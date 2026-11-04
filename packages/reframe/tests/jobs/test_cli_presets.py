@@ -315,7 +315,8 @@ def test_import_missing_file(cli_env: ft.FakeTools, tmp_path: Path) -> None:
         (b"{broken", "it is not JSON"),
         (b"[1, 2]", "it is not a JSON object"),
         (b"\xff\xfe not utf-8 \xff", "it is not UTF-8 text"),
-        (b"[" * 100_000 + b"]" * 100_000, "nested too deeply"),
+        # The id goes into PYTEST_CURRENT_TEST: Windows limits a variable to 32767 characters.
+        pytest.param(b"[" * 100_000 + b"]" * 100_000, "nested too deeply", id="deep-nesting"),
     ],
 )
 def test_import_not_a_preset_file(

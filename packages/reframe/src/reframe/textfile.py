@@ -76,7 +76,13 @@ def open_regular(path: str | os.PathLike[str]) -> BinaryIO:
     kind of file, at once, and :class:`OSError` as :func:`open` does."""
     # O_NONBLOCK: opening a FIFO waits for a writer without it; the kind is checked after.
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
-    fd = os.open(path, flags)
+    try:
+        fd = os.open(path, flags)
+    except PermissionError:
+        # Windows refuses to open a folder with EACCES.
+        if os.path.isdir(path):
+            raise IsADirectoryError(errno.EISDIR, "Is a directory", os.fspath(path)) from None
+        raise
     try:
         mode = os.fstat(fd).st_mode
         if stat.S_ISDIR(mode):

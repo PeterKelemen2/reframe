@@ -220,6 +220,16 @@ def media_file(folder: Path, name: str) -> Path:
     return path
 
 
+def draft_path(source: Path, name: str) -> Path:
+    """The output a draft names ``name`` next to ``source``. Where the file system ignores case
+    (Windows), ``Movie.mkv`` is the source ``movie.mkv`` itself, so the draft takes the next
+    free name."""
+    path = source.with_name(name)
+    if path.exists() and path.samefile(source):
+        return path.with_name(f"{path.stem} (1){path.suffix}")
+    return path
+
+
 def invoke(*args: str, env: dict[str, str] | None = None) -> Result:
     return CliRunner().invoke(build_app(), list(args), env={"COLUMNS": WIDTH, **(env or {})})
 

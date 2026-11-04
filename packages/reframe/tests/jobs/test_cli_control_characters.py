@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,8 @@ from .conftest import Queues, invoke, media_file, probe_json, probe_rule
 from .test_cli_output_names import E01, S01, anime, two_sources
 
 EVIL = "Evil\x1b[31mRED\x1b[0m\nline2\x07\x9b2J\x1b]0;title\x07"
+#: Windows file names cannot hold control characters; titles (metadata) can.
+NAMES_HOLD_ESC = sys.platform != "win32"
 
 
 def _user_preset(preset_id: str, name: str, **changes: Any) -> dict[str, Any]:
@@ -108,30 +111,26 @@ def test_titles_and_file_names_in_the_batch_output_are_printable(
     cli_env: ft.FakeTools, tmp_path: Path
 ) -> None:
     """A near member's difference names a track title with ESC (E05's commentary), two releases
-    of E01 are labelled by their file names (one with ESC), and the matrix shows that name
-    and its output name: no ESC on stdout."""
+    of E01 are labelled by their file names (one with ESC, where file names can hold it), and
+    the matrix shows that name and its output name: no ESC on stdout."""
     folder = tmp_path / "media" / S01
     e01 = media_file(folder, E01)
-    evil = media_file(folder, "Anime.Show.S01E01.\x1b[31mRed.WEB.x264-GRP.mkv")
     e05 = media_file(folder, media.anime_file_name(1, 5))
     commentary = escaped_probe(tmp_path, anime(1, 5), "Commentary", "Comm\x1b[32mGreen")
-    cli_env.set_scenario(
-        ft.Scenario(
-            [
-                probe_rule(commentary, e05),
-                probe_rule(probe_json(anime(1, 1)), e01),
-                probe_rule(probe_json(anime(1, 1)), evil),
-            ]
-        )
-    )
+    rules = [probe_rule(commentary, e05), probe_rule(probe_json(anime(1, 1)), e01)]
+    if NAMES_HOLD_ESC:
+        evil = media_file(folder, "Anime.Show.S01E01.\x1b[31mRed.WEB.x264-GRP.mkv")
+        rules.append(probe_rule(probe_json(anime(1, 1)), evil))
+    cli_env.set_scenario(ft.Scenario(rules))
     result = invoke("batch", str(folder), "--dry-run")
     assert result.exit_code == EXIT_OK, result.output
     out = result.stdout
     assert ESC not in out, out
     assert 'extra track (eng AC-3 2.0 "Comm\ufffd[32mGreen")' in out
-    # The member list and the matrix row label.
-    assert out.count("Anime.Show.S01E01.\ufffd[31mRed.WEB.x264-GRP.mkv") == 2
-    assert "Anime.Show.S01E01.[31mRed.mkv" in out
+    if NAMES_HOLD_ESC:
+        # The member list and the matrix row label.
+        assert out.count("Anime.Show.S01E01.\ufffd[31mRed.WEB.x264-GRP.mkv") == 2
+        assert "Anime.Show.S01E01.[31mRed.mkv" in out
 
 
 def test_reframe_probe_prints_titles_without_control_characters(
@@ -139,7 +138,7 @@ def test_reframe_probe_prints_titles_without_control_characters(
 ) -> None:
     """``reframe probe``: a track title, the container title and a chapter title come from the
     file; they are shown through ``printable`` too (``--json`` keeps them)."""
-    file = media_file(tmp_path / "media", "Movie\x1b[35m.mkv")
+    file = media_file(tmp_path / "media", "Movie\x1b[35m.mkv" if NAMES_HOLD_ESC else "Movie.mkv")
     data = json.loads(probe_json(anime(1, 5)).read_text(encoding="utf-8"))
     for stream in data["streams"]:
         if stream.get("tags", {}).get("title") == "Commentary":
