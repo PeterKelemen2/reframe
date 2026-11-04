@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 
 from reframe.capabilities.parse import parse_encoder_help
+from reframe.command import escape_value
+from reframe.command.video import split_params
 from reframe.definitions import load_definitions
 from reframe.definitions.custom_params import custom_param_rules
 from reframe.models import CapabilitySnapshot, ConstantQuality, VideoSettings
@@ -40,8 +42,7 @@ def _encode(
     if definition.params_arg is not None:
         argv += [definition.params_arg, params]
     else:
-        for entry in params.split(":"):
-            name, _, value = entry.partition("=")
+        for name, value in split_params(params):
             argv += [f"-{name}:v:0", value]
     argv += ["-f", "null", "-"]
     return subprocess.run(argv, capture_output=True, text=True, timeout=120, cwd=cwd, check=False)
@@ -84,7 +85,7 @@ def test_a_parameter_that_writes_a_file(
     cwd = tmp_path / "cwd"
     cwd.mkdir()
     target = tmp_path / "target.bin"
-    text = params.format(target=target)
+    text = params.format(target=escape_value(str(target)))
     result = _encode(encoder, text, cwd)
     assert result.returncode == 0, result.stderr[-1500:]
     if written == "target":
@@ -111,7 +112,7 @@ def test_a_parameter_that_reads_a_file(
 ) -> None:
     junk = tmp_path / "junk.txt"
     junk.write_text("junk\n")
-    path = junk if key not in ("cqmfile", "cqm") else tmp_path / "missing.txt"
+    path = escape_value(str(junk if key not in ("cqmfile", "cqm") else tmp_path / "missing.txt"))
     result = _encode(encoder, f"{key}={path}", tmp_path)
     assert message in result.stderr, result.stderr[-1500:]
     assert _refused_by_validation(encoder, f"{key}={path}")
@@ -149,11 +150,12 @@ def test_x264_reads_and_applies_the_file_a_cqm_value_names(tmp_path: Path) -> No
     cwd.mkdir()
     matrix = tmp_path / "matrix.cfg"  # no "flat" / "jvt" in the path: x264 matches those
     matrix.write_text(CQM_FILE)
-    assert _x264_sei_cqm(f"cqm={matrix}", tmp_path / "file.h264", cwd) == "2"
-    assert _x264_sei_cqm(f"cqmfile={matrix}", tmp_path / "cqmfile.h264", cwd) == "2"
+    named = escape_value(str(matrix))
+    assert _x264_sei_cqm(f"cqm={named}", tmp_path / "file.h264", cwd) == "2"
+    assert _x264_sei_cqm(f"cqmfile={named}", tmp_path / "cqmfile.h264", cwd) == "2"
     assert _x264_sei_cqm("cqm=flat", tmp_path / "flat.h264", cwd) == "0"
     assert _x264_sei_cqm("cqm=jvt", tmp_path / "jvt.h264", cwd) == "1"
-    assert _refused_by_validation("libx264", f"cqm={matrix}")
+    assert _refused_by_validation("libx264", f"cqm={named}")
     assert not _refused_by_validation("libx264", "cqm=flat")
     assert not _refused_by_validation("libx264", "cqm=jvt")
 
@@ -210,7 +212,7 @@ def test_a_value_that_is_a_name_or_a_file_name(
         pytest.skip("x264 would take the temporary path for a matrix name")
     cwd = tmp_path / "cwd"
     cwd.mkdir()
-    text = params.replace("{tmp}", str(tmp_path))
+    text = params.replace("{tmp}", escape_value(str(tmp_path)))
     result = _encode(encoder, text, cwd, frames=1)
     expected = None if opened is None else opened.replace("{tmp}", str(tmp_path))
     assert _opened(encoder, result.stderr) == expected, result.stderr[-1500:]
@@ -248,7 +250,7 @@ def test_which_file_keys_the_library_takes(tmp_path: Path, encoder: str) -> None
     missing = tmp_path / "no-such-folder" / "file"
     taken: set[str] = set()
     for key in custom_param_rules().file_keys[encoder]:
-        value = "1" if key == "pass" else str(missing)
+        value = "1" if key == "pass" else escape_value(str(missing))
         result = _encode(encoder, f"{key}={value}", tmp_path, frames=1)
         if not any(_REFUSED.search(line) for line in result.stderr.splitlines()):
             taken.add(key)

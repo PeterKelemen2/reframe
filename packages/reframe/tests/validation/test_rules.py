@@ -62,6 +62,8 @@ def _load(name: str) -> ModuleType:
 sc = _load("scenario")
 DEFS: Definitions = sc.DEFS
 ERR, WARN, INFO = Severity.ERROR, Severity.WARNING, Severity.INFO
+#: A name Windows does not allow: an error for a Windows path, a warning elsewhere.
+NOT_PORTABLE = ERR if sys.platform == "win32" else WARN
 
 type Mod = Callable[[Any], None]
 
@@ -1423,7 +1425,7 @@ CASES: list[Case] = [
         "reserved Windows name",
         "output.name_not_portable",
         "output.path",
-        WARN,
+        NOT_PORTABLE,
         output_path(Path("/out/CON.mkv")),
         output_path(Path("/out/CONTACT.mkv")),
     ),
@@ -1431,7 +1433,7 @@ CASES: list[Case] = [
         "character Windows does not allow",
         "output.name_not_portable",
         "output.path",
-        WARN,
+        NOT_PORTABLE,
         output_path(Path("/out/Movie: The Sequel.mkv")),
         output_path(Path("/out/Movie - The Sequel.mkv")),
     ),
@@ -1465,7 +1467,7 @@ CASES: list[Case] = [
         "output.not_writable",
         "output.path",
         ERR,
-        lambda s: s.fs.readonly.add("/out"),
+        lambda s: s.fs.readonly.add(str(Path("/out"))),
         nothing,
     ),
     Case(

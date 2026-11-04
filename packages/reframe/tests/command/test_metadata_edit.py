@@ -239,7 +239,7 @@ def test_metadata_edit_plan_edits_the_source() -> None:
     assert step.tool == "mkvpropedit"
     assert step.argv[0] == str(src.ref.path)
     assert step.description == "Edit the metadata of 1 track of multitrack.mkv in place"
-    assert plan.display.startswith("mkvpropedit /media/multitrack.mkv --edit track:a1")
+    assert plan.display.startswith(f"mkvpropedit {src.ref.path} --edit track:a1")
 
 
 def test_metadata_edit_plan_needs_no_output_path() -> None:

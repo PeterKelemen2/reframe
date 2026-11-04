@@ -471,8 +471,12 @@ def test_composite_parts_have_defaults(encoder: str, key: str, preset: str | Non
 
 
 #: Snapshot jobs that test the builder with a value validation refuses on purpose:
-#: job → the error codes it has.
-KNOWN_ERRORS: dict[str, set[str]] = {}
+#: job → the error codes it has. A Windows output name cannot hold ``:``.
+KNOWN_ERRORS: dict[str, set[str]] = (
+    {"x265_two_pass_stats_path_with_colon_windows_display": {"output.name_not_portable"}}
+    if sys.platform == "win32"
+    else {}
+)
 
 
 def test_snapshot_jobs_are_imported() -> None:

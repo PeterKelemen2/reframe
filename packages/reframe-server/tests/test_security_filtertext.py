@@ -12,6 +12,7 @@ from typing import Any
 
 import pytest
 
+from reframe.command import filter_path, quote_value
 from reframe.models import FilterConfig, JobDraft, JobSettings, SourceRef
 from reframe_server import security
 from reframe_server.config import ServerConfig, ServerMode
@@ -196,6 +197,11 @@ def _graph(filter_id: str, text: str) -> str:
     return {"custom": text, "sharpen": f"unsharp={text}"}[filter_id]
 
 
+def _file_value(path: Path) -> str:
+    """``path`` as one option value in a graph: a Windows path holds ``:``."""
+    return quote_value(filter_path(path))
+
+
 @pytest.mark.needs_ffmpeg
 @pytest.mark.parametrize(("filter_id", "text"), READS_A_FILE)
 def test_ffmpeg_reads_an_option_value_from_a_file_for_these_texts(
@@ -205,7 +211,7 @@ def test_ffmpeg_reads_an_option_value_from_a_file_for_these_texts(
     assert ffmpeg is not None
     secret = tmp_path / "secret.txt"
     secret.write_text("SECRET-FILE-CONTENT", encoding="utf-8")
-    graph = _graph(filter_id, text.format(file=secret))
+    graph = _graph(filter_id, text.format(file=_file_value(secret)))
     run = subprocess.run(
         [ffmpeg, "-hide_banner", "-nostdin", "-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.04",
          "-vf", graph, "-frames:v", "1", "-f", "null", "-"],
@@ -219,12 +225,13 @@ def test_free_filter_text_that_reads_a_file_is_refused(
     tmp_path: Path, filter_id: str, text: str
 ) -> None:
     preset = "default" if filter_id == "custom" else "custom"
-    config = FilterConfig(preset=preset, custom=text.format(file="/etc/passwd"))
-    with pytest.raises(ProblemError) as refused:
-        security.jail_job(_config(tmp_path), _job(tmp_path, {filter_id: config}))
-    problem = refused.value.problem
-    assert (problem.status, problem.code) == (403, "filter.not_allowed")
-    assert "starts with '/'" in (problem.detail or "")
+    for file in ("/etc/passwd", _file_value(tmp_path / "secret.txt")):
+        config = FilterConfig(preset=preset, custom=text.format(file=file))
+        with pytest.raises(ProblemError) as refused:
+            security.jail_job(_config(tmp_path), _job(tmp_path, {filter_id: config}))
+        problem = refused.value.problem
+        assert (problem.status, problem.code) == (403, "filter.not_allowed")
+        assert "starts with '/'" in (problem.detail or "")
 
 
 def test_desktop_mode_keeps_free_filter_text(tmp_path: Path) -> None:

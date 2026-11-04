@@ -31,6 +31,7 @@ from reframe.definitions.custom_params import (
     library_key_forms,
     own_option_allowed,
     split_custom_params,
+    whole_param,
 )
 from reframe.definitions.options import effective_preset
 from reframe.definitions.quality import round_to_step
@@ -1069,9 +1070,10 @@ def _remove_param(
         return fix(
             "Remove the custom parameters", replace("video.custom_params", ""), target=target
         )
-    rest = ":".join(p.raw for p in params if p is not param)
+    group = whole_param(params, param)
+    rest = ":".join(p.raw for p in params if not any(p is g for g in group))
     return fix(
-        f"Remove {param.raw.strip()} from the custom parameters",
+        f"Remove {':'.join(p.raw for p in group).strip()} from the custom parameters",
         replace("video.custom_params", rest),
         target=target,
     )
@@ -1120,10 +1122,12 @@ def _own_option_issues(
     params = split_custom_params(video.custom_params)
     build = status.private_options if status is not None else []
     issues: list[ValidationIssue] = []
+    removed: list[CustomParam] = []
     for param in params:
         name = param.name
-        if own_option_allowed(encoder.id, name, build):
+        if any(param is p for p in removed) or own_option_allowed(encoder.id, name, build):
             continue
+        removed += whole_param(params, param)
         if name in rules.file_options or name.startswith("/"):
             code = "encoder.custom_param_file"
             message = (

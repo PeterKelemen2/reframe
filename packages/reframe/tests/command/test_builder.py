@@ -136,7 +136,7 @@ def test_argument_order() -> None:
         a.index("-init_hw_device"),
         a.index("-ss"),
         a.index(str(src.ref.path)),
-        a.index("/m/x.srt"),
+        a.index(str(Path("/m/x.srt"))),
         a.index("ffmetadata"),
         a.index("-map"),
         a.index("-t"),

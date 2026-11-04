@@ -50,13 +50,16 @@ def video_stream(**kwargs: Any) -> VideoStream:
     return VideoStream.model_validate({"index": 0, "width": 1920, "height": 1080, **kwargs})
 
 
+PASSLOG = Path("/out/x.part.passlog")
+
+
 def args(encoder: str, *, run: int | None = None, hdr: bool = False, **settings: Any) -> list[str]:
     stream = settings.pop("stream", None) or video_stream()
     status = settings.pop("status", None)
     video = VideoSettings.model_validate({"encoder": encoder, **settings})
     return video_encoder_args(
         DEFS.video_encoders[encoder], video, stream, status=status, run=run,
-        passlog=Path("/out/x.part.passlog") if run else None, hdr=hdr,
+        passlog=PASSLOG if run else None, hdr=hdr,
     )  # fmt: skip
 
 
@@ -124,9 +127,9 @@ def test_two_pass_runs() -> None:
     first = args("libx264", rate_control=rc, run=1)
     second = args("libx264", rate_control=rc, run=2)
     assert first[-6:] == [
-        "-pass:v:0", "1", "-passlogfile:v:0", "/out/x.part.passlog", "-fastfirstpass:v:0", "1",
+        "-pass:v:0", "1", "-passlogfile:v:0", str(PASSLOG), "-fastfirstpass:v:0", "1",
     ]  # fmt: skip
-    assert second[-4:] == ["-pass:v:0", "2", "-passlogfile:v:0", "/out/x.part.passlog"]
+    assert second[-4:] == ["-pass:v:0", "2", "-passlogfile:v:0", str(PASSLOG)]
     x265 = args("libx265", rate_control=AverageBitrate(two_pass=True), run=1)
     assert x265[-1] == "pass=1:stats=/out/x.part.passlog:slow-firstpass=1"
     nvenc = args("hevc_nvenc", rate_control=AverageBitrate(two_pass=True))
