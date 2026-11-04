@@ -2945,7 +2945,7 @@ the stream's encoder settings SEI:
   key by key. `keyint=10s` (seconds) stays a custom parameter: the keyint option is a number of
   frames.
 
-### Windows: paths in parameters and filter text, file times (Q-1.4, task A)
+### Windows: paths, processes and file behaviour (Q-1.4)
 
 Windows 10 22H2 (VM), Python 3.14.10, FFmpeg n9.0.2 (BtbN win64, `reframe tools fetch`),
 2026-11-04:
@@ -2976,6 +2976,20 @@ Windows 10 22H2 (VM), Python 3.14.10, FFmpeg n9.0.2 (BtbN win64, `reframe tools 
   is `C:\t\a.mkv` when `missing` does not exist.
 - A file name `a:b` is the NTFS stream `b` of the file `a`: `shutil.copy` writes it and
   FFmpeg's `subtitles` filter reads it.
+- `os.open` (and `open`) of a folder raises `PermissionError` (EACCES), not
+  `IsADirectoryError`.
+- `os.replace` cannot replace a symbolic link to a folder (`PermissionError`, WinError 5); the
+  VM's account can create symbolic links.
+- uv's `.venv\Scripts\python.exe` is a launcher: it starts the real interpreter as a child
+  process (another pid), passes the exit code through (`SystemExit(75)` gives 75), and a kill of
+  the launcher ends the child, also when it was started with `launch_detached`'s flags.
+- A tool that crashes with an access violation exits with `0xC0000005` (positive, as an
+  NTSTATUS code), not with a negative signal number.
+- FFmpeg's Matroska muxer, writing a seekable file, takes time quadratic in the number of
+  subtitle packets on Windows (50 / 100 / 200 loops of the fixture: 0.34 / 3.6 / 16 s); with
+  `-live 1`, or to a pipe or null output, it is linear (200 loops: 0.25 s). On Linux the 1800
+  loops take 2.6 s.
+- pydantic-core dumps at most 100 nested levels on Windows (256 on Linux).
 
 ### The sidecar build and its packages (M5 task A)
 

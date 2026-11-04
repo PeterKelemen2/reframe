@@ -176,6 +176,12 @@ Platform differences that are not defects:
 
 ## Consequences
 
+Result, 2026-11-04: on `m10-hardening` 13e8cd0 the 233 failed tests and the 3 spike modules
+ran again on the VM, with FFmpeg not on `PATH`: 229 passed, 8 skipped (the 3 spike modules, 4
+file names Windows cannot hold, a POSIX path with the byte 0xFF), 0 failed. Each task also ran
+its changed test files in full on the VM, and every changed test file passes on Linux. The
+whole suite has not run on Windows again since the fixes.
+
 The CI matrix's Windows job (Q-1.1) has never run on GitHub; this phase stands in for it. The
 Rust checks and the desktop items of the phase (D-0's Windows items, the M5 demo, D-3's Job
 Object) are separate runs.
