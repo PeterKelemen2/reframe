@@ -12,6 +12,8 @@ from typing import Any
 
 import pytest
 
+pytest.importorskip("fcntl", reason="the desktop spike's scripts run on Linux only")
+
 REPO = Path(__file__).resolve().parents[3]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))

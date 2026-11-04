@@ -37,6 +37,31 @@ ALLOW_SCRIPT_TOOLS_ENV = "REFRAME_ALLOW_SCRIPT_TOOLS"
 os.environ.setdefault(ALLOW_SCRIPT_TOOLS_ENV, "1")
 
 
+def _put_bundled_ffmpeg_on_path() -> None:
+    # A test that makes a Reframe with private folders does not see the bundled build of the
+    # session's data folder; PATH keeps that same FFmpeg reachable for it. Not for a build
+    # that needs its own environment (the Linux build's lib/), which PATH cannot carry.
+    import shutil
+
+    from reframe.models.tools import ToolOrigin
+    from reframe.tools.discovery import locate_tools
+
+    tools = locate_tools()
+    folders: list[str] = []
+    for name in ("ffmpeg", "ffprobe"):
+        location = tools[name]
+        if shutil.which(name) is not None or location.path is None or location.env:
+            continue
+        if location.origin is ToolOrigin.BUNDLED and str(location.path.parent) not in folders:
+            folders.append(str(location.path.parent))
+    if folders:
+        os.environ["PATH"] = os.pathsep.join([*folders, os.environ.get("PATH", "")])
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    _put_bundled_ffmpeg_on_path()
+
+
 def require_ffmpeg() -> bool:
     """``REFRAME_REQUIRE_FFMPEG`` is set to something other than empty, ``0``, ``false``, ``no``."""
     return os.environ.get(REQUIRE_ENV, "").strip().lower() not in ("", "0", "false", "no")
