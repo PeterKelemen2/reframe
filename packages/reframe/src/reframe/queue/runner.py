@@ -38,7 +38,7 @@ from reframe.models.tools import ToolInfo, ToolSet, ToolStatus
 from reframe.probe import ProbeError, matroska
 from reframe.queue import files, loudnorm
 from reframe.queue.clock import Clock
-from reframe.queue.errors import closed_error, exit_text, printable, stderr_reason
+from reframe.queue.errors import closed_error, crashed, exit_text, printable, stderr_reason
 from reframe.queue.logs import JobLog
 from reframe.queue.process import resume_tree, suspend_tree
 from reframe.queue.progress import ProgressBlock, ProgressParser, ProgressTracker
@@ -998,10 +998,10 @@ def _failure(step: PlanStep, result: RunResult, stderr: Sequence[str]) -> str:
     what = _WHAT[step.kind]
     if result.error is not None:
         return f"{what} could not start {step.tool}: {result.error}"
-    crashed = result.returncode is not None and result.returncode < 0
-    reason = stderr_reason(stderr, last_line=not crashed)
+    crash = crashed(result.returncode)
+    reason = stderr_reason(stderr, last_line=not crash)
     status = exit_text(result.returncode)
-    if crashed:
+    if crash:
         head = f"{step.tool} crashed during {what.lower()} ({status})"
     else:
         head = f"{what} failed ({status})"

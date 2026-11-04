@@ -4,6 +4,7 @@ folder jail and the folders refused at start-up."""
 from __future__ import annotations
 
 import asyncio
+import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 
@@ -159,11 +160,13 @@ async def test_folder_behind_a_link_follows_the_link_on_each_request(
         (releases / name).mkdir(parents=True)
         (releases / name / "index.html").write_text(f"build {name}")
     current = tmp_path / "current"
-    current.symlink_to(releases / "1")
+    current.symlink_to(releases / "1", target_is_directory=True)
     async with make_api(static_dir=current) as api:
         assert (await api.anonymous.get("/queue")).text == "build 1"
         swap = tmp_path / "current.new"
-        swap.symlink_to(releases / "2")
+        swap.symlink_to(releases / "2", target_is_directory=True)
+        if sys.platform == "win32":
+            current.unlink()  # a rename cannot replace a directory link on Windows
         swap.replace(current)
         assert (await api.anonymous.get("/queue")).text == "build 2"
 

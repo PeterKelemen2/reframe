@@ -1,4 +1,4 @@
-"""Write the server's OpenAPI document as JSON to the file given as the argument, or to stdout.
+"""Write the server's OpenAPI document as UTF-8 JSON to the file given as the argument, or stdout.
 
 The app is created but never started: no facade, no tools and no network are needed. The
 ``REFRAME_*`` variables of the shell are ignored, so the document is the same everywhere.
@@ -25,7 +25,8 @@ def main(argv: list[str]) -> int:
     if argv:
         Path(argv[0]).write_text(text, encoding="utf-8", newline="\n")
     else:
-        sys.stdout.write(text)
+        # Bytes: on Windows the text stream writes the ANSI code page and CRLF to a pipe.
+        sys.stdout.buffer.write(text.encode("utf-8"))
     return 0
 
 
