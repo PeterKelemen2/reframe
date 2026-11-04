@@ -33,7 +33,7 @@ from reframe.models import (
 )
 from reframe.probe import ProbeError
 
-from .conftest import Stubs, caps, checking, media_file, preset, recorded
+from .conftest import Stubs, caps, checking, draft_path, media_file, preset, recorded
 
 pytestmark = pytest.mark.anyio
 
@@ -98,8 +98,8 @@ async def test_draft_with_the_default_preset(movie: tuple[Stubs, Path]) -> None:
     assert job.video.metadata == video_metadata(source.video[0])
     # The name: the folder name wins over "movie", next to the source.
     assert draft.naming.source == "folder"
-    assert job.output.path == file.parent / "Movie.mkv"
-    assert draft.naming.path == job.output.path
+    assert draft.naming.path == file.parent / "Movie.mkv"
+    assert job.output.path == draft_path(file, "Movie.mkv")
     assert job.output.naming.mode == "template"
     assert errors(draft.issues) == []
     assert "dimensions.crop_not_detected" in codes(draft.issues)
@@ -376,8 +376,9 @@ async def test_plan_of_a_drafted_job(movie: tuple[Stubs, Path]) -> None:
     assert isinstance(draft, JobDraft)
     plan = await jobs.plan(draft.job)  # probes the source again (the stub)
     assert isinstance(plan, EncodePlan)
-    assert plan.output_final == file.parent / "Movie.mkv"
-    assert plan.output_tmp == file.parent / "Movie.part.mkv"
+    final = draft_path(file, "Movie.mkv")
+    assert plan.output_final == final
+    assert plan.output_tmp == final.with_name(f"{final.stem}.part.mkv")
     assert "libx265" in plan.display
     assert stubs.probes == 2
 

@@ -15,7 +15,7 @@ from reframe.models import EncodePlan, JobDraft
 from reframe_testing import fake_tools as ft
 from reframe_testing.capabilities import detect_rule
 
-from .conftest import invoke, media_file, replay
+from .conftest import draft_path, invoke, media_file, replay
 
 Media = "Movie.2016.1080p.BluRay.x264-GRP"
 
@@ -40,7 +40,8 @@ def test_default_preset_prints_issues_then_the_command(movie: Path, cli_env: ft.
     out = result.stdout
     assert out.startswith("movie.mkv\n")
     assert "  Preset   H.265 MKV 1080p" in out
-    assert f"  Output   {movie.parent / 'Movie.mkv'}" in out
+    output = draft_path(movie, "Movie.mkv")
+    assert f"  Output   {output}" in out
     assert "template {main_title} on the folder name" in out
     assert "  Audio    #1  " in out
     assert out.index("Issues (") < out.index("Command (")
@@ -52,7 +53,7 @@ def test_default_preset_prints_issues_then_the_command(movie: Path, cli_env: ft.
     assert len(command) == 1  # one line, to copy into a terminal
     assert command[0].startswith(f"{cli_env.ffmpeg} -hide_banner")
     assert "-c:v:0 libx265" in command[0]
-    assert str(movie.parent / "Movie.part.mkv") in command[0]
+    assert str(output.with_name(f"{output.stem}.part.mkv")) in command[0]
 
 
 def test_preset_by_name_and_output(movie: Path, tmp_path: Path) -> None:

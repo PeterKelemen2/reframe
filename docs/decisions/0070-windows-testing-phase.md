@@ -63,7 +63,34 @@ Placeholder: filled when B merges.
 
 ## Task C — CLI, models, settings, batch and media
 
-Placeholder: filled when C merges.
+Product defect:
+
+- **A folder given as a chapter file was reported as "The file cannot be read: Permission
+  denied."** `textfile.open_regular` documents `IsADirectoryError` for a folder, but on Windows
+  `os.open` of a folder raises `PermissionError` (EACCES, checked on the VM), so
+  `read_chapter_file` fell through to its generic message. Fix: on `PermissionError`,
+  `open_regular` raises `IsADirectoryError` when the path is a folder; this serves every caller
+  of `open_regular` (chapter files, subtitle files, charset reads). The test of a folder as a
+  chapter file failed on Windows before the fix.
+
+Platform differences that are not defects:
+
+- **A case-insensitive file system.** The draft of `movie.mkv` in `Movie.2016…-GRP/` names the
+  output `Movie.mkv`, which on Windows is the source itself (`samefile` is true, checked on the
+  VM), so the draft correctly takes `Movie (1).mkv`. The tests compute the expected name from
+  the file system, so Windows runs the "name is the source" path and Linux the plain one.
+- **Paths in expected text.** Expected strings are built with `Path`, or the JSON is parsed
+  before it is compared, instead of POSIX literals.
+- **Lone surrogates.** The JSON writer's escape of a lone surrogate is tested on Windows too,
+  with strings that are not paths or with checks that do not depend on the separator. Only the
+  probe cache case whose key is a POSIX path with the byte 0xFF is skipped: no Windows name
+  holds it (the cache's lone-surrogate case runs there).
+- **Control characters in file names.** Windows does not allow them in a name, so the tests
+  that also put ESC in a file name keep their title (metadata) checks on Windows and make the
+  file-name part POSIX-only.
+- **Test ids in the environment.** pytest puts the current test id in `PYTEST_CURRENT_TEST`;
+  Windows limits a variable to 32767 characters, and one parameter id (200 000 brackets) was
+  longer. That case has a short id now, so its node id changed (`[deep-nesting]`).
 
 ## Consequences
 
