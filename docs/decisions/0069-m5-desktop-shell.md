@@ -1135,6 +1135,12 @@ was removed afterwards. Pointer events only; no keyboard event was sent.
 
 The driver, the scripts and the screenshots are in the lead's scratchpad (`lead/headed/`).
 
+**The same flow headless** (2026-11-04, after the headed run): the release build with the frozen
+sidecar in the virtual session, light theme, the file opened through the sources store in place of
+the dialog: every step as above (banner, two Summary errors, `hevc_amf`, CQ 30, audio 3 → 2 → 3,
+0 errors, `done`, the log with 97 lines), 4 `LauncherEntry.Update` signals, the app exited 0 on a
+window close.
+
 ## Consequences
 
 - The plan's text of D-1 and of the taskbar row was wrong for this platform; both are fixed
