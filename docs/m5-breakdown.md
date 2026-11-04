@@ -10,7 +10,7 @@ builds which part, in which order, and what each part must offer to the others. 
 section per task). Status: [status.md](status.md). The template is
 [m9-breakdown.md](m9-breakdown.md). If the lead's context is summarised, this file and
 `status.md` are the source of truth. M5 is done on Linux on the branch `m5-desktop-shell`
-(2026-11-04), not merged into `main`.
+(2026-11-04); the owner had it merged into `main` the same day (not pushed).
 
 M5 builds on D-0 ([0001](decisions/0001-desktop-shell.md): the spike's shell, its sidecar
 start, cleanup and PyInstaller options), the shared queue
@@ -484,17 +484,19 @@ write a test, name that defect in one sentence. If you cannot name one, do not w
 | 2026-11-04 | **Merged FB** (67b5254, merge a1bbae5): `privateQueue` in `BackendInfo` (all four reasons), a web-mode owner not used (`GET /api/system` `mode`), a live owner waited for (`kill(pid, 0)`; the state `starting` meanwhile), the timed-out child reaped, a panic guard, the app manifest (main: 10 commands, preview: 4), `dialog:allow-save` gone, the tray only with a `StatusNotifierWatcher`; 60 cargo tests (6 failed on the old code), 26 mutations; R1's `s8`, `s11`, `s12` and R2's web-mode repro re-run fixed. Lead: fmt, clippy, 60 tests after `touch build.rs`; the lead's mutation (`process_alive` always false) fails 3 tests; restored. FB's stuck wait loop (`pgrep -f` matched itself) stopped by the lead; worktree removed. **FF resumed for phase 2** (the banner in the real app, the overlay text for an owner not the app's, main-only commands from the preview window) |
 | 2026-11-04 | **Merged FF phase 2** (927354f, merge ee4b46c): the banner checked in the real app (`lockHeld` with R1's `s8`, `webServer` with a web-mode server, light and dark), the *Reconnecting…* text for an owner the app did not start, `quit()` and `notify()` only in the main window, the tray refusal without a tray host. The lead took `desktop_settings` out of `preview.json` (0f719c3; its page never reads them). No worktree left |
 | 2026-11-04 | **The M5 demo headed** once on `HDMI-A-1` through the window guard (the owner had put the cursor and VS Code there and said to go ahead without confirmations): native dialog, Dolphin drop, the M4 flow, taskbar progress and notification signals, CLI handoff, quit while a job runs, restart, open-with, `kill -9` (0069 "The lead's checks"). Found: on Plasma Wayland a second launch does not give the running window the focus. **Final checks** alone: Python 7668 passed, `npm test` 1940, `test:server` 67, e2e 22, cargo 60, all lint / format / type checks clean. **Cold start** (release, SSD): warm 1.072 s, page cache dropped 1.180 s. The same flow **headless** on the release build (light): every step passed, the app exited 0 on a close |
+| 2026-11-04 | **Merged into `main`** at the owner's request (`--no-ff`); not pushed |
 
 ## Where M5 ended (2026-11-04)
 
-M5 is done on Linux on the branch `m5-desktop-shell` (not merged into `main`, not pushed): D-1 to
+M5 is done on Linux on the branch `m5-desktop-shell`; merged into `main` at the owner's request on
+2026-11-04 (`--no-ff`), not pushed: D-1 to
 D-6, every box of 07 ticked (the Windows ones written and mock-tested), two reviews and their fixes,
 the demo headless and once headed, the final checks green. Recorded limits are in `status.md`
 ("Open items", "Not verified") and 0069.
 
 **Questions for the owner** (each built with the default named; none stopped the run):
 
-1. **Merge into `main`?** Not done; the owner decides.
+1. **Merge into `main`?** Done at the owner's request (2026-11-04, `--no-ff`); not pushed.
 2. **Focus on a second launch (Plasma Wayland).** The path is handed over and the file opens, but
    the running window does not take the keyboard focus: KWin wants an XDG activation token, and
    the single-instance plugin passes only `argv` and `cwd`. Default: recorded. Fixing it means
