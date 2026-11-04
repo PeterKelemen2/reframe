@@ -174,6 +174,27 @@ Platform differences that are not defects:
   Windows limits a variable to 32767 characters, and one parameter id (200 000 brackets) was
   longer. That case has a short id now, so its node id changed (`[deep-nesting]`).
 
+## The Rust job
+
+`ci.yml`'s desktop job (`npm run build:desktop`, then in `desktop/src-tauri` `cargo fmt
+--check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`) compiled the shell's
+`cfg(windows)` code for the first time, on the same VM (rustc 1.99.1, MSVC, Build Tools 2022
+17.14), 2026-11-04:
+
+- **No Windows icon** (a defect of the D-1 scaffold): tauri-build needs `icons/icon.ico` for
+  the Windows resource file, and only the 32 px `icon.png` placeholder existed, so the app did
+  not build on Windows at all. `icons/icon.ico` is generated from the same placeholder with
+  `tauri icon` (16 to 256 px) and listed in `bundle.icon`; the real icons are a release item.
+- **Dead code on Windows** (clippy `-D warnings`): `progress::DESKTOP_ENTRY` is used by the
+  Linux launcher entry only, and a test helper of `backend/owner.rs` by the Linux data-folder
+  tests only; both are compiled where they are used.
+- **`open_paths` tests with POSIX paths**: `/home/u` is not absolute on Windows, so every path
+  was dropped. The product is right (`Path::is_absolute`; a root-relative path takes the launch
+  folder's drive); the tests write their paths in the platform's form.
+
+Result: `cargo fmt --check` and clippy pass, `cargo test` 20 passed on Windows (the other tests
+of the crate are Linux-only); on Linux 60 passed.
+
 ## Consequences
 
 Result, 2026-11-04: on `m10-hardening` 13e8cd0 the 233 failed tests and the 3 spike modules
@@ -183,8 +204,8 @@ its changed test files in full on the VM, and every changed test file passes on 
 whole suite has not run on Windows again since the fixes.
 
 The CI matrix's Windows job (Q-1.1) has never run on GitHub; this phase stands in for it. The
-Rust checks and the desktop items of the phase (D-0's Windows items, the M5 demo, D-3's Job
-Object) are separate runs.
+desktop items of the phase (D-0's Windows items, the M5 demo, D-3's Job Object in the running
+app) are separate runs.
 
 ## Plan changes
 

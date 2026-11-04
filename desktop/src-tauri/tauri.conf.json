@@ -29,7 +29,7 @@
   },
   "bundle": {
     "active": false,
-    "icon": ["icons/icon.png"],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
     "resources": { "resources/sidecar/": "sidecar/" },
     "fileAssociations": [
       { "ext": ["mkv"], "mimeType": "video/x-matroska", "name": "Reframe.mkv", "description": "Matroska video" },
