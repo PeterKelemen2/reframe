@@ -18,7 +18,7 @@ dependencies = [
 reframe-server = "reframe_server.__main__:main"
 
 [build-system]
-requires = ["hatchling>=1.32.4"]
+requires = ["hatchling>=1.33.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
