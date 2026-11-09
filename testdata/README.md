@@ -2997,6 +2997,41 @@ Windows 10 22H2 (VM), Python 3.14.10, FFmpeg n9.0.2 (BtbN win64, `reframe tools 
   loops take 2.6 s.
 - pydantic-core dumps at most 100 nested levels on Windows (256 on Linux).
 
+### Windows: the desktop part of the testing phase (Q-1.4, second VM)
+
+Windows 10 Pro 2004 (19041.1, no updates; VM, 4 cores), Python 3.14.10, FFmpeg n9.0.2 (BtbN
+win64), WebView2 157, Tauri 2.12.5, 2026-11-09:
+
+- FFmpeg crashes now and then with `0xC0000005` when `fieldmatch` runs before other filters:
+  the every-filter chain of `test_every_filter_on_an_untagged_interlaced_source` on
+  `interlaced.mkv` crashed 2 of 40 and 5 of 60 times; without `decimate` 11 of 80, without
+  `fieldmatch` 0 of 80, and `fieldmatch` alone or with `decimate` alone 0 of 80. The pinned
+  Linux build ran the whole chain 80 times on the same CPU without a crash.
+- A process started from a session that ignores Ctrl+C (Win32-OpenSSH's) hands the flag down,
+  also through `CREATE_NEW_CONSOLE`: `GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)` from a process
+  attached to the child's console succeeds, and the child sees nothing until it calls
+  `SetConsoleCtrlHandler(None, False)`; then Python raises `KeyboardInterrupt` at once.
+- Reading a file while another process replaces it with `os.replace` can raise
+  `PermissionError` (seen once for `server.json` in a full run).
+- The proactor loop's read pipe transport allocates a 32 KiB buffer per pipe when it is made
+  (`_ProactorReadPipeTransport`): 20 FFmpeg pipes of encoder detection are about 650 KB under
+  `tracemalloc`.
+- `SO_RCVBUF` set to 8192 before `connect` stays 8192 (65536 when left alone).
+- WebView2 converts a PNG's `cICP` colours in `createImageBitmap` unless
+  `colorSpaceConversion: "none"`: a tone-mapped frame (`cICP` 1/1/0/1) differed from FFmpeg's
+  rgb24 decode at 656 of 1640 sampled pixels (78 read as 68); with the option all equal.
+- `document.hasFocus()` in WebView2 stays true while no other window has taken the focus (a
+  window shown behind a hidden one); it is false once another window is in front.
+- A Tauri notification of an app that is not installed shows Windows PowerShell's name and
+  icon (Tauri falls back to PowerShell's AppUserModelID).
+- Windows places a new Tauri window without regard to the taskbar (208,61 with 1296×839 on a
+  1600×900 screen), and the window-state plugin restores a place from a larger screen as it was.
+- A process that is not in the foreground cannot bring another to the front: open-with from a
+  background launcher hands the path over, but the running window stays behind.
+- The common Open dialog (`#32770`) on this build gives UI Automation its file name box and its
+  buttons as plain panes; `WM_SETTEXT` to the box's edit (control 1148) and `BM_CLICK` to
+  `IDOK` work.
+
 ### The sidecar build and its packages (M5 task A)
 
 PyInstaller 6.22.3 (hooks-contrib 2026.9, Python 3.14.8), Tauri CLI 2.12.4 and tauri-build 2.7.4:
