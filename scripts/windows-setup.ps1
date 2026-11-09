@@ -18,7 +18,8 @@ param(
     [string]$AuthorizedKey,
     # Skips the Visual Studio Build Tools and Rust (only needed for the desktop shell).
     [switch]$SkipDesktop,
-    # Turns off sleep and hibernation on mains power, so long test runs are not suspended.
+    # Turns off sleep, hibernation and the display timeout on mains power: long test runs are
+    # not suspended, and the desktop that GUI tests drive stays on.
     [switch]$NoSleep,
     # With -RepoDir: clones this URL there when the folder does not exist yet.
     [string]$RepoUrl,
@@ -298,9 +299,10 @@ if ($AuthorizedKey) {
 }
 
 if ($NoSleep) {
-    Step 'Sleep and hibernation off on mains power'
+    Step 'Sleep, hibernation and the display timeout off on mains power'
     powercfg.exe /change standby-timeout-ac 0
     powercfg.exe /change hibernate-timeout-ac 0
+    powercfg.exe /change monitor-timeout-ac 0
 }
 
 if ($RepoDir) {

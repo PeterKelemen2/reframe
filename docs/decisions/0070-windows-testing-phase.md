@@ -2,7 +2,7 @@
 
 - Status: accepted
 - Date: 2026-11-04
-- Steps: Q-1.4
+- Steps: Q-1.4, D-0, D-3, D-6 (Windows), S-2
 
 ## Context
 
@@ -214,6 +214,101 @@ The whole suite on Windows, 2026-11-04, `m10-hardening` 926c834 (FFmpeg not on `
 Both fixed tests and their files pass on the VM (the capability service tests five times in a
 row) and on Linux. With that, every failure of the Windows run is fixed: Q-1.4 is done.
 
+## The desktop part and the open items (2026-11-09)
+
+The owner set up a new VM and asked for the rest of the phase that does not wait for D-7 to D-9.
+
+**The machine**: a libvirt VM on the owner's laptop (i5-8250U), Windows 10 Pro 2004 (19041.1, no
+updates), 4 cores (1 socket: Windows 10 Pro uses at most 2 sockets, so 4 one-core sockets gave
+it 2 processors), 6 GB, no GPU, 1600×900. `scripts/windows-setup.ps1` (new, rerunnable on any
+Windows 10/11 machine) installed Git for Windows 2.56, uv with Python 3.14.10, Node 24.22.2,
+VS Build Tools 2022, Rust 1.99.1, MKVToolNix 103.0, MediaInfo CLI 26.10, and an OpenSSH server
+(the Win32-OpenSSH MSI: the Windows capability failed with 0x800f0950 without updates) with Git
+Bash as its shell. The code came from the laptop by `git push` over SSH (the repository is
+private). The app was the release build (`npx tauri build --no-bundle`) with the frozen sidecar,
+started in the logged-in console session by a scheduled task, and driven through WebView2's
+DevTools port (Playwright over CDP, and raw CDP where Playwright's focus emulation would
+matter), Win32 and UI Automation for the native windows, and screenshots.
+
+**D-0's Windows items** (all pass):
+
+- The sidecar starts as the app's child, with no console window.
+- **A kill from Task Manager** (`taskkill /F`, the same `TerminateProcess`) during a job that a
+  CLI handed to the app: FFmpeg and the sidecar were gone about 0.3 s after the app, through the
+  Job Object chain (the app's kill-on-close job holds the sidecar; the sidecar's own nested job
+  holds FFmpeg). The CLI said "the connection to the Reframe server was lost" and `interrupted`.
+  Unlike Linux (a death signal), the sidecar has no chance to clean up: the empty `.part` stayed
+  until the next start, which removed it and marked the job interrupted.
+- **WebView2 renders the UI** (Edge 157): the workspace, the preview frames, the log dialog, the
+  magnifier's edge strips. **`cICP`**: a tone-mapped frame of `hdr10-4k.mkv` decoded in the page
+  with `colorSpaceConversion: "none"` equals FFmpeg's rgb24 decode at 1640 sampled pixels;
+  without the option 656 differ.
+- **Drag-and-drop**: a real mouse drag (`SendInput`) of `Ünnepi film – 2.mkv` from an Explorer
+  window onto the Sources panel gave the exact path; the file was probed and grouped.
+
+**The M5 demo on Windows**: the app on its own sidecar; **Open files…** opened the Windows Open
+dialog, and the chosen file was opened; the drop above; the M4 flow through the page's controls
+(the NVENC preset's banner "NVIDIA driver not found", two Summary errors and **Add to queue**
+disabled; the closest-match fix gives libx265; quality 30; audio tracks 3 → 2 → 3; Summary 0
+errors; queued, `done`; the log, 121 lines, "Job done after 4.5 s"); taskbar progress (the
+button's green fill); a Windows toast "Job done" when the window had no focus; a frozen
+`reframe.exe encode` handed its job to the app ("Queue: Reframe 0.1.0.dev0 (pid 8036), shared
+…"); closing the window while it ran asked "Quit Reframe? 1 job is running or paused", and
+**Stop jobs and quit** ended the app, the sidecar and FFmpeg (about 7 s by one-second polls over
+SSH; not measured finer), the CLI reported `interrupted`, no `.part` was left, and the next start
+showed the job interrupted; open-with (`Reframe.exe vfr.mkv` while the app ran) handed the path
+over and exited, and the file was selected; the kill above.
+
+**D-3 on Windows**: the Job Object as above. Owner discovery: the app started while a
+CLI-started owner ran used that owner (no sidecar of its own; the CLI's job was shown), so the
+Rust `dirs` and the core's `platformdirs` agree on the data folder; killing that owner, the app
+noticed within about 4 s (`process_alive`) and started its own sidecar, and the job became
+interrupted. The frozen sidecar loads the bundled `MediaInfo.dll` (probes record "pymediainfo
+7.0.1, libmediainfo 24.12").
+
+**Not verified items checked**: a real console Ctrl+C reaches the CLI and cancels only its own
+jobs (`remote/test_shared_queue_real.py` runs on Windows now: 9 passed, Ctrl+Z skipped);
+Windows keeps a set `SO_RCVBUF`, and the stalled-client tests pass; the folder masks with the
+default folders (the cache inside the data folder) work; file identity on a real SMB share:
+an existing file has one key as `C:\…`, a mapped drive, `\\localhost\…`, `\\127.0.0.1\…` and in
+upper case, and a new file has one key as a mapped drive and its UNC path (`realpath` resolves
+the drive), but not as a local path and a UNC path; 14 symbolic-link tests that skipped on
+every Windows machine run where links can be made, and pass; sleep inhibit holds
+(`powercfg /requests` lists `reframe-server.exe` under SYSTEM while a job runs, and nothing
+about 1 s after a cancel).
+
+**Defects found and fixed**:
+
+1. **The main window reached under the taskbar** (D-6): Windows placed it at 208,61 with
+   1296×839 on a 1600×900 screen, so the status bar was hidden; on 1366×768 the minimum size
+   (1100×700 plus the title bar) did not fit the 728-pixel work area at all. The window, a
+   restored one too, is now shrunk and moved into its monitor's work area before it is shown
+   (Windows only; on Linux the compositor places it), and the minimum is lowered where the
+   screen is smaller. Checked: 1600×900 opens at 26,21 with 1296×839; 1366×768 at 52,0 with
+   1296×728, the status bar visible; a state saved at 1600×900 restored at 1366×768 fits.
+2. **Server folders not hidden on Windows** (S-2): a folder written with `/` (FFmpeg filter
+   text, also with its escaped `C\:`) or in another case was not replaced by `<cache>` etc.
+3. Test-only: the event hub's memory tests counted encoder detection's FFmpeg pipes (the
+   proactor's 32 KiB read buffers); the owner tests read `server.json` while it was replaced
+   (`PermissionError`); the real shared-queue tests' clients inherited "ignore Ctrl+C" from the
+   SSH session; the symbolic-link tests above.
+
+**The full run on this VM**, 2026-11-09 (`m10-hardening` 465d8c2, `REFRAME_REQUIRE_FFMPEG=1`,
+FFmpeg not on `PATH`): `uv lock --check`, ruff, ruff format, mypy, the Rust job (`cargo fmt
+--check`, clippy `-D warnings`, `cargo test`) and every frontend command pass; pytest 7447
+passed, 2 failed, 194 skipped (42 min). The two failures: the `server.json` race (fixed, item
+3), and FFmpeg itself: the Windows build crashes now and then (`0xC0000005`) when `fieldmatch`
+runs before other filters (2 of 40 runs of the test's own command, 0 of 80 without
+`fieldmatch`, the Linux build 0 of 80; `testdata/README.md`). Reframe reports such a job as
+"ffmpeg crashed"; the test leaves Detelecine out on Windows, and the crash is a known limit.
+
+**Not done, with the reason**: the installers (NSIS, MSI), file associations, the PATH offer and
+whether an update drops it, and the notification's app identity (an app that is not installed
+shows PowerShell's name and icon) wait for D-8; the bundled tools on Windows for D-7; the smoke
+tests for D-9. Open-with bringing the window to the front needs a real double-click (a
+background launcher may not give the foreground away). The magnifier's update rate and GPU
+encoders need a GPU. The GitHub Windows jobs need a push.
+
 ## Consequences
 
 Result, 2026-11-04: on `m10-hardening` 13e8cd0 the 233 failed tests and the 3 spike modules
@@ -224,7 +319,8 @@ whole suite has not run on Windows again since the fixes.
 
 The CI matrix's Windows job (Q-1.1) has never run on GitHub; this phase stands in for it. The
 desktop items of the phase (D-0's Windows items, the M5 demo, D-3's Job Object in the running
-app) are pending: the owner deferred them to a later date (2026-11-04).
+app) were deferred on 2026-11-04 and done on 2026-11-09 (above). What is left of the phase waits
+for D-7, D-8 and D-9: their Windows parts are checked when they are built.
 
 ## Plan changes
 

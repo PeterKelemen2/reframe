@@ -25,7 +25,8 @@ powershell -ExecutionPolicy Bypass -File windows-setup.ps1 [-AuthorizedKey 'ssh-
 - `-AuthorizedKey` installs the OpenSSH server (the Windows capability, or Microsoft's
   Win32-OpenSSH MSI when Windows Update cannot provide it), opens port 22 and ping, authorizes
   the key, and makes Git Bash the shell of SSH sessions, as CI runs `shell: bash`.
-- `-NoSleep` turns off sleep and hibernation on mains power, for long test runs.
+- `-NoSleep` turns off sleep, hibernation and the display timeout on mains power, for long
+  test runs and for tests that drive the desktop.
 - `-RepoDir` runs `uv sync --frozen`, `reframe tools fetch` (the pinned FFmpeg as the bundled
   build) and `npm ci` in a checkout; with `-RepoUrl` it clones it first.
 
