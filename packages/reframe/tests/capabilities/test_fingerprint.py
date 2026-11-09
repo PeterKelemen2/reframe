@@ -16,6 +16,7 @@ from reframe.capabilities.fingerprint import (
     linux_fingerprint,
     windows_fingerprint,
 )
+from reframe_testing.links import needs_symlinks
 
 
 def drm_device(root: Path, name: str, vendor: str, device: str, driver: str | None) -> Path:
@@ -35,7 +36,7 @@ def drm_device(root: Path, name: str, vendor: str, device: str, driver: str | No
     return entry
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges on Windows")
+@needs_symlinks
 def test_linux_fingerprint(tmp_path: Path) -> None:
     drm_device(tmp_path, "card1", "0x1002", "0x7480", "amdgpu")
     drm_device(tmp_path, "renderD128", "0x1002", "0x7480", "amdgpu")  # the same GPU

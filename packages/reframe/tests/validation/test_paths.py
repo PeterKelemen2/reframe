@@ -25,6 +25,7 @@ from reframe.validation.output import (
     source_clash,
     written_paths,
 )
+from reframe_testing.links import needs_symlinks
 
 
 def _load(name: str) -> ModuleType:
@@ -239,7 +240,7 @@ def test_windows_spelling_of_the_partial_file() -> None:
     assert codes(check(W("c:\\videos\\foo.mkv"), source, fs)) == ["output.same_as_source"]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges on Windows")
+@needs_symlinks
 @pytest.mark.parametrize("source_name", ["Foo.mkv", "Foo.part.mkv"])
 def test_output_folder_linked_to_the_source_folder(tmp_path: Path, source_name: str) -> None:
     """The output folder is a symlink to the source's folder (a string compare misses it);
