@@ -24,23 +24,59 @@ from reframe.cli import EXIT_FAILED, EXIT_INTERRUPTED, EXIT_OK, STOPPED_BY_OTHER
 from reframe.models import ServerEndpoint
 from reframe.platform.power import DRY_RUN_ENV
 from reframe.remote.owner import ENDPOINT_FILE
-from reframe_testing import media
+from reframe_testing import media, processes
 
-pytestmark = [
-    pytest.mark.needs_ffmpeg,
-    pytest.mark.slow,
-    pytest.mark.skipif(sys.platform == "win32", reason="POSIX signals; Windows: not run yet"),
-]
+pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.slow]
 
 WAIT = 120.0
 STOP = int(getattr(signal, "SIGTSTP", 20))
 GO_ON = int(getattr(signal, "SIGCONT", 18))
+WINDOWS = sys.platform == "win32"
+
+# Run in a process of its own: AttachConsole replaces the caller's console.
+CTRL_C = """
+import ctypes, sys
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+kernel32.FreeConsole()
+if not kernel32.AttachConsole(int(sys.argv[1])):
+    sys.exit(f"AttachConsole: error {ctypes.get_last_error()}")
+kernel32.SetConsoleCtrlHandler(None, True)
+if not kernel32.GenerateConsoleCtrlEvent(0, 0):
+    sys.exit(f"GenerateConsoleCtrlEvent: error {ctypes.get_last_error()}")
+"""
 
 
 def _default_sigint() -> None:
     """In the child, before ``exec``: SIGINT back to its default disposition (a background
     pytest run would hand it down as ignored)."""
     signal.signal(signal.SIGINT, signal.SIG_DFL)
+
+
+def _own_console() -> dict[str, Any]:
+    """Popen arguments for a hidden console of the child's own, which :func:`ctrl_c` can
+    send a real Ctrl+C to."""
+    if sys.platform == "win32":
+        startup = subprocess.STARTUPINFO()
+        startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startup.wShowWindow = 0  # SW_HIDE
+        return {"creationflags": subprocess.CREATE_NEW_CONSOLE, "startupinfo": startup}
+    else:
+        return {"preexec_fn": _default_sigint}
+
+
+def ctrl_c(process: subprocess.Popen[str]) -> None:
+    """A terminal's Ctrl+C: SIGINT, or on Windows CTRL_C_EVENT to the process's console."""
+    if sys.platform == "win32":
+        sent = subprocess.run(
+            [sys.executable, "-c", CTRL_C, str(process.pid)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        assert sent.returncode == 0, sent.stderr
+    else:
+        process.send_signal(signal.SIGINT)
 
 
 @dataclass
@@ -70,7 +106,8 @@ class Home:
         assert ffmpeg is not None
         assert ffprobe is not None
         env |= {"REFRAME_FFMPEG": ffmpeg, "REFRAME_FFPROBE": ffprobe, DRY_RUN_ENV: "1"}
-        env |= {"PYTHONUNBUFFERED": "1", "COLUMNS": "200"}
+        # PYTHONIOENCODING: a pipe on Windows gets the ANSI code page, which cannot hold "·".
+        env |= {"PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", "COLUMNS": "200"}
         return env
 
     def settings(self, *, parallel_jobs: int = 1) -> None:
@@ -126,8 +163,8 @@ class Home:
             env=self.env(),
             text=True,
             encoding="utf-8",
-            preexec_fn=_default_sigint,
             process_group=0 if group else None,
+            **_own_console(),
         )
         self.clients.append(process)
         return process
@@ -166,7 +203,10 @@ class Home:
                 continue
             if "reframe_server" in cmdline and environ.get("REFRAME_DATA_DIR") == str(self.data):
                 found.append(process)
-        return found
+        # On Windows a venv's python.exe is a launcher with the same command line as its
+        # interpreter child: the server is the child.
+        parents = {process.ppid() for process in found}
+        return [process for process in found if process.pid not in parents]
 
     def stop_everything(self) -> None:
         for process in self.clients:
@@ -263,7 +303,7 @@ def test_sigint_in_one_client_cancels_only_its_own_jobs(home: Home) -> None:
     other = home.start("encode", str(second), "-o", str(home.out / "Second.mkv"))
     read_until(other, encoding)
     assert list(home.out.glob("First.part.*")), seen
-    one.send_signal(signal.SIGINT)
+    ctrl_c(one)
     lines, err = finish(one, seen)
     assert one.returncode == EXIT_INTERRUPTED, (lines, err)
     assert "Interrupted: cancelling the jobs" in err
@@ -391,12 +431,13 @@ def test_a_server_of_another_api_version_is_not_used_and_the_client_says_why(hom
     source = home.source("a/Show.mkv", 2)
     result = home.run("encode", str(source), "-o", str(home.out / "Show.mkv"))
     assert result.returncode == EXIT_OK, (result.stdout, result.stderr)
+    pid = processes.interpreter(server.pid).pid
     assert (
-        f"warning: no Reframe server can take the jobs (Reframe 0.1.0.dev0 (pid {server.pid}) "
+        f"warning: no Reframe server can take the jobs (Reframe 0.1.0.dev0 (pid {pid}) "
         "owns the queue, and it speaks API version 2, not 1 as this reframe does): they run "
         "in this process."
     ) in result.stderr
-    assert f"Another Reframe process (pid {server.pid}) is using the saved queue" in result.stderr
+    assert f"Another Reframe process (pid {pid}) is using the saved queue" in result.stderr
     assert "Queue: Reframe" not in result.stdout
     assert result.stdout.splitlines()[-1] == "Summary: 1 done, 0 failed, 0 cancelled, 0 not queued."
     assert server.poll() is None
@@ -418,6 +459,7 @@ def test_a_waiting_job_that_another_client_removes_ends_the_follow(home: Home) -
     assert [job["state"] for job in home.jobs()] == ["done"]
 
 
+@pytest.mark.skipif(WINDOWS, reason="no job control on Windows")
 def test_ctrl_z_pauses_the_job_and_fg_resumes_it(home: Home) -> None:
     """SIGTSTP (the terminal's Ctrl+Z): while the command is stopped its job is paused in the
     owner and the command holds no connection; SIGCONT (``fg``) resumes the job."""
@@ -497,7 +539,7 @@ def test_a_stop_by_another_front_end_is_reported_and_the_jobs_wait_for_a_start(
         time.sleep(1.0)  # a job that the runner took would be running by now
         assert [home.state(first), home.state(second)] == ["waiting", "waiting"]
         assert [client.poll() for client in clients] == [None, None]
-        clients[1].send_signal(signal.SIGINT)
+        ctrl_c(clients[1])
         lines, err = finish(clients[1], seen[1])
         assert clients[1].returncode == EXIT_INTERRUPTED, (lines, err)
         assert lines[-1] == "Summary: 0 done, 0 failed, 1 cancelled, 0 not queued."
