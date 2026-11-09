@@ -110,7 +110,7 @@ def wait_for_endpoint(
     while True:
         try:
             endpoint = ServerEndpoint.model_validate_json(home.endpoint.read_bytes())
-        except FileNotFoundError:
+        except (FileNotFoundError, PermissionError):  # Windows: the owner is replacing it
             pass
         else:
             if endpoint.instance != replacing:
