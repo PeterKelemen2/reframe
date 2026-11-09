@@ -19,13 +19,90 @@ pub fn window_state<R: Runtime>() -> TauriPlugin<R> {
 // built, and a window shown first would jump there.
 
 pub fn create_main_window(app: &AppHandle) -> tauri::Result<()> {
-    WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+    let window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
         .title("Reframe")
         .inner_size(1280.0, 800.0)
         .min_inner_size(1100.0, 700.0)
         .visible(false)
-        .build()?
-        .show()
+        .build()?;
+    #[cfg(windows)]
+    fit_into_work_area(&window)?;
+    window.show()
+}
+
+/// A window's or a work area's place and size, in physical pixels.
+#[cfg(any(windows, test))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Rect {
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+}
+
+/// `window` shrunk and moved into `area`, or `None` when it is inside already.
+#[cfg(any(windows, test))]
+fn fit(window: Rect, area: Rect) -> Option<Rect> {
+    let width = window.width.min(area.width);
+    let height = window.height.min(area.height);
+    let clamp = |at: i32, start: i32, room: u32, size: u32| {
+        let last = start.saturating_add(i32::try_from(room - size).unwrap_or(i32::MAX));
+        at.clamp(start, last)
+    };
+    let fitted = Rect {
+        x: clamp(window.x, area.x, area.width, width),
+        y: clamp(window.y, area.y, area.height, height),
+        width,
+        height,
+    };
+    (fitted != window).then_some(fitted)
+}
+
+/// Windows places a new window without regard to the taskbar, and a saved place may be from a
+/// larger screen: the status bar would be under the taskbar or off the screen.
+#[cfg(windows)]
+fn fit_into_work_area<R: Runtime>(window: &tauri::WebviewWindow<R>) -> tauri::Result<()> {
+    use tauri::{PhysicalPosition, PhysicalSize};
+
+    if window.is_maximized()? {
+        return Ok(());
+    }
+    let Some(monitor) = window.current_monitor()? else {
+        return Ok(());
+    };
+    let work = monitor.work_area();
+    let area = Rect {
+        x: work.position.x,
+        y: work.position.y,
+        width: work.size.width,
+        height: work.size.height,
+    };
+    let (outer, inner, at) = (
+        window.outer_size()?,
+        window.inner_size()?,
+        window.outer_position()?,
+    );
+    let frame = (outer.width - inner.width, outer.height - inner.height);
+    let current = Rect {
+        x: at.x,
+        y: at.y,
+        width: outer.width,
+        height: outer.height,
+    };
+    let Some(fitted) = fit(current, area) else {
+        return Ok(());
+    };
+    let scale = monitor.scale_factor();
+    let min = PhysicalSize::new(
+        ((1100.0 * scale) as u32).min(fitted.width - frame.0),
+        ((700.0 * scale) as u32).min(fitted.height - frame.1),
+    );
+    window.set_min_size(Some(min))?;
+    window.set_size(PhysicalSize::new(
+        fitted.width - frame.0,
+        fitted.height - frame.1,
+    ))?;
+    window.set_position(PhysicalPosition::new(fitted.x, fitted.y))
 }
 
 /// Opens the preview window on `/preview/<source_id>`, or focuses it when it is open.
@@ -57,6 +134,60 @@ fn is_source_id(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const AREA: Rect = Rect {
+        x: 0,
+        y: 0,
+        width: 1600,
+        height: 860,
+    };
+
+    #[test]
+    fn a_window_inside_the_work_area_stays_where_it_is() {
+        let window = Rect {
+            x: 160,
+            y: 20,
+            width: 1296,
+            height: 839,
+        };
+        assert_eq!(fit(window, AREA), None);
+    }
+
+    #[test]
+    fn a_window_that_reaches_under_the_taskbar_moves_up() {
+        let window = Rect {
+            x: 208,
+            y: 61,
+            width: 1296,
+            height: 839,
+        };
+        let fitted = Rect { y: 21, ..window };
+        assert_eq!(fit(window, AREA), Some(fitted));
+    }
+
+    #[test]
+    fn a_window_larger_than_the_work_area_shrinks_into_it() {
+        let window = Rect {
+            x: -8,
+            y: -8,
+            width: 1616,
+            height: 916,
+        };
+        assert_eq!(fit(window, AREA), Some(AREA));
+    }
+
+    #[test]
+    fn a_window_on_another_monitor_comes_back_onto_this_one() {
+        let area = Rect { x: 1920, ..AREA };
+        let window = Rect {
+            x: 100,
+            y: 100,
+            width: 800,
+            height: 600,
+        };
+        let fitted = Rect { x: 1920, ..window };
+        assert_eq!(fit(window, area), Some(fitted));
+    }
 
     #[test]
     fn a_source_id_cannot_leave_the_preview_route() {
