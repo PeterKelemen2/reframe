@@ -44,6 +44,13 @@ kernel32.SetConsoleCtrlHandler(None, True)
 if not kernel32.GenerateConsoleCtrlEvent(0, 0):
     sys.exit(f"GenerateConsoleCtrlEvent: error {ctypes.get_last_error()}")
 """
+# ``python -m reframe.cli`` with Ctrl+C on: a process started from a session that ignores it
+# (an SSH session, a CI runner) hands the ignore flag down, as a background run does SIGINT.
+CLI_WITH_CTRL_C = """
+import ctypes, runpy
+ctypes.windll.kernel32.SetConsoleCtrlHandler(None, False)
+runpy.run_module("reframe.cli", run_name="__main__", alter_sys=True)
+"""
 
 
 def _default_sigint() -> None:
@@ -156,8 +163,9 @@ class Home:
     def start(self, *args: str, group: bool = False) -> subprocess.Popen[str]:
         """``reframe ARGS…`` in the background (``group``: in a process group of its own, as a
         shell starts a job; a stop signal does not stop a process of an orphaned group)."""
+        command = ["-c", CLI_WITH_CTRL_C] if sys.platform == "win32" else ["-m", "reframe.cli"]
         process = subprocess.Popen(
-            [sys.executable, "-m", "reframe.cli", *args],
+            [sys.executable, *command, *args],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=self.env(),
