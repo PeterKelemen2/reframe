@@ -253,6 +253,18 @@ hands its jobs to the server or desktop app that owns the queue, or starts one
     `<config>\…`.
   - A clean quit while a job ran took about 7 s on the Windows VM (one-second polls; Linux 0.41 s);
     not measured finer.
+- **Next Windows checks that need no GPU** (not started; the VM and `scripts/windows-setup.ps1`
+  are ready, [0070](decisions/0070-windows-testing-phase.md) "The desktop part" says how the app
+  was driven):
+  1. **The quit time**: measure the ~7 s quit with the 50 ms process watcher. If it is the 5 s
+     shutdown timeout followed by a kill, the sidecar does not stop on the shutdown request on
+     Windows: a defect (D-3).
+  2. **Open-with focus**: start the second `Reframe.exe file.mkv` from a visible window that has
+     the foreground (what a double-click amounts to), not from a background task. If the running
+     window still stays behind, the app does not pass the foreground on
+     (`AllowSetForegroundWindow` before the hand-over): a defect (D-5).
+  3. **Q-3 on Windows**: the `benchmark` tests, and the desktop cold start (interactive in under
+     2 s) with the release build.
 - **C-13** (decided, [0034](decisions/0034-metadata-edit-in-place.md)): ffprobe cannot read
   Matroska `LanguageIETF`; Reframe reads it with its own Matroska track reader (MediaInfo stays
   optional), and the re-probe check compares BCP 47 languages, names and flags.
