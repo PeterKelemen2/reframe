@@ -232,6 +232,7 @@ async def test_a_slow_consumer_costs_bounded_memory_and_gets_the_latest_values(
         signed_in(server, api) as client,
     ):
         stalled = await stall(api.reframe.events, client, subscriptions[0])
+        await api.reframe.capabilities.wait()  # its ffmpeg pipes are not this test's memory
         tracemalloc.start()
         try:
             for i in range(count):
@@ -305,6 +306,7 @@ async def test_the_throttle_forgets_the_ids_that_went_quiet(api: Api) -> None:
     freed once that task goes quiet."""
     publish = api.reframe.events.publish
     async with serving(api, progress_rate=100) as server, signed_in(server, api) as client:
+        await api.reframe.capabilities.wait()  # its ffmpeg pipes are not this test's memory
         tracemalloc.start()
         try:
             for i in range(3000):
