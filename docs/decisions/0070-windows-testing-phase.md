@@ -361,7 +361,8 @@ Where the time goes (medians):
 
 The figure is recorded, not fixed: the owner decides between shortening the server's start,
 showing the workspace before the backend is ready, measuring with a Defender exclusion first,
-and a known limit for Windows (`docs/status.md`, "Open items").
+and a known limit for Windows (`docs/status.md`, "Open items"). The follow-up is
+[0071](0071-server-start-and-windows-cold-start.md).
 
 ## Consequences
 
