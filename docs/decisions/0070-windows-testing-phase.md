@@ -405,9 +405,20 @@ source of 359 characters and an output of 394:
   says the source does not exist ("The file does not exist.", "the file or folder does not
   exist."), exit 3. The file exists; Windows refuses the path to Python. FFmpeg reads it.
 
-The message comes from several places (the prober, the facade, folder probes, the CLI's path
-checks, validation of the output path), so the fix is a choice for the owner
-(`docs/status.md`, "Open items").
+The message came from several places, so the owner chose (2026-11-10) to name the real reason
+wherever a missing path is reported, and to leave the policy itself to Windows (an installer
+offer is a D-8 question). `reframe.platform.longpath` asks Windows whether this process may use
+long paths (`RtlAreLongPathsEnabled`); a path of 260 characters or more (a folder to be made:
+248) is then reported as "Windows refuses this path: it has N characters, and Windows allows
+259 while long paths are turned off. Turn on long paths in Windows, or use a shorter path."
+This covers the prober and the facade's probe, the folder probe, the server's source list and
+folder listing (in the problem's `detail`; the title stays), the CLI's path checks and preset
+import, chapter files, a tool path override, and output validation (`output.not_writable`
+for the job's folder or its `.part` file, after the name checks, which win for a name over 255
+bytes). Tests turn the policy off with `monkeypatch`; the shared test plugin pins it on, so the
+suite does not depend on the machine. Checked on the VM with `LongPathsEnabled` 0: the CLI and
+the app (the sources list) show the new text for the 359-character source, the changed tests
+pass there, and the limits match (`testdata/README.md`).
 
 **Two monitors: not tested.** The VM has one QXL head; a second needs a change of the VM and a
 restart, and the VM has no automatic logon. The live scaling change above covers one part of

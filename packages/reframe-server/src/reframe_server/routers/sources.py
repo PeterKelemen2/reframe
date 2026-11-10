@@ -9,6 +9,7 @@ from fastapi import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from reframe.models import MediaSource
+from reframe.platform.longpath import missing_text
 from reframe.probe import ProbeError, ProbeErrorKind
 from reframe.tasks import TaskContext
 from reframe_server import security
@@ -115,7 +116,11 @@ async def probe(
             for position, file in enumerate(files):
                 group.create_task(one(position, file))
         errors = [
-            _failure(ProbeError(path, ProbeErrorKind.NOT_FOUND, "The file does not exist."))
+            _failure(
+                ProbeError(
+                    path, ProbeErrorKind.NOT_FOUND, missing_text(path, "The file does not exist.")
+                )
+            )
             for path in found.missing
         ] + [
             ProbeFailure(

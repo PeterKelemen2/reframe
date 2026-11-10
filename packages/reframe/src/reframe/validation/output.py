@@ -25,6 +25,7 @@ from reframe.naming.sanitize import (
     replace_undecodable,
     sanitize_segments,
 )
+from reframe.platform.longpath import MAX_FOLDER_PATH, refused, refused_text
 from reframe.validation.common import error, fix, info, replace, warning
 from reframe.validation.context import JobContext
 from reframe.validation.fs import FileSystemView, has_nul
@@ -205,6 +206,22 @@ def _nul_issue(path: PurePath, target: FixTarget) -> ValidationIssue:
     )
 
 
+def _long_path_issue(path: PurePath, fs: FileSystemView) -> ValidationIssue | None:
+    """``output.not_writable`` when Windows would refuse the folder the job makes, or a file
+    it writes, because of the path's length."""
+    folder = path.parent
+    if not fs.exists(folder) and refused(folder, limit=MAX_FOLDER_PATH):
+        why = (
+            f"The job makes the folder {folder.name}. {refused_text(folder, limit=MAX_FOLDER_PATH)}"
+        )
+    else:
+        written = max((path, partial_path(cast(Path, path))), key=lambda p: len(str(p)))
+        if not refused(written):
+            return None
+        why = f"The job writes {written.name}. {refused_text(written)}"
+    return error("output.not_writable", "output.path", f"The file cannot be created. {why}")
+
+
 def output_path_issues(
     path: PurePath,
     source: PurePath,
@@ -237,6 +254,10 @@ def output_path_issues(
             )
         )
     issues.extend(name_issues(path, target=target))
+    # Windows hides what lies past the limit, so the checks below would read a wrong answer.
+    named = any(issue.code == "output.name_too_long" for issue in issues)
+    if not named and (long_path := _long_path_issue(path, fs)) is not None:
+        return [*issues, long_path]
     clash = source_clash(path, source, fs)
     if clash is not None:
         what = "output" if clash == path else "file written during the encode"

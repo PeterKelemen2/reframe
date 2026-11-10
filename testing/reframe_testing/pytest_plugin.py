@@ -205,6 +205,17 @@ def _no_real_power_actions() -> Iterator[PowerGuard]:
         yield guard
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _long_paths_on() -> Iterator[None]:
+    """Session-wide: tests do not depend on the machine's Windows long path policy. A test of
+    the refused-path messages turns it off with ``monkeypatch``."""
+    from reframe.platform import longpath
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(longpath, "long_paths_enabled", lambda: True)
+        yield
+
+
 @pytest.fixture(autouse=True)
 def power_guard(_no_real_power_actions: PowerGuard) -> Iterator[PowerGuard]:
     """The session's :class:`PowerGuard`. The teardown fails the test if it refused a call that

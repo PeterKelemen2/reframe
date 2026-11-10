@@ -3049,6 +3049,10 @@ The same VM, PyInstaller 6.22.3, 2026-11-10:
   `os.stat` raises `WinError 3` ("The system cannot find the path specified"). The BtbN
   `ffprobe.exe` n9.0.2 reads the same path. With 1, Python, the frozen sidecar and FFmpeg all
   read and write paths of 359 and 394 characters.
+- The limits with `LongPathsEnabled` 0: Python creates and finds a file whose path has 259
+  characters, and gets `FileNotFoundError` at 260; it creates a folder of 247 characters and
+  gets `FileNotFoundError` (`winerror` 206) at 248. `ntdll.RtlAreLongPathsEnabled()` in
+  Python's own process follows the policy (0 with 0, 1 with 1), read when the process starts.
 - The frozen sidecar (PyInstaller bootloader), the Tauri app and the bundled FFmpeg start and
   work from a folder whose name holds `ő`, `日本` and `🎬`.
 

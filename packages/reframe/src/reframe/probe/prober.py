@@ -35,6 +35,7 @@ from reframe.models.media import (
 )
 from reframe.models.text import replace_undecodable
 from reframe.models.tools import ToolInfo
+from reframe.platform.longpath import missing_text
 from reframe.probe import matroska, mediainfo, roles
 from reframe.probe.cache import CacheKey, ProbeCache
 from reframe.probe.ffprobe import (
@@ -232,7 +233,8 @@ class Prober:
         try:
             stat = os.stat(file)
         except FileNotFoundError:
-            return ProbeError(file, ProbeErrorKind.NOT_FOUND, "The file does not exist.")
+            message = missing_text(file, "The file does not exist.")
+            return ProbeError(file, ProbeErrorKind.NOT_FOUND, message)
         except OSError as exc:
             return ProbeError(file, ProbeErrorKind.UNREADABLE, "The file cannot be read.", str(exc))
         if not S_ISREG(stat.st_mode):

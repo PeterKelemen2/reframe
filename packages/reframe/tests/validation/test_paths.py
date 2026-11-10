@@ -18,6 +18,7 @@ import pytest
 import reframe.validation.fs as fs_module
 from reframe.command import build_plan
 from reframe.models import AverageBitrate, ChapterSettings, ReplaceOp, Severity, SourceRef
+from reframe.platform import longpath
 from reframe.validation import LocalFileSystem, next_free_path
 from reframe.validation.output import (
     existing_ancestor,
@@ -80,6 +81,20 @@ SOURCE = W("C:\\Videos\\Movie.mkv")
 def test_windows_drive_root_is_a_folder() -> None:
     assert check(W("D:\\Movie.mkv"), SOURCE, windows_fs()) == []
     assert existing_ancestor(W("D:\\"), windows_fs()) == W("D:\\")
+
+
+def test_an_output_windows_refuses_is_not_writable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(longpath, "long_paths_enabled", lambda: False)
+    near = W("C:\\Out\\" + "x" * 245 + ".mkv")  # 256 characters, its .part file 261
+    issues = check(near, SOURCE, windows_fs())
+    assert errors(issues) == ["output.not_writable"]
+    assert ".part" in issues[0].message
+    assert "Windows refuses this path" in issues[0].message
+    deep = W("C:\\Out\\" + "y" * 241 + "\\Movie.mkv")  # a 248-character folder to make
+    (issue,) = check(deep, SOURCE, windows_fs())
+    assert issue.code == "output.not_writable"
+    assert "makes the folder" in issue.message
+    assert check(W("C:\\Out\\Movie.mkv"), SOURCE, windows_fs()) == []
 
 
 def test_windows_drive_not_connected() -> None:

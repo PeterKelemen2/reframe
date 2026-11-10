@@ -82,6 +82,7 @@ from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.tasks import TaskInfo, TaskState
 from reframe.models.text import json_text
 from reframe.models.tools import ToolFetchResult, ToolInfo, ToolName, ToolOrigin, ToolSet
+from reframe.platform.longpath import missing_text
 from reframe.presets import ConflictPolicy, ImportResult
 from reframe.queue import (
     ENDED,
@@ -788,6 +789,8 @@ async def run_probe(file: Path, *, as_json: bool) -> int:
         render_source(outcome, make_console())
     return EXIT_OK
 
+
+_MISSING = "the file or folder does not exist."
 
 #: Width for the human output when neither stdout, stdin nor stderr is a terminal and
 #: ``COLUMNS`` is not set (CI logs, ``subprocess``): wider than rich's 80, so that the tables
@@ -1682,7 +1685,7 @@ async def run_encode(
     async with open_reframe(detect=False) as app:
         found = await app.jobs.media_files(paths, recursive=recursive)
         for missing in found.missing:
-            _error(f"{display_path(missing)}: the file or folder does not exist.")
+            _error(f"{display_path(missing)}: {missing_text(missing, _MISSING)}")
         if found.missing:
             return EXIT_NOT_FOUND
         for folder in found.empty:
@@ -2523,7 +2526,7 @@ async def run_batch(
     async with open_reframe(detect=False) as app:
         found = await app.jobs.media_files(paths, recursive=recursive)
         for missing in found.missing:
-            _error(f"{display_path(missing)}: the file or folder does not exist.")
+            _error(f"{display_path(missing)}: {missing_text(missing, _MISSING)}")
         if found.missing:
             return EXIT_NOT_FOUND
         for folder in found.empty:
@@ -3692,7 +3695,7 @@ def read_preset_file(path: Path) -> dict[str, Any] | tuple[int, str]:
         else:
             raw = _read_regular_file(path, MAX_PRESET_FILE)
     except FileNotFoundError:
-        return EXIT_NOT_FOUND, f"{name}: the file does not exist."
+        return EXIT_NOT_FOUND, f"{name}: {missing_text(path, 'the file does not exist.')}"
     except IsADirectoryError:
         return EXIT_NOT_FOUND, f"{name} is a folder, not a preset file."
     except OSError as exc:

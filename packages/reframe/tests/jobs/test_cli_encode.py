@@ -30,6 +30,7 @@ from reframe.models import (
     Severity,
 )
 from reframe.models import ValidationIssue as Issue
+from reframe.platform import longpath
 from reframe.queue import UnknownJobError
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
@@ -214,6 +215,16 @@ async def test_cancelling_the_command_cancels_the_jobs(
     assert await task == EXIT_INTERRUPTED
     assert not partial_files(season)
     assert {job.state for job in queues.queue.list()} == {JobState.CANCELLED}
+
+
+def test_a_path_windows_refuses_is_named_as_too_long(
+    cli_env: ft.FakeTools, queues: Queues, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(longpath, "long_paths_enabled", lambda: False)
+    result = invoke("encode", str(tmp_path / ("x" * 250) / "nope.mkv"))
+    assert result.exit_code == EXIT_NOT_FOUND
+    assert "Windows refuses this path" in result.stderr
+    assert queues.made == []
 
 
 def test_missing_path(cli_env: ft.FakeTools, queues: Queues, tmp_path: Path) -> None:

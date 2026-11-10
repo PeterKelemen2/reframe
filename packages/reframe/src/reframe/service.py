@@ -39,6 +39,7 @@ from reframe.models.settings import AppSettings
 from reframe.models.tasks import TaskInfo
 from reframe.models.template import JobTemplate
 from reframe.models.tools import ToolInfo, ToolName, ToolSet, ToolStatus
+from reframe.platform.longpath import missing_text
 from reframe.platform.power import PowerService, create_power_service
 from reframe.presets import (
     ConflictPolicy,
@@ -656,7 +657,8 @@ def _check_file(path: str | os.PathLike[str]) -> ProbeError | None:
     try:
         stat = os.stat(file)
     except FileNotFoundError:
-        return ProbeError(file, ProbeErrorKind.NOT_FOUND, "The file does not exist.")
+        message = missing_text(file, "The file does not exist.")
+        return ProbeError(file, ProbeErrorKind.NOT_FOUND, message)
     except OSError as exc:
         return ProbeError(file, ProbeErrorKind.UNREADABLE, "The file cannot be read.", str(exc))
     if not S_ISREG(stat.st_mode):

@@ -72,6 +72,7 @@ from reframe.models import (
     TrackRoleInfo,
     VideoStream,
 )
+from reframe.platform import longpath
 from reframe.probe import mediainfo
 from reframe.service import ProbeError, ProbeErrorKind
 from reframe.tools import ENV_VARS
@@ -356,6 +357,16 @@ def test_recorded_badges_and_bitrate_sources(fake_env: ft.FakeTools, tmp_path: P
 
     out = invoke("probe", str(recorded_file(tmp_path, "dv-p8", fake_env))).stdout
     assert "Dolby Vision 8.1" in out
+
+
+def test_a_path_windows_refuses_is_named_as_too_long(
+    fake_env: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(longpath, "long_paths_enabled", lambda: False)
+    path = tmp_path / ("x" * 250) / "movie.mkv"
+    line = assert_clean_failure(invoke("probe", str(path)), EXIT_NOT_FOUND)
+    assert "Windows refuses this path" in line
+    assert "does not exist" not in line
 
 
 def test_missing_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
