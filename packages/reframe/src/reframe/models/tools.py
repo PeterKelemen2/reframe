@@ -78,12 +78,16 @@ class ToolInfo(ReframeModel):
     """FFmpeg: the version of each library, by name."""
     env: dict[str, str] = Field(default_factory=dict)
     """Extra environment variables to set when running this tool (for example
-    ``LIBVA_DRIVERS_PATH`` for the bundled FFmpeg on Linux)."""
+    ``LD_LIBRARY_PATH`` to the libva shipped with the bundled FFmpeg on Linux)."""
     env_var: str | None = None
     """The environment variable that overrides this tool (``REFRAME_FFMPEG``)."""
     next_to_ffmpeg: bool = False
     """ffprobe only: it was found next to an overridden ffmpeg (its ``origin`` is the ffmpeg's)."""
     fixes: list[Fix] = Field(default_factory=list)
+    bundled_dir: Path | None = None
+    """The folder of the bundled build of this tool's family (shipped with the app, or put there
+    by ``reframe tools fetch``), also when an override is used instead. ``None``: there is none,
+    so using the bundled build means downloading it first."""
 
 
 class ToolSet(ReframeModel):

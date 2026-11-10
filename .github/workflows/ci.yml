@@ -148,6 +148,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev
 
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      - name: Cache the pinned tool downloads
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools
+          key: bundle-${{ runner.os }}-${{ hashFiles('tools/*.toml') }}
+
+      # The tools the app ships, into resources/tools/: the pinned FFmpeg, its libva on Linux
+      # (built from source in Ubuntu 22.04 with Docker), mkvpropedit on Windows. Every download
+      # is checked against its pinned SHA-256.
+      - name: Bundle the tools (tools/*.toml)
+        run: uv run --no-project python scripts/bundle-tools.py
+      - name: The bundled FFmpeg runs
+        shell: bash
+        run: |
+          cat desktop/src-tauri/resources/tools/bundle.json
+          desktop/src-tauri/resources/tools/ffmpeg/bin/ffmpeg -hide_banner -version | head -n 1
+
       # tauri::generate_context! embeds the desktop frontend, so it must be built first.
       - run: npm ci && npm run build:desktop
         working-directory: frontend

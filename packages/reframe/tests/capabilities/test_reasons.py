@@ -10,9 +10,11 @@ import pytest
 from reframe.capabilities import TestContext, explain_failure
 from reframe.capabilities.reasons import informative_line
 from reframe.models import EncoderState
+from reframe.platform.libva import NEEDED_FUNCTIONS
 from reframe_testing import fake_tools as ft
 
 UNAVAILABLE = EncoderState.UNAVAILABLE
+NO_QSV = "No Intel QSV device or runtime (needs an Intel GPU, its media driver and the QSV runtime)"
 ERROR = EncoderState.ERROR
 
 
@@ -53,7 +55,7 @@ def ctx(encoder: str, device: str | None = None) -> TestContext:
             "hevc_qsv",
             None,
             UNAVAILABLE,
-            "No Intel QSV device (needs an Intel GPU with its media driver)",
+            NO_QSV,
             "Failed to set value 'qsv=hw' for option 'init_hw_device': "
             "Generic error in an external library",
         ),
@@ -63,7 +65,7 @@ def ctx(encoder: str, device: str | None = None) -> TestContext:
             "hevc_qsv",
             None,
             UNAVAILABLE,
-            "No Intel QSV device (needs an Intel GPU with its media driver)",
+            NO_QSV,
             "[hevc_qsv] Error creating a MFX session: -9.",
         ),
         (
@@ -222,7 +224,7 @@ def tagged(encoder: str, *lines: str) -> str:
         (
             "hevc_qsv",
             tagged("hevc_qsv", "Error initializing an MFX session"),
-            "No Intel QSV device (needs an Intel GPU with its media driver)",
+            NO_QSV,
         ),
         (
             "h264_vaapi",
@@ -242,6 +244,22 @@ def tagged(encoder: str, *lines: str) -> str:
             ),
             "AMD driver too old for 10-bit (needs 23.30 or newer)",
         ),
+        (
+            # Ubuntu 22.04's Intel media driver (22.3) with the QSV runtime
+            "h264_qsv",
+            "[QSV @ 0x55] libva: Failed to get device id from the driver. Please consider to "
+            "upgrade the driver to support VA-API 1.15.0\nDevice creation failed: -1313558101.\n",
+            "The Intel media driver is too old for QSV (needs VA-API 1.15.0)",
+        ),
+        (
+            # The free Intel driver of Debian and Ubuntu: no H.265 encoder on Kaby Lake.
+            "hevc_vaapi",
+            tagged(
+                "hevc_vaapi",
+                "No usable encoding entrypoint found for profile VAProfileHEVCMain (17).",
+            ),
+            "The VAAPI driver cannot encode H.265 on this GPU",
+        ),
     ],
 )
 def test_texts_confirmed_in_the_build(encoder: str, text: str, reason: str) -> None:
@@ -250,6 +268,34 @@ def test_texts_confirmed_in_the_build(encoder: str, text: str, reason: str) -> N
     assert failure.reason == reason
     assert failure.detail is not None
     assert "0x" not in failure.detail
+
+
+#: What the pinned build printed on Ubuntu 24.04 (libva 2.20) and Ubuntu 22.04 without libva,
+#: before it aborted (testdata/README.md, "The bundled FFmpeg on other distros").
+OLD_LIBVA = (
+    "implib-gen: libva.so.2: failed to resolve symbol 'vaMapBuffer2' via dlsym: "
+    "/lib/x86_64-linux-gnu/libva.so.2: undefined symbol: vaMapBuffer2\n"
+    "ffmpeg: libva.so.2.init.c:290: _libva_so_2_tramp_resolve: Assertion "
+    '`0 && "Assertion in generated code"\' failed.\n'
+)
+NO_LIBVA = (
+    "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: "
+    "libva-drm.so.2: cannot open shared object file: No such file or directory\n"
+    "ffmpeg: libva-drm.so.2.init.c:122: load_library: Assertion "
+    '`0 && "Assertion in generated code"\' failed.\n'
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        (OLD_LIBVA, "The system's libva.so.2 is too old for this FFmpeg (it has no vaMapBuffer2)"),
+        (NO_LIBVA, "libva-drm.so.2 is not installed (hardware encoding needs it)"),
+    ],
+)
+def test_an_abort_of_the_library_loader_names_the_library(text: str, reason: str) -> None:
+    failure = explain_failure(text, ctx("h264_vaapi"), returncode=-6)
+    assert (failure.state, failure.reason) == (UNAVAILABLE, reason)
 
 
 def test_the_mapped_texts_are_in_the_pinned_build() -> None:
@@ -265,6 +311,24 @@ def test_the_mapped_texts_are_in_the_pinned_build() -> None:
     assert "bin/ffmpeg" in found["Failed to set value '%s' for option '%s': %s"]
     assert codec in found["This version of runtime doesn't support AV1 encoding"]
     assert codec in found["No usable encoding profile found."]
+    assert codec in found["No usable encoding entrypoint found for profile"]
+    assert util in found["Please consider to upgrade the driver to support VA-API"]
+    assert util in found["implib-gen: libva.so.2: failed to resolve symbol '%s' via dlsym: %s"]
+    assert (
+        util
+        in found[
+            "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: %s"
+        ]
+    )
+    assert (
+        util
+        in found["implib-gen: libdrm.so.2: failed to load library 'libdrm.so.2' via dlopen: %s"]
+    )
+
+
+@pytest.mark.parametrize("function", NEEDED_FUNCTIONS)
+def test_the_checked_libva_functions_are_called_by_the_pinned_build(function: str) -> None:
+    assert ft.library_strings()[function], function
 
 
 def test_nvenc_only_texts_need_an_nvenc_encoder() -> None:

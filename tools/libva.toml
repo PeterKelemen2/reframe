@@ -1,0 +1,36 @@
+# The libva that the desktop app ships next to the bundled FFmpeg on Linux.
+#
+# The BtbN FFmpeg loads the system's libva at run time and aborts when it is older than the
+# libva its build used (libva 2.20 of Ubuntu 24.04 and 2.17 of Debian 12 lack vaMapBuffer2).
+# Reframe points the bundled FFmpeg at this copy only when the system's libva cannot serve it
+# (reframe.platform.libva); a new enough system libva is better, because it knows the distro's
+# own driver folders. See docs/decisions/0002-bundled-ffmpeg.md.
+#
+# `scripts/bundle-tools.py` downloads the source, checks the size and SHA-256, and builds it
+# in `build_image`, the oldest supported distro, so the libraries load on every newer one.
+
+schema_version = 1
+
+version = "2.24.1"
+url = "https://github.com/intel/libva/releases/download/2.24.1/libva-2.24.1.tar.bz2"
+sha256 = "eec6050b52876f229bd35e9df17cd31a06785e18e6f7990c445b584628483d67"
+size = 557422
+# Every member of the archive is under this folder.
+root = "libva-2.24.1"
+license = "MIT"
+license_file = "COPYING"
+source_repository = "https://github.com/intel/libva"
+
+build_image = "ubuntu:22.04"
+# The folders this libva searches for VA drivers, in order (meson option `driverdir`). It is used
+# only on distros with an old libva; Fedora's RPM Fusion folders come before /usr/lib64/dri, as
+# in Fedora's own libva.
+driver_dirs = [
+    "/usr/lib/x86_64-linux-gnu/dri",
+    "/usr/lib64/dri-nonfree",
+    "/usr/lib64/dri-freeworld",
+    "/usr/lib64/dri",
+    "/usr/lib/dri",
+]
+# The shared libraries that are shipped, by soname. FFmpeg loads both.
+libraries = ["libva.so.2", "libva-drm.so.2"]

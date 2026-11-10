@@ -291,6 +291,38 @@ many blocks on a fast machine too. What `C-11`'s parser must handle:
 The fake's `progress(na_blocks=N, na_fields=[...])` action prints the same start-up blocks and
 `N/A` fields (`reframe_testing.fake_tools.progress`).
 
+### The bundled FFmpeg on other distros (D-7, decision 0002)
+
+Checked 2026-11-10 with the pinned build in containers (`docker run --device /dev/dri`) on an
+Intel UHD Graphics 620 (Kaby Lake), with the distro's Intel media driver:
+
+- **The build loads the system's libva at run time** (`libva.so.2`, `libva-drm.so.2`,
+  `libdrm.so.2`; strings `implib-gen: <lib>: failed to …` in `libavutil`), and **aborts**
+  (SIGABRT, exit code 134) when a library or a function is missing, on the first VAAPI or QSV
+  use. `ffmpeg -version` and software encodes still work.
+  - No `libva-drm.so.2`: `implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2'
+    via dlopen: libva-drm.so.2: cannot open shared object file: No such file or directory`.
+  - No `libdrm.so.2` (QSV): the same text for `libdrm.so.2`.
+  - libva 2.14 (Ubuntu 22.04), 2.17 (Debian 12) and 2.20 (Ubuntu 24.04): `implib-gen:
+    libva.so.2: failed to resolve symbol 'vaMapBuffer2' via dlsym: /lib/x86_64-linux-gnu/libva.so.2:
+    undefined symbol: vaMapBuffer2`. libva 2.22 (Debian 13) and 2.24.1 (Fedora 45, Arch) work.
+- **libva 2.24.1 built on Ubuntu 22.04** (`tools/libva.toml`), found through `LD_LIBRARY_PATH`,
+  works with the drivers of Ubuntu 22.04 (iHD 22.3), Ubuntu 24.04 (24.1), Debian 12 (23.1) and
+  Debian 13 (25.2), also with no system libva at all (`libdrm2` is still needed).
+  `ffmpeg -v verbose` then prints `libva: VA-API version 1.24.0` and tries the driver folders of
+  its `driverdir` in order.
+- **Fedora's libva looks in `/usr/lib64/dri-nonfree` first**, where RPM Fusion's
+  `intel-media-driver` installs `iHD_drv_video.so`; Fedora's own `libva-intel-media-driver` in
+  `/usr/lib64/dri` has no encoders (`No usable encoding profile found.` for H.264 and H.265).
+  The free `intel-media-va-driver` of Debian and Ubuntu has no H.265 encoder on Kaby Lake:
+  `[hevc_vaapi @ …] No usable encoding entrypoint found for profile VAProfileHEVCMain (17).`
+- **QSV on Kaby Lake needs the Media SDK runtime** (`libmfx1`; Ubuntu 24.04 and Debian 12 have
+  it, Debian 13 has only `libmfx-gen1.2`, which does not serve this GPU): without it
+  `[QSV @ …] Error creating a MFX session: -9.` With Ubuntu 22.04's driver 22.3: `[QSV @ …]
+  libva: Failed to get device id from the driver. Please consider to upgrade the driver to support
+  VA-API 1.15.0`, then `Device creation failed: -1313558101.`
+- The BtbN binaries need glibc 2.28 (`objdump -T`).
+
 ### Hardware encoder failures (stderr and exit codes)
 
 Captured with the **pinned build** (`n9.0.2-17-g2a571b6068-20260930`, BtbN gpl-shared,
@@ -452,7 +484,7 @@ command and the captures were not made again):
 |---------|-----------|-----------------|--------------------|
 | `detect_h264_vaapi_ok`, `detect_hevc_vaapi_10bit_ok`, `detect_hevc_amf_ok`, `detect_hevc_amf_10bit_ok` | 0 | — | available |
 | `detect_hevc_nvenc_no_driver` | 255 | `[hevc_nvenc @ 0x…] Cannot load libcuda.so.1` | NVIDIA driver not found |
-| `detect_hevc_qsv_no_device` | 187 | `Failed to set value 'qsv=hw' for option 'init_hw_device': Generic error in an external library` (no device line) | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `detect_hevc_qsv_no_device` | 187 | `Failed to set value 'qsv=hw' for option 'init_hw_device': Generic error in an external library` (no device line) | No Intel QSV device or runtime (needs an Intel GPU, its media driver and the QSV runtime) |
 | `detect_h264_vaapi_bad_device` (`renderD999`) | 234 | `[VAAPI @ 0x…] No VA display found for device /dev/dri/renderD999.` | No VAAPI device (/dev/dri/renderD999) |
 | `detect_h264_vaapi_no_driver` (`LIBVA_DRIVER_NAME=reframe_nonexistent`) | 251 | `[VAAPI @ 0x…] Failed to initialise VAAPI connection: -1 (unknown libva error).` | VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error) |
 | `detect_hevc_amf_no_runtime` | 171 | `[AMF @ 0x…] DLL libamfrt64.so.1 failed to open`, then `[hevc_amf @ 0x…] Failed to create  hardware device context (AMF) : Unknown error occurred` | AMD AMF runtime not found (libamfrt64.so.1) |
@@ -516,7 +548,7 @@ usable):
 |---------|-------|--------|--------|--------|
 | `libx264`, `libx265`, `libsvtav1`, `libvpx-vp9` | available | yes | – | |
 | `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` | unavailable | – | – | NVIDIA driver not found |
-| `h264_qsv`, `hevc_qsv`, `av1_qsv` | unavailable | – | – | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `h264_qsv`, `hevc_qsv`, `av1_qsv` | unavailable | – | – | No Intel QSV device or runtime (needs an Intel GPU, its media driver and the QSV runtime) |
 | `h264_amf` | available | no (no 10-bit format in the definition) | – | |
 | `hevc_amf`, `av1_amf` | available | yes | – | |
 | `h264_vaapi` | available | no (no 10-bit format in the definition) | `/dev/dri/renderD128` | |

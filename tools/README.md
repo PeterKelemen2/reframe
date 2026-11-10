@@ -6,8 +6,24 @@ Pinned third-party tool builds. Plan: [02 §Bundled FFmpeg](../docs/plan/02-arch
 | File | Content |
 |------|---------|
 | `ffmpeg.toml` | The FFmpeg build that ships (`default`) and a second build for the CI job that tests the path override (`override-test`). For each platform: URL, SHA-256, size, archive layout. Also the exact version string, licence and the source commits (GPL source obligations). |
+| `libva.toml` | Linux: the libva source that `scripts/bundle-tools.py` builds in Ubuntu 22.04 and ships in `tools/ffmpeg/libva/`, for distros whose own libva is too old for the FFmpeg build ([decision 0002](../docs/decisions/0002-bundled-ffmpeg.md)). URL, SHA-256, size, the driver folders it searches. |
+| `mkvtoolnix.toml` | Windows: the MKVToolNix portable zip; only `mkvpropedit.exe` and the licence ship. URL, SHA-256, size, the source archive. |
 
-MKVToolNix and MediaInfo pins come with `D-7`.
+MediaInfo ships inside the sidecar (pymediainfo's library), so it has no pin here.
+
+## Bundle the tools for the desktop app
+
+```sh
+uv run --no-project python scripts/bundle-tools.py                          # host platform
+uv run --no-project python scripts/bundle-tools.py --platform windows-x64   # from Linux too
+```
+
+It writes `desktop/src-tauri/resources/tools/` (the app maps it to `tools/`, one folder above
+the sidecar): `ffmpeg/` with only `ffmpeg`, `ffprobe`, the libraries (on Linux each under its
+soname, without links) and `LICENSE.txt`; on Linux `ffmpeg/libva/`; on Windows `mkvtoolnix/`;
+and `bundle.json` with the versions. Downloads are kept in `.tools/` and checked against their
+SHA-256 on every run. On Linux the libva build runs in Docker (`--libva-build native` inside an
+`ubuntu:22.04` job with meson, ninja, gcc and libdrm-dev; `skip` leaves it out).
 
 ## Fetch a build
 
@@ -29,8 +45,8 @@ the DLLs are next to the `.exe` files.
 ## Where the builds come from
 
 [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds), release-branch `gpl-shared`
-variant. This is the first candidate from the plan. `D-7` tests it on real GPUs and records the
-final choice in `docs/decisions/0002-bundled-ffmpeg.md`.
+variant, confirmed in [decision 0002](../docs/decisions/0002-bundled-ffmpeg.md), which lists
+the hosts it was tested on.
 
 **Retention.** BtbN keeps the last build of each month for two years and only the last 14 daily
 builds. The `latest` release floats. So:

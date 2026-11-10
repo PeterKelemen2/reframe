@@ -103,14 +103,18 @@ build behaves the same.
   package, so the tests run against the exact binaries that ship (`Q-1.2`).
 - **Build requirements**: GPL build from an upstream release branch. It must include libx264,
   libx265, libsvtav1, libopus, libplacebo + Vulkan, libvpl (QSV), NVENC, AMF (Windows) and
-  VAAPI (Linux), and it must run on the oldest supported distro. The first candidate is the
+  VAAPI (Linux), and it must run on the oldest supported distro (Ubuntu 22.04). The build is the
   BtbN release-branch GPL build, shared-library variant, so `ffmpeg` and `ffprobe` share one
-  set of libraries. `D-7` confirms the choice.
+  set of libraries ([decision 0002](../decisions/0002-bundled-ffmpeg.md)). It loads the
+  system's libva and aborts when that is too old (Ubuntu 24.04, Debian 12), so on Linux a libva
+  built from pinned source ships in `tools/ffmpeg/libva/`; Reframe uses it only when the
+  system's libva lacks a function the build needs.
 - **Install location**: `<app>/tools/ffmpeg/` (Windows, AppImage), `/usr/lib/reframe/tools/ffmpeg/`
   (.deb/.rpm, so it does not conflict with the distro's `ffmpeg` package),
   `/opt/reframe/tools/ffmpeg/` (Docker), `<data dir>/tools/ffmpeg/` (`reframe tools fetch`, and
   CI). Bundled MKVToolNix and MediaInfo go to `tools/mkvtoolnix/` and `tools/mediainfo/` next to
-  it. Each folder holds the binaries in `bin/` or directly. `REFRAME_CONFIG_DIR`,
+  it (the desktop app ships `mkvpropedit` on Windows only; MediaInfo ships as the sidecar's
+  library). Each folder holds the binaries in `bin/` or directly. `REFRAME_CONFIG_DIR`,
   `REFRAME_DATA_DIR` and `REFRAME_CACHE_DIR` override the platform folders
   ([decision 0005](../decisions/0005-tool-discovery-details.md)).
 

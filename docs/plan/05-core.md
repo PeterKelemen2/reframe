@@ -84,9 +84,10 @@ async def run_streaming(argv, *, on_stdout_line, on_stderr_line, cancel, timeout
 - [ ] `ffprobe` next to an overridden `ffmpeg` is preferred over the bundled `ffprobe`.
 - [ ] A broken override gives a `broken`/`missing` status with a reason and a "Use bundled"
       fix. It never falls back to the bundled build without telling the user.
-- [ ] Linux, bundled build only: if `LIBVA_DRIVERS_PATH` is not set, set it for the child
-      process to the first existing distro driver folder (`/usr/lib/x86_64-linux-gnu/dri`,
-      `/usr/lib64/dri`, `/usr/lib/dri`). Keep this only if `D-7` shows that it is needed.
+- [x] Linux, bundled build only: when the system's libva cannot serve the bundled FFmpeg and
+      a libva ships next to it (`tools/ffmpeg/libva/`), set `LD_LIBRARY_PATH` to that folder
+      for the child process. `D-7` showed that `LIBVA_DRIVERS_PATH` is not needed, and harmful
+      on Fedora ([decision 0002](../decisions/0002-bundled-ffmpeg.md)).
 - [ ] Parse versions (`ffmpeg -version`, `mkvpropedit --version`). Set a minimum FFmpeg version
       (7.0). Record build flags (`--enable-libx265`, …) for diagnostics.
 - [ ] `ToolStatus` per tool: `found | missing | too_old | broken`, plus a reason.

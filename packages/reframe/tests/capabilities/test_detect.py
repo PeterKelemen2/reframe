@@ -40,6 +40,7 @@ HARDWARE = [enc.id for enc in DEFS.video_encoders.values() if enc.hardware]
 SOFTWARE = [enc.id for enc in DEFS.video_encoders.values() if not enc.hardware]
 AVAILABLE = EncoderState.AVAILABLE
 UNAVAILABLE = EncoderState.UNAVAILABLE
+NO_QSV = "No Intel QSV device or runtime (needs an Intel GPU, its media driver and the QSV runtime)"
 ERROR = EncoderState.ERROR
 #: The warning FFmpeg prints when it replaces the ``-pix_fmt`` of a test encode; it then exits 0.
 AUTO_SELECTED = (
@@ -130,7 +131,7 @@ async def test_driver_errors_are_mapped(fake_tools: ft.FakeTools, fake_ffmpeg: T
     assert row("av1_nvenc") == (AVAILABLE, None)  # no rule: the fake's test encode works
     assert row("hevc_qsv") == (
         UNAVAILABLE,
-        "No Intel QSV device (needs an Intel GPU with its media driver)",
+        NO_QSV,
     )
     assert row("h264_vaapi") == (
         UNAVAILABLE,

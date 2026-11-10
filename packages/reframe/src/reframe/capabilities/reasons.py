@@ -125,11 +125,25 @@ def _with_rest(prefix: str, fallback: str = "") -> _Reason:
     return reason
 
 
-_NO_QSV = "No Intel QSV device (needs an Intel GPU with its media driver)"
+_NO_QSV = (
+    "No Intel QSV device or runtime (needs an Intel GPU, its media driver and the QSV runtime)"
+)
 _NVENC = frozenset({"nvenc"})
 
 #: Known texts, most specific first. The first rule that matches any line wins.
 _RULES: tuple[_Rule, ...] = (
+    # The run-time loader of the BtbN builds (implib-gen) aborts FFmpeg when a system library
+    # or one of its functions is missing.
+    _Rule(
+        re.compile(r"implib-gen: (?P<lib>\S+?): failed to resolve symbol '(?P<function>\w+)'"),
+        lambda m, _ctx, _t: (
+            f"The system's {m['lib']} is too old for this FFmpeg (it has no {m['function']})"
+        ),
+    ),
+    _Rule(
+        re.compile(r"implib-gen: (?P<lib>\S+?): failed to load library"),
+        lambda m, _ctx, _t: f"{m['lib']} is not installed (hardware encoding needs it)",
+    ),
     # NVIDIA: libavcodec/nvenc.c and the CUDA loader (compat/cuda, ffnvcodec)
     _Rule(
         re.compile(
@@ -163,6 +177,12 @@ _RULES: tuple[_Rule, ...] = (
         _NVENC,
     ),
     # Intel QSV (oneVPL): libavcodec/qsv.c, libavutil/hwcontext_qsv.c
+    _Rule(
+        re.compile(r"Please consider to upgrade the driver to support VA-API (?P<version>[\d.]+)"),
+        lambda m, _ctx, _t: (
+            f"The Intel media driver is too old for QSV (needs VA-API {m['version']})"
+        ),
+    ),
     _Rule(re.compile(r"Error (?:creating|initializing|querying) an? MFX session"), _fixed(_NO_QSV)),
     _Rule(
         re.compile(r"This version of runtime doesn't support AV1 encoding"),
@@ -177,7 +197,7 @@ _RULES: tuple[_Rule, ...] = (
     ),
     _Rule(re.compile(r"Failed to create a VAAPI device"), _vaapi_device),
     _Rule(
-        re.compile(r"^No usable encoding profile found\.?$"),
+        re.compile(r"^No usable encoding (?:profile|entrypoint) found"),
         lambda _m, ctx, _t: f"The VAAPI driver cannot encode {_codec(ctx)} on this GPU",
         frozenset({"vaapi"}),
     ),

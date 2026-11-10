@@ -213,17 +213,23 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       the session bus (0069 "Fix round — FB").
 
 ### D-7 Tool bundling
-- [ ] Choose the FFmpeg build for `tools/ffmpeg.toml` against the requirements in
+- [x] Choose the FFmpeg build for `tools/ffmpeg.toml` against the requirements in
       [02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg). Test it on the hosts that are
       available, aiming at Intel (VAAPI + QSV), AMD (VAAPI, AMF on Windows) and NVIDIA
       (NVENC), on at least two Linux distros (Debian/Ubuntu and Fedora or Arch) and on
       Windows *(Windows testing phase)*. Record each host and its result in `docs/decisions/0002-bundled-ffmpeg.md`, and
       list there the hosts that were not tested as not verified
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 7).
-- [ ] CI downloads the pinned FFmpeg / MKVToolNix / MediaInfo builds, verifies the checksums,
-      and puts them in `resources/tools/<os>/`. The same step feeds the .deb/.rpm layout.
-- [ ] Settings → Tools: a path override per tool, **Test**, **Use bundled**, env overrides shown
-      read-only. The first-run check runs before the main UI.
+      Done: the BtbN build, with a libva shipped next to it on Linux for distros whose libva is
+      too old (0002); NVIDIA and the GPUs on Windows are not verified.
+- [x] CI downloads the pinned FFmpeg / MKVToolNix builds, verifies the checksums, and puts
+      them in `resources/tools/` (`scripts/bundle-tools.py`: one platform per run, mapped to
+      `tools/` in the app; on Linux it also builds the pinned libva). MediaInfo ships as the
+      sidecar's library, not as a program; MKVToolNix only on Windows (0002). The .deb/.rpm
+      layout comes with D-8.
+- [x] Settings → Tools: a path override per tool, **Test**, **Use bundled**, env overrides shown
+      read-only. The first-run check runs before the main UI. (F-15 and F-3; **Use bundled**
+      downloads only when there is no bundled build, 0002.)
 
 ### D-8 Packaging, signing, updates
 - [ ] Windows: NSIS installer (per-user, no admin rights), WebView2 bootstrapper, optional MSI.

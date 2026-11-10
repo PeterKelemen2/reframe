@@ -201,12 +201,14 @@ LIBRARY_STRINGS = (
     "Error querying a MFX session",
     "MFX_ERR_UNSUPPORTED",
     "This version of runtime doesn't support AV1 encoding",
+    "Please consider to upgrade the driver to support VA-API",
     # VAAPI
     "No VA display found for device",
     "No VA display found for any default device",
     "Failed to initialise VAAPI connection",
     "Failed to create a VAAPI device",
     "No usable encoding profile found.",
+    "No usable encoding entrypoint found for profile",
     # AMD AMF
     "Failed to create  hardware device context (AMF)",
     "DLL %s failed to open",
@@ -219,6 +221,15 @@ LIBRARY_STRINGS = (
     "Vulkan device does not support all required features",
     "Failed creating logical device",
     "Failed initializing vulkan device",
+    # The run-time loader of the build (implib-gen), and the libva functions it needs
+    "implib-gen: libva.so.2: failed to resolve symbol '%s' via dlsym: %s",
+    "implib-gen: libva.so.2: failed to load library 'libva.so.2' via dlopen: %s",
+    "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: %s",
+    "implib-gen: libdrm.so.2: failed to load library 'libdrm.so.2' via dlopen: %s",
+    "vaMapBuffer2",
+    "vaSyncBuffer",
+    "vaSyncSurface2",
+    "vaCopy",
     # generic (fftools)
     "Device creation failed",
     "Failed to set value '%s' for option '%s': %s",

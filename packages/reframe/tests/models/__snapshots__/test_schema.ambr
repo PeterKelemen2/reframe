@@ -9631,13 +9631,31 @@
         'title': 'Build Flags',
         'type': 'array',
       }),
+      'bundled_dir': dict({
+        'anyOf': list([
+          dict({
+            'format': 'path',
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          The folder of the bundled build of this tool's family (shipped with the app, or put there
+          by ``reframe tools fetch``), also when an override is used instead. ``None``: there is none,
+          so using the bundled build means downloading it first.
+        ''',
+        'title': 'Bundled Dir',
+      }),
       'env': dict({
         'additionalProperties': dict({
           'type': 'string',
         }),
         'description': '''
           Extra environment variables to set when running this tool (for example
-          ``LIBVA_DRIVERS_PATH`` for the bundled FFmpeg on Linux).
+          ``LD_LIBRARY_PATH`` to the libva shipped with the bundled FFmpeg on Linux).
         ''',
         'title': 'Env',
         'type': 'object',

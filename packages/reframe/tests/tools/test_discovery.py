@@ -30,7 +30,6 @@ def _isolate_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     for key in list(os.environ):
         if key.startswith("REFRAME_") and not key.startswith("REFRAME_FAKE_"):
             monkeypatch.delenv(key)
-    monkeypatch.delenv("LIBVA_DRIVERS_PATH", raising=False)
 
 
 def _script_tool(directory: Path, name: str, text: str, exit_code: int = 0) -> Path:
@@ -158,7 +157,7 @@ def test_path_is_used_without_a_bundled_build(tmp_path: Path) -> None:
     assert tools.ffmpeg.path is not None
     assert os.path.samefile(tools.ffmpeg.path, on_path.ffmpeg)
     assert tools.ffprobe.origin is ToolOrigin.PATH
-    assert tools.ffmpeg.env == {}  # LIBVA_DRIVERS_PATH only for the bundled build
+    assert tools.ffmpeg.env == {}
 
 
 def test_bundled_build_in_the_folder_itself(tmp_path: Path, empty_path: str) -> None:
@@ -362,7 +361,7 @@ def test_windows_accepts_only_exe(tmp_path: Path, empty_path: str) -> None:
     )
     assert located["ffmpeg"].path == bundled_bin / "ffmpeg.exe"
     assert located["ffprobe"].path == bundled_bin / "ffprobe.exe"
-    assert located["ffmpeg"].env == {}  # no LIBVA_DRIVERS_PATH on Windows
+    assert located["ffmpeg"].env == {}
 
 
 @pytest.mark.anyio
@@ -729,77 +728,107 @@ async def test_unknown_version_is_found_with_a_note(tmp_path: Path, empty_path: 
     assert "could not be checked" in tools.ffmpeg.reason
 
 
-@pytest.fixture
-def driver_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
-    first = tmp_path / "dri-missing"
-    second = tmp_path / "dri"
-    second.mkdir()
-    monkeypatch.setattr(discovery, "LIBVA_DRIVER_DIRS", (first, second))
-    return first, second
+def _with_libva_fallback(root: Path) -> Path:
+    """A bundled Linux FFmpeg under ``root`` with the shipped libva; returns the libva folder."""
+    _linux_build(root / "ffmpeg" / "bin")
+    fallback = root / "ffmpeg" / discovery.LIBVA_FALLBACK_DIR
+    fallback.mkdir()
+    (fallback / "libva.so.2").write_bytes(b"")
+    return fallback
 
 
-def test_libva_drivers_path_for_the_bundled_build(
-    tmp_path: Path, empty_path: str, driver_dirs: tuple[Path, Path]
+def _system_libva(monkeypatch: pytest.MonkeyPatch, *, usable: bool) -> None:
+    monkeypatch.setattr(discovery, "system_libva_usable", lambda: usable)
+
+
+def test_the_shipped_libva_when_the_systems_cannot_serve(
+    tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _system_libva(monkeypatch, usable=False)
+    fallback = _with_libva_fallback(tmp_path / "root")
+    located = locate_tools(
+        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path, platform="linux"
+    )
+    assert located["ffmpeg"].env == {"LD_LIBRARY_PATH": str(fallback)}
+    assert located["ffprobe"].env == {"LD_LIBRARY_PATH": str(fallback)}
+    assert located["mkvpropedit"].env == {}
+
+
+def test_the_shipped_libva_comes_before_a_library_path(
+    tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _system_libva(monkeypatch, usable=False)
+    fallback = _with_libva_fallback(tmp_path / "root")
+    located = locate_tools(
+        environ=_env(LD_LIBRARY_PATH="/app/lib"),
+        bundled_roots=[tmp_path / "root"],
+        search_path=empty_path,
+        platform="linux",
+    )
+    assert located["ffmpeg"].env == {"LD_LIBRARY_PATH": f"{fallback}{os.pathsep}/app/lib"}
+
+
+def test_the_systems_libva_when_it_can_serve(
+    tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _system_libva(monkeypatch, usable=True)
+    _with_libva_fallback(tmp_path / "root")
+    located = locate_tools(
+        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path, platform="linux"
+    )
+    assert located["ffmpeg"].env == {}
+
+
+def test_no_libva_check_without_a_shipped_libva(
+    tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail() -> bool:
+        raise AssertionError("checked the system's libva")
+
+    monkeypatch.setattr(discovery, "system_libva_usable", fail)
     _linux_build(tmp_path / "root" / "ffmpeg" / "bin")
     located = locate_tools(
         environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path, platform="linux"
     )
-    assert located["ffmpeg"].env == {"LIBVA_DRIVERS_PATH": str(driver_dirs[1])}
-    assert located["ffprobe"].env == {"LIBVA_DRIVERS_PATH": str(driver_dirs[1])}
+    assert located["ffmpeg"].env == {}
 
 
-def test_libva_drivers_path_is_not_changed_when_set(
-    tmp_path: Path, empty_path: str, driver_dirs: tuple[Path, Path]
+def test_the_shipped_libva_is_not_for_overrides_or_windows(
+    tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _linux_build(tmp_path / "root" / "ffmpeg" / "bin")
+    _system_libva(monkeypatch, usable=False)
+    _with_libva_fallback(tmp_path / "root")
+    custom = _linux_build(tmp_path / "custom")
     located = locate_tools(
-        environ=_env(LIBVA_DRIVERS_PATH="/custom/dri"),
+        environ=_env(REFRAME_FFMPEG=str(custom.ffmpeg)),
         bundled_roots=[tmp_path / "root"],
         search_path=empty_path,
         platform="linux",
     )
     assert located["ffmpeg"].env == {}
-
-
-def test_libva_drivers_path_not_for_overrides(
-    tmp_path: Path, empty_path: str, driver_dirs: tuple[Path, Path]
-) -> None:
-    custom = _linux_build(tmp_path / "custom")
-    located = locate_tools(
-        environ=_env(REFRAME_FFMPEG=str(custom.ffmpeg)),
-        bundled_roots=[],
-        search_path=empty_path,
-        platform="linux",
+    windows = locate_tools(
+        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path, platform="win32"
     )
-    assert located["ffmpeg"].env == {}
-    assert located["ffprobe"].env == {}
+    assert windows["ffmpeg"].env == {}
 
 
-def test_libva_drivers_path_none_found(
-    tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(discovery, "LIBVA_DRIVER_DIRS", (tmp_path / "x",))
-    _linux_build(tmp_path / "root" / "ffmpeg" / "bin")
-    located = locate_tools(
-        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path, platform="linux"
-    )
-    assert located["ffmpeg"].env == {}
-
-
-@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="LIBVA_DRIVERS_PATH is Linux only")
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="LD_LIBRARY_PATH is Linux only")
 @pytest.mark.anyio
 async def test_tool_env_reaches_the_version_check(
-    tmp_path: Path, empty_path: str, driver_dirs: tuple[Path, Path]
+    tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _system_libva(monkeypatch, usable=False)
     _fake(
         tmp_path / "root" / "ffmpeg" / "bin",
         ft.Rule(argv_has=["-version"], actions=[ft.version()]),
     )
+    fallback = tmp_path / "root" / "ffmpeg" / discovery.LIBVA_FALLBACK_DIR
+    fallback.mkdir()
+    (fallback / "libva.so.2").write_bytes(b"")
     tools = await discover_tools(
         environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path
     )
-    assert tools.ffmpeg.env == {"LIBVA_DRIVERS_PATH": str(driver_dirs[1])}
+    assert tools.ffmpeg.env == {"LD_LIBRARY_PATH": str(fallback)}
     assert tools.ffmpeg.status is ToolStatus.FOUND
 
 

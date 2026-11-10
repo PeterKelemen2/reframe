@@ -17,6 +17,11 @@ export function setByEnvironment(tool: ToolInfo): boolean {
   return tool.origin === 'env' && !tool.next_to_ffmpeg
 }
 
+/** A bundled FFmpeg is there (shipped with the app or downloaded before): nothing to download. */
+export function hasBundledFfmpeg(set: Schemas['ToolSet'] | undefined): boolean {
+  return set !== undefined && FFMPEG_FAMILY.every((name) => set[name].bundled_dir != null)
+}
+
 export function toolTone(tool: ToolInfo): StatusTone {
   if (tool.status === 'found') return 'ok'
   // MKVToolNix and MediaInfo are optional: without them some features are off.

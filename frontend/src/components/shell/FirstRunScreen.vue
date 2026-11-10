@@ -11,7 +11,7 @@ import type { JsonPatchOp, Schemas } from '@/api/types'
 import KeyValue from '@/components/base/KeyValue.vue'
 import StatusDot from '@/components/base/StatusDot.vue'
 import type { StatusTone } from '@/components/base/types'
-import { FFMPEG_FAMILY, setByEnvironment } from '@/components/settings/tools'
+import { FFMPEG_FAMILY, hasBundledFfmpeg, setByEnvironment } from '@/components/settings/tools'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 import { useTasksStore } from '@/stores/tasks'
@@ -99,12 +99,8 @@ async function quietly(action: () => Promise<void>): Promise<void> {
   }
 }
 
-/**
- * Downloads the pinned FFmpeg, then removes the Settings paths of ffmpeg and ffprobe, which would
- * still win over the bundled build.
- */
-async function useBundled(): Promise<void> {
-  unchangedAt.value = null
+/** Downloads the pinned FFmpeg; false when it failed (a toast says why). */
+async function download(): Promise<boolean> {
   let taskId: string | null = null
   const stop = watch(
     () => system.toolsFetch,
@@ -118,7 +114,16 @@ async function useBundled(): Promise<void> {
   } finally {
     stop()
   }
-  if (taskId === null || tasks.tasks[taskId]?.state !== 'done') return
+  return taskId !== null && tasks.tasks[taskId]?.state === 'done'
+}
+
+/**
+ * Downloads the pinned FFmpeg unless a bundled one is there, then removes the Settings paths of
+ * ffmpeg and ffprobe, which would still win over the bundled build.
+ */
+async function useBundled(): Promise<void> {
+  unchangedAt.value = null
+  if (!hasBundledFfmpeg(system.info?.tools) && !(await download())) return
   const paths = settings.settings?.tools
   const ops: JsonPatchOp[] = FFMPEG_FAMILY.filter((name) => paths?.[name]).map((name) => ({
     op: 'replace',

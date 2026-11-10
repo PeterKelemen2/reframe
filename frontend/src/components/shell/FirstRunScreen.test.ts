@@ -133,6 +133,25 @@ describe('the first-run screen', () => {
     expect(system.rescanTools).toHaveBeenCalledTimes(1)
   })
 
+  it('removes the Settings paths without a download when the app ships FFmpeg', async () => {
+    const shipped = { bundled_dir: 'C:/Program Files/Reframe/tools/ffmpeg' }
+    const { wrapper, system } = await mountFirstRun(
+      info({ status: 'missing', origin: 'settings', reason: 'gone', ...shipped }, shipped),
+    )
+    const settings = useSettingsStore()
+    settings.settings = { tools: { ffmpeg: '/opt/gone/ffmpeg', ffprobe: null } } as never
+    settings.update = vi.fn<typeof settings.update>(async () => ({}) as never)
+    system.rescanTools = vi.fn<() => Promise<void>>(async () => {})
+    system.fetchTools = vi.fn<() => Promise<void>>(async () => {})
+    await wrapper.find('.first-run__bundled').trigger('click')
+    await flushPromises()
+    expect(system.fetchTools).not.toHaveBeenCalled()
+    expect(settings.update).toHaveBeenCalledExactlyOnceWith([
+      { op: 'replace', path: '/tools/ffmpeg', value: null },
+    ])
+    expect(system.rescanTools).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps the Settings paths when the download failed', async () => {
     const { wrapper, system } = await mountFirstRun(info({ status: 'missing', reason: 'gone' }, {}))
     const settings = useSettingsStore()

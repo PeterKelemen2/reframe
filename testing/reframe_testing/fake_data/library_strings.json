@@ -174,6 +174,12 @@
         "string": "No capable devices found\n"
       }
     ],
+    "No usable encoding entrypoint found for profile": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "No usable encoding entrypoint found for profile %s (%d).\n"
+      }
+    ],
     "No usable encoding profile found.": [
       {
         "file": "lib/libavcodec.so.63.1.102",
@@ -190,6 +196,12 @@
       {
         "file": "lib/libavcodec.so.63.1.102",
         "string": "OpenEncodeSessionEx failed"
+      }
+    ],
+    "Please consider to upgrade the driver to support VA-API": [
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "libva: Failed to get device id from the driver. Please consider to upgrade the driver to support VA-API 1.15.0\n"
       }
     ],
     "The minimum required Nvidia driver for nvenc is": [
@@ -210,6 +222,50 @@
         "string": "Vulkan device does not support all required features!"
       }
     ],
+    "implib-gen: libdrm.so.2: failed to load library 'libdrm.so.2' via dlopen: %s": [
+      {
+        "file": "lib/libavdevice.so.63.1.102",
+        "string": "implib-gen: libdrm.so.2: failed to load library 'libdrm.so.2' via dlopen: %s\n"
+      },
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "implib-gen: libdrm.so.2: failed to load library 'libdrm.so.2' via dlopen: %s\n"
+      }
+    ],
+    "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: %s": [
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: %s\n"
+      }
+    ],
+    "implib-gen: libva.so.2: failed to load library 'libva.so.2' via dlopen: %s": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "implib-gen: libva.so.2: failed to load library 'libva.so.2' via dlopen: %s\n"
+      },
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "implib-gen: libva.so.2: failed to load library 'libva.so.2' via dlopen: %s\n"
+      },
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "implib-gen: libva.so.2: failed to load library 'libva.so.2' via dlopen: %s\n"
+      }
+    ],
+    "implib-gen: libva.so.2: failed to resolve symbol '%s' via dlsym: %s": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "implib-gen: libva.so.2: failed to resolve symbol '%s' via dlsym: %s\n"
+      },
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "implib-gen: libva.so.2: failed to resolve symbol '%s' via dlsym: %s\n"
+      },
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "implib-gen: libva.so.2: failed to resolve symbol '%s' via dlsym: %s\n"
+      }
+    ],
     "libamfrt64.so.1": [
       {
         "file": "lib/libavutil.so.61.1.102",
@@ -226,6 +282,62 @@
         "string": "libcuda.so.1"
       }
     ],
-    "nvcuda.dll": []
+    "nvcuda.dll": [],
+    "vaCopy": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "vaCopy"
+      },
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "vaCopy"
+      },
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "vaCopy"
+      }
+    ],
+    "vaMapBuffer2": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "vaMapBuffer2"
+      },
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "vaMapBuffer2"
+      },
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "vaMapBuffer2"
+      }
+    ],
+    "vaSyncBuffer": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "vaSyncBuffer"
+      },
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "vaSyncBuffer"
+      },
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "vaSyncBuffer"
+      }
+    ],
+    "vaSyncSurface2": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "vaSyncSurface2"
+      },
+      {
+        "file": "lib/libavfilter.so.12.1.102",
+        "string": "vaSyncSurface2"
+      },
+      {
+        "file": "lib/libavutil.so.61.1.102",
+        "string": "vaSyncSurface2"
+      }
+    ]
   }
 }

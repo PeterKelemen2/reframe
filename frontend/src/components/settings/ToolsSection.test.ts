@@ -207,6 +207,20 @@ describe('the Tools section', () => {
       expect(system.rescanTools).toHaveBeenCalledTimes(1)
     })
 
+    it('removes the Settings paths without a download when the app ships FFmpeg', async () => {
+      const shipped = { bundled_dir: '/opt/Reframe/tools/ffmpeg' }
+      const { wrapper, server, system } = await mountTools(
+        systemInfo({ mode: 'desktop' }, { ffmpeg: shipped, ffprobe: shipped }),
+        { ffmpeg: '/opt/ff/ffmpeg' },
+      )
+      fetchEnds(system, 'done')
+      await wrapper.find('[data-action="use-bundled"]').trigger('click')
+      await flushPromises()
+      expect(system.fetchTools).not.toHaveBeenCalled()
+      expect(server.patches).toEqual([[{ op: 'replace', path: '/tools/ffmpeg', value: null }]])
+      expect(system.rescanTools).toHaveBeenCalledTimes(1)
+    })
+
     it('keeps the paths when the download fails', async () => {
       const { wrapper, server, system } = await mountTools(systemInfo({ mode: 'desktop' }), {
         ffmpeg: '/opt/ff/ffmpeg',

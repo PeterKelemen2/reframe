@@ -1,0 +1,18 @@
+# The mkvpropedit that the desktop app ships on Windows.
+#
+# On Linux mkvpropedit comes from the distro (it is optional), so there is no Linux entry.
+# `scripts/bundle-tools.py` downloads the portable archive, checks the size and SHA-256 (the
+# same value as the `.sha256` file next to the archive), and extracts only `files`.
+
+schema_version = 1
+
+version = "103.0"
+license = "GPL-2.0-or-later"
+source_url = "https://mkvtoolnix.download/sources/mkvtoolnix-103.0.tar.xz"
+
+[platforms.windows-x64]
+url = "https://mkvtoolnix.download/windows/releases/103.0/mkvtoolnix-64-bit-103.0.zip"
+sha256 = "c860a10c707cb1ee587d1464f6171842f2ada3bb6f031dfff55fec75542f0417"
+size = 103859301
+# Archive member -> file name in the shipped folder. mkvpropedit.exe needs only Windows' own DLLs.
+files = { "mkvtoolnix/mkvpropedit.exe" = "mkvpropedit.exe", "mkvtoolnix/doc/COPYING.txt" = "COPYING.txt" }

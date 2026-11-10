@@ -326,7 +326,7 @@
     "hevc_qsv": {
       "id": "hevc_qsv",
       "state": "unavailable",
-      "reason": "No Intel QSV device (needs an Intel GPU with its media driver)",
+      "reason": "No Intel QSV device or runtime (needs an Intel GPU, its media driver and the QSV runtime)",
       "checked_at": "2026-10-29T20:03:01.289837Z",
       "hardware": true,
       "in_build": true,

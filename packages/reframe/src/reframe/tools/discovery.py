@@ -15,6 +15,7 @@ which interprets ``& | % ^ < >`` in the arguments.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import os
 import sys
 from collections.abc import Mapping, Sequence
@@ -26,6 +27,7 @@ from pydantic import BaseModel
 from reframe import paths
 from reframe.models.issues import Fix, RemoveOp
 from reframe.models.tools import ToolInfo, ToolName, ToolOrigin, ToolSet, ToolStatus
+from reframe.platform.libva import system_libva_usable
 from reframe.platform.longpath import missing_text
 from reframe.tools import versions
 from reframe.tools.runner import run
@@ -33,7 +35,7 @@ from reframe.tools.runner import run
 __all__ = [
     "ALLOW_SCRIPT_TOOLS_ENV",
     "ENV_VARS",
-    "LIBVA_DRIVER_DIRS",
+    "LIBVA_FALLBACK_DIR",
     "TOOL_NAMES",
     "VERSION_TIMEOUT",
     "ToolLocation",
@@ -54,13 +56,8 @@ ENV_VARS: Mapping[ToolName, str] = {
     "mkvpropedit": "REFRAME_MKVPROPEDIT",
     "mediainfo": "REFRAME_MEDIAINFO",
 }
-#: Distro folders with libva drivers. The bundled libva may not look there, so the bundled
-#: FFmpeg on Linux gets the first one that exists as ``LIBVA_DRIVERS_PATH``.
-LIBVA_DRIVER_DIRS = (
-    Path("/usr/lib/x86_64-linux-gnu/dri"),
-    Path("/usr/lib64/dri"),
-    Path("/usr/lib/dri"),
-)
+#: The folder in a bundled FFmpeg folder with the libva for distros whose own libva is too old.
+LIBVA_FALLBACK_DIR = "libva"
 #: Seconds for a ``-version`` call. Generous: the first start of a binary on a network share
 #: or under a virus scanner can be slow.
 VERSION_TIMEOUT = 20.0
@@ -97,6 +94,7 @@ class ToolLocation:
     fixes: list[Fix] = field(default_factory=list)
     problem_status: ToolStatus = ToolStatus.MISSING
     """The status that ``problem`` gives (``broken`` for a script tool on Windows)."""
+    bundled_dir: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -161,13 +159,16 @@ def _bundled_dir(ctx: _Context, tool: ToolName) -> tuple[Path | None, Path | Non
     return None, None
 
 
-def _libva_env(ctx: _Context) -> dict[str, str]:
-    if not ctx.platform.startswith("linux") or ctx.environ.get("LIBVA_DRIVERS_PATH"):
+def _libva_env(ctx: _Context, family_dir: Path) -> dict[str, str]:
+    """The system's libva knows the distro's driver folders, so the shipped one is only used
+    when the system's cannot serve the bundled FFmpeg."""
+    fallback = family_dir / LIBVA_FALLBACK_DIR
+    if not ctx.platform.startswith("linux") or not (fallback / "libva.so.2").is_file():
         return {}
-    for directory in LIBVA_DRIVER_DIRS:
-        if directory.is_dir():
-            return {"LIBVA_DRIVERS_PATH": str(directory)}
-    return {}
+    if system_libva_usable():
+        return {}
+    current = ctx.environ.get("LD_LIBRARY_PATH")
+    return {"LD_LIBRARY_PATH": f"{fallback}{os.pathsep}{current}" if current else str(fallback)}
 
 
 def _override(
@@ -238,8 +239,19 @@ def _search_path(ctx: _Context, tool: str) -> Path | None:
 def _locate(
     ctx: _Context, tool: ToolName, located: Mapping[ToolName, ToolLocation]
 ) -> ToolLocation:
-    env_var = ENV_VARS[tool]
     bundled, family_dir = _bundled_dir(ctx, tool)
+    found = _locate_from(ctx, tool, located, bundled, family_dir)
+    return dataclasses.replace(found, bundled_dir=family_dir)
+
+
+def _locate_from(
+    ctx: _Context,
+    tool: ToolName,
+    located: Mapping[ToolName, ToolLocation],
+    bundled: Path | None,
+    family_dir: Path | None,
+) -> ToolLocation:
+    env_var = ENV_VARS[tool]
     bundled_exists = family_dir is not None
 
     env_value = ctx.environ.get(env_var, "").strip()
@@ -270,7 +282,7 @@ def _locate(
                 )
 
     if family_dir is not None:
-        env = _libva_env(ctx) if _FAMILY[tool] == "ffmpeg" else {}
+        env = _libva_env(ctx, family_dir) if _FAMILY[tool] == "ffmpeg" else {}
         if bundled is None:
             problem = (
                 f"The bundled {_DISPLAY[_FAMILY[tool]]} in {family_dir} has no {tool}: the "
@@ -355,6 +367,7 @@ def _info(loc: ToolLocation, status: ToolStatus, reason: str | None, **kw: objec
             "env_var": loc.env_var,
             "next_to_ffmpeg": loc.next_to_ffmpeg,
             "fixes": fixes,
+            "bundled_dir": loc.bundled_dir,
             **kw,
         }
     )

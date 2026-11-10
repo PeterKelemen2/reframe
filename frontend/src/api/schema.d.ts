@@ -6905,7 +6905,7 @@ export interface components {
             /**
              * Env
              * @description Extra environment variables to set when running this tool (for example
-             *     ``LIBVA_DRIVERS_PATH`` for the bundled FFmpeg on Linux).
+             *     ``LD_LIBRARY_PATH`` to the libva shipped with the bundled FFmpeg on Linux).
              */
             env?: {
                 [key: string]: string;
@@ -6923,6 +6923,13 @@ export interface components {
             next_to_ffmpeg: boolean;
             /** Fixes */
             fixes?: components["schemas"]["Fix"][];
+            /**
+             * Bundled Dir
+             * @description The folder of the bundled build of this tool's family (shipped with the app, or put there
+             *     by ``reframe tools fetch``), also when an override is used instead. ``None``: there is none,
+             *     so using the bundled build means downloading it first.
+             */
+            bundled_dir?: string | null;
         };
         /**
          * ToolOrigin
