@@ -72,6 +72,7 @@ from reframe.models import (
     TrackRoleInfo,
     VideoStream,
 )
+from reframe.platform import longpath
 from reframe.probe import mediainfo
 from reframe.service import ProbeError, ProbeErrorKind
 from reframe.tools import ENV_VARS
@@ -358,6 +359,16 @@ def test_recorded_badges_and_bitrate_sources(fake_env: ft.FakeTools, tmp_path: P
     assert "Dolby Vision 8.1" in out
 
 
+def test_a_path_windows_refuses_is_named_as_too_long(
+    fake_env: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(longpath, "long_paths_enabled", lambda: False)
+    path = tmp_path / ("x" * 250) / "movie.mkv"
+    line = assert_clean_failure(invoke("probe", str(path)), EXIT_NOT_FOUND)
+    assert "Windows refuses this path" in line
+    assert "does not exist" not in line
+
+
 def test_missing_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     line = assert_clean_failure(invoke("probe", str(tmp_path / "nope.mkv")), EXIT_NOT_FOUND)
     assert line == f"error: {tmp_path / 'nope.mkv'}: The file does not exist."
@@ -552,7 +563,7 @@ def unicode_recording(tmp_path: Path) -> Path:
 
 
 def run_subprocess(
-    fake: ft.FakeTools, tmp_path: Path, *args: str, encoding: str
+    fake: ft.FakeTools, tmp_path: Path, *args: str, encoding: str | None
 ) -> subprocess.CompletedProcess[bytes]:
     env = fake.env()
     for var in ENV_VARS.values():
@@ -562,10 +573,12 @@ def run_subprocess(
         REFRAME_FFPROBE=str(fake.ffprobe),
         REFRAME_CACHE_DIR=str(tmp_path / "cache-sub"),
         REFRAME_CONFIG_DIR=str(tmp_path / "config-sub"),
-        PYTHONIOENCODING=encoding,
         COLUMNS="120",
     )
     env.pop("PYTHONUTF8", None)
+    env.pop("PYTHONIOENCODING", None)
+    if encoding is not None:
+        env["PYTHONIOENCODING"] = encoding
     return subprocess.run(
         [sys.executable, "-m", "reframe.cli", *args],
         capture_output=True,
@@ -573,6 +586,37 @@ def run_subprocess(
         timeout=60,
         check=False,
     )
+
+
+def test_a_pipe_gets_utf8_when_no_encoding_is_set(
+    fake_env: ft.FakeTools, tmp_path: Path, unicode_recording: Path
+) -> None:
+    replay(fake_env, unicode_recording)
+    path = tmp_path / "Film ő 日本 🎬.mkv"
+    path.write_bytes(b"x")
+    result = run_subprocess(fake_env, tmp_path, "probe", str(path), encoding=None)
+    assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
+    assert "Film ő 日本 🎬.mkv" in result.stdout.decode("utf-8")
+    missing = run_subprocess(
+        fake_env, tmp_path, "probe", str(tmp_path / "ő 日本.mkv"), encoding=None
+    )
+    assert "ő 日本.mkv" in missing.stderr.decode("utf-8")
+
+
+@pytest.mark.parametrize(
+    ("platform", "environ", "expected"),
+    [
+        ("win32", {}, "utf-8"),
+        ("win32", {"PYTHONIOENCODING": "cp1252"}, "cp1252"),
+        ("linux", {}, "cp1252"),
+    ],
+)
+def test_only_a_windows_stream_without_a_chosen_encoding_becomes_utf8(
+    platform: str, environ: dict[str, str], expected: str
+) -> None:
+    stream = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    cli._configure_stream(stream, platform=platform, environ=environ)
+    assert (stream.encoding, stream.errors) == (expected, "replace")
 
 
 def test_non_utf8_stdout_does_not_crash(

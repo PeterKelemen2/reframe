@@ -44,7 +44,7 @@ from reframe.queue.process import resume_tree, suspend_tree
 from reframe.queue.progress import ProgressBlock, ProgressParser, ProgressTracker
 from reframe.queue.verify import check_output
 from reframe.queue.watchdog import StepWatch, Verdict, tree_cpu_seconds
-from reframe.tools import CancelToken, RunResult, run_streaming
+from reframe.tools import CancelToken, RunResult, crashed, run_streaming
 from reframe.validation import FileSystemView, next_free_path, validate
 from reframe.validation.output import output_path_issues
 
@@ -998,10 +998,10 @@ def _failure(step: PlanStep, result: RunResult, stderr: Sequence[str]) -> str:
     what = _WHAT[step.kind]
     if result.error is not None:
         return f"{what} could not start {step.tool}: {result.error}"
-    crashed = result.returncode is not None and result.returncode < 0
-    reason = stderr_reason(stderr, last_line=not crashed)
+    crash = crashed(result.returncode)
+    reason = stderr_reason(stderr, last_line=not crash)
     status = exit_text(result.returncode)
-    if crashed:
+    if crash:
         head = f"{step.tool} crashed during {what.lower()} ({status})"
     else:
         head = f"{what} failed ({status})"

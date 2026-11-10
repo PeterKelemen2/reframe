@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from reframe.platform import longpath
 from reframe_server.routers import fs
 from reframe_testing.server import Api, ApiFactory
 
@@ -141,6 +142,17 @@ async def test_a_path_that_cannot_be_listed_is_a_problem(
         if path.is_dir():
             path.chmod(0o700)
     assert (response.status_code, response.json()["code"]) == (status, code)
+
+
+async def test_a_folder_windows_refuses_is_named_as_too_long(
+    api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(longpath, "long_paths_enabled", lambda: False)
+    path = api.media / ("x" * 250) / "gone"
+    response = await api.client.get("/api/fs/list", params={"path": str(path)})
+    problem = response.json()
+    assert (response.status_code, problem["code"]) == (404, "fs.not_found")
+    assert problem["detail"].startswith("Windows refuses this path")
 
 
 def _file(path: Path) -> Path:

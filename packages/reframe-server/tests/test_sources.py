@@ -12,6 +12,7 @@ from typing import Any
 import pytest
 
 from reframe.models import TaskInfo, TaskState
+from reframe.platform import longpath
 from reframe.tasks import TaskContext
 from reframe_server.routers.sources import ProbeSummary
 from reframe_server.sources import source_id
@@ -76,6 +77,17 @@ async def test_folders_missing_paths_and_failed_probes_are_in_the_result(api: Ap
     }
     listed = (await api.client.get("/api/sources")).json()
     assert [item["id"] for item in listed] == [source_id(episode), source_id(nested)]
+
+
+async def test_a_path_windows_refuses_is_named_as_too_long(
+    api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(longpath, "long_paths_enabled", lambda: False)
+    missing = api.media / ("x" * 250) / "gone.mkv"
+    summary = ProbeSummary.model_validate((await _probe(api, missing)).result)
+    (error,) = summary.errors
+    assert error.code == "probe.not_found"
+    assert error.message.startswith("Windows refuses this path")
 
 
 async def test_a_link_in_a_folder_that_points_outside_the_roots_is_not_probed(api: Api) -> None:

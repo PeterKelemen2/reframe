@@ -2945,6 +2945,117 @@ the stream's encoder settings SEI:
   key by key. `keyint=10s` (seconds) stays a custom parameter: the keyint option is a number of
   frames.
 
+### Windows: paths, processes and file behaviour (Q-1.4)
+
+Windows 10 22H2 (VM), Python 3.14.10, FFmpeg n9.0.2 (BtbN win64, `reframe tools fetch`),
+2026-11-04:
+
+- `-x264-params` / `-x265-params` with a Windows path: FFmpeg's dictionary parser splits
+  `key=C:\dir\f` at the drive colon, and the rest (`\dir\f`, also `/dir/f`) is a key without
+  `=`, so FFmpeg refuses the whole argument (`Error setting option x265-params`) and nothing is
+  written. `key=C\:\dir\f` gives the library `C:dirf` (each `\` removed): x265 `csv` and x264
+  `dump-yuv` write that drive-relative name in the working folder. `key=C\:\\dir\\f`,
+  `key='C:\dir\f'` and `key=C\:/dir/f` give the library `C:\dir\f`, and the file is written.
+  Reframe refuses these keys by name, whatever the value.
+- The builder's two-pass x265 plan (`stats=C\:/…/x.part.passlog`) encodes on Windows.
+- Filter text `eq=/contrast=C:\dir\secret.txt` (also with `/`, or `C\:`) is a graph syntax
+  error. Written as one graph token, `'C\:/dir/secret.txt'` (`quote_value`) or `C\\\:/dir/…`,
+  the file is read: its text is in FFmpeg's error. The same holds for `eq='/contrast'=…`,
+  `eq=brightness=0\: /contrast=…` and `unsharp=5:5:/lx=…`.
+- The Windows build's `h264_qsv` has the private options `dual_gfx` and `vcm`, and `hevc_qsv`
+  has `dual_gfx`; the Linux builds have neither.
+- `os.stat()` on NTFS: `st_ctime_ns` is the creation time (equal to `st_birthtime_ns`). A
+  rewrite of the same size followed by `os.utime` back to the old times changes no field but
+  `st_atime`. `FILE_BASIC_INFO.ChangeTime` (`GetFileInformationByHandleEx`) moves on each write
+  and on `os.utime`, but in clock ticks: writes less than one tick apart (1 ms on the VM, 15.6 ms
+  by default) can share it. Reading it takes about as long as `os.stat` (16 µs and 23 µs).
+- A path with a NUL: `os.path.realpath` and `Path.resolve` give it back (`ntpath` ignores the
+  error unless `strict=True`, which raises `OSError`); `os.stat`, `open` and the others raise
+  `ValueError` as on Linux.
+- `os.stat` takes `..` out of a path before it looks at the folders: `C:\t\missing\..\a.mkv`
+  is `C:\t\a.mkv` when `missing` does not exist.
+- A file name `a:b` is the NTFS stream `b` of the file `a`: `shutil.copy` writes it and
+  FFmpeg's `subtitles` filter reads it.
+- `os.open` (and `open`) of a folder raises `PermissionError` (EACCES), not
+  `IsADirectoryError`.
+- `os.replace` cannot replace a symbolic link to a folder (`PermissionError`, WinError 5); the
+  VM's account can create symbolic links.
+- uv's `.venv\Scripts\python.exe` is a launcher: it starts the real interpreter as a child
+  process (another pid), passes the exit code through (`SystemExit(75)` gives 75), and a kill of
+  the launcher ends the child, also when it was started with `launch_detached`'s flags.
+- A tool that crashes with an access violation exits with `0xC0000005` (positive, as an
+  NTSTATUS code), not with a negative signal number. FFmpeg's own error exit is its negative
+  `AVERROR` as an unsigned 32-bit code: an AAC encode of a silent track shorter than 3 s with
+  loudness normalisation (`EINVAL`, -22) exits with `0xFFFFFFEA` (on Linux 234). FFmpeg's tag
+  codes reach above `0xC0000000` too (`AVERROR_EOF` is `0xDFB9B0BB`), but none has the form of
+  a system exception, `0xC000xxxx`.
+- A just-renamed or just-deleted file can refuse to open for a moment (`PermissionError`): the
+  fake tools' call log needed a retry when read while files came and went.
+- FFmpeg's Matroska muxer, writing a seekable file, takes time quadratic in the number of
+  subtitle packets on Windows (50 / 100 / 200 loops of the fixture: 0.34 / 3.6 / 16 s); with
+  `-live 1`, or to a pipe or null output, it is linear (200 loops: 0.25 s). On Linux the 1800
+  loops take 2.6 s.
+- pydantic-core dumps at most 100 nested levels on Windows (256 on Linux).
+
+### Windows: the desktop part of the testing phase (Q-1.4, second VM)
+
+Windows 10 Pro 2004 (19041.1, no updates; VM, 4 cores), Python 3.14.10, FFmpeg n9.0.2 (BtbN
+win64), WebView2 157, Tauri 2.12.5, 2026-11-09:
+
+- FFmpeg crashes now and then with `0xC0000005` when `fieldmatch` runs before other filters:
+  the every-filter chain of `test_every_filter_on_an_untagged_interlaced_source` on
+  `interlaced.mkv` crashed 2 of 40 and 5 of 60 times; without `decimate` 11 of 80, without
+  `fieldmatch` 0 of 80, and `fieldmatch` alone or with `decimate` alone 0 of 80. The pinned
+  Linux build ran the whole chain 80 times on the same CPU without a crash.
+- A process started from a session that ignores Ctrl+C (Win32-OpenSSH's) hands the flag down,
+  also through `CREATE_NEW_CONSOLE`: `GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)` from a process
+  attached to the child's console succeeds, and the child sees nothing until it calls
+  `SetConsoleCtrlHandler(None, False)`; then Python raises `KeyboardInterrupt` at once.
+- Reading a file while another process replaces it with `os.replace` can raise
+  `PermissionError` (seen once for `server.json` in a full run).
+- The proactor loop's read pipe transport allocates a 32 KiB buffer per pipe when it is made
+  (`_ProactorReadPipeTransport`): 20 FFmpeg pipes of encoder detection are about 650 KB under
+  `tracemalloc`.
+- `SO_RCVBUF` set to 8192 before `connect` stays 8192 (65536 when left alone).
+- WebView2 converts a PNG's `cICP` colours in `createImageBitmap` unless
+  `colorSpaceConversion: "none"`: a tone-mapped frame (`cICP` 1/1/0/1) differed from FFmpeg's
+  rgb24 decode at 656 of 1640 sampled pixels (78 read as 68); with the option all equal.
+- `document.hasFocus()` in WebView2 stays true while no other window has taken the focus (a
+  window shown behind a hidden one); it is false once another window is in front.
+- A Tauri notification of an app that is not installed shows Windows PowerShell's name and
+  icon (Tauri falls back to PowerShell's AppUserModelID).
+- Windows places a new Tauri window without regard to the taskbar (208,61 with 1296×839 on a
+  1600×900 screen), and the window-state plugin restores a place from a larger screen as it was.
+- A process that is not in the foreground cannot bring another to the front: open-with from a
+  background launcher hands the path over, but the running window stays behind.
+- The common Open dialog (`#32770`) on this build gives UI Automation its file name box and its
+  buttons as plain panes; `WM_SETTEXT` to the box's edit (control 1148) and `BM_CLICK` to
+  `IDOK` work.
+
+### Windows: scaling, unusual paths and long paths (M10, second VM)
+
+The same VM, PyInstaller 6.22.3, 2026-11-10:
+
+- `SystemParametersInfo(SPI_SETLOGICALDPIOVERRIDE, n, NULL, SPIF_UPDATEINIFILE)` changes the
+  display scaling of the running session (n steps above the recommended value; QXL at
+  1600×900 recommends 100 %): a new process gets `GetDpiForSystem()` 120 or 144 without a
+  sign-out. A process that was already DPI-aware keeps 96 and sees a scaled screen.
+- A running Tauri window follows such a change: at 100 % → 150 % its `GetDpiForWindow` became
+  144 and it stayed inside the work area (0,0 1598×840 of 1600×840).
+- Python 3.14 writes a pipe or a redirected file in the ANSI code page (cp1252 here), so `ő`,
+  `日本` and `🎬` cannot be encoded; with `errors="replace"` they become `?`. A program frozen
+  with PyInstaller ignores `PYTHONUTF8`.
+- With `LongPathsEnabled` 0 (the Windows default), Python cannot open a 359-character path:
+  `os.stat` raises `WinError 3` ("The system cannot find the path specified"). The BtbN
+  `ffprobe.exe` n9.0.2 reads the same path. With 1, Python, the frozen sidecar and FFmpeg all
+  read and write paths of 359 and 394 characters.
+- The limits with `LongPathsEnabled` 0: Python creates and finds a file whose path has 259
+  characters, and gets `FileNotFoundError` at 260; it creates a folder of 247 characters and
+  gets `FileNotFoundError` (`winerror` 206) at 248. `ntdll.RtlAreLongPathsEnabled()` in
+  Python's own process follows the policy (0 with 0, 1 with 1), read when the process starts.
+- The frozen sidecar (PyInstaller bootloader), the Tauri app and the bundled FFmpeg start and
+  work from a folder whose name holds `ő`, `日本` and `🎬`.
+
 ### The sidecar build and its packages (M5 task A)
 
 PyInstaller 6.22.3 (hooks-contrib 2026.9, Python 3.14.8), Tauri CLI 2.12.4 and tauri-build 2.7.4:

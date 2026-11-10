@@ -14,6 +14,7 @@ from typing import Annotated, Literal
 from fastapi import Query
 from pydantic import AwareDatetime, BaseModel, ConfigDict
 
+from reframe.platform.longpath import refused, refused_text
 from reframe.probe import MEDIA_EXTENSIONS, natural_key
 from reframe_server import security
 from reframe_server.api import api_router
@@ -145,7 +146,8 @@ def _listing(config: ServerConfig, folder: Path, wanted: frozenset[str]) -> FsLi
         with os.scandir(folder) as scan:
             entries = [e for e in (_entry(item, wanted) for item in scan) if e is not None]
     except FileNotFoundError:
-        raise ProblemError(404, "fs.not_found", "The folder does not exist") from None
+        detail = refused_text(folder) if refused(folder) else None
+        raise ProblemError(404, "fs.not_found", "The folder does not exist", detail) from None
     except NotADirectoryError:
         raise ProblemError(422, "fs.not_a_folder", "The path is not a folder") from None
     except OSError as exc:

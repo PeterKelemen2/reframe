@@ -14,6 +14,7 @@ import shutil
 import sys
 import tempfile
 import threading
+from functools import cache
 from pathlib import Path, PurePath
 from typing import Protocol
 
@@ -85,8 +86,70 @@ def _can_create_file(folder: PurePath) -> bool:
         return False
 
 
+if sys.platform == "win32":  # pragma: no cover - Windows only
+    import ctypes
+    from ctypes import wintypes
+
+    class _FileBasicInfo(ctypes.Structure):
+        _fields_ = (
+            ("CreationTime", ctypes.c_int64),
+            ("LastAccessTime", ctypes.c_int64),
+            ("LastWriteTime", ctypes.c_int64),
+            ("ChangeTime", ctypes.c_int64),
+            ("FileAttributes", wintypes.DWORD),
+        )
+
+    @cache
+    def _kernel32() -> ctypes.WinDLL:
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateFileW.argtypes = (
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        )
+        k32.CreateFileW.restype = wintypes.HANDLE
+        k32.GetFileInformationByHandleEx.argtypes = (
+            wintypes.HANDLE,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+        )
+        k32.GetFileInformationByHandleEx.restype = wintypes.BOOL
+        k32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        k32.CloseHandle.restype = wintypes.BOOL
+        return k32
+
+    def _change_time(path: PurePath, info: os.stat_result) -> int:
+        """NTFS's change time, which every write moves; ``st_ctime`` is the creation time."""
+        k32 = _kernel32()
+        read_attributes, share_all, open_existing, backup_semantics = 0x80, 7, 3, 0x02000000
+        handle = k32.CreateFileW(
+            str(path), read_attributes, share_all, None, open_existing, backup_semantics, None
+        )
+        if handle is None or handle == wintypes.HANDLE(-1).value:
+            return info.st_ctime_ns
+        try:
+            basic = _FileBasicInfo()
+            if not k32.GetFileInformationByHandleEx(
+                handle, 0, ctypes.byref(basic), ctypes.sizeof(basic)
+            ):
+                return info.st_ctime_ns
+            return int(basic.ChangeTime)
+        finally:
+            k32.CloseHandle(handle)
+
+else:
+
+    def _change_time(path: PurePath, info: os.stat_result) -> int:
+        return info.st_ctime_ns
+
+
 class LocalFileSystem(RealNamingFs):
-    """The real file system: ``os``, ``shutil`` and ``tempfile`` calls only, no subprocess.
+    """The real file system, read without a subprocess.
 
     A path with a NUL character names no file: every method answers as for a path that does
     not exist, before any ``os`` call (which would raise ``ValueError``)."""
@@ -155,7 +218,7 @@ class LocalFileSystem(RealNamingFs):
                 info.st_ino,
                 info.st_size,
                 info.st_mtime_ns,
-                info.st_ctime_ns,
+                _change_time(path, info),
             )
             with self._lock:
                 found = self._charsets.get(key)

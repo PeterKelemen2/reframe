@@ -4,6 +4,7 @@ end of its connection, its refusals, and the owner's countdown, validation and s
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import socket
 from collections.abc import Callable
@@ -741,7 +742,7 @@ async def test_the_servers_folders_are_this_machines_in_every_text(server: Serve
     assert done.output_path == reframe.cache_dir / "Out.mkv"
     assert done.log_path == reframe.data_dir / "logs" / f"{job.id}.log"
     shown = done.model_dump_json(exclude={"settings"})
-    assert str(source) in shown  # the plan's input
+    assert json.dumps(str(source), ensure_ascii=False)[1:-1] in shown  # the plan's input
     assert not any(label in shown for label in ("<data>", "<config>", "<cache>"))
 
 

@@ -16,9 +16,6 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from types import MappingProxyType
 
-from guessit import guessit
-from rebulk.match import Match as RebulkMatch
-
 from reframe.models.naming import NameSpan, ParsedName
 from reframe.naming.sanitize import replace_undecodable
 
@@ -111,6 +108,10 @@ def guess_matches(text: str) -> tuple[GuessMatch, ...]:
     Cached: a season folder is parsed once for every file in it. Matches without text
     (``type``, ``mimetype``) are left out. guessit failing is not an error: no matches.
     """
+    # Imported here: guessit and its rule set take a large part of the server's start.
+    from guessit import guessit
+    from rebulk.match import Match as RebulkMatch
+
     try:
         result = guessit(text, dict(GUESSIT_OPTIONS))
     except Exception:  # guessit raises its own exception types on odd input

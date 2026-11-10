@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from fractions import Fraction
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -90,17 +91,21 @@ def test_subtitles_filter_with_a_windows_path() -> None:
     )
 
 
+#: A Windows name cannot hold ``\``, ``"`` or ``:`` (``a:b`` names an NTFS stream of ``a``).
+_NOT_A_WINDOWS_NAME = pytest.mark.skipif(sys.platform == "win32", reason="not a Windows name")
+
 #: File names with every character that either parser treats specially.
 AWKWARD_NAMES = [
     "plain.srt",
     "with space.srt",
-    "colon:name.srt",
+    pytest.param("colon:name.srt", marks=_NOT_A_WINDOWS_NAME),
     "quote'name.srt",
     "comma,semi;br[ack]et.srt",
-    "back\\slash.srt",
+    pytest.param("back\\slash.srt", marks=_NOT_A_WINDOWS_NAME),
     "percent%d =eq.srt",
     "ünï cødé \u2013 dash.srt",
-    "all ' : , ; [ ] \\ \" $ & mixed.srt",
+    pytest.param("all ' : , ; [ ] \\ \" $ & mixed.srt", marks=_NOT_A_WINDOWS_NAME),
+    "all ' , ; [ ] $ & % = mixed.srt",
 ]
 
 

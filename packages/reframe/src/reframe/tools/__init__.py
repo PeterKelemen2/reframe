@@ -13,6 +13,7 @@ from reframe.tools.discovery import (
     discover_tools_sync,
     locate_tools,
 )
+from reframe.tools.exitcodes import crashed
 from reframe.tools.runner import (
     CancelToken,
     LineCallback,
@@ -40,6 +41,7 @@ __all__ = [
     "RunResult",
     "ToolLocation",
     "check_tool",
+    "crashed",
     "discover_tools",
     "discover_tools_sync",
     "kill_leftovers",

@@ -28,6 +28,7 @@ from reframe.models import (
     Severity,
     ValidationIssue,
 )
+from reframe.platform.longpath import missing_text
 from reframe.textfile import NotARegularFileError, open_regular
 
 __all__ = [
@@ -335,7 +336,7 @@ def read_chapter_file(
         with open_regular(path) as file:
             data = file.read(MAX_CHAPTER_FILE + 1)
     except FileNotFoundError:
-        return ChapterFileError("unreadable", "The file does not exist.")
+        return ChapterFileError("unreadable", missing_text(path, "The file does not exist."))
     except IsADirectoryError:
         return ChapterFileError("unreadable", "The path is a folder, not a file.")
     except NotARegularFileError:

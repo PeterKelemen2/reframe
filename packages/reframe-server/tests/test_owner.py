@@ -25,8 +25,10 @@ from websockets.sync.client import connect
 from reframe import settings as settings_module
 from reframe.models import ServerEndpoint
 from reframe.queue.lock import LOCK_FILE, StoreLock
+from reframe.tools.discovery import ALLOW_SCRIPT_TOOLS_ENV
 from reframe_server import owner
 from reframe_testing import fake_tools as ft
+from reframe_testing.processes import interpreter
 from reframe_testing.server import PROBE_RULE, ApiFactory
 
 pytestmark = pytest.mark.anyio
@@ -70,7 +72,11 @@ class Home:
 def home(tmp_path: Path, fake_tools: ft.FakeTools) -> Home:
     """No token is given: the server's token is random, so only ``server.json`` can tell it."""
     path = tmp_path / "home"
-    env = {name: value for name, value in os.environ.items() if not name.startswith("REFRAME_")}
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith("REFRAME_") or name == ALLOW_SCRIPT_TOOLS_ENV
+    }
     for name in ("config", "data", "cache"):
         env[f"REFRAME_{name.upper()}_DIR"] = str(path / name)
     (path / "config").mkdir(parents=True)
@@ -104,7 +110,7 @@ def wait_for_endpoint(
     while True:
         try:
             endpoint = ServerEndpoint.model_validate_json(home.endpoint.read_bytes())
-        except FileNotFoundError:
+        except (FileNotFoundError, PermissionError):  # Windows: the owner is replacing it
             pass
         else:
             if endpoint.instance != replacing:
@@ -170,12 +176,12 @@ def test_the_endpoint_file_names_the_listening_server_until_it_stops(home: Home)
 def test_a_file_left_by_kill_9_is_replaced_by_the_next_owner(home: Home) -> None:
     with running_server(home) as first:
         stale = wait_for_endpoint(home, first)
-        first.kill()
+        interpreter(first.pid).kill()
         first.wait()
     assert ServerEndpoint.model_validate_json(home.endpoint.read_bytes()) == stale
     with running_server(home) as second:
         fresh = wait_for_endpoint(home, second, replacing=stale.instance)
-        assert fresh.pid == second.pid
+        assert fresh.pid == interpreter(second.pid).pid
         health = httpx.get(f"http://127.0.0.1:{fresh.port}/api/health", timeout=10)
         assert health.json()["instance"] == fresh.instance
 

@@ -16,6 +16,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from reframe.models.capabilities import EncoderState
+from reframe.tools.exitcodes import crashed
 
 __all__ = [
     "Failure",
@@ -283,10 +284,8 @@ def explain_failure(stderr: str, ctx: TestContext, *, returncode: int | None = N
 
 
 def _crash(returncode: int | None) -> str | None:
-    if returncode is None:
+    if returncode is None or not crashed(returncode):
         return None
     if returncode < 0:
         return f"signal {-returncode}"
-    if returncode >= 0xC0000000:  # a Windows NTSTATUS error (0xC0000005: access violation)
-        return f"exit code 0x{returncode:08X}"
-    return None
+    return f"exit code 0x{returncode:08X}"

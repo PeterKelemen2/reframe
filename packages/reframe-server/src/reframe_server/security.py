@@ -347,9 +347,11 @@ def _jail(config: ServerConfig, path: str | os.PathLike[str], roots: list[Path],
     given = Path(text)
     if not given.is_absolute():
         raise _bad_path(text, "the path is not absolute")
+    if "\0" in text:  # Windows' non-strict realpath returns such a path unchanged
+        raise _bad_path(text, "the path holds a NUL character")
     try:
         resolved = given.resolve(strict=False)
-    except ValueError as exc:  # a NUL, or a character the file system cannot encode
+    except ValueError as exc:  # a character the file system cannot encode
         raise _bad_path(text, str(exc)) from None
     if config.mode == "desktop":
         return resolved

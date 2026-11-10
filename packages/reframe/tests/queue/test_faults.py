@@ -76,8 +76,7 @@ async def test_crash_mid_encode(harness: Harness, policy: str) -> None:
     if POSIX:
         assert ended.error == "ffmpeg crashed during pass 2 (signal 11 (SIGSEGV))."
     else:
-        assert ended.error is not None
-        assert "0xC0000005" in ended.error
+        assert ended.error == "ffmpeg crashed during pass 2 (exit code 0xC0000005)."
     assert_failed_run(h, ended.id, error_part="pass 2")
     assert part.exists() is (policy == "keep")
     assert not any(p.exists() for p in others)  # files and temp_files: always removed

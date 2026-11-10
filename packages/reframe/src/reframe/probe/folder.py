@@ -16,6 +16,7 @@ from pydantic import JsonValue
 
 from reframe.models.media import MediaSource
 from reframe.models.tasks import TaskInfo
+from reframe.platform.longpath import missing_text
 from reframe.probe.ffprobe import ProbeError, ProbeErrorKind
 from reframe.probe.prober import Prober
 from reframe.tasks import TaskContext, TaskManager
@@ -143,7 +144,9 @@ async def probe_folder(
         files = await asyncio.to_thread(list_media_files, root, recursive=recursive)
     except FileNotFoundError:
         result.errors.append(
-            ProbeError(root, ProbeErrorKind.NOT_FOUND, "The folder does not exist.")
+            ProbeError(
+                root, ProbeErrorKind.NOT_FOUND, missing_text(root, "The folder does not exist.")
+            )
         )
         return result
     except NotADirectoryError:

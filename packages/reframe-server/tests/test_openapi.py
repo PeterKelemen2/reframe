@@ -71,7 +71,7 @@ def test_the_export_is_the_served_document_whatever_the_process_and_its_environm
 ) -> None:
     """The committed types stay comparable: the same document, in the same order, from a
     process with another hash seed and the developer's ``REFRAME_*`` variables (this host
-    would need an auth mode)."""
+    would need an auth mode), as UTF-8 with LF line ends on every platform."""
     environment = {
         key: value for key, value in os.environ.items() if not key.startswith("REFRAME_")
     }
@@ -80,10 +80,9 @@ def test_the_export_is_the_served_document_whatever_the_process_and_its_environm
         [sys.executable, str(EXPORT)],
         env=environment | {"PYTHONHASHSEED": seed, "REFRAME_HOST": "0.0.0.0"},
         capture_output=True,
-        text=True,
-        encoding="utf-8",
         check=True,
         timeout=60,
     ).stdout
+    assert b"\r" not in exported
     # Compared as text so that the order of the keys counts.
-    assert json.dumps(json.loads(exported)) == json.dumps(document)
+    assert json.dumps(json.loads(exported.decode("utf-8"))) == json.dumps(document)

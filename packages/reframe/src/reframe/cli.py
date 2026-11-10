@@ -19,7 +19,15 @@ import stat
 import sys
 import tempfile
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterable, Sequence
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Coroutine,
+    Iterable,
+    Mapping,
+    Sequence,
+)
 from contextlib import asynccontextmanager
 from enum import StrEnum
 from pathlib import Path
@@ -74,6 +82,7 @@ from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.tasks import TaskInfo, TaskState
 from reframe.models.text import json_text
 from reframe.models.tools import ToolFetchResult, ToolInfo, ToolName, ToolOrigin, ToolSet
+from reframe.platform.longpath import missing_text
 from reframe.presets import ConflictPolicy, ImportResult
 from reframe.queue import (
     ENDED,
@@ -780,6 +789,8 @@ async def run_probe(file: Path, *, as_json: bool) -> int:
         render_source(outcome, make_console())
     return EXIT_OK
 
+
+_MISSING = "the file or folder does not exist."
 
 #: Width for the human output when neither stdout, stdin nor stderr is a terminal and
 #: ``COLUMNS`` is not set (CI logs, ``subprocess``): wider than rich's 80, so that the tables
@@ -1674,7 +1685,7 @@ async def run_encode(
     async with open_reframe(detect=False) as app:
         found = await app.jobs.media_files(paths, recursive=recursive)
         for missing in found.missing:
-            _error(f"{display_path(missing)}: the file or folder does not exist.")
+            _error(f"{display_path(missing)}: {missing_text(missing, _MISSING)}")
         if found.missing:
             return EXIT_NOT_FOUND
         for folder in found.empty:
@@ -2515,7 +2526,7 @@ async def run_batch(
     async with open_reframe(detect=False) as app:
         found = await app.jobs.media_files(paths, recursive=recursive)
         for missing in found.missing:
-            _error(f"{display_path(missing)}: the file or folder does not exist.")
+            _error(f"{display_path(missing)}: {missing_text(missing, _MISSING)}")
         if found.missing:
             return EXIT_NOT_FOUND
         for folder in found.empty:
@@ -3684,7 +3695,7 @@ def read_preset_file(path: Path) -> dict[str, Any] | tuple[int, str]:
         else:
             raw = _read_regular_file(path, MAX_PRESET_FILE)
     except FileNotFoundError:
-        return EXIT_NOT_FOUND, f"{name}: the file does not exist."
+        return EXIT_NOT_FOUND, f"{name}: {missing_text(path, 'the file does not exist.')}"
     except IsADirectoryError:
         return EXIT_NOT_FOUND, f"{name} is a folder, not a preset file."
     except OSError as exc:
@@ -4198,17 +4209,31 @@ def _run(work: Coroutine[object, object, int]) -> None:
         raise typer.Exit(code)
 
 
-def _replace_unencodable(stream: object) -> None:
-    """Make a text stream replace characters it cannot encode instead of raising."""
-    if isinstance(stream, io.TextIOWrapper):
-        stream.reconfigure(errors="replace")
+def _configure_stream(
+    stream: object,
+    *,
+    errors: str = "replace",
+    platform: str = sys.platform,
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    """Make a text stream handle characters it cannot encode with ``errors`` instead of
+    raising. On Windows a pipe or file gets UTF-8 unless ``PYTHONIOENCODING`` names an
+    encoding: Python's default there, the ANSI code page, loses every name outside it."""
+    if not isinstance(stream, io.TextIOWrapper):
+        return
+    env = os.environ if environ is None else environ
+    if platform == "win32" and not env.get("PYTHONIOENCODING"):
+        stream.reconfigure(encoding="utf-8", errors=errors)
+    else:
+        stream.reconfigure(errors=errors)
 
 
 def main() -> None:
     if not _CLI_EXTRA:  # pragma: no cover - depends on the installed extras
         print("The reframe CLI needs the [cli] extra: pip install 'reframe[cli]'", file=sys.stderr)
         raise SystemExit(2) from None
-    _replace_unencodable(sys.stdout)
+    _configure_stream(sys.stdout)
+    _configure_stream(sys.stderr, errors="backslashreplace")
     build_app()()
 
 

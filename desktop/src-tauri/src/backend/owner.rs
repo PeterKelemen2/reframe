@@ -264,11 +264,11 @@ fn parse_answer(answer: &[u8]) -> Option<(u16, Vec<u8>)> {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
 
+    #[cfg(not(windows))]
     fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
+        use std::collections::HashMap;
         let pairs: HashMap<String, OsString> = pairs
             .iter()
             .map(|(name, value)| ((*name).to_owned(), OsString::from(value)))

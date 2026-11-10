@@ -18,6 +18,7 @@ import pytest
 import reframe.validation.fs as fs_module
 from reframe.command import build_plan
 from reframe.models import AverageBitrate, ChapterSettings, ReplaceOp, Severity, SourceRef
+from reframe.platform import longpath
 from reframe.validation import LocalFileSystem, next_free_path
 from reframe.validation.output import (
     existing_ancestor,
@@ -25,6 +26,7 @@ from reframe.validation.output import (
     source_clash,
     written_paths,
 )
+from reframe_testing.links import needs_symlinks
 
 
 def _load(name: str) -> ModuleType:
@@ -79,6 +81,20 @@ SOURCE = W("C:\\Videos\\Movie.mkv")
 def test_windows_drive_root_is_a_folder() -> None:
     assert check(W("D:\\Movie.mkv"), SOURCE, windows_fs()) == []
     assert existing_ancestor(W("D:\\"), windows_fs()) == W("D:\\")
+
+
+def test_an_output_windows_refuses_is_not_writable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(longpath, "long_paths_enabled", lambda: False)
+    near = W("C:\\Out\\" + "x" * 245 + ".mkv")  # 256 characters, its .part file 261
+    issues = check(near, SOURCE, windows_fs())
+    assert errors(issues) == ["output.not_writable"]
+    assert ".part" in issues[0].message
+    assert "Windows refuses this path" in issues[0].message
+    deep = W("C:\\Out\\" + "y" * 241 + "\\Movie.mkv")  # a 248-character folder to make
+    (issue,) = check(deep, SOURCE, windows_fs())
+    assert issue.code == "output.not_writable"
+    assert "makes the folder" in issue.message
+    assert check(W("C:\\Out\\Movie.mkv"), SOURCE, windows_fs()) == []
 
 
 def test_windows_drive_not_connected() -> None:
@@ -159,7 +175,9 @@ def test_local_file_system(tmp_path: Path) -> None:
     assert free is not None
     assert free > 0
     assert local.free_bytes(tmp_path / "missing") is None
-    assert local.same_file(movie, tmp_path / "sub" / ".." / "Movie.mkv") is False  # no "sub"
+    # Windows removes "sub\.." from the path before it looks for "sub".
+    no_sub = tmp_path / "sub" / ".." / "Movie.mkv"
+    assert local.same_file(movie, no_sub) is (sys.platform == "win32")
     (tmp_path / "sub").mkdir()
     assert local.same_file(movie, tmp_path / "sub" / ".." / "Movie.mkv")
     os.link(movie, tmp_path / "hardlink.mkv")
@@ -237,7 +255,7 @@ def test_windows_spelling_of_the_partial_file() -> None:
     assert codes(check(W("c:\\videos\\foo.mkv"), source, fs)) == ["output.same_as_source"]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges on Windows")
+@needs_symlinks
 @pytest.mark.parametrize("source_name", ["Foo.mkv", "Foo.part.mkv"])
 def test_output_folder_linked_to_the_source_folder(tmp_path: Path, source_name: str) -> None:
     """The output folder is a symlink to the source's folder (a string compare misses it);
@@ -270,13 +288,15 @@ def test_too_long_name_counts_the_partial_suffix() -> None:
 
 
 def test_a_byte_that_is_not_utf8_in_the_name_is_not_portable() -> None:
-    """``bad\\xffname.mkv`` on POSIX is ``bad\\udcffname.mkv`` in Python (PEP 383)."""
+    """``bad\\xffname.mkv`` on POSIX is ``bad\\udcffname.mkv`` in Python (PEP 383). An error for a
+    Windows path."""
     s = sc.base()
     s.job.output.path = Path("/out/bad\udcffname.mkv")
     issues = sc.check(s)
-    assert sc.error_codes(issues) == set()
+    windows = sys.platform == "win32"
+    assert sc.error_codes(issues) == ({"output.name_not_portable"} if windows else set())
     [issue] = [i for i in issues if i.code == "output.name_not_portable"]
-    assert issue.severity is Severity.WARNING
+    assert issue.severity is (Severity.ERROR if windows else Severity.WARNING)
     assert issue.fixes[0].label == "Save as bad�name.mkv"
     issue.model_dump_json()  # the message holds no lone surrogate
 

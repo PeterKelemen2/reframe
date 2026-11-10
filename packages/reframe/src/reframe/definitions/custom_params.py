@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import re
 import tomllib
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from functools import cache
 from importlib import resources
@@ -26,6 +26,7 @@ __all__ = [
     "library_key_forms",
     "own_option_allowed",
     "split_custom_params",
+    "whole_param",
 ]
 
 #: An own option's name: letters, digits, ``_`` and ``-``. Refuses ``/filter`` (FFmpeg reads
@@ -90,15 +91,24 @@ class CustomParam:
     name: str
     value: str
     raw: str
+    continues: bool = False
+    """The entry is the rest of the value typed before it: the ``:`` that split them is inside
+    single quotes, or the drive colon of a Windows path (``csv=C:\\x`` gives ``csv=C`` and
+    ``\\x``). A fix that removes a parameter removes all of it (:func:`whole_param`)."""
+
+
+def _drive_letter(entry: str) -> bool:
+    value = entry.partition("=")[2].strip()
+    return len(value) == 1 and value.isascii() and value.isalpha()
 
 
 def split_custom_params(text: str) -> list[CustomParam]:
     """The entries of a custom parameter string, split at an unescaped ``:``; ``\\`` escapes
     the next character. An entry without ``=`` is ``name=1``; empty entries are dropped."""
-    segments: list[tuple[str, str]] = []
+    segments: list[tuple[str, str, bool]] = []
     typed: list[str] = []
     plain: list[str] = []
-    escaped = False
+    escaped = quoted = False
     for char in text.strip():
         if escaped:
             typed.append(char)
@@ -108,22 +118,43 @@ def split_custom_params(text: str) -> list[CustomParam]:
             escaped = True
             typed.append(char)
         elif char == ":":
-            segments.append(("".join(typed), "".join(plain)))
+            segments.append(("".join(typed), "".join(plain), quoted))
             typed, plain = [], []
         else:
+            quoted ^= char == "'"
             typed.append(char)
             plain.append(char)
-    segments.append(("".join(typed), "".join(plain)))
+    segments.append(("".join(typed), "".join(plain), False))
     params: list[CustomParam] = []
-    for raw, unescaped in segments:
+    for i, (raw, unescaped, _) in enumerate(segments):
         entry = unescaped.strip()
         if not entry:
             continue
+        before = segments[i - 1] if i else None
+        continues = before is not None and (
+            before[2] or (raw.startswith(("\\", "/")) and _drive_letter(before[1]))
+        )
         name, sep, value = entry.partition("=")
         params.append(
-            CustomParam(name=name.strip().lstrip("-"), value=value.strip() if sep else "1", raw=raw)
+            CustomParam(
+                name=name.strip().lstrip("-"),
+                value=value.strip() if sep else "1",
+                raw=raw,
+                continues=continues,
+            )
         )
     return params
+
+
+def whole_param(params: Sequence[CustomParam], param: CustomParam) -> list[CustomParam]:
+    """The entries of the parameter that ``param`` is part of: the entry it continues, and the
+    entries that continue it (:attr:`CustomParam.continues`)."""
+    start = end = next(i for i, p in enumerate(params) if p is param)
+    while params[start].continues and start > 0:
+        start -= 1
+    while end + 1 < len(params) and params[end + 1].continues:
+        end += 1
+    return list(params[start : end + 1])
 
 
 def _get_token(text: str, start: int, term: str) -> tuple[str, int]:

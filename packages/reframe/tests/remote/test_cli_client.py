@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import gc
 import json
+import os
 import signal
 import sys
 from collections.abc import AsyncIterator
@@ -69,7 +70,9 @@ def ends(name: str, *, seconds: float = 0.0, code: int = 0) -> ft.Rule:
     """The encode of the source ``name`` writes its ``.part`` file, prints progress, runs for
     ``seconds`` and exits with ``code``."""
     actions = [ft.write_output(), ft.progress(blocks=1, end=False), ft.sleep(seconds)]
-    return ft.Rule(tool="ffmpeg", argv_contains=[f"/{name}"], actions=actions, exit_code=code)
+    return ft.Rule(
+        tool="ffmpeg", argv_contains=[f"{os.sep}{name}"], actions=actions, exit_code=code
+    )
 
 
 def scenario(*rules: ft.Rule) -> ft.Scenario:

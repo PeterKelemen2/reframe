@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from reframe import paths
 from reframe.models.issues import Fix, RemoveOp
 from reframe.models.tools import ToolInfo, ToolName, ToolOrigin, ToolSet, ToolStatus
+from reframe.platform.longpath import missing_text
 from reframe.tools import versions
 from reframe.tools.runner import run
 
@@ -192,7 +193,7 @@ def _override(
         problem = f"{where}: the folder has no {tool} executable.{cannot_fix}"
         return ToolLocation(tool, given, origin, problem, env_var, fixes=fixes)
     if not path.is_file():
-        problem = f"{where}: the file does not exist.{cannot_fix}"
+        problem = f"{where}: {missing_text(path, 'the file does not exist.')}{cannot_fix}"
         return ToolLocation(tool, path, origin, problem, env_var, fixes=fixes)
     if not ctx.runnable(path):
         problem = (

@@ -91,7 +91,8 @@ def test_a_path_that_is_not_utf8_is_saved_and_loaded_back(tmp_path: Path) -> Non
     settings = AppSettings.model_validate({"tools": {"ffmpeg": "/opt/Amélie/bad\udcff/ffmpeg"}})
     assert store.write(settings) is None
     text = (tmp_path / "settings.json").read_text("utf-8")
-    assert "Amélie/bad\\udcff/ffmpeg" in text
+    assert "Amélie" in text
+    assert "bad\\udcff" in text
     assert SettingsStore(tmp_path).load() == settings
 
 

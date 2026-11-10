@@ -57,6 +57,11 @@ def _fake(directory: Path, *rules: ft.Rule) -> ft.FakeTools:
     return ft.make_fake_tools(directory, ft.Scenario(list(rules)))
 
 
+def _linux_build(directory: Path) -> ft.FakeTools:
+    """Tools named as on Linux, for ``platform="linux"`` on any OS (they are found, not run)."""
+    return ft.make_fake_tools(directory, platform="linux")
+
+
 def _env(**values: str) -> dict[str, str]:
     # On Windows the fake tools are .cmd launchers: allow script tools (test-only opt-in).
     env = {"PATHEXT": ".COM;.EXE;.BAT;.CMD", ALLOW_SCRIPT_TOOLS_ENV: "1"} if WINDOWS else {}
@@ -736,7 +741,7 @@ def driver_dirs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, 
 def test_libva_drivers_path_for_the_bundled_build(
     tmp_path: Path, empty_path: str, driver_dirs: tuple[Path, Path]
 ) -> None:
-    _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    _linux_build(tmp_path / "root" / "ffmpeg" / "bin")
     located = locate_tools(
         environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path, platform="linux"
     )
@@ -747,7 +752,7 @@ def test_libva_drivers_path_for_the_bundled_build(
 def test_libva_drivers_path_is_not_changed_when_set(
     tmp_path: Path, empty_path: str, driver_dirs: tuple[Path, Path]
 ) -> None:
-    _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    _linux_build(tmp_path / "root" / "ffmpeg" / "bin")
     located = locate_tools(
         environ=_env(LIBVA_DRIVERS_PATH="/custom/dri"),
         bundled_roots=[tmp_path / "root"],
@@ -760,7 +765,7 @@ def test_libva_drivers_path_is_not_changed_when_set(
 def test_libva_drivers_path_not_for_overrides(
     tmp_path: Path, empty_path: str, driver_dirs: tuple[Path, Path]
 ) -> None:
-    custom = _fake(tmp_path / "custom")
+    custom = _linux_build(tmp_path / "custom")
     located = locate_tools(
         environ=_env(REFRAME_FFMPEG=str(custom.ffmpeg)),
         bundled_roots=[],
@@ -775,7 +780,7 @@ def test_libva_drivers_path_none_found(
     tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(discovery, "LIBVA_DRIVER_DIRS", (tmp_path / "x",))
-    _fake(tmp_path / "root" / "ffmpeg" / "bin")
+    _linux_build(tmp_path / "root" / "ffmpeg" / "bin")
     located = locate_tools(
         environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path, platform="linux"
     )
@@ -845,6 +850,7 @@ def test_main_reports_and_checks_the_origin(
     data = tmp_path / "data"
     _fake(data / "tools" / "ffmpeg" / "bin")
     monkeypatch.setenv("REFRAME_DATA_DIR", str(data))
+    monkeypatch.setenv(ALLOW_SCRIPT_TOOLS_ENV, "1")  # the fake tools are .cmd files on Windows
     assert main(["--require", "ffmpeg,ffprobe", "--expect-origin", "bundled"]) == 0
     out = capsys.readouterr().out
     assert "ffmpeg       found    bundled" in out

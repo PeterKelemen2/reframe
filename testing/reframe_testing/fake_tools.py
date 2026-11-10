@@ -14,6 +14,7 @@ import json
 import os
 import shlex
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -310,6 +311,23 @@ class Invocation:
 _PID_REUSE_TOLERANCE = 2.0
 
 
+def _read_entry(path: Path) -> dict[str, Any] | None:
+    """A call-log entry, or ``None`` once it is gone. Windows refuses to open a file for a moment
+    while it is being deleted or scanned (``PermissionError``)."""
+    for _ in range(100):
+        try:
+            entry: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except PermissionError:
+            if os.name != "nt":
+                raise
+            time.sleep(0.01)
+        else:
+            return entry
+    return None if not path.exists() else json.loads(path.read_text(encoding="utf-8"))
+
+
 @dataclass
 class FakeTools:
     """Paths of the fake tools in one directory, plus the scenario and the call log."""
@@ -351,9 +369,8 @@ class FakeTools:
             return []
         result: list[Invocation] = []
         for path in self.log_dir.glob("*.json"):
-            try:
-                entry = json.loads(path.read_text(encoding="utf-8"))
-            except FileNotFoundError:  # removed by clear_log() in the meantime
+            entry = _read_entry(path)
+            if entry is None:  # removed by clear_log() in the meantime
                 continue
             result.append(
                 Invocation(

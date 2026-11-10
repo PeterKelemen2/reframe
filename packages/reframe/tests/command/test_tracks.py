@@ -438,8 +438,8 @@ def test_subtitle_conversions_and_externals() -> None:
     ]  # fmt: skip
     assert plan.copies_ass
     assert [i.args for i in plan.inputs] == [
-        ["-itsoffset", "-0.5", "-ss", "2", "-i", "/m/a.vtt"],
-        ["-ss", "2", "-sub_charenc", "cp1250", "-i", "/m/b.ass"],
+        ["-itsoffset", "-0.5", "-ss", "2", "-i", str(Path("/m/a.vtt"))],
+        ["-ss", "2", "-sub_charenc", "cp1250", "-i", str(Path("/m/b.ass"))],
     ]
     webm = plan_subtitles(tracks[1:2], src, WEBM, start=0, first_input=1, passthrough=False)
     assert webm.outputs[0].codec == "copy"

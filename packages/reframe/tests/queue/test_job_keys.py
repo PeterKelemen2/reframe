@@ -19,15 +19,12 @@ from reframe.models import JobSettings, JobState, SourceRef
 from reframe.queue import files, runner, service
 from reframe.queue.service import _conflicts, _output_key, _source_key
 from reframe_testing import fake_tools as ft
+from reframe_testing.links import needs_symlinks
 
 from .conftest import Harness, encode_rule, queue_at, restore_together, store_rows, tool_set
 from .test_in_place_scheduling import active_for, ended_before_started, in_place_job, queued
 
 pytestmark = pytest.mark.anyio
-
-needs_symlinks = pytest.mark.skipif(
-    sys.platform == "win32", reason="creating a symbolic link needs a privilege on Windows"
-)
 
 
 def _in_place_job_at(h: Harness, path: Path, name: str) -> JobSettings:
@@ -95,11 +92,11 @@ async def test_the_same_output_through_a_linked_folder(harness: Harness, tmp_pat
 
 async def test_keys_differ_only_in_case_are_the_same_output(harness: Harness) -> None:
     """Windows and macOS file systems ignore case; on Linux this errs on the safe side (the
-    rule of ``files.same_file``)."""
+    rule of ``files.same_file``). On Windows the keys themselves are the same (``normcase``)."""
     h = harness
     first = queued(h.job("Movie"), "a")
     second = queued(h.job("MOVIE"), "b")
-    assert _output_key(first) != _output_key(second)
+    assert (_output_key(first) == _output_key(second)) is (sys.platform == "win32")
     assert _conflicts(second, [active_for(first)])
 
 

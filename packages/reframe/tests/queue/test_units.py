@@ -21,15 +21,17 @@ from reframe.models import (
     ExternalSubtitle,
     JobLogEvent,
     PlanFile,
+    PlanStep,
     SubtitleOutputTrack,
     TrackMetadata,
 )
-from reframe.queue import files, loudnorm
+from reframe.queue import files, loudnorm, runner
 from reframe.queue.errors import UnknownJobError, exit_text, stderr_reason
 from reframe.queue.logs import JobLog
 from reframe.queue.process import resume_tree, suspend_tree
 from reframe.queue.verify import check_output, expected_streams
 from reframe.queue.watchdog import StepWatch, tree_cpu_seconds
+from reframe.tools import RunResult, crashed
 
 from .conftest import draft, recorded
 
@@ -154,6 +156,43 @@ def test_exit_text() -> None:
     assert exit_text(None) == "no exit code"
     assert exit_text(0xC0000005) == "exit code 0xC0000005"
     assert str(UnknownJobError("x")) == "no job 'x' in the queue"
+
+
+def test_a_signal_or_a_windows_exception_is_a_crash() -> None:
+    assert [crashed(code) for code in (-11, 0xC0000005, 0xC00000FD, 0xC0000409)] == [True] * 4
+    assert [crashed(code) for code in (None, 0, 1, 255, 0x8000_0003)] == [False] * 5
+
+
+def test_ffmpegs_own_error_codes_on_windows_are_not_crashes() -> None:
+    # FFmpeg exits with its AVERROR code; Windows reports it as an unsigned 32-bit number.
+    codes = (-22 & 0xFFFFFFFF, 0xDFB9B0BB, 0xDEB8AABE, 0xCFCFCB08, 0xBEBBB1B7)
+    assert [crashed(code) for code in codes] == [False] * len(codes)
+
+
+@pytest.mark.parametrize("returncode", [-22 & 0xFFFFFFFF], ids=["windows-averror"])
+def test_an_ffmpeg_error_exit_on_windows_is_a_failure_not_a_crash(returncode: int) -> None:
+    step = PlanStep(kind="encode", tool="ffmpeg")
+    result = RunResult(returncode=returncode, stdout=b"", stderr=b"", duration=1.0)
+    assert runner._failure(step, result, ["title=Chapter 4"]) == (
+        "The encode failed (exit code 0xFFFFFFEA): title=Chapter 4"
+    )
+
+
+@pytest.mark.parametrize(
+    ("returncode", "error"),
+    [
+        (-11, "ffmpeg crashed during pass 2 (signal 11 (SIGSEGV))."),
+        (0xC0000005, "ffmpeg crashed during pass 2 (exit code 0xC0000005)."),
+        (1, "Pass 2 failed (exit code 1): title=Chapter 4"),
+    ],
+    ids=["signal", "windows-exception", "exit-code"],
+)
+def test_the_last_line_is_the_reason_of_a_failure_not_of_a_crash(
+    returncode: int, error: str
+) -> None:
+    step = PlanStep(kind="pass2", tool="ffmpeg")
+    result = RunResult(returncode=returncode, stdout=b"", stderr=b"", duration=1.0)
+    assert runner._failure(step, result, ["title=Chapter 4"]) == error
 
 
 @pytest.mark.anyio

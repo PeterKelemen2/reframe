@@ -167,17 +167,18 @@ async def test_a_web_client_can_only_choose_a_vaapi_render_node(
 
 
 async def test_a_desktop_client_may_choose_a_program_and_any_device(
-    make_api: ApiFactory,
+    make_api: ApiFactory, tmp_path: Path
 ) -> None:
+    program = str(tmp_path / "opt" / "mediainfo")
     async with make_api(mode="desktop") as api:
         patch = [
-            {"op": "add", "path": "/tools/mediainfo", "value": "/opt/mediainfo"},
+            {"op": "add", "path": "/tools/mediainfo", "value": program},
             {"op": "replace", "path": VAAPI, "value": WITH_OPTIONS},
         ]
         response = await api.client.put("/api/settings", json=patch)
     assert response.status_code == 200
     settings = response.json()["settings"]
-    assert settings["tools"]["mediainfo"] == "/opt/mediainfo"
+    assert settings["tools"]["mediainfo"] == program
     assert settings["encoders"]["vaapi_device"] == WITH_OPTIONS
 
 
