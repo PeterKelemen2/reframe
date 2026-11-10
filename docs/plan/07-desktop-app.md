@@ -232,17 +232,26 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       downloads only when there is no bundled build, 0002.)
 
 ### D-8 Packaging, signing, updates
-- [ ] Windows: NSIS installer (per-user, no admin rights), WebView2 bootstrapper, optional MSI.
+- [x] Windows: NSIS installer (per-user, no admin rights), WebView2 bootstrapper, optional MSI.
       Code signing is strongly recommended (SmartScreen warns about unsigned installers).
-      Installed and run on Windows: *(Windows testing phase)*.
-- [ ] Linux: AppImage (built on the oldest supported distro image, for glibc compatibility),
+      Installed and run on Windows: *(Windows testing phase)*. Done: the per-user installer goes
+      to `%LOCALAPPDATA%\Programs\Reframe` (a copy of Tauri's template with that change: its
+      default was Reframe's data folder); the MSI is built; **unsigned** for now, the owner's
+      choice ([decision 0072](../decisions/0072-desktop-packages.md)).
+- [x] Linux: AppImage (built on the oldest supported distro image, for glibc compatibility),
       `.deb`, `.rpm`. Flatpak comes later (its sandbox complicates file access and GPU access).
-- [ ] Updater: signed `latest.json` in GitHub Releases.
+      Done: built in `ubuntu:22.04` by `scripts/build-linux-packages.sh` (0072).
+- [x] Updater: signed `latest.json` in GitHub Releases. Done in the app: `tauri-plugin-updater`
+      with the public key, one check after the start, the user decides; the packages carry
+      signatures. Writing `latest.json` into a release is Q-5's release workflow (0072).
 
 ### D-9 Desktop smoke tests
-- [ ] `tauri-driver` (WebDriver) on Linux and Windows CI: the app starts, the backend becomes
+- [x] `tauri-driver` (WebDriver) on Linux and Windows CI: the app starts, the backend becomes
       ready, a fixture opens from argv, a job is queued and finishes, and quitting leaves no
-      orphan processes. On Windows: *(Windows testing phase)*.
+      orphan processes. On Windows: *(Windows testing phase)*. Done: `desktop/smoke/smoke.py`,
+      passing against the .deb in Ubuntu 22.04 and the installed NSIS build on the Windows VM;
+      on Windows the fixture opens through a second launch, because msedgedriver turns the
+      arguments into browser switches (0072). The CI jobs have not run (nothing is pushed).
 
 ## Risks
 

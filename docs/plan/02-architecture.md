@@ -109,8 +109,9 @@ build behaves the same.
   system's libva and aborts when that is too old (Ubuntu 24.04, Debian 12), so on Linux a libva
   built from pinned source ships in `tools/ffmpeg/libva/`; Reframe uses it only when the
   system's libva lacks a function the build needs.
-- **Install location**: `<app>/tools/ffmpeg/` (Windows, AppImage), `/usr/lib/reframe/tools/ffmpeg/`
-  (.deb/.rpm, so it does not conflict with the distro's `ffmpeg` package),
+- **Install location**: `<app>/tools/ffmpeg/` (Windows, AppImage), `/usr/lib/Reframe/tools/ffmpeg/`
+  (.deb/.rpm, Tauri's folder, so it does not conflict with the distro's `ffmpeg` package;
+  [decision 0072](../decisions/0072-desktop-packages.md)),
   `/opt/reframe/tools/ffmpeg/` (Docker), `<data dir>/tools/ffmpeg/` (`reframe tools fetch`, and
   CI). Bundled MKVToolNix and MediaInfo go to `tools/mkvtoolnix/` and `tools/mediainfo/` next to
   it (the desktop app ships `mkvpropedit` on Windows only; MediaInfo ships as the sidecar's

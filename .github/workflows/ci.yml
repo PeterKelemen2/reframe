@@ -375,3 +375,74 @@ jobs:
 
       - name: Performance budgets
         run: uv run pytest -m "benchmark and not needs_gpu" -v
+
+  desktop-packages-linux:
+    # The AppImage, .deb and .rpm, built in Ubuntu 22.04 with Docker, then the smoke test against
+    # the installed .deb (tauri-driver, WebKitWebDriver, Xvfb). Without the updater key the
+    # packages carry no updater signatures.
+    name: Desktop packages and smoke test (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+      - name: The fixture for the smoke test
+        run: |
+          echo "REFRAME_DATA_DIR=$RUNNER_TEMP/reframe-data" >> "$GITHUB_ENV"
+          uv run --no-project python scripts/fetch-tools.py --install-dir "$RUNNER_TEMP/reframe-data/tools/ffmpeg"
+          REFRAME_DATA_DIR="$RUNNER_TEMP/reframe-data" uv run python scripts/make-testdata.py --only chapters
+      - run: scripts/build-linux-packages.sh
+      - run: scripts/smoke-linux.sh
+
+  desktop-installer-windows:
+    # The per-user NSIS installer, installed silently, then the smoke test through tauri-driver
+    # and the msedgedriver of the runner's WebView2.
+    name: Desktop installer and smoke test (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.node-version
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - run: uv run python desktop/sidecar/build.py
+      - run: uv run --no-project python scripts/bundle-tools.py
+      - name: The fixture for the smoke test
+        run: |
+          export REFRAME_DATA_DIR="$RUNNER_TEMP/reframe-data"
+          uv run --no-project python scripts/fetch-tools.py --install-dir "$REFRAME_DATA_DIR/tools/ffmpeg"
+          uv run python scripts/make-testdata.py --only chapters
+      - run: npm ci --prefix frontend && npm ci --prefix desktop
+      - name: The NSIS installer (unsigned, no updater signatures)
+        working-directory: desktop
+        run: npx tauri build --bundles nsis --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Install it for this user
+        shell: pwsh
+        run: Start-Process -Wait -FilePath (Get-Item desktop/src-tauri/target/release/bundle/nsis/*-setup.exe).FullName -ArgumentList '/S'
+      - name: tauri-driver and msedgedriver
+        shell: pwsh
+        run: |
+          cargo install --locked --root "$env:RUNNER_TEMP\drivers" tauri-driver --version 2.1.0
+          $pv = (Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}').pv
+          Invoke-WebRequest -UseBasicParsing "https://msedgedriver.microsoft.com/$pv/edgedriver_win64.zip" -OutFile "$env:RUNNER_TEMP\edgedriver.zip"
+          Expand-Archive "$env:RUNNER_TEMP\edgedriver.zip" "$env:RUNNER_TEMP\drivers"
+      - name: Smoke test
+        run: >-
+          uv run --no-project python desktop/smoke/smoke.py
+          --app "$LOCALAPPDATA/Programs/Reframe/Reframe.exe" --fixture testdata/media/chapters.mkv
+          --driver "$RUNNER_TEMP/drivers/bin/tauri-driver.exe" --native-driver "$RUNNER_TEMP/drivers/msedgedriver.exe"

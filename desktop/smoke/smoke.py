@@ -160,7 +160,7 @@ else:
         return found
 
 
-def run(app: Path, fixture: Path, driver: str, timeout: float) -> None:
+def run(app: Path, fixture: Path, driver: list[str], timeout: float) -> None:
     home = Path(tempfile.mkdtemp(prefix="reframe-smoke-"))
     source = home / "media" / fixture.name
     source.parent.mkdir()
@@ -173,12 +173,15 @@ def run(app: Path, fixture: Path, driver: str, timeout: float) -> None:
         "REFRAME_NO_UPDATE_CHECK": "1",
     }
     port = _free_port()
-    driver_process = subprocess.Popen([driver, "--port", str(port)], env=env)
+    driver_process = subprocess.Popen([*driver, "--port", str(port)], env=env)
     session: Session | None = None
     try:
         driver_url = f"http://127.0.0.1:{port}"
         wait_for("tauri-driver", lambda: _http("GET", f"{driver_url}/status"), 30)
-        session = started = Session(driver_url, app, [str(source)])
+        # msedgedriver passes the arguments as browser switches ("--c:\…", lowercased), so on
+        # Windows a second launch hands the file to the running app (single instance).
+        second_launch = sys.platform == "win32"
+        session = started = Session(driver_url, app, [] if second_launch else [str(source)])
         _log("the app started")
 
         endpoint_file = home / "data" / "server.json"
@@ -195,8 +198,11 @@ def run(app: Path, fixture: Path, driver: str, timeout: float) -> None:
         def opened() -> bool:
             return fixture.name in str(started.script("return document.body.innerText"))
 
-        wait_for(f"{fixture.name} to open from the arguments", opened, timeout)
-        _log(f"{fixture.name} opened from the arguments")
+        how = "a second launch" if second_launch else "the arguments"
+        if second_launch:
+            subprocess.run([str(app), str(source)], env=env, timeout=60, check=False)
+        wait_for(f"{fixture.name} to open from {how}", opened, timeout)
+        _log(f"{fixture.name} opened from {how}")
         started.click(".status-bar__add", timeout)
         jobs = wait_for(
             "the job in the queue", lambda: _http("GET", f"{api}/queue", headers=auth)["jobs"], 30
@@ -242,10 +248,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--app", type=Path, required=True, help="the app's main program")
     parser.add_argument("--fixture", type=Path, required=True, help="a media file to encode")
     parser.add_argument("--driver", default="tauri-driver")
+    parser.add_argument("--native-driver", help="msedgedriver or WebKitWebDriver, if not on PATH")
     parser.add_argument("--timeout", type=float, default=180.0, help="seconds for each step")
     args = parser.parse_args(argv)
     try:
-        run(args.app.resolve(), args.fixture.resolve(), args.driver, args.timeout)
+        driver = [args.driver]
+        if args.native_driver:
+            driver += ["--native-driver", args.native_driver]
+        run(args.app.resolve(), args.fixture.resolve(), driver, args.timeout)
     except SmokeError as e:
         _log(f"FAILED: {e}")
         return 1
