@@ -306,8 +306,62 @@ runs before other filters (2 of 40 runs of the test's own command, 0 of 80 witho
 whether an update drops it, and the notification's app identity (an app that is not installed
 shows PowerShell's name and icon) wait for D-8; the bundled tools on Windows for D-7; the smoke
 tests for D-9. Open-with bringing the window to the front needs a real double-click (a
-background launcher may not give the foreground away). The magnifier's update rate and GPU
-encoders need a GPU. The GitHub Windows jobs need a push.
+background launcher may not give the foreground away; checked 2026-11-10, below). The
+magnifier's update rate and GPU encoders need a GPU. The GitHub Windows jobs need a push.
+
+## The checks that need no GPU (2026-11-10)
+
+The same VM and the same release build (built after the last product change, 0bc5af3), driven
+the same way. The clocks of the measurements are the VM's: a PowerShell watcher that lists
+Reframe's processes every 50 ms, and the page read over raw CDP.
+
+**The quit while a job runs: about 1 s, no defect.** Three runs: a CLI hands a job on
+`long.mkv` to the app, the window gets `WM_CLOSE`, and **Stop jobs and quit** is clicked in
+the page. From the click, FFmpeg was gone after 0.35 s, the sidecar after 0.92 s and the app
+after 0.97 s (the other two runs: 0.54 / 1.10 / 1.18 s, 0.35 / 0.91 / 0.97 s). The sidecar
+log shows `POST /api/system/shutdown` answered 204 and uvicorn's normal end, so the shutdown
+request stops the sidecar and the 5 s kill is not used. The job ends `interrupted` ("Reframe
+was closed while the job was running") and no `.part` is left. The 7 s of 2026-11-09 came
+from the one-second polls over SSH.
+
+**Open-with from a foreground window: the window comes to the front, no defect.** A console
+window got the foreground through a real click (`SendInput`), and
+`…\release\Reframe.exe vfr.mkv` was typed into it, as a person would start it. In each of
+four runs the foreground moved from the console to Reframe's window within 3 s, the second
+process exited, and `vfr.mkv` (relative to the console's folder) was opened: with the window
+behind other windows (twice), minimised, and hidden in the tray (**Keep running in tray**).
+The single-instance plugin (2.5.5) calls `AllowSetForegroundWindow` with the first instance's
+pid before it hands the arguments over, and tao's `set_focus` calls `SetForegroundWindow`.
+Not checked: a real Explorer double-click, which needs D-8's file associations.
+
+**Q-3, the `benchmark` tests** (`pytest -m "benchmark and not needs_gpu"`, as CI's benchmark
+job, FFmpeg not on `PATH`): 2 passed. The probe: one file 104 ms (budget 500 ms), a 24-file
+folder 1.15 s (5 s). The 4K HDR frame (no GPU: tone mapped with zscale + tonemap, not
+libplacebo): cold max 1.26 s and 1.28 s in two runs (2 s), cached max 7.8 ms (50 ms).
+
+**Q-3, the desktop cold start: the 2 s budget is missed.** From `Start-Process` of the release
+`Reframe.exe` (WebView2's DevTools port on) to the workspace with the event connection open
+(`[data-connection="open"]` and an enabled **Open files…**, polled every 5 ms over CDP), with
+a clean quit before each run: 11 runs, the first not counted. Median **5.11 s**, best 5.00 s,
+worst 5.36 s. Linux, release build: 1.07 s ([0069](0069-m5-desktop-shell.md)).
+
+Where the time goes (medians):
+
+- The sidecar process exists 0.1–0.2 s after the spawn; `backend_info` resolves at 4.12 s.
+  The page has loaded at about 0.8 s and shows the loading screen until then.
+- The page's first requests to the new server take another 0.99 s (`/api/languages` 0.67 s,
+  `/api/system` 0.59 s, in parallel), then `/api/presets`.
+- The frozen sidecar on its own, from its spawn to its ready line: 2.35, 2.39 and 3.34 s. The
+  venv server (`.venv\Scripts\python.exe -m reframe_server`) is no faster: 3.3 s warm. In the
+  app it takes about 3.9 s, while WebView2 starts on the same 4 processors.
+- The server's imports (`-X importtime`, the venv): 2.86 s on the VM, 1.24 s on Linux on the
+  same laptop CPU. The largest cumulative entries: `reframe.analysis` 1.2 s, FastAPI 0.6 s.
+- Windows Defender's real-time scan is on. A run with an exclusion for the repository was not
+  done, so its share is not known.
+
+The figure is recorded, not fixed: the owner decides between shortening the server's start,
+showing the workspace before the backend is ready, measuring with a Defender exclusion first,
+and a known limit for Windows (`docs/status.md`, "Open items").
 
 ## Consequences
 
