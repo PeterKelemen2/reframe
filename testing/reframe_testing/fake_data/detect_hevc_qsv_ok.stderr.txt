@@ -1,0 +1,16 @@
+Input #0, lavfi, from 'color=size=640x360':
+  Duration: N/A, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: wrapped_avframe, yuv420p, 640x360 [SAR 1:1 DAR 16:9], 25 fps, 25 tbr, 25 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (wrapped_avframe (native) -> hevc (hevc_qsv))
+[hevc_qsv @ 0x55f28bb92480] Using the constant quantization parameter (CQP) by default. Please use the global_quality option and other options for a quality-based mode or the b option and other options for a bitrate-based mode if the default is not the desired choice.
+Output #0, null, to 'pipe:':
+  Metadata:
+    encoder         : Lavf63.1.102
+  Stream #0:0: Video: hevc, nv12(tv, progressive), 640x360 [SAR 1:1 DAR 16:9], q=2-31, 25 fps, 25 tbn
+    Metadata:
+      encoder         : Lavc63.1.102 hevc_qsv
+    Side data:
+      CPB properties: bitrate max/min/avg: 0/0/0 buffer size: 0 vbv_delay: N/A
+[out#0/null @ 0x55f28bb91c00] video:0KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: unknown
+frame=    3 fps=0.0 q=-0.0 Lsize=N/A time=-00:00:00.04 bitrate=N/A speed=N/A elapsed=0:00:00.02    

@@ -1,0 +1,16 @@
+Input #0, lavfi, from 'color=size=640x360':
+  Duration: N/A, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: wrapped_avframe, yuv420p, 640x360 [SAR 1:1 DAR 16:9], 25 fps, 25 tbr, 25 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (wrapped_avframe (native) -> av1 (av1_vaapi))
+[av1_vaapi @ 0x55761dbdcdc0] No usable encoding profile found.
+[vost#0:0/av1_vaapi @ 0x55761db39240] [enc:av1_vaapi @ 0x55761dbdcd40] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0x55761dbe2800] Error sending frames to consumers: Function not implemented
+[vf#0:0 @ 0x55761dbe2800] Task finished with error code: -38 (Function not implemented)
+[vf#0:0 @ 0x55761dbe2800] Terminating thread with return code -38 (Function not implemented)
+[vost#0:0/av1_vaapi @ 0x55761db39240] [enc:av1_vaapi @ 0x55761dbdcd40] Could not open encoder before EOF
+[vost#0:0/av1_vaapi @ 0x55761db39240] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/av1_vaapi @ 0x55761db39240] Terminating thread with return code -22 (Invalid argument)
+[out#0/null @ 0x55761dbdc800] Nothing was written into output file, because at least one of its streams received no packets.
+frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A elapsed=0:00:00.00    
+Conversion failed!

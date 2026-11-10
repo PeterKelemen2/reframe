@@ -34,7 +34,8 @@ _NOISE = re.compile(
     r"\[(?:vf|vost|aost|out|in|dec|enc|sq|mux)#)"
     r"|Nothing was written into output file|Task finished with error code|"
     r"Terminating thread with return code|Could not open encoder before EOF|"
-    r"Error sending frames to consumers"
+    r"Error sending frames to consumers|"
+    r"Using the constant quantization parameter \(CQP\) by default"
 )
 #: ``[hevc_nvenc @ 0x…] text`` (as FFmpeg prints it) or ``[hevc_nvenc] text`` (normalised).
 _TAG = re.compile(r"^\[(?P<tag>[^\]@]+?)(?: @ [^\]]*)?\]\s*(?P<text>.*)$")
@@ -163,6 +164,10 @@ _RULES: tuple[_Rule, ...] = (
     ),
     # Intel QSV (oneVPL): libavcodec/qsv.c, libavutil/hwcontext_qsv.c
     _Rule(re.compile(r"Error (?:creating|initializing|querying) an? MFX session"), _fixed(_NO_QSV)),
+    _Rule(
+        re.compile(r"This version of runtime doesn't support AV1 encoding"),
+        _fixed("The Intel media runtime on this machine cannot encode AV1"),
+    ),
     # VAAPI: libavutil/hwcontext_vaapi.c
     _Rule(re.compile(r"No VA display found for device (?P<device>\S+?)\.?$"), _vaapi_device),
     _Rule(re.compile(r"No VA display found for any default device"), _vaapi_device),
@@ -171,6 +176,11 @@ _RULES: tuple[_Rule, ...] = (
         _vaapi_driver,
     ),
     _Rule(re.compile(r"Failed to create a VAAPI device"), _vaapi_device),
+    _Rule(
+        re.compile(r"^No usable encoding profile found\.?$"),
+        lambda _m, ctx, _t: f"The VAAPI driver cannot encode {_codec(ctx)} on this GPU",
+        frozenset({"vaapi"}),
+    ),
     # AMD AMF: libavutil/hwcontext_amf.c, libavcodec/amfenc*.c
     _Rule(
         re.compile(r"DLL (?P<lib>\S+) failed to open"),
@@ -246,7 +256,7 @@ def informative_line(stderr: str, encoder: str) -> str | None:
         return normalise_line(rest[-1]) if rest else None
     tags = [_split(line)[0] for line in top]
     for line, tag in zip(top, tags, strict=True):
-        if tag == encoder:
+        if tag == encoder and not _NOISE.search(_split(line)[1]):
             return normalise_line(line)
     for line, tag in zip(top, tags, strict=True):
         if tag in _DEVICE_TAGS:

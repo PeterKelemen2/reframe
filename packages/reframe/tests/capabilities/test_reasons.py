@@ -108,6 +108,23 @@ def ctx(encoder: str, device: str | None = None) -> TestContext:
             "[h264_amf] 10-bit input video is not supported by AMF H264 encoder",
         ),
         (
+            # an Intel GPU without AV1 encoding: the CQP notice before the reason is not it
+            "detect_av1_qsv_no_av1",
+            "av1_qsv",
+            None,
+            UNAVAILABLE,
+            "The Intel media runtime on this machine cannot encode AV1",
+            "[av1_qsv] This version of runtime doesn't support AV1 encoding",
+        ),
+        (
+            "detect_av1_vaapi_no_profile",
+            "av1_vaapi",
+            None,
+            UNAVAILABLE,
+            "The VAAPI driver cannot encode AV1 on this GPU",
+            "[av1_vaapi] No usable encoding profile found.",
+        ),
+        (
             # a command-builder mistake (no hwupload): not a known reason, so "error" with the
             # most informative line, never the generic last line
             "hw_h264_vaapi_no_hwupload",
@@ -246,6 +263,8 @@ def test_the_mapped_texts_are_in_the_pinned_build() -> None:
     assert util in found["DLL %s failed to open"]
     assert util in found["libamfrt64.so.1"]
     assert "bin/ffmpeg" in found["Failed to set value '%s' for option '%s': %s"]
+    assert codec in found["This version of runtime doesn't support AV1 encoding"]
+    assert codec in found["No usable encoding profile found."]
 
 
 def test_nvenc_only_texts_need_an_nvenc_encoder() -> None:
@@ -285,6 +304,13 @@ def test_no_message_at_all() -> None:
         "The test encode failed with no message (exit code 1)",
         None,
     )
+
+
+def test_an_unknown_qsv_failure_skips_the_cqp_notice() -> None:
+    text = tagged("av1_qsv", "Using the constant quantization parameter (CQP) by default.")
+    text += tagged("av1_qsv", "Something new went wrong")
+    failure = explain_failure(text, ctx("av1_qsv"))
+    assert failure.reason == "The test encode failed: Something new went wrong"
 
 
 def test_informative_line_order() -> None:

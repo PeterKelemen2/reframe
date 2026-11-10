@@ -314,6 +314,17 @@ captures made with the Arch Linux n9.0.2 package had the same key lines and exit
 | `hw_h264_vaapi_ok` | `h264_vaapi` with `/dev/dri/renderD128` | 0 | success |
 | `hw_hevc_amf_ok` | `hevc_amf` | 0 | success: AMF works on Linux here. stderr has a Mesa line `radv: RADV_PERFTEST=video_decode is deprecated …` (the AMF runtime sets that variable; it is not in our environment) and an AMF warning line |
 
+Captured on a second machine with the same pinned build (2026-11-10): an Intel UHD Graphics
+620 (Kaby Lake, i915, iHD driver 26.3.5, VAAPI at `/dev/dri/renderD128`), with the detection
+command (`detect_*`, `hardware_test_argv`). H.264 and H.265 work through QSV and VAAPI;
+the GPU has no AV1 encoder:
+
+| Capture | Case | Exit code | Key stderr line |
+|---------|------|-----------|-----------------|
+| `detect_hevc_qsv_ok` | `hevc_qsv` on the Intel GPU | 0 | success |
+| `detect_av1_qsv_no_av1` | `av1_qsv`, GPU without AV1 | 171 | `[av1_qsv @ 0x…] This version of runtime doesn't support AV1 encoding`, after the notice `[av1_qsv @ 0x…] Using the constant quantization parameter (CQP) by default. …` (not a reason) |
+| `detect_av1_vaapi_no_profile` | `av1_vaapi`, GPU without AV1 | 218 | `[av1_vaapi @ 0x…] No usable encoding profile found.` |
+
 Facts for `C-4`'s reason mapping:
 
 - `Cannot load libcuda`, `No VA display found` and `Failed to initialise VAAPI` appear as the

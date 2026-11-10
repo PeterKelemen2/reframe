@@ -171,6 +171,10 @@ def detect_captures() -> dict[str, tuple[tuple[str, ...], dict[str, str]]]:
         # file that does not exist gives "no Vulkan driver".
         "detect_libplacebo_ok": (libplacebo, {}),
         "detect_libplacebo_no_vulkan": (libplacebo, {"VK_ICD_FILENAMES": "/nonexistent/icd.json"}),
+        # An Intel GPU without AV1 encoding (Kaby Lake): QSV and VAAPI work for H.264 and H.265.
+        "detect_hevc_qsv_ok": (argv("hevc_qsv"), {}),
+        "detect_av1_qsv_no_av1": (argv("av1_qsv"), {}),
+        "detect_av1_vaapi_no_profile": (argv("av1_vaapi"), {}),
     }
 
 
@@ -196,11 +200,13 @@ LIBRARY_STRINGS = (
     "Error initializing an MFX session",
     "Error querying a MFX session",
     "MFX_ERR_UNSUPPORTED",
+    "This version of runtime doesn't support AV1 encoding",
     # VAAPI
     "No VA display found for device",
     "No VA display found for any default device",
     "Failed to initialise VAAPI connection",
     "Failed to create a VAAPI device",
+    "No usable encoding profile found.",
     # AMD AMF
     "Failed to create  hardware device context (AMF)",
     "DLL %s failed to open",

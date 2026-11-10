@@ -64,7 +64,7 @@ FILTER_CAPTURES = sorted(n for n in ft.captures() if n.startswith("detect_libpla
 
 
 def test_there_are_hardware_and_filter_captures() -> None:
-    assert len(HARDWARE_CAPTURES) == 9
+    assert len(HARDWARE_CAPTURES) == 12
     assert FILTER_CAPTURES == ["detect_libplacebo_no_vulkan", "detect_libplacebo_ok"]
 
 

@@ -163,6 +163,20 @@ async def test_qsv_without_an_intel_gpu(hardware_snapshot: CapabilitySnapshot) -
 
 @pytest.mark.needs_gpu
 @pytest.mark.skipif(not sys.platform.startswith("linux"), reason="VAAPI is Linux only")
+async def test_qsv_and_vaapi_on_an_intel_gpu(hardware_snapshot: CapabilitySnapshot) -> None:
+    """H.264 and H.265 work on every Intel GPU with a media driver; AV1 only on newer ones,
+    so its answer must be definite, never a failed check."""
+    if "0x8086" not in pci_vendors():
+        pytest.skip("no Intel GPU")
+    for encoder in ("h264_qsv", "hevc_qsv", "h264_vaapi", "hevc_vaapi"):
+        assert hardware_snapshot.status(encoder).state is EncoderState.AVAILABLE, encoder
+    for encoder in ("av1_qsv", "av1_vaapi"):
+        status = hardware_snapshot.status(encoder)
+        assert status.state in (EncoderState.AVAILABLE, EncoderState.UNAVAILABLE), status
+
+
+@pytest.mark.needs_gpu
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="VAAPI is Linux only")
 async def test_vaapi_and_amf_on_an_amd_gpu(hardware_snapshot: CapabilitySnapshot) -> None:
     if "0x1002" not in pci_vendors() or not exists("/dev/dri/renderD128"):
         pytest.skip("no AMD GPU at /dev/dri/renderD128")
