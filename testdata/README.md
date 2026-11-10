@@ -3032,6 +3032,26 @@ win64), WebView2 157, Tauri 2.12.5, 2026-11-09:
   buttons as plain panes; `WM_SETTEXT` to the box's edit (control 1148) and `BM_CLICK` to
   `IDOK` work.
 
+### Windows: scaling, unusual paths and long paths (M10, second VM)
+
+The same VM, PyInstaller 6.22.3, 2026-11-10:
+
+- `SystemParametersInfo(SPI_SETLOGICALDPIOVERRIDE, n, NULL, SPIF_UPDATEINIFILE)` changes the
+  display scaling of the running session (n steps above the recommended value; QXL at
+  1600×900 recommends 100 %): a new process gets `GetDpiForSystem()` 120 or 144 without a
+  sign-out. A process that was already DPI-aware keeps 96 and sees a scaled screen.
+- A running Tauri window follows such a change: at 100 % → 150 % its `GetDpiForWindow` became
+  144 and it stayed inside the work area (0,0 1598×840 of 1600×840).
+- Python 3.14 writes a pipe or a redirected file in the ANSI code page (cp1252 here), so `ő`,
+  `日本` and `🎬` cannot be encoded; with `errors="replace"` they become `?`. A program frozen
+  with PyInstaller ignores `PYTHONUTF8`.
+- With `LongPathsEnabled` 0 (the Windows default), Python cannot open a 359-character path:
+  `os.stat` raises `WinError 3` ("The system cannot find the path specified"). The BtbN
+  `ffprobe.exe` n9.0.2 reads the same path. With 1, Python, the frozen sidecar and FFmpeg all
+  read and write paths of 359 and 394 characters.
+- The frozen sidecar (PyInstaller bootloader), the Tauri app and the bundled FFmpeg start and
+  work from a folder whose name holds `ő`, `日本` and `🎬`.
+
 ### The sidecar build and its packages (M5 task A)
 
 PyInstaller 6.22.3 (hooks-contrib 2026.9, Python 3.14.8), Tauri CLI 2.12.4 and tauri-build 2.7.4:

@@ -383,7 +383,7 @@ def test_human_output_survives_an_ascii_stdout(cli_env: ft.FakeTools, tmp_path: 
     write_presets(tmp_path, [user_preset("u-1", "Ünïcode ✓")])
     buffer = io.BytesIO()
     stream = io.TextIOWrapper(buffer, encoding="ascii", errors="strict")
-    cli._replace_unencodable(stream)
+    cli._configure_stream(stream, platform="linux")
     old = sys.stdout
     sys.stdout = stream
     try:

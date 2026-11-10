@@ -364,6 +364,56 @@ showing the workspace before the backend is ready, measuring with a Defender exc
 and a known limit for Windows (`docs/status.md`, "Open items"). The follow-up is
 [0071](0071-server-start-and-windows-cold-start.md).
 
+## The Windows-specific risks (2026-11-10)
+
+Risks that no earlier check covered, tested on the same VM with the release build (tool
+behaviour: `testdata/README.md`, "Windows: scaling, unusual paths and long paths").
+
+**Display scaling: no defect.** The scaling was changed in the running session (no sign-out
+was possible: the VM has no automatic logon). The main window was inside the work area, with
+the status bar visible, in every case: 1600×900 at 125 % and 150 %, 1920×1080 at 150 %,
+1366×768 at 125 %, each with a fresh state and with the state saved at another scaling; and a
+change from 100 % to 150 % while the app ran. Below the window's minimum of 1100×700 logical
+pixels (1600×900 at 150 % and 1366×768 at 125 % leave about 1060×530) the editor is cramped:
+two or three tabs fit, the file name wraps, and the editor column scrolls sideways. Collapsing
+the preview panel gives the room back. At 1920×1080 at 150 % the editor still shows a
+horizontal scroll bar.
+
+**Paths with spaces, accents, CJK and an emoji: one defect, fixed.** The app (`Reframe.exe`
+and the sidecar onedir) was copied to `C:\Users\TestWin\Ünnep ő 日本 🎬\Programok\Reframe`, with
+`REFRAME_DATA_DIR`, `REFRAME_CONFIG_DIR` and `REFRAME_CACHE_DIR` and the bundled FFmpeg under
+the same folder. The sidecar started, the bundled FFmpeg was found, the source
+`Film – ő 日本 🎬.mkv` was probed and opened in the app with its preview frames, and the frozen
+CLI handed a job to the app that wrote `Eredmény – 🎬.mkv` into such a folder (no `.part` left).
+A Windows user whose profile path has such a name was not made; the folders come from the same
+known-folder APIs that the overrides stand in for.
+
+- **Defect: the CLI's output to a pipe or file lost every character outside the ANSI code
+  page.** `reframe name 'Film – ő 日本 🎬.mkv' > list.txt` wrote `Film – ? ?? ?.mkv` (cp1252
+  bytes); the frozen CLI also ignores `PYTHONUTF8`. On Windows the CLI now writes UTF-8 to
+  stdout and stderr unless `PYTHONIOENCODING` names an encoding (a console gets UTF-16 from
+  Python either way); `--json` was always ASCII. `test_a_pipe_gets_utf8_when_no_encoding_is_set`
+  failed on Windows before the fix (`UnicodeDecodeError`). Checked with the venv CLI and the
+  rebuilt frozen CLI.
+
+**Long paths: works when Windows allows them; a misleading message when it does not.** A
+source of 359 characters and an output of 394:
+
+- `LongPathsEnabled` 1 (this VM, set by `scripts/windows-setup.ps1`): both CLIs probe the
+  source, and the app's sidecar encodes it into the long output folder.
+- `LongPathsEnabled` 0 (the Windows default, set for the test and restored): every entry point
+  says the source does not exist ("The file does not exist.", "the file or folder does not
+  exist."), exit 3. The file exists; Windows refuses the path to Python. FFmpeg reads it.
+
+The message comes from several places (the prober, the facade, folder probes, the CLI's path
+checks, validation of the output path), so the fix is a choice for the owner
+(`docs/status.md`, "Open items").
+
+**Two monitors: not tested.** The VM has one QXL head; a second needs a change of the VM and a
+restart, and the VM has no automatic logon. The live scaling change above covers one part of
+a move to a monitor with another scaling: the window follows the new DPI. Placement across
+monitors and a state saved on a monitor that is gone are not checked.
+
 ## Consequences
 
 Result, 2026-11-04: on `m10-hardening` 13e8cd0 the 233 failed tests and the 3 spike modules

@@ -19,7 +19,15 @@ import stat
 import sys
 import tempfile
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterable, Sequence
+from collections.abc import (
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Coroutine,
+    Iterable,
+    Mapping,
+    Sequence,
+)
 from contextlib import asynccontextmanager
 from enum import StrEnum
 from pathlib import Path
@@ -4198,17 +4206,31 @@ def _run(work: Coroutine[object, object, int]) -> None:
         raise typer.Exit(code)
 
 
-def _replace_unencodable(stream: object) -> None:
-    """Make a text stream replace characters it cannot encode instead of raising."""
-    if isinstance(stream, io.TextIOWrapper):
-        stream.reconfigure(errors="replace")
+def _configure_stream(
+    stream: object,
+    *,
+    errors: str = "replace",
+    platform: str = sys.platform,
+    environ: Mapping[str, str] | None = None,
+) -> None:
+    """Make a text stream handle characters it cannot encode with ``errors`` instead of
+    raising. On Windows a pipe or file gets UTF-8 unless ``PYTHONIOENCODING`` names an
+    encoding: Python's default there, the ANSI code page, loses every name outside it."""
+    if not isinstance(stream, io.TextIOWrapper):
+        return
+    env = os.environ if environ is None else environ
+    if platform == "win32" and not env.get("PYTHONIOENCODING"):
+        stream.reconfigure(encoding="utf-8", errors=errors)
+    else:
+        stream.reconfigure(errors=errors)
 
 
 def main() -> None:
     if not _CLI_EXTRA:  # pragma: no cover - depends on the installed extras
         print("The reframe CLI needs the [cli] extra: pip install 'reframe[cli]'", file=sys.stderr)
         raise SystemExit(2) from None
-    _replace_unencodable(sys.stdout)
+    _configure_stream(sys.stdout)
+    _configure_stream(sys.stderr, errors="backslashreplace")
     build_app()()
 
 
