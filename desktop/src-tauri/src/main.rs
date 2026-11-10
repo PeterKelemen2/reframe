@@ -11,6 +11,7 @@ mod open_paths;
 mod progress;
 mod quit;
 mod tray;
+mod updates;
 
 use tauri::Manager;
 
@@ -26,6 +27,7 @@ fn main() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(comfort::window_state())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(backend)
         .manage(open_paths::Pending::from_args(std::env::args_os().skip(1)))
         .invoke_handler(tauri::generate_handler![
@@ -45,6 +47,7 @@ fn main() {
             app.state::<backend::Backend>().attach(app.handle().clone());
             comfort::create_main_window(app.handle())?;
             tray::setup(app.handle())?;
+            updates::spawn_check(app.handle());
             Ok(())
         })
         .build(context)

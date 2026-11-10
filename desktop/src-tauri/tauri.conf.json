@@ -27,8 +27,20 @@
       }
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY3Qjc0MjYzRUU4NjM0RUQKUldUdE5JYnVZMEszWnltc2Z5ZWwyVWozM1lzMDhCUGsweHdMdkIvRWZXQVpRS1k2cldYczR5L2cK",
+      "endpoints": ["https://github.com/PeterKelemen2/reframe/releases/latest/download/latest.json"],
+      "windows": { "installMode": "passive" }
+    }
+  },
   "bundle": {
-    "active": false,
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "targets": "all",
+    "category": "Video",
+    "shortDescription": "Video transcoder",
+    "license": "GPL-3.0-or-later",
     "icon": ["icons/icon.png", "icons/icon.ico"],
     "resources": { "resources/sidecar/": "sidecar/", "resources/tools/": "tools/" },
     "fileAssociations": [
@@ -42,15 +54,22 @@
     "linux": {
       "deb": {
         "postInstallScript": "linux/link-cli.sh",
-        "preRemoveScript": "linux/unlink-cli.sh"
+        "preRemoveScript": "linux/unlink-cli.sh",
+        "desktopTemplate": "linux/reframe.desktop"
       },
       "rpm": {
         "postInstallScript": "linux/link-cli.sh",
-        "preRemoveScript": "linux/unlink-cli.sh"
+        "preRemoveScript": "linux/unlink-cli.sh",
+        "desktopTemplate": "linux/reframe.desktop"
       }
     },
     "windows": {
-      "nsis": { "installerHooks": "windows/hooks.nsh" }
+      "nsis": {
+        "installMode": "currentUser",
+        "template": "windows/installer.nsi",
+        "installerHooks": "windows/hooks.nsh"
+      },
+      "webviewInstallMode": { "type": "downloadBootstrapper" }
     }
   }
 }

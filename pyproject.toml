@@ -73,6 +73,7 @@ files = [
     "scripts",
     "desktop/spike/scripts",
     "desktop/sidecar",
+    "desktop/smoke",
 ]
 
 [tool.pydantic-mypy]
