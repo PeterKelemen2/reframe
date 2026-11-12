@@ -5,8 +5,9 @@
 # and checks that `ffmpeg -version` / `ffprobe -version` print `version` below.
 # See tools/README.md for how to update a pin.
 #
-# Source of the builds: BtbN/FFmpeg-Builds, release-branch "gpl-shared" variant (`ffmpeg` and
-# `ffprobe` share one set of libav* libraries). The choice of build source is not final yet.
+# Source of the builds: BtbN/FFmpeg-Builds (now github.com/FFmpeg-Builds/FFmpeg-Builds; the
+# URLs below redirect there), release-branch "gpl-shared" variant (`ffmpeg` and `ffprobe` share
+# one set of libav* libraries). Chosen and tested on real hosts in decision 0002.
 #
 # Retention (BtbN README, "Release Retention Policy", checked 2026-10-11): the last build of
 # each month is kept for two years, only the last 14 daily builds are kept, and "latest" floats.

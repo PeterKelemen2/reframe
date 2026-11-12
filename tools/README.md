@@ -42,9 +42,10 @@ the DLLs are next to the `.exe` files.
 
 ## Where the builds come from
 
-[BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds), release-branch `gpl-shared`
-variant. This is the first candidate from the plan. `D-7` tests it on real GPUs and records the
-final choice in `docs/decisions/0002-bundled-ffmpeg.md`.
+[BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) (moved to
+`github.com/FFmpeg-Builds/FFmpeg-Builds`; the old URLs redirect), release-branch `gpl-shared`
+variant. [Decision 0002](../docs/decisions/0002-bundled-ffmpeg.md) confirms the choice, with
+the host tests and the Windows builds that were tried instead.
 
 **Retention.** BtbN keeps the last build of each month for two years and only the last 14 daily
 builds. The `latest` release floats. So:

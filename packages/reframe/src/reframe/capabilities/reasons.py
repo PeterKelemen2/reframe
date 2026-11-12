@@ -228,7 +228,7 @@ _RULES: tuple[_Rule, ...] = (
         _fixed("The Vulkan device could not be opened"),
     ),
     # The build loads system libraries (libva, …) at run time through implib-gen stubs, which
-    # abort when the system's library lacks a function the build was compiled against.
+    # abort when the library is missing or lacks a function the build was compiled against.
     _Rule(
         re.compile(r"^implib-gen: (?P<lib>\S+): failed to resolve symbol '(?P<symbol>[^']+)'"),
         lambda m, _ctx, _t: (
