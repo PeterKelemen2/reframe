@@ -340,10 +340,64 @@ def _strings(table: Mapping[str, Any], skip: Iterable[str] = ()) -> list[tuple[s
     ]
 
 
+def _pin_entry(
+    name: str,
+    pin: Mapping[str, Any],
+    archive: Mapping[str, Any],
+    manifest: Path,
+    license_file: Path,
+    tools: Path,
+    platform: str,
+) -> Entry:
+    lines = [
+        str(pin.get("description", "")),
+        "",
+        f"Pinned in {manifest.relative_to(manifest.parent.parent).as_posix()}:",
+    ]
+    lines += [f"  {key}: {value}" for key, value in _strings(pin, skip=("description",))]
+    lines += [f"  {platform}.{key}: {value}" for key, value in _strings(archive)]
+    lines += [
+        "",
+        f"The licence text is below and in tools/{license_file.relative_to(tools).as_posix()}.",
+        "",
+        license_file.read_text(encoding="utf-8", errors="replace"),
+    ]
+    return Entry(
+        name=name,
+        version=str(pin.get("version", "")),
+        license=str(pin.get("license", "see below")),
+        url=str(pin.get("release_url", "")),
+        text="\n".join(lines),
+    )
+
+
+def _library_entries(
+    tools: Path, folders: Sequence[Path], manifests: Path, platform: str
+) -> list[Entry]:
+    """The libraries pinned for ``platform`` that the tools layout builds into a tool folder,
+    with its licence there as ``LICENSE-<name>.txt``."""
+    entries = []
+    for manifest in sorted(manifests.glob("*.toml")):
+        data = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        for name, pin in data.get("libraries", {}).items():
+            archive = pin.get("platforms", {}).get(platform)
+            if not isinstance(archive, dict):
+                continue
+            licence = f"LICENSE-{name}.txt"
+            found = [folder / licence for folder in folders if (folder / licence).is_file()]
+            if not found:
+                raise NoticesError(
+                    f"{manifest}: {name} is pinned for {platform}, but no folder in {tools} "
+                    f"has its {licence}"
+                )
+            entries.append(_pin_entry(name, pin, archive, manifest, found[0], tools, platform))
+    return entries
+
+
 def tool_entries(tools: Path, manifests: Path, platform: str) -> list[Entry]:
-    """One entry per bundled tool folder in ``tools``, with every field of its pin: the
-    download, its checksum and the corresponding-source links. A folder without a pin is an
-    error: its source could not be named."""
+    """One entry per bundled tool folder in ``tools`` and per library built into one, with
+    every field of its pin: the download, its checksum and the corresponding-source links. A
+    folder without a pin is an error: its source could not be named."""
     entries = []
     folders = sorted(p for p in tools.iterdir() if p.is_dir()) if tools.is_dir() else []
     for folder in folders:
@@ -354,34 +408,17 @@ def tool_entries(tools: Path, manifests: Path, platform: str) -> list[Entry]:
         archive = build.get("platforms", {}).get(platform)
         if not isinstance(archive, dict):
             raise NoticesError(f"{manifest}: the default build has no {platform} archive")
-        lines = [
-            str(build.get("description", "")),
-            "",
-            f"Pinned in {manifest.relative_to(manifest.parent.parent).as_posix()}:",
-        ]
-        lines += [f"  {key}: {value}" for key, value in _strings(build, skip=("description",))]
-        lines += [f"  {platform}.{key}: {value}" for key, value in _strings(archive)]
         license_file = folder / str(build.get("license_file", ""))
         if not license_file.is_file():
             found = sorted(p for p in folder.iterdir() if _LICENSE_FILE_RE.match(p.name))
             if not found:
                 raise NoticesError(f"{folder} has no licence file")
             license_file = found[0]
-        lines += [
-            "",
-            f"The licence text is below and in tools/{folder.name}/{license_file.name}.",
-            "",
-            license_file.read_text(encoding="utf-8", errors="replace"),
-        ]
         entries.append(
-            Entry(
-                name=folder.name,
-                version=str(build.get("version", "")),
-                license=str(build.get("license", "see below")),
-                url=str(build.get("release_url", "")),
-                text="\n".join(lines),
-            )
+            _pin_entry(folder.name, build, archive, manifest, license_file, tools, platform)
         )
+    if folders:
+        entries += _library_entries(tools, folders, manifests, platform)
     return entries
 
 
@@ -410,8 +447,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--platform", required=True, choices=sorted(RUST_TARGETS))
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args(argv)
-
-    import reframe
+    # The packages carry the desktop app's version, not the core's.
+    config = json.loads((TAURI_DIR / "tauri.conf.json").read_text(encoding="utf-8"))
 
     try:
         names = shipped_top_level_names(DEFAULT_SIDECAR)
@@ -432,7 +469,7 @@ def main(argv: list[str] | None = None) -> int:
     except NoticesError as e:
         sys.stderr.write(f"third-party-notices: {e}\n")
         return 1
-    text = render(sections, version=reframe.__version__, platform=args.platform)
+    text = render(sections, version=config["version"], platform=args.platform)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     partial = args.out.with_name(args.out.name + ".part")
     partial.write_text(text, encoding="utf-8")
