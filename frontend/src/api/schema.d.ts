@@ -6921,6 +6921,13 @@ export interface components {
              * @default false
              */
             next_to_ffmpeg: boolean;
+            /**
+             * Bundled
+             * @description A bundled build of the tool's family (FFmpeg: ffmpeg and ffprobe) exists, so without a
+             *     Settings path discovery uses it. Also set while an override is in use.
+             * @default false
+             */
+            bundled: boolean;
             /** Fixes */
             fixes?: components["schemas"]["Fix"][];
         };

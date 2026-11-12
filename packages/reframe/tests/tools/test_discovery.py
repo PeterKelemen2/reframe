@@ -133,6 +133,42 @@ async def test_settings_path_wins_over_bundled(tmp_path: Path, empty_path: str) 
 
 
 @pytest.mark.anyio
+async def test_a_bundled_build_is_reported_per_family_while_an_override_works(
+    tmp_path: Path, empty_path: str
+) -> None:
+    settings_tools = _fake(tmp_path / "custom")
+    mkv = _script_tool(tmp_path / "m", "mkvpropedit", MKVPROPEDIT_OUT)
+    root = tmp_path / "root"
+    _fake(root / "ffmpeg" / "bin")
+    _script_tool(root / "mediainfo", "mediainfo", MEDIAINFO_OUT)
+    tools = await discover_tools(
+        {"ffmpeg": str(settings_tools.ffmpeg), "mediainfo": str(tmp_path / "gone")},
+        environ=_env(REFRAME_MKVPROPEDIT=str(mkv)),
+        bundled_roots=[root],
+        search_path=empty_path,
+    )
+    assert tools.ffmpeg.origin is ToolOrigin.SETTINGS
+    assert tools.ffmpeg.status is ToolStatus.FOUND
+    assert tools.ffmpeg.bundled
+    assert tools.ffprobe.bundled
+    assert tools.mediainfo.status is ToolStatus.MISSING
+    assert tools.mediainfo.bundled
+    assert tools.mkvpropedit.origin is ToolOrigin.ENV
+    assert not tools.mkvpropedit.bundled
+
+
+def test_no_bundled_build_is_reported_without_one(tmp_path: Path) -> None:
+    path_dir = tmp_path / "path"
+    _fake(path_dir)
+    tools = discover_tools_sync(
+        environ=_env(), bundled_roots=[tmp_path / "no-root"], search_path=str(path_dir)
+    )
+    assert tools.ffmpeg.origin is ToolOrigin.PATH
+    assert not tools.ffmpeg.bundled
+    assert not tools.ffprobe.bundled
+
+
+@pytest.mark.anyio
 async def test_bundled_wins_over_path(tmp_path: Path) -> None:
     bundled = _fake(tmp_path / "root" / "ffmpeg" / "bin")
     path_dir = tmp_path / "path"
@@ -207,6 +243,7 @@ async def test_damaged_bundled_build_does_not_fall_back_to_path(tmp_path: Path) 
     assert tools.ffprobe.path is None
     assert tools.ffprobe.reason is not None
     assert "damaged" in tools.ffprobe.reason
+    assert tools.ffprobe.bundled
 
 
 @pytest.mark.anyio

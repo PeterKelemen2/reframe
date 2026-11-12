@@ -2,26 +2,24 @@
 import { Download, RefreshCw } from '@lucide/vue'
 import Button from 'primevue/button'
 import ProgressBar from 'primevue/progressbar'
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { ApiError } from '@/api/client'
-import type { JsonPatchOp, ValidationIssue } from '@/api/types'
+import type { ValidationIssue } from '@/api/types'
 import Section from '@/components/base/Section.vue'
-import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
-import { useTasksStore } from '@/stores/tasks'
 
 import RefusalList from './RefusalList.vue'
 import ToolRow from './ToolRow.vue'
 import { FFMPEG_FAMILY, setByEnvironment, TOOL_NAMES, type ToolInfo } from './tools'
-import { refusalIssues, useSettingsLocked } from './useSetting'
+import { useBundledTools } from './useBundledTools'
+import { useSettingsLocked } from './useSetting'
 
 const { t } = useI18n()
 const system = useSystemStore()
-const settings = useSettingsStore()
-const tasks = useTasksStore()
 const locked = useSettingsLocked()
+const { fetching, fetchTask, use } = useBundledTools()
 
 const tools = computed<ToolInfo[]>(() => {
   const set = system.info?.tools
@@ -30,10 +28,11 @@ const tools = computed<ToolInfo[]>(() => {
 const mode = computed(() => system.info?.mode ?? 'web')
 
 const checking = ref(false)
-const fetching = computed(() => system.toolsFetch !== null)
-const fetchTask = computed(() =>
-  system.toolsFetch === null ? null : (tasks.tasks[system.toolsFetch] ?? null),
-)
+/** A bundled FFmpeg needs no download: each of its rows has *Use bundled*. */
+const canDownload = computed(() => {
+  const set = system.info?.tools
+  return set !== undefined && !FFMPEG_FAMILY.some((name) => set[name].bundled)
+})
 /** The environment sets both: a bundled build would not be used. */
 const bundledUseless = computed(() => {
   const set = system.info?.tools
@@ -41,63 +40,21 @@ const bundledUseless = computed(() => {
 })
 const bundledIssues = shallowRef<ValidationIssue[]>([])
 
-/** The API client has shown the problem as a toast. */
-async function quietly(action: () => Promise<void>): Promise<boolean> {
-  try {
-    await action()
-    return true
-  } catch (error) {
-    if (!(error instanceof ApiError)) throw error
-    return false
-  }
-}
-
 async function checkAgain(): Promise<void> {
   checking.value = true
   try {
-    await quietly(() => system.rescanTools())
+    await system.rescanTools()
+  } catch (error) {
+    // The API client has shown it as a toast.
+    if (!(error instanceof ApiError)) throw error
   } finally {
     checking.value = false
   }
 }
 
-/**
- * Downloads the pinned FFmpeg, then removes the Settings paths of ffmpeg and ffprobe, which
- * would otherwise still win over the bundled build.
- */
 async function useBundled(): Promise<void> {
   bundledIssues.value = []
-  let taskId: string | null = null
-  const stop = watch(
-    () => system.toolsFetch,
-    (id) => {
-      if (id !== null) taskId = id
-    },
-    { flush: 'sync' },
-  )
-  let fetched: boolean
-  try {
-    fetched = await quietly(() => system.fetchTools())
-  } finally {
-    stop()
-  }
-  // A failed download is a toast already; the paths stay as they were.
-  if (!fetched || taskId === null || tasks.tasks[taskId]?.state !== 'done') return
-  const current = settings.settings?.tools
-  const ops: JsonPatchOp[] = FFMPEG_FAMILY.filter((name) => current?.[name]).map((name) => ({
-    op: 'replace',
-    path: `/tools/${name}`,
-    value: null,
-  }))
-  if (ops.length === 0) return
-  try {
-    await settings.update(ops)
-  } catch (error) {
-    if (!(error instanceof ApiError)) throw error
-    bundledIssues.value = refusalIssues(error, 'tools', t)
-    return
-  }
-  await quietly(() => system.rescanTools())
+  bundledIssues.value = await use('ffmpeg')
 }
 </script>
 
@@ -105,13 +62,14 @@ async function useBundled(): Promise<void> {
   <Section :title="t('settings.tools.title')">
     <template #actions>
       <Button
+        v-if="canDownload"
         :label="t('settings.tools.useBundled')"
         severity="secondary"
         outlined
         size="small"
         :loading="fetching"
         :disabled="bundledUseless || locked"
-        data-action="use-bundled"
+        data-action="fetch-bundled"
         @click="useBundled"
       >
         <template #icon>

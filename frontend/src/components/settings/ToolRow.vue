@@ -5,13 +5,15 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { ApiError } from '@/api/client'
+import type { ValidationIssue } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import KeyValue from '@/components/base/KeyValue.vue'
 import StatusDot from '@/components/base/StatusDot.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 
-import { setByEnvironment, type ToolInfo, toolTone } from './tools'
+import { familyOf, resetOps, setByEnvironment, type ToolInfo, toolTone } from './tools'
+import { useBundledTools } from './useBundledTools'
 import { readPointer, useSetting } from './useSetting'
 
 const props = defineProps<{
@@ -43,6 +45,20 @@ watch(saved, (now, before) => {
   if (draft.value === (before ?? '')) draft.value = now ?? ''
 })
 const shown = computed(() => (byEnvironment.value ? (props.tool.path ?? '') : draft.value))
+
+const bundled = useBundledTools()
+const bundledIssues = shallowRef<ValidationIssue[]>([])
+/**
+ * With a bundled build the reset is *Use bundled*, for the whole family: an ffprobe path left
+ * behind would still win over the bundled ffprobe.
+ */
+const canUseBundled = computed(
+  () =>
+    props.tool.bundled &&
+    !byEnvironment.value &&
+    resetOps(familyOf(props.tool.name), settings.settings?.tools).length > 0,
+)
+const fieldIssues = computed(() => [...override.issues.value, ...bundledIssues.value])
 
 interface Outcome {
   ok: boolean
@@ -145,9 +161,22 @@ async function putBack(previous: string | null): Promise<void> {
   }
 }
 
+async function useBundled(): Promise<void> {
+  testing.value = true
+  outcome.value = null
+  bundledIssues.value = []
+  try {
+    bundledIssues.value = await bundled.use(props.tool.name)
+    if (bundledIssues.value.length === 0) draft.value = ''
+  } finally {
+    testing.value = false
+  }
+}
+
 async function remove(): Promise<void> {
   testing.value = true
   outcome.value = null
+  bundledIssues.value = []
   try {
     if (!(await override.save(null))) return
     draft.value = ''
@@ -179,7 +208,7 @@ async function remove(): Promise<void> {
     </dl>
     <p v-if="tool.reason" class="tool-row__reason" data-field="reason">{{ tool.reason }}</p>
 
-    <Field :label="t('settings.tools.override')" :issues="override.issues.value" stacked>
+    <Field :label="t('settings.tools.override')" :issues="fieldIssues" stacked>
       <template #default="{ id, invalid }">
         <div class="tool-row__override">
           <InputText
@@ -205,7 +234,16 @@ async function remove(): Promise<void> {
             @click="test"
           />
           <Button
-            v-if="saved !== null && !byEnvironment"
+            v-if="canUseBundled"
+            :label="t('settings.tools.useBundledTool')"
+            severity="secondary"
+            text
+            :disabled="locked || testing || bundled.fetching.value"
+            data-action="use-bundled"
+            @click="useBundled"
+          />
+          <Button
+            v-else-if="saved !== null && !byEnvironment"
             :label="t('settings.tools.removeOverride')"
             severity="secondary"
             text

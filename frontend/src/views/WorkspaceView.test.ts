@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 
 import type { SourceEntry, SystemInfo } from '@/api/types'
+import { FIRST_RUN_KEY } from '@/components/shell/firstRun'
 import { focusWorkspace } from '@/components/shell/focus'
 import { mountShell } from '@/components/shell/testing'
+import { platform } from '@/platform'
 import { useSystemStore } from '@/stores/system'
 
 import WorkspaceView from './WorkspaceView.vue'
@@ -53,7 +55,25 @@ beforeEach(() => {
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.replaceChildren()
+  Object.assign(platform, { kind: 'web' })
 })
+
+function bundledTool(name: string) {
+  return { name, status: 'found', origin: 'bundled', path: `/app/${name}` }
+}
+
+/** Every tool found, bundled with the desktop app. */
+function working(): SystemInfo {
+  return {
+    mode: 'desktop',
+    tools: {
+      ffmpeg: bundledTool('ffmpeg'),
+      ffprobe: bundledTool('ffprobe'),
+      mkvpropedit: bundledTool('mkvpropedit'),
+      mediainfo: bundledTool('mediainfo'),
+    },
+  } as SystemInfo
+}
 
 async function mountWorkspace(setup?: () => void) {
   const result = await mountShell(WorkspaceView, { setup })
@@ -175,5 +195,52 @@ describe('the workspace', () => {
     useSystemStore().info = null
     await flushPromises()
     expect(wrapper.find('.workspace__columns').exists()).toBe(true)
+  })
+
+  describe('the first start', () => {
+    it('in the desktop app shows the tools before the workspace, once', async () => {
+      Object.assign(platform, { kind: 'desktop' })
+      const first = await mountWorkspace(() => {
+        useSystemStore().info = working()
+      })
+      expect(first.find('[data-screen="first-run"]').exists()).toBe(true)
+      expect(first.find('.workspace__columns').exists()).toBe(false)
+
+      await first.find('.first-run__continue').trigger('click')
+      await flushPromises()
+      expect(first.find('.workspace__columns').exists()).toBe(true)
+      expect(document.activeElement).toBe(first.find('.workspace__open').element)
+
+      first.unmount()
+      const second = await mountWorkspace(() => {
+        useSystemStore().info = working()
+      })
+      expect(second.find('[data-screen="first-run"]').exists()).toBe(false)
+      expect(second.find('.workspace__columns').exists()).toBe(true)
+    })
+
+    it('after the first start comes back only while FFmpeg cannot be used', async () => {
+      Object.assign(platform, { kind: 'desktop' })
+      localStorage.setItem(FIRST_RUN_KEY, 'true')
+      const wrapper = await mountWorkspace(() => {
+        useSystemStore().info = working()
+      })
+      expect(wrapper.find('.workspace__columns').exists()).toBe(true)
+
+      const broken = working()
+      broken.tools.ffmpeg = { ...broken.tools.ffmpeg, status: 'missing', reason: 'gone' }
+      useSystemStore().info = broken
+      await flushPromises()
+      expect(wrapper.find('[data-screen="first-run"]').exists()).toBe(true)
+      expect(wrapper.find('.first-run__continue').exists()).toBe(false)
+    })
+
+    it('in a browser goes straight to the workspace', async () => {
+      const wrapper = await mountWorkspace(() => {
+        useSystemStore().info = working()
+      })
+      expect(wrapper.find('[data-screen="first-run"]').exists()).toBe(false)
+      expect(wrapper.find('.workspace__columns').exists()).toBe(true)
+    })
   })
 })

@@ -298,6 +298,32 @@ def test_safe_member_names() -> None:
     assert str(member_path("root/", "root")) == "root"
 
 
+def test_an_archive_without_a_top_folder_still_refuses_unsafe_names() -> None:
+    assert str(member_path("MediaInfo.exe", None)) == "MediaInfo.exe"
+    assert str(member_path("./Plugin/x.csv", None)) == "Plugin/x.csv"
+    for name in ("../x", "/etc/passwd", "C:/x", "a\\b", "a:b"):
+        with pytest.raises(FetchError):
+            member_path(name, None)
+
+
+def test_a_zip_without_a_top_folder_is_extracted_as_it_is(tmp_path: Path) -> None:
+    archive = tmp_path / "a.zip"
+    archive.write_bytes(zip_bytes({"MediaInfo.exe": b"MZ", "Plugin/x.csv": b"csv"}))
+    dest = tmp_path / "out"
+    dest.mkdir()
+    fetch_module.safe_extract(archive, "zip", None, dest, CancelToken())
+    assert (dest / "MediaInfo.exe").read_bytes() == b"MZ"
+    assert (dest / "Plugin" / "x.csv").read_bytes() == b"csv"
+
+
+def test_a_tar_without_a_top_folder_is_refused(tmp_path: Path) -> None:
+    archive = tmp_path / "a.tar.xz"
+    archive.write_bytes(_archive_with())
+    with pytest.raises(FetchError, match="needs a top folder"):
+        fetch_module.safe_extract(archive, "tar.xz", None, tmp_path, CancelToken())
+    assert list(tmp_path.iterdir()) == [archive]
+
+
 @pytest.mark.anyio
 async def test_the_fetch_helper_sees_every_step_message(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

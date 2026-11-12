@@ -324,6 +324,80 @@ def test_vulkan_texts_confirmed_in_the_build(line: str, reason: str) -> None:
     assert (failure.state, failure.reason) == (UNAVAILABLE, reason)
 
 
+# Real captures of the pinned Linux build: Ubuntu 24.04 in a container without libvulkan1 (the
+# Windows VM without vulkan-1.dll prints the same libplacebo lines), and with its libva 2.20.
+NO_VULKAN_LOADER = """\
+Input #0, lavfi, from 'color=size=640x360':
+  Stream #0:0: Video: wrapped_avframe, yuv420p, 640x360 [SAR 1:1 DAR 16:9], 25 fps, 25 tbr, 25 tbn
+[libplacebo @ 0x561efe38ff00] Instance API version 1.0.0 is lower than the minimum required \
+version of 1.2.0, cannot proceed!
+[libplacebo @ 0x561efe38ff00] Failed initializing vulkan instance
+[libplacebo @ 0x561efe38ff00] Failed initializing vulkan device
+[Parsed_libplacebo_0 @ 0x561efe38fe00] Failed creating Vulkan device!
+[AVFilterGraph @ 0x561efe38fcc0] Error initializing filters
+Error opening output file -.
+Error opening output files: Generic error in an external library
+"""
+OLD_LIBVA = """\
+amdgpu: os_same_file_description couldn't determine if two DRM fds reference the same file \
+description.
+If they do, bad things may happen!
+Input #0, lavfi, from 'color=size=640x360':
+  Stream #0:0: Video: wrapped_avframe, yuv420p, 640x360 [SAR 1:1 DAR 16:9], 25 fps, 25 tbr, 25 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (wrapped_avframe (native) -> h264 (h264_vaapi))
+implib-gen: libva.so.2: failed to resolve symbol 'vaMapBuffer2' via dlsym: \
+/lib/x86_64-linux-gnu/libva.so.2: undefined symbol: vaMapBuffer2
+ffmpeg: libva.so.2.init.c:290: _libva_so_2_tramp_resolve: Assertion `0 && "Assertion in \
+generated code"' failed.
+"""
+
+
+def test_libplacebo_without_a_vulkan_loader_real() -> None:
+    failure = explain_failure(NO_VULKAN_LOADER, FILTER, returncode=187)
+    assert (failure.state, failure.reason) == (
+        UNAVAILABLE,
+        "No Vulkan runtime, or one too old for libplacebo (Vulkan 1.0.0, needs 1.2.0)",
+    )
+
+
+def test_libplacebo_with_a_vulkan_driver_too_old() -> None:
+    text = (
+        "[libplacebo @ 0x55] Device API version 1.1.0 is lower than the minimum required "
+        "version of 1.2.0, cannot proceed!\n"
+        "[libplacebo @ 0x55] Failed initializing vulkan device\n"
+    )
+    failure = explain_failure(text, FILTER, returncode=187)
+    assert (failure.state, failure.reason) == (
+        UNAVAILABLE,
+        "The Vulkan driver is too old for libplacebo (Vulkan 1.1.0, needs 1.2.0)",
+    )
+
+
+def test_a_system_libva_too_old_for_the_build_real() -> None:
+    """The stub aborts (SIGABRT): without the rule this reads "FFmpeg crashed"."""
+    failure = explain_failure(OLD_LIBVA, ctx("h264_vaapi"), returncode=-6)
+    assert (failure.state, failure.reason) == (
+        UNAVAILABLE,
+        "The system's libva.so.2 is too old for this FFmpeg build (it has no vaMapBuffer2)",
+    )
+
+
+def test_a_missing_system_library_real() -> None:
+    """Ubuntu 22.04 without libva: the h264_qsv test encode aborts in the stub."""
+    text = (
+        "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: "
+        "libva-drm.so.2: cannot open shared object file: No such file or directory\n"
+        'ffmpeg: libva-drm.so.2.init.c:122: load_library: Assertion `0 && "Assertion in '
+        "generated code\"' failed.\n"
+    )
+    failure = explain_failure(text, ctx("h264_qsv"), returncode=-6)
+    assert (failure.state, failure.reason) == (
+        UNAVAILABLE,
+        "The system library libva-drm.so.2 is not installed",
+    )
+
+
 def test_the_vulkan_texts_are_in_the_pinned_build() -> None:
     found = {text: {e["file"] for e in hits} for text, hits in ft.library_strings().items()}
     for text in (

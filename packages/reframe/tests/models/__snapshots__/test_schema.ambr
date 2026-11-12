@@ -9631,6 +9631,15 @@
         'title': 'Build Flags',
         'type': 'array',
       }),
+      'bundled': dict({
+        'default': False,
+        'description': '''
+          A bundled build of the tool's family (FFmpeg: ffmpeg and ffprobe) exists, so without a
+          Settings path discovery uses it. Also set while an override is in use.
+        ''',
+        'title': 'Bundled',
+        'type': 'boolean',
+      }),
       'env': dict({
         'additionalProperties': dict({
           'type': 'string',

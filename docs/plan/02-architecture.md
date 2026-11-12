@@ -103,13 +103,13 @@ build behaves the same.
   package, so the tests run against the exact binaries that ship (`Q-1.2`).
 - **Build requirements**: GPL build from an upstream release branch. It must include libx264,
   libx265, libsvtav1, libopus, libplacebo + Vulkan, libvpl (QSV), NVENC, AMF (Windows) and
-  VAAPI (Linux), and it must run on the oldest supported distro. The first candidate is the
-  BtbN release-branch GPL build, shared-library variant, so `ffmpeg` and `ffprobe` share one
-  set of libraries. `D-7` confirms the choice.
+  VAAPI (Linux), and it must run on the oldest supported distro. The BtbN release-branch GPL
+  build, shared-library variant (`ffmpeg` and `ffprobe` share one set of libraries), is the
+  choice ([decision 0002](../decisions/0002-bundled-ffmpeg.md)); its VAAPI needs the
+  system's libva 2.22 or newer, so not on Ubuntu 22.04 / 24.04 or Debian 12.
 - **Install location**: `<app>/tools/ffmpeg/` (Windows, AppImage), `/usr/lib/Reframe/tools/ffmpeg/`
-  (.deb/.rpm: the Tauri bundler's resource folder, named after the product, next to the
-  sidecar in `/usr/lib/Reframe/sidecar/`; it does not conflict with the distro's `ffmpeg`
-  package; [decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) task L),
+  (.deb/.rpm: the package's resource folder next to the sidecar, so it does not conflict with
+  the distro's `ffmpeg` package),
   `/opt/reframe/tools/ffmpeg/` (Docker), `<data dir>/tools/ffmpeg/` (`reframe tools fetch`, and
   CI). Bundled MKVToolNix and MediaInfo go to `tools/mkvtoolnix/` and `tools/mediainfo/` next to
   it. Each folder holds the binaries in `bin/` or directly. `REFRAME_CONFIG_DIR`,

@@ -75,7 +75,7 @@ describe('the Tools section', () => {
     expect(row('ffmpeg').find('[data-field="note"]').text()).toContain('REFRAME_FFMPEG')
     expect(row('ffmpeg').find('[data-field="origin"]').text()).toContain('REFRAME_FFMPEG')
     expect(row('ffmpeg').find('[data-action="remove"]').exists()).toBe(false)
-    expect(wrapper.find('[data-action="use-bundled"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-action="fetch-bundled"]').attributes('disabled')).toBeDefined()
     expect(
       row('mkvpropedit').find('[data-field="override"]').attributes('readonly'),
     ).toBeUndefined()
@@ -200,7 +200,7 @@ describe('the Tools section', () => {
         mkvpropedit: '/opt/mkvpropedit',
       })
       fetchEnds(system, 'done')
-      await wrapper.find('[data-action="use-bundled"]').trigger('click')
+      await wrapper.find('[data-action="fetch-bundled"]').trigger('click')
       await flushPromises()
       expect(system.fetchTools).toHaveBeenCalledTimes(1)
       expect(server.patches).toEqual([[{ op: 'replace', path: '/tools/ffmpeg', value: null }]])
@@ -212,7 +212,7 @@ describe('the Tools section', () => {
         ffmpeg: '/opt/ff/ffmpeg',
       })
       fetchEnds(system, 'failed')
-      await wrapper.find('[data-action="use-bundled"]').trigger('click')
+      await wrapper.find('[data-action="fetch-bundled"]').trigger('click')
       await flushPromises()
       expect(server.patches).toEqual([])
     })
@@ -230,6 +230,84 @@ describe('the Tools section', () => {
       }
       await flushPromises()
       expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('37')
+    })
+  })
+
+  describe('Use bundled, with a bundled build', () => {
+    const bundledFfmpeg = { bundled: true, origin: 'bundled' as const }
+
+    it('removes the Settings paths of ffmpeg and ffprobe together, with no download', async () => {
+      const { wrapper, row, server, system } = await mountTools(
+        systemInfo(
+          { mode: 'desktop' },
+          {
+            ffmpeg: { ...bundledFfmpeg, origin: 'settings', path: '/usr/bin/ffmpeg' },
+            ffprobe: { ...bundledFfmpeg, origin: 'settings', path: '/usr/bin/ffprobe' },
+          },
+        ),
+        { ffmpeg: '/usr/bin/ffmpeg', ffprobe: '/usr/bin/ffprobe', mediainfo: '/opt/mediainfo' },
+      )
+      fetchEnds(system, 'done')
+      expect(wrapper.find('[data-action="fetch-bundled"]').exists()).toBe(false)
+      expect(row('ffmpeg').find('[data-action="remove"]').exists()).toBe(false)
+
+      await row('ffprobe').find('[data-action="use-bundled"]').trigger('click')
+      await flushPromises()
+      expect(system.fetchTools).not.toHaveBeenCalled()
+      expect(server.patches).toEqual([
+        [
+          { op: 'replace', path: '/tools/ffmpeg', value: null },
+          { op: 'replace', path: '/tools/ffprobe', value: null },
+        ],
+      ])
+      expect(system.rescanTools).toHaveBeenCalledTimes(1)
+      expect(
+        (row('ffmpeg').find('[data-field="override"]').element as HTMLInputElement).value,
+      ).toBe('')
+    })
+
+    it('resets MediaInfo on its own', async () => {
+      const { row, server } = await mountTools(
+        systemInfo({ mode: 'desktop' }, { mediainfo: { bundled: true, origin: 'settings' } }),
+        { mediainfo: '/opt/mediainfo', mkvpropedit: '/opt/mkvpropedit' },
+      )
+      expect(row('mkvpropedit').find('[data-action="use-bundled"]').exists()).toBe(false)
+      expect(row('mkvpropedit').find('[data-action="remove"]').exists()).toBe(true)
+
+      await row('mediainfo').find('[data-action="use-bundled"]').trigger('click')
+      await flushPromises()
+      expect(server.patches).toEqual([[{ op: 'replace', path: '/tools/mediainfo', value: null }]])
+    })
+
+    it('is not offered when the bundled build is in use already, or the environment sets the tool', async () => {
+      const { row } = await mountTools(
+        systemInfo(
+          { mode: 'desktop' },
+          {
+            ffmpeg: bundledFfmpeg,
+            ffprobe: bundledFfmpeg,
+            mediainfo: { bundled: true, origin: 'env', path: '/env/mediainfo' },
+          },
+        ),
+        { mediainfo: '/opt/mediainfo' },
+      )
+      expect(row('ffmpeg').find('[data-action="use-bundled"]').exists()).toBe(false)
+      expect(row('ffprobe').find('[data-action="use-bundled"]').exists()).toBe(false)
+      expect(row('mediainfo').find('[data-action="use-bundled"]').exists()).toBe(false)
+    })
+
+    it('shows a refused reset at the field and does not check the tools', async () => {
+      const { row, server, system } = await mountTools(
+        systemInfo({ mode: 'desktop' }, { mkvpropedit: { bundled: true, origin: 'settings' } }),
+        { mkvpropedit: '/opt/mkvpropedit' },
+      )
+      server.refuse = () => refusal(409, 'settings.conflict', 'The settings changed', 'Try again.')
+      await row('mkvpropedit').find('[data-action="use-bundled"]').trigger('click')
+      await flushPromises()
+      expect(row('mkvpropedit').find('.rf-field__issue').text()).toContain(
+        'The settings changed. Try again.',
+      )
+      expect(system.rescanTools).not.toHaveBeenCalled()
     })
   })
 })

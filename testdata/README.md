@@ -3079,3 +3079,38 @@ PyInstaller 6.22.3 (hooks-contrib 2026.9, Python 3.14.8), Tauri CLI 2.12.4 and t
   with `StartupWMClass=reframe-desktop`; the package name is `reframe`.
   `postInstallScript` / `preRemoveScript` become the `.deb`'s `postinst` / `prerm` and the
   `.rpm`'s `POSTIN` / `PREUN` header tags.
+
+### The bundled tools (D-7)
+
+The pinned BtbN build `n9.0.2-17-g2a571b6068-20260930`, MKVToolNix 103.0 and MediaInfo CLI
+26.10, 2026-11-12 ([0002](../docs/decisions/0002-bundled-ffmpeg.md)):
+
+- The BtbN Linux build carries no libva or Vulkan loader: `libavutil` and `libavcodec` load the
+  system's `libva.so.2` and `libva-drm.so.2` at run time through implib-gen stubs, so libva's
+  own driver folder applies (on Arch the encode works with and without `LIBVA_DRIVERS_PATH`;
+  `LIBVA_DRIVERS_PATH` set but empty makes device creation fail with -5).
+- A stub aborts the process (SIGABRT, exit 134) when the library is missing
+  (`implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: …`, the QSV
+  test without `libva-drm2`) or lacks a function
+  (`implib-gen: libva.so.2: failed to resolve symbol 'vaMapBuffer2' via dlsym: …`). Every
+  VAAPI encode hits the second with libva 2.14 (Ubuntu 22.04), 2.17 (Debian 12) and 2.20
+  (Ubuntu 24.04); libva 2.22 (Debian 13) and 2.24 (Arch) work.
+- libplacebo without a Vulkan loader (no `libvulkan1` in a container, no `vulkan-1.dll` on the
+  Windows VM) prints `Instance API version 1.0.0 is lower than the minimum required version of
+  1.2.0, cannot proceed!` and exits 187; the same text with `Device API version` exists in
+  `libavfilter`.
+- The Detelecine crash on Windows (the chain of `test_every_filter_on_an_untagged_interlaced_source`,
+  400 runs each on the 6-processor VM): the pin 2, BtbN n9.0.2-39 (2026-10-31) 5, gyan.dev
+  9.0.2 `full_build-shared` 4; the pin with `-filter_threads 1` 0; the chain without
+  `decimate` 11, and with `-filter_threads 1` 16; the pin's Linux build on the same CPU 0. Git Bash shows `0xC0000005` as exit 139.
+- `mkvpropedit.exe` of the portable MKVToolNix zip is linked statically: alone in a folder it
+  prints `mkvpropedit v103.0 ('The Darkness') 64-bit`. `MediaInfo.exe` without `LIBCURL.DLL`
+  prints its version and reads a local file.
+- The MediaInfo CLI zip has no top folder. MKVToolNix publishes a `.zip` next to the `.7z` and
+  a `.sha256` for each.
+- mediaarea.net's chain ends at "SSL.com TLS ECC Root CA 2022", cross-signed by "SecureTrust
+  CA"; the VM's machine root store has neither, so Python's download fails with
+  `CERTIFICATE_VERIFY_FAILED` (Windows adds such roots on demand, Python does not ask);
+  `SSL_CERT_FILE` set to certifi's `cacert.pem` works.
+- BtbN's repository is now `github.com/FFmpeg-Builds/FFmpeg-Builds`; the release URLs under
+  `github.com/BtbN/FFmpeg-Builds` redirect there.

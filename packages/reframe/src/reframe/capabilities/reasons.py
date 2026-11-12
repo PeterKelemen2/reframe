@@ -195,6 +195,26 @@ _RULES: tuple[_Rule, ...] = (
         re.compile(r"Failed creating instance: (?P<code>VK_\w+)"),
         lambda m, _ctx, _t: f"No working Vulkan driver ({m['code']})",
     ),
+    # Without a Vulkan loader (no vulkan-1.dll / libvulkan.so.1) libplacebo also sees 1.0.
+    _Rule(
+        re.compile(
+            r"Instance API version (?P<have>[\d.]+) is lower than the minimum required "
+            r"version of (?P<need>[\d.]+)"
+        ),
+        lambda m, _ctx, _t: (
+            f"No Vulkan runtime, or one too old for libplacebo "
+            f"(Vulkan {m['have']}, needs {m['need']})"
+        ),
+    ),
+    _Rule(
+        re.compile(
+            r"Device API version (?P<have>[\d.]+) is lower than the minimum required "
+            r"version of (?P<need>[\d.]+)"
+        ),
+        lambda m, _ctx, _t: (
+            f"The Vulkan driver is too old for libplacebo (Vulkan {m['have']}, needs {m['need']})"
+        ),
+    ),
     _Rule(
         re.compile(r"Found no suitable device, giving up"),
         _fixed("No Vulkan device that libplacebo can use"),
@@ -206,6 +226,18 @@ _RULES: tuple[_Rule, ...] = (
     _Rule(
         re.compile(r"Failed creating logical device"),
         _fixed("The Vulkan device could not be opened"),
+    ),
+    # The build loads system libraries (libva, …) at run time through implib-gen stubs, which
+    # abort when the library is missing or lacks a function the build was compiled against.
+    _Rule(
+        re.compile(r"^implib-gen: (?P<lib>\S+): failed to resolve symbol '(?P<symbol>[^']+)'"),
+        lambda m, _ctx, _t: (
+            f"The system's {m['lib']} is too old for this FFmpeg build (it has no {m['symbol']})"
+        ),
+    ),
+    _Rule(
+        re.compile(r"^implib-gen: (?P<lib>\S+): failed to load library"),
+        lambda m, _ctx, _t: f"The system library {m['lib']} is not installed",
     ),
     # A hardware device option failed (fftools) and no device line said why.
     _Rule(
