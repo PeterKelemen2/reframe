@@ -8,6 +8,7 @@
     "intro": "The programs Reframe runs. Where each one comes from: an environment variable on the server, a path in the settings, the bundled build, or the system PATH.",
     "useBundled": "Use bundled FFmpeg",
     "useBundledTool": "Use bundled",
+    "useBundledAlso": "Use bundled also removes the path of {tools}.",
     "checkAgain": "Check again",
     "downloading": "Downloading FFmpeg…",
     "bundledUseless": "Environment variables on the server set ffmpeg and ffprobe, so a bundled FFmpeg would not be used.",

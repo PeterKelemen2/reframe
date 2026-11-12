@@ -19,7 +19,7 @@ import { useSettingsLocked } from './useSetting'
 const { t } = useI18n()
 const system = useSystemStore()
 const locked = useSettingsLocked()
-const { fetching, fetchTask, use } = useBundledTools()
+const { canDownload, fetching, fetchTask, use } = useBundledTools()
 
 const tools = computed<ToolInfo[]>(() => {
   const set = system.info?.tools
@@ -28,11 +28,6 @@ const tools = computed<ToolInfo[]>(() => {
 const mode = computed(() => system.info?.mode ?? 'web')
 
 const checking = ref(false)
-/** A bundled FFmpeg needs no download: each of its rows has *Use bundled*. */
-const canDownload = computed(() => {
-  const set = system.info?.tools
-  return set !== undefined && !FFMPEG_FAMILY.some((name) => set[name].bundled)
-})
 /** The environment sets both: a bundled build would not be used. */
 const bundledUseless = computed(() => {
   const set = system.info?.tools

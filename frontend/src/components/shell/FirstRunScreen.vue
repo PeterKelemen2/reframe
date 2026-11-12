@@ -33,7 +33,7 @@ const router = useRouter()
 const system = useSystemStore()
 const settings = useSettingsStore()
 const { firstStart, finish } = useFirstRun()
-const { fetching, fetchTask, use } = useBundledTools()
+const { canDownload, fetching, fetchTask, use } = useBundledTools()
 
 const checking = ref(false)
 /** When the last *Check again* found the tools as they were: it says so, else nothing changes. */
@@ -56,15 +56,10 @@ const failing = computed(() => {
 const setByEnv = computed(() => failing.value.filter(setByEnvironment))
 /** The server refuses tool paths from a browser; only the desktop app can choose one. */
 const desktop = computed(() => system.info?.mode === 'desktop')
-/**
- * A bundled FFmpeg is used once no Settings path wins over it; without one the pinned build is
- * downloaded first. A damaged bundled build with no path to remove is not fixed by either.
- */
+/** A bundled FFmpeg is used once no Settings path wins over it, after a download if needed. */
 const canBundle = computed(() => {
   if (welcome.value || setByEnv.value.length > 0) return false
-  const set = system.info?.tools
-  const bundled = set !== undefined && FFMPEG_FAMILY.some((name) => set[name].bundled)
-  return !bundled || resetOps(FFMPEG_FAMILY, settings.settings?.tools).length > 0
+  return canDownload.value || resetOps(FFMPEG_FAMILY, settings.settings?.tools).length > 0
 })
 const canChoosePath = computed(() => desktop.value && setByEnv.value.length === 0)
 const variables = computed(() =>

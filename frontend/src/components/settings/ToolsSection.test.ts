@@ -296,6 +296,93 @@ describe('the Tools section', () => {
       expect(row('mediainfo').find('[data-action="use-bundled"]').exists()).toBe(false)
     })
 
+    it('is offered only on a row whose own tool has a Settings path', async () => {
+      const { row, server } = await mountTools(
+        systemInfo(
+          { mode: 'desktop' },
+          {
+            ffmpeg: bundledFfmpeg,
+            ffprobe: { ...bundledFfmpeg, origin: 'settings', path: '/opt/ff/ffprobe' },
+          },
+        ),
+        { ffprobe: '/opt/ff/ffprobe' },
+      )
+      expect(row('ffmpeg').find('[data-action="use-bundled"]').exists()).toBe(false)
+      expect(row('ffprobe').find('[data-field="bundled-note"]').exists()).toBe(false)
+
+      await row('ffprobe').find('[data-action="use-bundled"]').trigger('click')
+      await flushPromises()
+      expect(server.patches).toEqual([[{ op: 'replace', path: '/tools/ffprobe', value: null }]])
+    })
+
+    it('says that the reset removes the other FFmpeg path too', async () => {
+      const { row } = await mountTools(
+        systemInfo(
+          { mode: 'desktop' },
+          {
+            ffmpeg: { ...bundledFfmpeg, origin: 'settings' },
+            ffprobe: { ...bundledFfmpeg, origin: 'settings' },
+          },
+        ),
+        { ffmpeg: '/opt/ff/ffmpeg', ffprobe: '/opt/ff/ffprobe' },
+      )
+      expect(row('ffmpeg').find('[data-field="bundled-note"]').text()).toBe(
+        'Use bundled also removes the path of ffprobe.',
+      )
+      expect(row('ffprobe').find('[data-field="bundled-note"]').text()).toBe(
+        'Use bundled also removes the path of ffmpeg.',
+      )
+    })
+
+    describe('a damaged bundled FFmpeg with no Settings path', () => {
+      const damaged = {
+        ffmpeg: bundledFfmpeg,
+        ffprobe: {
+          ...bundledFfmpeg,
+          status: 'missing' as const,
+          path: null,
+          version: null,
+          reason: 'The bundled FFmpeg has no ffprobe: the installation is damaged.',
+        },
+      }
+
+      it('is downloaded again in web mode, where the data folder holds it', async () => {
+        const { wrapper, server, system } = await mountTools(systemInfo({ mode: 'web' }, damaged))
+        fetchEnds(system, 'done')
+        await wrapper.find('[data-action="fetch-bundled"]').trigger('click')
+        await flushPromises()
+        expect(system.fetchTools).toHaveBeenCalledTimes(1)
+        expect(server.patches).toEqual([])
+      })
+
+      it('is downloaded again before a Settings path is removed in web mode', async () => {
+        const { wrapper, server, system } = await mountTools(
+          systemInfo(
+            { mode: 'web' },
+            { ...damaged, ffmpeg: { ...bundledFfmpeg, origin: 'settings', path: '/opt/x/ffmpeg' } },
+          ),
+          { ffmpeg: '/opt/x/ffmpeg' },
+        )
+        fetchEnds(system, 'done')
+        await wrapper.find('[data-action="fetch-bundled"]').trigger('click')
+        await flushPromises()
+        expect(system.fetchTools).toHaveBeenCalledTimes(1)
+        expect(server.patches).toEqual([[{ op: 'replace', path: '/tools/ffmpeg', value: null }]])
+      })
+
+      it('is not offered in web mode once the bundled build works', async () => {
+        const { wrapper } = await mountTools(
+          systemInfo({ mode: 'web' }, { ffmpeg: bundledFfmpeg, ffprobe: bundledFfmpeg }),
+        )
+        expect(wrapper.find('[data-action="fetch-bundled"]').exists()).toBe(false)
+      })
+
+      it("is not offered in the desktop app: the app's own folder is searched first", async () => {
+        const { wrapper } = await mountTools(systemInfo({ mode: 'desktop' }, damaged))
+        expect(wrapper.find('[data-action="fetch-bundled"]').exists()).toBe(false)
+      })
+    })
+
     it('shows a refused reset at the field and does not check the tools', async () => {
       const { row, server, system } = await mountTools(
         systemInfo({ mode: 'desktop' }, { mkvpropedit: { bundled: true, origin: 'settings' } }),

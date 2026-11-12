@@ -7,7 +7,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 import { useTasksStore } from '@/stores/tasks'
 
-import { familyOf, resetOps, type ToolName } from './tools'
+import { bundledFfmpegDamaged, FFMPEG_FAMILY, familyOf, resetOps, type ToolName } from './tools'
 import { refusalIssues } from './useSetting'
 
 /** The API client has shown the problem as a toast. */
@@ -36,6 +36,16 @@ export function useBundledTools() {
   const fetchTask = computed(() =>
     system.toolsFetch === null ? null : (tasks.tasks[system.toolsFetch] ?? null),
   )
+  /**
+   * Downloading the pinned FFmpeg changes what is found: there is no bundled build, or a web
+   * server's damaged one is the download itself. The desktop app's own folder comes first.
+   */
+  const canDownload = computed(() => {
+    const set = system.info?.tools
+    if (set === undefined) return false
+    if (!FFMPEG_FAMILY.some((name) => set[name].bundled)) return true
+    return system.info?.mode === 'web' && bundledFfmpegDamaged(set)
+  })
 
   /** `true` when the download task ended `done`; a failure is a toast already. */
   async function download(): Promise<boolean> {
@@ -57,7 +67,9 @@ export function useBundledTools() {
 
   /** What the server refused, at `tools`; empty when nothing was refused. */
   async function use(name: ToolName): Promise<ValidationIssue[]> {
-    if (!system.info?.tools[name].bundled && !(await download())) return []
+    const fetchFirst =
+      !system.info?.tools[name].bundled || (FFMPEG_FAMILY.includes(name) && canDownload.value)
+    if (fetchFirst && !(await download())) return []
     const ops = resetOps(familyOf(name), settings.settings?.tools)
     if (ops.length === 0) return []
     try {
@@ -70,5 +82,5 @@ export function useBundledTools() {
     return []
   }
 
-  return { fetching, fetchTask, use }
+  return { canDownload, fetching, fetchTask, use }
 }
