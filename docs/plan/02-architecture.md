@@ -106,8 +106,10 @@ build behaves the same.
   VAAPI (Linux), and it must run on the oldest supported distro. The first candidate is the
   BtbN release-branch GPL build, shared-library variant, so `ffmpeg` and `ffprobe` share one
   set of libraries. `D-7` confirms the choice.
-- **Install location**: `<app>/tools/ffmpeg/` (Windows, AppImage), `/usr/lib/reframe/tools/ffmpeg/`
-  (.deb/.rpm, so it does not conflict with the distro's `ffmpeg` package),
+- **Install location**: `<app>/tools/ffmpeg/` (Windows, AppImage), `/usr/lib/Reframe/tools/ffmpeg/`
+  (.deb/.rpm: the Tauri bundler's resource folder, named after the product, next to the
+  sidecar in `/usr/lib/Reframe/sidecar/`; it does not conflict with the distro's `ffmpeg`
+  package; [decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) task L),
   `/opt/reframe/tools/ffmpeg/` (Docker), `<data dir>/tools/ffmpeg/` (`reframe tools fetch`, and
   CI). Bundled MKVToolNix and MediaInfo go to `tools/mkvtoolnix/` and `tools/mediainfo/` next to
   it. Each folder holds the binaries in `bin/` or directly. `REFRAME_CONFIG_DIR`,
