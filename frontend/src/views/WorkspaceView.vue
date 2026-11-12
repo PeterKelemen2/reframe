@@ -10,6 +10,7 @@ import GroupBanner from '@/components/batch/GroupBanner.vue'
 import MatrixDialog from '@/components/matrix/MatrixDialog.vue'
 import PresetPicker from '@/components/presets/PresetPicker.vue'
 import EditorTabs from '@/components/shell/EditorTabs.vue'
+import { useFirstRun } from '@/components/shell/firstRun'
 import FirstRunScreen from '@/components/shell/FirstRunScreen.vue'
 import { focusLost, focusWorkspace } from '@/components/shell/focus'
 import { fileName, formatDuration } from '@/components/shell/format'
@@ -20,11 +21,10 @@ import { useValidation } from '@/composables/useValidation'
 import { platform } from '@/platform'
 import { useCropStore } from '@/stores/crop'
 import { useSourcesStore } from '@/stores/sources'
-import { useSystemStore } from '@/stores/system'
 
 const { t } = useI18n()
-const system = useSystemStore()
 const sources = useSourcesStore()
+const { shown: firstRunShown } = useFirstRun()
 
 useValidation()
 // Detects the crop of a job opened in automatic or conservative mode, whichever tab is shown.
@@ -64,7 +64,7 @@ async function open(): Promise<void> {
 
 <template>
   <main class="workspace" :data-platform="platform.kind">
-    <FirstRunScreen v-if="system.ffmpegProblem !== null" />
+    <FirstRunScreen v-if="firstRunShown" />
     <template v-else>
       <header class="workspace__header">
         <div class="workspace__source">

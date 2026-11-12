@@ -47,6 +47,7 @@ export function tool(name: ToolInfo['name'], extra: Partial<ToolInfo> = {}): Too
     version: '9.0.2',
     env_var: `REFRAME_${name.toUpperCase()}`,
     next_to_ffmpeg: false,
+    bundled: false,
     ...extra,
   } as ToolInfo
 }

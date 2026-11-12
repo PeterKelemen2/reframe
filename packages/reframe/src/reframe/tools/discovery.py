@@ -18,7 +18,7 @@ import asyncio
 import os
 import sys
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -97,6 +97,8 @@ class ToolLocation:
     fixes: list[Fix] = field(default_factory=list)
     problem_status: ToolStatus = ToolStatus.MISSING
     """The status that ``problem`` gives (``broken`` for a script tool on Windows)."""
+    bundled: bool = False
+    """A bundled build of the tool's family exists."""
 
 
 @dataclass(frozen=True)
@@ -238,8 +240,19 @@ def _search_path(ctx: _Context, tool: str) -> Path | None:
 def _locate(
     ctx: _Context, tool: ToolName, located: Mapping[ToolName, ToolLocation]
 ) -> ToolLocation:
-    env_var = ENV_VARS[tool]
     bundled, family_dir = _bundled_dir(ctx, tool)
+    loc = _locate_in(ctx, tool, located, bundled, family_dir)
+    return replace(loc, bundled=family_dir is not None)
+
+
+def _locate_in(
+    ctx: _Context,
+    tool: ToolName,
+    located: Mapping[ToolName, ToolLocation],
+    bundled: Path | None,
+    family_dir: Path | None,
+) -> ToolLocation:
+    env_var = ENV_VARS[tool]
     bundled_exists = family_dir is not None
 
     env_value = ctx.environ.get(env_var, "").strip()
@@ -354,6 +367,7 @@ def _info(loc: ToolLocation, status: ToolStatus, reason: str | None, **kw: objec
             "env": loc.env,
             "env_var": loc.env_var,
             "next_to_ffmpeg": loc.next_to_ffmpeg,
+            "bundled": loc.bundled,
             "fixes": fixes,
             **kw,
         }
