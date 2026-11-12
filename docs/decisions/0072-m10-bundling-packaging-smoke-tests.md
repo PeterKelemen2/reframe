@@ -821,6 +821,55 @@ generated with the bundled FFmpeg. The process listing (`Get-CimInstance Win32_P
 
 *Placeholder: filled by the lead.*
 
+**Fix round — FA** (the AppImage's environment and working folder; `desktop/src-tauri/src/`
+`appimage.rs`, `external.rs`, `main.rs`). Checked in the real AppImage built from the branch
+(`build.sh`), headless in a virtual KWin (socket `reframe-fa`) with private folders, against
+the task-T AppImage as "before".
+
+- **Open in external player got the AppImage's environment** (R1). The opener plugin starts
+  `xdg-open` with the app's environment, and the plugin has no way to change a child's
+  environment; the app's own environment cannot be cleaned either, because WebKit's helper
+  processes and the sidecar need it. Before: the program `xdg-open` started (a private
+  `x-scheme-handler/http` handler that writes its environment) had 19 variables naming the
+  mount (`LD_LIBRARY_PATH`, `PATH`, `GTK_PATH`, `GIO_MODULE_DIR`, `PYTHONHOME`, …) plus
+  `GTK_THEME=Adwaita:light`, `PYTHONDONTWRITEBYTECODE`, `APPIMAGE`, `ARGV0`, `OWD`. Fix: the page
+  calls the shell's `open_external` command (it replaces `opener:allow-open-url`; the same
+  scope, preview clip links of `http://127.0.0.1`, checked in Rust). Outside an AppImage it
+  calls the opener as before (Windows unchanged); with `APPDIR` set it runs the `open` crate's
+  launchers (`xdg-open`, `gio open`, …, the opener's own list) in the opener's order and
+  fallback, with `appimage::user_environ`: the core's `user_environ` rule (every entry under
+  `APPDIR` dropped from every variable, an emptied variable removed; only when the executable
+  is inside `APPDIR`) plus the variables set only for the image with values that do not name it
+  (`APPIMAGE`, `ARGV0`, `OWD`, `GTK_THEME`, `PYTHONDONTWRITEBYTECODE`; the core keeps these);
+  the launcher starts in `OWD` (else `/`), not in the mount, which goes away when the app quits.
+  After: the handler got the URL and the session's own variables, no line naming the mount
+  and none of the five, and ran in `OWD` (`PWD`). **Reveal in folder is not affected** (R1 was wrong
+  there): on Linux the opener calls `org.freedesktop.FileManager1.ShowItems` over D-Bus, so the
+  file manager is started by D-Bus activation, not by the app; a stand-in `FileManager1` on the
+  private bus got the bus's environment, 0 lines naming the mount, before and after.
+- **A relative file argument was resolved inside the AppImage** (R1). Before: `cd films;
+  Reframe.AppImage multitrack.mkv` probed `/tmp/.mount_…/usr/multitrack.mkv`, and a second
+  launch `Reframe.AppImage other.mkv` handed over `/tmp/.mount_<its own mount>/usr/other.mkv`
+  (both `probe.not_found`). **R1's suggested fix (`set_current_dir(OWD)` for the whole run)
+  crashes the app**: Tauri's AppImage patches WebKitGTK to find its helper processes at
+  `././/lib/x86_64-linux-gnu/webkit2gtk-4.1/` (its strings), relative to `$APPDIR/usr`; the
+  extracted AppImage's `reframe-desktop` with AppRun's environment started in another folder
+  aborts with `Failed to spawn child process “././/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess”
+  (No such file or directory)`; started in `usr/` it runs. Fix: `main()` changes to `OWD` (when
+  `APPIMAGE` is set and `OWD` is absolute) before anything else and back to the image's folder
+  after `Builder::build`: the arguments are read, and the single-instance plugin (its setup
+  runs in `build`) sends a second launch's working folder, in the user's folder; the windows,
+  and so WebKit, start in `run`. The sidecar, started before `build`, now runs in the user's
+  folder (as a `.deb` install launched from a terminal does); it uses absolute paths. After:
+  the first and the second launch opened `films/multitrack.mkv` and `films/other.mkv` (probed,
+  crop detected, frames); the webview and the sidecar started; SIGTERM ended every process.
+- Tests: `appimage.rs` 6 (the user's folder, the environment of an AppImage read from the
+  built one, a folder next to the mount, outside the image, bytes that are not UTF-8),
+  `external.rs` 6 (the scope, the launcher's environment and folder, fallback after a failure
+  or a missing program, a launcher still running, the error reported), and the adapter's
+  `open_external` call; each failed first (stubs, the old adapter) and under a mutation of the
+  code it covers (14 mutations).
+
 ## Consequences
 
 *Filled at the end.*

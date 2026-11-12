@@ -27,6 +27,7 @@ tokio = { version = "1.54.1", features = ["io-util", "macros", "net", "process",
 libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
+open = "=5.4.5"
 zbus = "5.19.0"
 
 [target.'cfg(windows)'.dependencies]
