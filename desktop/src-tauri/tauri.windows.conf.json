@@ -2,6 +2,10 @@
   "$schema": "https://schema.tauri.app/config/2",
   "mainBinaryName": "Reframe",
   "bundle": {
-    "targets": ["nsis", "msi"]
+    "targets": ["nsis", "msi"],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "nsis": { "installMode": "currentUser" }
+    }
   }
 }
