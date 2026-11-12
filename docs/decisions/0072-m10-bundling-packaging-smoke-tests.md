@@ -411,7 +411,140 @@ rule, inside the folder because the root `.gitignore` is the lead's) ships in th
 
 ## Task S — the smoke tests (D-9)
 
-*Placeholder: filled by task S.*
+Built on `m10-hardening` 1d8398d (2026-11-12): the Linux run, the CI job and the Windows
+preparation. The Windows run waits for the VM's GUI session (below).
+
+**The test** (`desktop/tests/smoke/smoke.test.ts`, `processes.ts`, `close-window.py`): Node's own
+test runner (`node --test`, TypeScript run by Node 24's type stripping) and `selenium-webdriver`
+4.52.0 (the client of Tauri's WebDriver guide), `tauri-driver` 2.1.0 (`cargo install --locked`;
+3.0 is an alpha) in front of `WebKitWebDriver` or `msedgedriver`. `npm run smoke` in `desktop/`
+starts `tauri-driver` on 8770/8771 with this run's own `REFRAME_DATA_DIR`, `REFRAME_CONFIG_DIR`,
+`REFRAME_CACHE_DIR`, `REFRAME_POWER_DRY_RUN=1` and, on Linux, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`,
+`XDG_CACHE_HOME` (on Windows `WEBVIEW2_USER_DATA_FOLDER`), all in one temp folder that it removes.
+The app is `REFRAME_SMOKE_APP`, else the release build in `$CARGO_TARGET_DIR` (or
+`src-tauri/target`). Six steps, each skipped once one before it failed; a failed step prints the
+sidecar log's last lines and the page's text:
+
+1. **starts**: a WebDriver session with `tauri:options` `{application, args: [<temp>/media/multitrack.mkv]}`,
+   the page's title is *Reframe*, and the app runs below `tauri-driver`. The session must open
+   within 60 s.
+2. **reaches its backend**: the page shows `[data-connection="open"]` (or the backend error
+   screen, reported with its text), and the app's own child is `reframe-server` (the frozen
+   sidecar; the folder above it is the app's resource folder).
+3. **the first-run screen**: shown on the first start, its ffmpeg path is inside the resource
+   folder (the bundled build), **Continue** opens the workspace (task U's screen, the way a user
+   goes past it).
+4. **the file from argv**: a source item with the fixture's exact path, probed (its summary holds
+   the probe's `320×180`), and the editor has its job.
+5. **a job**: the preset picker → *Fast 720p30* (libx264), **Add to queue**, the output path from
+   the status bar (next to the file, in the temp folder), **Start**, the status bar's queue link;
+   the one row of the queue table reaches `done` (any end state fails at once), and the output
+   file exists and is not empty.
+6. **the quit**: the app's process tree is listed; the main window gets the close button's
+   message (X11 `WM_DELETE_WINDOW` through python-xlib; `WM_CLOSE` on Windows); within 20 s no
+   process of that tree, no process whose program is inside the resource folder (the sidecar,
+   the bundled FFmpeg), and no process with `--parent-pid <app>` is alive; no `.part` file is in
+   the output folder; and `sidecar.log` has `"POST /api/system/shutdown HTTP/1.1" 204` (only the
+   quit flow sends it: after a kill the sidecar ends on its parent watch instead).
+
+**Deviations from the plan and the brief**:
+
+- **No short range**: the job editor has no range control yet (`JobSettings.range` exists, no UI
+  sets it). The fixture is 4 s at 320×180, so the whole file encodes in about 1 s; the test
+  uses the whole file.
+- **The quit is the window's close button**, sent by the test, not WebDriver's *Close Window*
+  (the page has no `core:window:allow-close` permission, and a close through the webview is not
+  the user's path). With no job running the page quits at once (0069).
+- A mutation of the app needs the copy in a folder named `target/<profile>/` with a
+  `.cargo-lock` file: **Tauri reads the resources beside the binary on Linux only in a Cargo
+  output folder** (`tauri-utils` 2.10.2 `resource_dir_from`; else `../lib/<productName>` or
+  `/usr/lib/<productName>`), so a copied release binary elsewhere finds no sidecar ("No such file
+  or directory (os error 2)" on the error screen). Windows always uses the binary's folder.
+
+**Real tool behaviour found** (checked in the runs below):
+
+- `tauri-driver` 2.1.0 passes `tauri:options.args` to `webkitgtk:browserOptions.args` (Linux)
+  and `ms:edgeOptions.args` (Windows) and sets `TAURI_WEBVIEW_AUTOMATION=true` for the native
+  driver; the release build accepts the session with no change to the app.
+- **`WebKitWebDriver` waits without end** for an app that exits before its page loads (the
+  session request never answered in 10 minutes): the test gives the session 60 s.
+- WebDriver's element text is the *visible* text: in the 1280×800 window under Xvfb the sources
+  panel's summary and the preset picker's label are cut by the layout, and `getText()` returns
+  `""` for them. The test reads `textContent`.
+- The queue view fills its table a moment after it opens (zero rows at first).
+
+**Linux run** (2026-11-12, this host, Docker 29.9.2): `desktop/tests/smoke/linux/run.sh` builds
+the image `reframe-s` from task L's `reframe-l` (`REFRAME_BUILD_NAME=reframe-l`) plus
+`webkit2gtk-driver` (WebKitGTK 2.50 of Ubuntu 22.04), `xvfb`, `python3-xlib` and `tauri-driver`
+2.1.0, pipes a clean copy of the working tree into a container and runs
+`linux/in-container.sh`: the CI job's steps (`uv sync --frozen`, `bundle-tools.py --platform
+linux-x64`, the frozen sidecar, `npm ci`, `npx tauri build --no-bundle`, `make-testdata.py
+--only multitrack` with the bundled FFmpeg, the type check, oxlint and oxfmt of the test) and
+`dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' npm run smoke`. Volumes
+`reframe-s-{cargo,target,cache}`. The output (the last full run):
+
+```
+▶ the desktop app
+  ✔ starts
+  ✔ reaches its backend
+  ✔ shows the first-run screen with the bundled FFmpeg, and goes past it
+  ✔ opens and probes the file given on its command line
+  ✔ queues a job and finishes it
+  ✔ quits without leaving processes or files behind
+✔ the desktop app
+ℹ tests 6 · pass 6 · fail 0
+```
+
+The steps took 0.3, 0.9, 0.4, 0.5, 2.2 and 0.6 s (the whole test 5.1 s); the release build
+1 min 22 s on warm volumes.
+
+**Mutation check** (Linux container; each run against a broken copy of the release app, or of
+the test, in `/tmp/m/target/release/`; an unchanged copy passed before and after them, 5 times
+in all; two earlier baseline failures were the test's own: the queue table read before it
+filled, and an orphan of the previous mutation still running, which the harness now kills
+first):
+
+| Mutation | Step that failed | Message |
+|----------|------------------|---------|
+| the app exits at once (`reframe-desktop` replaced by `exit 1`) | starts (60 s) | the app opened no page within 60 s |
+| the sidecar exits at once | reaches its backend | the backend failed: The Reframe server is not running · The server ended before it was ready (exit status: 1) · … |
+| no bundled FFmpeg (`tools/ffmpeg/` removed) | the first-run screen | ffmpeg  is not the one bundled in /tmp/m/target/release |
+| the app gets a path that does not exist | the file from argv (30 s) | …/multitrack.mkv from the command line is not in the sources |
+| the encode fails (`ffmpeg` wrapped: exit 1 for an output `.part`) | a job | the job ended failed |
+| an FFmpeg left running (the wrapper starts a detached `ffmpeg` under `setsid`) | the quit | still running 20 s after the quit: 1589 /tmp/m/target/release/tools/ffmpeg/bin/ffmpeg.real |
+| a `.part` file left (the wrapper writes `stray.part.mkv`) | the quit | a .part file is left next to the output |
+| the app killed (`SIGKILL`) instead of closed | the quit | no shutdown request |
+
+With the kill, the sidecar and the WebKit processes still ended within 20 s (the sidecar's
+`PR_SET_PDEATHSIG` and parent watch), so only the log check tells the kill from a quit on Linux.
+
+**The CI job** (`desktop-smoke` in `ci.yml`, `ubuntu-22.04` and `windows-latest`, 60 min): the
+steps of `in-container.sh`, plus `cargo install --locked tauri-driver@2.1.0`, Tauri's Linux
+packages with `webkit2gtk-driver xvfb python3-xlib`, and on Windows
+`desktop/tests/smoke/msedgedriver.ps1`: it reads the WebView2 runtime's version (`pv` of the
+EdgeUpdate client `{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`, machine or user), downloads
+`https://msedgedriver.microsoft.com/<version>/edgedriver_win64.zip`, checks the driver's
+Authenticode signature (Microsoft; no checksums are published) and that `--version` names the
+same version, and the job puts the folder on `PATH` (where `tauri-driver` looks). The Linux
+runner is `ubuntu-22.04`, the oldest supported distro and the image of the Linux run; it must
+move when GitHub retires that image. Not run (nothing is pushed): **actionlint was not run**
+(its release download was refused by this session's permission rules); the file parses as YAML
+(PyYAML 6.0.3) with the job and its 17 steps as written, and every Linux step ran in the
+container above. The Windows runner's own steps are not verified: its MediaInfo download may
+need `SSL_CERT_FILE` as on the VM (task T), and whether its WebView2 matches an msedgedriver on
+the new download host.
+
+**Windows preparation** (the VM, over SSH, no GUI): `tauri-driver` 2.1.0 installed in
+`~/.cargo/bin`; `msedgedriver.ps1` fetched `msedgedriver` **157.0.4341.46** for WebView2
+157.0.4341.46 into `C:\Users\TestWin\wt\s-tools\msedgedriver` (signature and version checks
+passed); the clone `~/wt/s` built with `bundle-tools.py --platform windows-x64` (with
+`SSL_CERT_FILE` from certifi), the frozen sidecar and `npx tauri build --no-bundle` in
+`C:\Users\TestWin\cargo-agents`, copied at once to `C:\Users\TestWin\wt\s-app` (`Reframe.exe`,
+`sidecar/`, `tools/` with ffmpeg, mkvtoolnix and mediainfo, `notices/`; 336 MB); the fixture
+generated with the bundled FFmpeg. The process listing (`Get-CimInstance Win32_Process` through
+`-EncodedCommand`, 154 processes in about 1 s) and the path rules work there.
+
+**The Windows run**: *waits for the VM's GUI session (phase 2).*
 
 ## Review and fix round
 

@@ -159,6 +159,95 @@ jobs:
       - run: cargo test
         working-directory: desktop/src-tauri
 
+  desktop-smoke:
+    # The release app with its frozen sidecar and bundled tools, driven through tauri-driver
+    # (desktop/tests/smoke): it starts, reaches its backend, opens a file from argv, finishes a
+    # job and quits without leaving processes behind. Ubuntu 22.04 is the oldest supported distro.
+    name: Desktop smoke test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.node-version
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      # webkit2gtk-driver is WebKitWebDriver; python3-xlib closes the window as a user does.
+      - name: Tauri's Linux libraries, WebKitWebDriver and Xvfb
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb python3-xlib
+
+      - run: uv sync --frozen
+
+      - name: Lay out the bundled tools (tools/ffmpeg.toml, tools/bundled-tools.toml)
+        run: uv run python scripts/bundle-tools.py --platform ${{ runner.os == 'Windows' && 'windows-x64' || 'linux-x64' }}
+
+      - name: Build the frozen sidecar
+        run: uv run python desktop/sidecar/build.py
+
+      - run: npm ci
+        working-directory: frontend
+      - run: npm ci
+        working-directory: desktop
+
+      # The binary next to its resources (sidecar/, tools/), as the installers lay it out.
+      - name: Build the release app (no installers)
+        run: npx tauri build --no-bundle
+        working-directory: desktop
+
+      - name: Install tauri-driver
+        run: cargo install --locked tauri-driver@2.1.0
+
+      # A driver of another major version than the WebView2 runtime refuses the session.
+      - name: Put the msedgedriver of the runner's WebView2 on PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = & desktop/tests/smoke/msedgedriver.ps1 -Dest "$env:RUNNER_TEMP\msedgedriver"
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
+
+      - name: Generate the test file with the bundled FFmpeg
+        run: |
+          bin="$PWD/desktop/src-tauri/resources/tools/ffmpeg/bin"
+          exe=""
+          if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
+          REFRAME_FFMPEG="$bin/ffmpeg$exe" REFRAME_FFPROBE="$bin/ffprobe$exe" \
+            uv run python scripts/make-testdata.py --only multitrack
+
+      - name: Type-check, lint and format-check the smoke test (the frontend's rules)
+        run: |
+          npm run smoke:typecheck
+          ../frontend/node_modules/.bin/oxlint -c ../frontend/.oxlintrc.json --deny-warnings tests/smoke
+          ../frontend/node_modules/.bin/oxfmt -c ../frontend/.oxfmtrc.json --check tests/smoke
+        working-directory: desktop
+
+      - name: Smoke test (Xvfb)
+        if: runner.os == 'Linux'
+        run: dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' npm run smoke
+        working-directory: desktop
+
+      - name: Smoke test
+        if: runner.os == 'Windows'
+        run: npm run smoke
+        working-directory: desktop
+
   frontend-server:
     # The frontend against a real reframe-server and a real FFmpeg: the server tests (vitest)
     # and the browser flows (Playwright, Chromium and Firefox). Linux only: the tests find the
