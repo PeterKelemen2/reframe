@@ -220,7 +220,8 @@ async def test_libplacebo_run_test(hardware_snapshot: CapabilitySnapshot) -> Non
 
 @pytest.mark.needs_gpu
 async def test_libplacebo_without_a_vulkan_driver() -> None:
-    """``VK_ICD_FILENAMES`` pointing to nothing: the real failure and its reason."""
+    """``VK_ICD_FILENAMES`` pointing to nothing: the real failure and its reason. Without a
+    Vulkan loader at all (a Windows VM without a GPU driver) libplacebo stops earlier."""
     ffmpeg = await real_ffmpeg()
     assert ffmpeg.path is not None
     outcome = await run_filter_test(
@@ -230,4 +231,7 @@ async def test_libplacebo_without_a_vulkan_driver() -> None:
     )
     assert outcome.failure is not None
     assert outcome.failure.state is EncoderState.UNAVAILABLE
-    assert outcome.failure.reason == "No working Vulkan driver (VK_ERROR_INCOMPATIBLE_DRIVER)"
+    if "Instance API version 1.0.0" in (outcome.failure.detail or ""):
+        assert outcome.failure.reason.startswith("No Vulkan runtime, or one too old")
+    else:
+        assert outcome.failure.reason == "No working Vulkan driver (VK_ERROR_INCOMPATIBLE_DRIVER)"

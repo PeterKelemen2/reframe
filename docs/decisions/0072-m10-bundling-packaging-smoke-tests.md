@@ -89,7 +89,54 @@ whole screen from a task in the same session):
 
 ## Task T — the bundled tools (D-7)
 
-*Placeholder: filled by task T.*
+The results and the host tests are in [0002](0002-bundled-ffmpeg.md); this section is what the
+other tasks need.
+
+**Built.** `tools/bundled-tools.toml` (MKVToolNix 103.0 portable zip, only `mkvpropedit.exe`
+and its licence files; MediaInfo CLI 26.10 zip, `MediaInfo.exe` and its licence files; both
+`windows-x64` only). `scripts/bundle-tools.py` (reuses `reframe.tools.fetch`: download with
+the size limit, `verify_file`, `safe_extract`, the tree digest of the marker); `fetch.py`
+extracts a zip without a top folder. Tests: `testing/tests/test_bundle_tools.py`, three tests
+in `packages/reframe/tests/tools/test_fetch.py`. The FFmpeg pin does not change.
+
+**The CI step** (the S task's job, and the L task's Docker build in `ubuntu:22.04`), after
+`uv sync --frozen`:
+
+```sh
+uv run python scripts/bundle-tools.py --platform linux-x64     # on Linux
+uv run python scripts/bundle-tools.py --platform windows-x64   # on Windows (or on Linux)
+```
+
+It exits 1 with the reason on stderr (a checksum, a download, a foreign file in the folder,
+a tool that discovery does not find as `bundled` with its pinned version). Its downloads can
+be cached keyed on `tools/ffmpeg.toml` and `tools/bundled-tools.toml` (cache the archives, not
+`resources/tools/`: the script re-hashes the folder anyway). The Linux layout needs a Linux
+host (the tarball has symbolic links); the Windows layout builds on either. On a Windows whose
+root store lacks mediaarea.net's root the MediaInfo download fails with
+`CERTIFICATE_VERIFY_FAILED`; then run it with `SSL_CERT_FILE` set to the output of
+`uv run python -m certifi` (needed on the VM; the GitHub runner is not checked).
+
+**For L (packages)**: the `.deb` / `.rpm` get the tools in `/usr/lib/Reframe/tools/` (Tauri's
+resource folder; the core finds it next to the sidecar), not 02's `/usr/lib/reframe/tools/`
+(plan corrected). The licence files are `tools/ffmpeg/LICENSE.txt`,
+`tools/mkvtoolnix/doc/COPYING.txt` (+ `README.txt`), `tools/mediainfo/LICENSE`
+(+ `License.html`); the source links are in the two manifests (`source_commit`,
+`build_scripts_commit`; `source_url`, `source_repository`, `source_tag`). The FFmpeg folder is
+the archive root as it is (234 MB on Linux, `ffplay` and the headers included).
+
+**Plan changes (in the same commit as 0002)**: 07 §D-7 bullet 2 said `resources/tools/<os>/`,
+but one build makes one platform's package, so the layout is `resources/tools/` per build;
+07 §Tool bundling and 02 §Bundled FFmpeg named `/usr/lib/reframe/tools/ffmpeg/` for the
+`.deb` / `.rpm`, but Tauri installs resources under `/usr/lib/<productName>/`; 02 notes that
+the build's VAAPI needs libva 2.22 or newer. 07 §D-7 bullet 1 is ticked; bullet 2 waits for
+the CI job (S).
+
+**Found for the lead and the owner**: VAAPI is unavailable with the bundled build on Ubuntu
+22.04 / 24.04 and Debian 12 (their libva lacks `vaMapBuffer2`), and their distro FFmpeg is
+older than Reframe's minimum, so the 07 risk table's remedy does not help there (0002
+"Consequences"). The Windows Detelecine crash stays (no build without it; one filter thread
+does not avoid it). The `status.md` open items on the
+Detelecine crash and on D-7's `LIBVA_DRIVERS_PATH` are answered by 0002 (the lead's rows).
 
 ## Task U — Settings → Tools and the first-run check (D-7)
 

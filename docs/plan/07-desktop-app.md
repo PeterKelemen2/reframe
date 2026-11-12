@@ -120,7 +120,7 @@ Every desktop package bundles the pinned FFmpeg from `tools/ffmpeg.toml`
 |----------|--------|-------------------------|
 | Windows | Bundled in `resources/tools/ffmpeg/` | Bundled MKVToolNix CLI tools (`mkvpropedit.exe`) and MediaInfo CLI |
 | Linux AppImage | Bundled inside the AppImage | System packages, if installed |
-| Linux .deb / .rpm | Bundled in `/usr/lib/reframe/tools/ffmpeg/`. No dependency on the distro `ffmpeg` package | `Recommends: mkvtoolnix, mediainfo` |
+| Linux .deb / .rpm | Bundled in `/usr/lib/Reframe/tools/ffmpeg/`. No dependency on the distro `ffmpeg` package | `Recommends: mkvtoolnix, mediainfo` |
 
 **Override**: Settings → Tools has a path field for each tool, a **Test** button and a **Use
 bundled** reset. Environment variables (`REFRAME_FFMPEG`, …) take precedence and show as
@@ -213,7 +213,7 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       the session bus (0069 "Fix round — FB").
 
 ### D-7 Tool bundling
-- [ ] Choose the FFmpeg build for `tools/ffmpeg.toml` against the requirements in
+- [x] Choose the FFmpeg build for `tools/ffmpeg.toml` against the requirements in
       [02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg). Test it on the hosts that are
       available, aiming at Intel (VAAPI + QSV), AMD (VAAPI, AMF on Windows) and NVIDIA
       (NVENC), on at least two Linux distros (Debian/Ubuntu and Fedora or Arch) and on
@@ -221,7 +221,8 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       list there the hosts that were not tested as not verified
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 7).
 - [ ] CI downloads the pinned FFmpeg / MKVToolNix / MediaInfo builds, verifies the checksums,
-      and puts them in `resources/tools/<os>/`. The same step feeds the .deb/.rpm layout.
+      and puts them in `resources/tools/` (`scripts/bundle-tools.py`; one build platform per
+      layout, so no sub-folder per OS). The same step feeds the .deb/.rpm layout.
 - [ ] Settings → Tools: a path override per tool, **Test**, **Use bundled**, env overrides shown
       read-only. The first-run check runs before the main UI.
 
