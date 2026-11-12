@@ -236,7 +236,7 @@ def _start(
     the exit code, which ``launch_detached``'s reaper thread sets."""
     started: list[subprocess.Popen[bytes]] = []
     # A frozen owner's bootloader would keep this client's own library path as the user's.
-    env = owner_environment(data_dir, user_environ(environ))
+    env = owner_environment(data_dir, user_environ(environ, platform=platform))
     stderr = _open_log(server_log(data_dir))
 
     def popen(args: list[str], **kwargs: Any) -> subprocess.Popen[bytes]:
