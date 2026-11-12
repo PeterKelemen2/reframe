@@ -82,9 +82,10 @@ source of the C-10 frame budget (`hdr10-4k`, about 6 MB, generated and never com
 | UI reaction to an edit | < 100 ms (validation is debounced and async) |
 | Events during a 4-job parallel encode | ≤ 4 progress messages per second per job |
 
-The desktop cold start holds on Linux (1.07 s). On the Windows 10 VM of the Windows testing
-phase it takes about 4.7 s, a known limit until it is measured on a real Windows machine
-([decision 0071](../decisions/0071-server-start-and-windows-cold-start.md)).
+The desktop cold start holds on Linux (1.07 s) and on a Windows 10 VM on a desktop CPU
+(1.38 s median, 6 processors). On a Windows 10 VM on a laptop CPU it took about 4.7 s, a known
+limit for slow machines ([decision 0071](../decisions/0071-server-start-and-windows-cold-start.md),
+"Follow-up").
 
 Benchmarks run in CI as a non-blocking job. A regression of more than 20 % comments on the PR.
 

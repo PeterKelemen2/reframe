@@ -240,3 +240,4 @@ left on the VM or in Docker.
 | Date | What |
 |------|------|
 | 2026-11-12 | Owner answers: a self-signed Windows test certificate and an updater test key in `~/.config/reframe-test-keys/`; try another Windows FFmpeg build; the owner at the VM window when asked, one display head (two monitors stays not verified); installing NSIS / WiX / tauri-driver / msedgedriver on the VM and Docker containers on the host is allowed. Part 1 step 1 (VM `win10`, 22H2, 6 processors): the lock, ruff, format, both mypy runs, every frontend command (1940 tests) and the Rust job (24 tests) pass. |
+| 2026-11-12 | Wave 0 committed (096836f). Part 1 step 1: the whole pytest on the VM 7481 passed, 3 failed (`needs_gpu`; one is a wrong libplacebo reason, given to T); step 2: cold start median 1.38 s, the budget is met (0071 "Follow-up"). Next: wave 1 (T, U, L). |

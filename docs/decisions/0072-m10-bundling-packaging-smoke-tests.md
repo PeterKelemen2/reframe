@@ -41,7 +41,29 @@ The owner's answers (2026-11-12):
 
 ## Part 1 — the VM checks (lead)
 
-*Placeholder: filled by the lead.*
+**The CI commands and the whole suite on 22H2** (2026-11-12, `m10-hardening` 3a5a2cb, the VM's
+clone in Git Bash over SSH; FFmpeg n9.0.2 as the bundled build in `%LOCALAPPDATA%\Reframe\tools`,
+not on `PATH`; MKVToolNix 103.0 and MediaInfo CLI 26.10 on `PATH`): `uv lock --check`,
+`uv sync --frozen`, `python -m reframe.tools --require ffmpeg,ffprobe --expect-origin bundled`,
+ruff, ruff format (542 files), mypy and `mypy --platform linux` (540 files), the test media
+(16 up to date); every frontend command (`npm ci`, lint, fmt:check, typecheck, `npm test` 1940
+passed, build:web, build:desktop); the Rust job (`cargo fmt --check`, clippy `-D warnings`,
+`cargo test` 24 passed). The whole `uv run pytest` with `REFRAME_REQUIRE_FFMPEG=1` (also the
+`needs_gpu` and `benchmark` tests): **7481 passed, 3 failed, 204 skipped in 23 min**. The three
+failures are `needs_gpu` tests, which CI's selection leaves out:
+
+- `capabilities/test_real.py::test_every_hardware_encoder_gets_a_final_state` and
+  `preview/test_frames.py::test_hdr_frames_with_libplacebo`: they need a GPU (expected).
+- `capabilities/test_real.py::test_libplacebo_without_a_vulkan_driver`: **a wrong reason.** The
+  VM's Vulkan loader reports instance API 1.0.0; libplacebo says `Instance API version 1.0.0 is
+  lower than the minimum required version of 1.2.0, cannot proceed!`, which Reframe's reason
+  table does not know, so libplacebo is `error` instead of `unavailable`. Fixed in task T.
+
+**Q-3, the desktop cold start again**: the release build of 096836f with its frozen sidecar,
+measured as 0070 did: **median 1.38 s, worst 1.43 s** (10 runs; the first run after the build
+2.66 s); the frozen sidecar alone is ready in 0.96–1.03 s. The budget is met on this VM; the
+4.7 s of 0071 was the laptop VM's CPU ([0071](0071-server-start-and-windows-cold-start.md)
+"Follow-up").
 
 ## Task T — the bundled tools (D-7)
 
