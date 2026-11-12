@@ -4,7 +4,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
-import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 
 import type {
   DesktopBackend,
@@ -141,7 +141,7 @@ export function createDesktopPlatform(): Platform {
     },
 
     openExternal(target) {
-      return openUrl(target)
+      return invoke('open_external', { url: target })
     },
 
     async notify(title, body) {

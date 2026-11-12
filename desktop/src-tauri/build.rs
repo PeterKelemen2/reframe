@@ -11,6 +11,7 @@ fn main() {
         "open_preview_window",
         "desktop_settings",
         "set_desktop_settings",
+        "open_external",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("the Tauri build step");

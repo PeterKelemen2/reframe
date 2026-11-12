@@ -4,9 +4,11 @@
 // No console window next to the app on Windows (release builds).
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod appimage;
 mod backend;
 mod comfort;
 mod desktop_settings;
+mod external;
 mod open_paths;
 mod progress;
 mod quit;
@@ -16,6 +18,8 @@ mod updater;
 use tauri::Manager;
 
 fn main() {
+    // Until the build: the arguments are read, and a second launch hands over its folder, there.
+    let image_folder = appimage::enter_launch_folder();
     // Before the builder: the owner is looked for, and the sidecar started, while GTK and
     // WebKitGTK load.
     let context = tauri::generate_context!();
@@ -42,6 +46,7 @@ fn main() {
             comfort::open_preview_window,
             desktop_settings::desktop_settings,
             desktop_settings::set_desktop_settings,
+            external::open_external,
         ])
         .on_window_event(quit::on_window_event)
         .setup(|app| {
@@ -52,5 +57,7 @@ fn main() {
         })
         .build(context)
         .expect("the Tauri app is built");
+    // The windows, and so WebKit's helper processes, start in `run`.
+    appimage::leave_launch_folder(image_folder);
     app.run(quit::on_run_event);
 }

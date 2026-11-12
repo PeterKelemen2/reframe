@@ -91,7 +91,7 @@ Reasons:
 | Taskbar progress | `Window.setProgressBar` on Windows. Linux: the app's own Unity `LauncherEntry.Update` signal on the session bus, for launchers that support it (Tauri's needs libunity; [decision 0069](../decisions/0069-m5-desktop-shell.md)) |
 | Single instance + "Open with Reframe" | `tauri-plugin-single-instance`. Paths from argv are forwarded to the running window and probed |
 | File associations (optional) | NSIS registry entries. Linux `.desktop` `MimeType=` |
-| Reveal in folder, open externally | `tauri-plugin-opener` |
+| Reveal in folder, open externally | Reveal: `tauri-plugin-opener` (D-Bus `FileManager1` on Linux). Open externally: the shell's `open_external` command (the preview clip links only); in an AppImage it starts the opener's launchers itself, with the user's environment and folder ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) "Fix round — FA") |
 | Remember window size/position | `tauri-plugin-window-state` |
 | Detached preview window | A second webview window on route `/preview/:sourceId`, same backend |
 | Tray (optional) | Queue progress, pause all, show, quit |

@@ -270,8 +270,10 @@ describe('the other native integrations', () => {
     await platform.revealInFolder('/out/a (1).mkv')
     expect(sent('plugin:opener|reveal_item_in_dir')).toEqual([{ paths: ['/out/a (1).mkv'] }])
     await platform.openExternal('http://127.0.0.1:8731/api/preview/clips/c1?sig=x')
-    expect(sent('plugin:opener|open_url')).toEqual([
-      { url: 'http://127.0.0.1:8731/api/preview/clips/c1?sig=x', with: undefined },
+    // Through the shell, which starts the player with the user's environment, not the AppImage's.
+    expect(sent('plugin:opener|open_url')).toEqual([])
+    expect(sent('open_external')).toEqual([
+      { url: 'http://127.0.0.1:8731/api/preview/clips/c1?sig=x' },
     ])
   })
 
