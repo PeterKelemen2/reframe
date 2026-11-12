@@ -979,6 +979,25 @@ the task-T AppImage as "before".
   `open_external` call; each failed first (stubs, the old adapter) and under a mutation of the
   code it covers (14 mutations).
 
+**Fix round — FB** (core and build scripts, 2026-11-12). (1) Fedora with RPM Fusion's VA
+drivers: the core's `LIBVA_DRIVER_DIRS` and the bundled libva's `-Ddriverdir` (now the same
+tuple) get `/usr/lib64/dri-nonfree` and `/usr/lib64/dri-freeworld` before `/usr/lib64/dri`,
+and `LIBVA_DRIVERS_PATH` names every existing folder (0002 "Follow-up: Fedora with RPM
+Fusion's VA drivers": on fedora:45 with `mesa-va-drivers-freeworld` h264 / hevc went from
+`unavailable` to encoding; Debian 13 unchanged). The finding said "Failed to initialise VAAPI
+connection"; on Fedora 45 it is "The VAAPI driver has no H.264 encoder", because Fedora's
+`mesa-dri-drivers` keeps an AV1-only VA driver in `/usr/lib64/dri`. (2) THIRD_PARTY_NOTICES
+gets an entry per `[libraries.*]` pinned for the platform, with its pin and the
+`LICENSE-<name>.txt` that the layout puts into the tool folder (a pinned library without it
+fails the run); the built notices have "libva 2.24.1", MIT, its source links. (3) Only
+"cannot open shared object file" reads "is not installed"; another dlopen error gives "The
+system library X could not be loaded (<error without folders and 'required by'>)" (real on
+Fedora: a libdrm without symbols, `LD_BIND_NOW=1`: "…libva-drm.so.2 could not be loaded
+(libva-drm.so.2: undefined symbol: drmFreeVersion)"). (4) The notices header takes
+`tauri.conf.json`'s version (0.1.0, what the packages carry). The core's `__version__` (and
+the server's) is `0.1.0.dev0`: two version sources, which Q-5 ("one version source, stamped at
+build time") has to join; not changed here.
+
 ## Consequences
 
 *Filled at the end.*

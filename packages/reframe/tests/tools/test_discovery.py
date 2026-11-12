@@ -786,6 +786,28 @@ def test_libva_drivers_path_for_the_bundled_build(
     assert located["ffprobe"].env == {"LIBVA_DRIVERS_PATH": str(driver_dirs[1])}
 
 
+def test_libva_drivers_path_names_every_driver_folder_in_order(
+    tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dirs = [tmp_path / "dri-freeworld", tmp_path / "missing", tmp_path / "dri"]
+    dirs[0].mkdir()
+    dirs[2].mkdir()
+    monkeypatch.setattr(discovery, "LIBVA_DRIVER_DIRS", tuple(dirs))
+    _linux_build(tmp_path / "root" / "ffmpeg" / "bin")
+    located = locate_tools(
+        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=empty_path, platform="linux"
+    )
+    assert located["ffmpeg"].env == {"LIBVA_DRIVERS_PATH": f"{dirs[0]}:{dirs[2]}"}
+
+
+def test_rpm_fusions_driver_folders_come_before_fedoras_own() -> None:
+    """RPM Fusion's VA drivers replace Fedora's and live in these folders (Fedora's libva
+    searches them in this order)."""
+    names = [str(d) for d in discovery.LIBVA_DRIVER_DIRS]
+    fedora = ["/usr/lib64/dri-nonfree", "/usr/lib64/dri-freeworld", "/usr/lib64/dri"]
+    assert [n for n in names if n.startswith("/usr/lib64/")] == fedora
+
+
 def test_libva_drivers_path_is_not_changed_when_set(
     tmp_path: Path, empty_path: str, driver_dirs: tuple[Path, Path]
 ) -> None:

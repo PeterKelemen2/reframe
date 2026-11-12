@@ -124,6 +124,15 @@ def _with_rest(prefix: str, fallback: str = "") -> _Reason:
     return reason
 
 
+def _library_not_loaded(match: re.Match[str], _ctx: TestContext, _texts: Sequence[str]) -> str:
+    if match["missing"]:
+        return f"The system library {match['missing']} is not installed"
+    error = re.sub(r"\s*\(required by [^)]*\)", "", match["error"])
+    error = re.sub(r"\S*/", "", error).strip().rstrip(".")
+    reason = f"The system library {match['lib']} could not be loaded"
+    return f"{reason} ({error})" if error else reason
+
+
 _NO_QSV = "No Intel QSV device (needs an Intel GPU with its media driver)"
 _NVENC = frozenset({"nvenc"})
 
@@ -249,9 +258,9 @@ _RULES: tuple[_Rule, ...] = (
         # The dlopen error names the library that is missing: the stub's own, or one it needs.
         re.compile(
             r"^implib-gen: (?P<lib>\S+): failed to load library .*via dlopen: "
-            r"(?:(?P<missing>[^:\s]+): cannot open shared object file)?"
+            r"(?:(?P<missing>[^:\s]+): cannot open shared object file|(?P<error>.*))"
         ),
-        lambda m, _ctx, _t: f"The system library {m['missing'] or m['lib']} is not installed",
+        _library_not_loaded,
     ),
     # A hardware device option failed (fftools) and no device line said why.
     _Rule(

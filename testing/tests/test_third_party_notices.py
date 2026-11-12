@@ -160,9 +160,10 @@ def _layout(tools: Path, name: str, licence: str = "LICENSE.txt") -> None:
 def test_the_bundled_ffmpeg_gets_its_pin_with_the_source_links(tmp_path: Path) -> None:
     tools = tmp_path / "resources" / "tools"
     _layout(tools, "ffmpeg")
+    (tools / "ffmpeg" / "LICENSE-libva.txt").write_text("libva licence text")
     manifests = REPO_ROOT / "tools"
 
-    [entry] = tpn.tool_entries(tools, manifests, "linux-x64")
+    [entry, _libva] = tpn.tool_entries(tools, manifests, "linux-x64")
 
     pin = tpn.tomllib.loads((manifests / "ffmpeg.toml").read_text())["builds"]["default"]
     archive = pin["platforms"]["linux-x64"]
@@ -180,6 +181,50 @@ def test_the_bundled_ffmpeg_gets_its_pin_with_the_source_links(tmp_path: Path) -
         assert value in entry.text
     assert pin["platforms"]["windows-x64"]["url"] not in entry.text
     assert entry.text.endswith("ffmpeg licence text")
+
+
+def test_a_library_built_into_a_tool_gets_its_pin_and_licence(tmp_path: Path) -> None:
+    tools = tmp_path / "tools"
+    _layout(tools, "ffmpeg")
+    (tools / "ffmpeg" / "LICENSE-libva.txt").write_text("libva licence text")
+    manifests = REPO_ROOT / "tools"
+
+    entries = tpn.tool_entries(tools, manifests, "linux-x64")
+
+    pin = tpn.tomllib.loads((manifests / "bundled-tools.toml").read_text())["libraries"]["libva"]
+    assert [entry.name for entry in entries] == ["ffmpeg", "libva"]
+    libva = entries[1]
+    assert (libva.version, libva.license, libva.url) == (
+        pin["version"],
+        pin["license"],
+        pin["release_url"],
+    )
+    for value in (
+        pin["source_repository"],
+        pin["source_tag"],
+        pin["platforms"]["linux-x64"]["url"],
+        pin["platforms"]["linux-x64"]["sha256"],
+        "tools/ffmpeg/LICENSE-libva.txt",
+    ):
+        assert value in libva.text
+    assert libva.text.endswith("libva licence text")
+
+
+def test_a_library_without_its_licence_file_is_an_error(tmp_path: Path) -> None:
+    tools = tmp_path / "tools"
+    _layout(tools, "ffmpeg")
+
+    with pytest.raises(tpn.NoticesError, match=r"LICENSE-libva\.txt"):
+        tpn.tool_entries(tools, REPO_ROOT / "tools", "linux-x64")
+
+
+def test_a_library_pinned_for_another_platform_gets_no_entry(tmp_path: Path) -> None:
+    tools = tmp_path / "tools"
+    _layout(tools, "ffmpeg")
+
+    [entry] = tpn.tool_entries(tools, REPO_ROOT / "tools", "windows-x64")
+
+    assert entry.name == "ffmpeg"
 
 
 def _write_pin(path: Path, table: str) -> None:
@@ -318,6 +363,24 @@ def test_every_entry_and_its_text_are_written() -> None:
         "Used by: a 1",
     ):
         assert line in text.splitlines()
+
+
+def test_the_header_names_the_packages_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("shipped_top_level_names", "shipped_distributions", "python_entries"):
+        monkeypatch.setattr(tpn, name, lambda *args: [])
+    for name in ("mediainfo_library_entry", "javascript_entries", "rust_entries"):
+        monkeypatch.setattr(tpn, name, lambda *args: [])
+    monkeypatch.setattr(tpn, "python_interpreter_entry", lambda: tpn.Entry("Python", "3", "PSF"))
+    monkeypatch.setattr(tpn, "DEFAULT_TOOLS", tmp_path / "no-tools")
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out)]) == 0
+
+    config = json.loads((REPO_ROOT / "desktop" / "src-tauri" / "tauri.conf.json").read_text())
+    header = out.read_text().splitlines()[0]
+    assert header == f"Third-party notices for Reframe {config['version']} (linux-x64)"
 
 
 def test_the_notices_ship_in_every_desktop_package() -> None:

@@ -3092,10 +3092,18 @@ The pinned BtbN build `n9.0.2-17-g2a571b6068-20260930`, MKVToolNix 103.0 and Med
   build's `lib/` is loaded before the system's (`LD_DEBUG=libs`: `…/bin/../lib/libva.so.2`),
   also when the system's is newer.
 - libva 2.24.1 built with meson (DRM only) in `ubuntu:22.04` needs `GLIBC_2.34` at most; its
-  built-in driver path `/usr/lib/x86_64-linux-gnu/dri:/usr/lib64/dri:/usr/lib/dri` is tried
-  folder by folder (Arch: the second, a link to `/usr/lib`). libva loads a driver that exports
+  built-in driver path (`-Ddriverdir`, the core's `LIBVA_DRIVER_DIRS` joined by `:`) is tried
+  folder by folder (Arch: `/usr/lib64/dri`, a link to `/usr/lib`). libva loads a driver that exports
   `__vaDriverInit_1_<n>` for its own VA-API minor or an older one (`va.c`); Mesa exports the
   one of the libva it was built with (Arch's Mesa 26.2.5: `__vaDriverInit_1_24`).
+- libva 2.24.1 splits `LIBVA_DRIVERS_PATH` (or, unset, its built-in path) at `:` and opens
+  `<folder>/<driver>_drv_video.so` folder by folder; the first that loads is used (`va.c`,
+  `va_openDriver`). Fedora 45's own libva has the built-in path
+  `/usr/lib64/dri-nonfree:/usr/lib64/dri-freeworld:/usr/lib64/dri`. There
+  `mesa-dri-drivers` 26.2.6 ships `/usr/lib64/dri/radeonsi_drv_video.so` without H.264 / H.265
+  (on the RX 7600, `vainfo`: only `VAProfileAV1Profile0: VAEntrypointEncSlice`), and RPM
+  Fusion's `mesa-va-drivers-freeworld` puts the full driver into `/usr/lib64/dri-freeworld/`
+  (H.264, HEVC Main / Main10 and AV1 encode).
 - With that libva on the RX 7600: Ubuntu 22.04's Mesa 23.2.1 and Debian 12's 22.3.6 write no
   H.264 parameter sets ("Driver does not support some wanted packed headers (wanted 0xd, found
   0)"): the encode to `null` works, into Matroska the header fails ("Could not write header

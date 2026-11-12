@@ -29,7 +29,7 @@ from pathlib import Path, PurePosixPath
 
 from reframe.models.tools import ToolOrigin, ToolStatus
 from reframe.tools import fetch
-from reframe.tools.discovery import ENV_VARS, discover_tools_sync
+from reframe.tools.discovery import ENV_VARS, LIBVA_DRIVER_DIRS, discover_tools_sync
 from reframe.tools.runner import CancelToken
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -48,8 +48,6 @@ FOLDER_TOOLS: Mapping[str, tuple[str, ...]] = {
 }
 #: Archive formats of the pins in ``tools/bundled-tools.toml``.
 FORMATS = ("tar.xz", "tar.bz2", "zip")
-#: Where the bundled libva looks for VA drivers: Debian/Ubuntu, Fedora, Arch.
-LIBVA_DRIVER_DIRS = "/usr/lib/x86_64-linux-gnu/dri:/usr/lib64/dri:/usr/lib/dri"
 #: The libraries of the libva build that FFmpeg loads.
 LIBVA_SONAMES = ("libva.so.2", "libva-drm.so.2")
 
@@ -337,7 +335,7 @@ def _build_libva(source: Path, build: Path) -> dict[str, Path]:
         [
             "meson", "setup", str(build), str(source), "--buildtype=release", "--prefix=/usr",
             "-Ddisable_drm=false", "-Dwith_x11=no", "-Dwith_glx=no", "-Dwith_wayland=no",
-            f"-Ddriverdir={LIBVA_DRIVER_DIRS}",
+            f"-Ddriverdir={':'.join(str(d) for d in LIBVA_DRIVER_DIRS)}",
         ]
     )  # fmt: skip
     _run(["meson", "compile", "-C", str(build)])

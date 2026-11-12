@@ -442,6 +442,40 @@ def test_a_missing_library_of_the_bundled_libva_real() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    ("error", "reason"),
+    [
+        (
+            "/lib/x86_64-linux-gnu/libdrm.so.2: version `LIBDRM_2.4.120' not found (required "
+            "by /usr/lib/Reframe/tools/ffmpeg/lib/libva-drm.so.2)",
+            "The system library libva-drm.so.2 could not be loaded (libdrm.so.2: version "
+            "`LIBDRM_2.4.120' not found)",
+        ),
+        (
+            # Real: Fedora 45, the .rpm, a libdrm.so.2 without symbols, LD_BIND_NOW=1.
+            "/usr/lib/Reframe/tools/ffmpeg/bin/../lib/libva-drm.so.2: undefined symbol: "
+            "drmFreeVersion",
+            "The system library libva-drm.so.2 could not be loaded (libva-drm.so.2: undefined "
+            "symbol: drmFreeVersion)",
+        ),
+        (
+            "/usr/lib/libva.so.2: undefined symbol: drmGetDevices2",
+            "The system library libva-drm.so.2 could not be loaded (libva.so.2: undefined "
+            "symbol: drmGetDevices2)",
+        ),
+    ],
+)
+def test_a_library_that_is_installed_but_does_not_load(error: str, reason: str) -> None:
+    text = (
+        "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: "
+        f"{error}\n"
+        'ffmpeg: libva-drm.so.2.init.c:122: load_library: Assertion `0 && "Assertion in '
+        "generated code\"' failed.\n"
+    )
+    failure = explain_failure(text, ctx("h264_vaapi"), returncode=-6)
+    assert (failure.state, failure.reason) == (UNAVAILABLE, reason)
+
+
 def test_the_vulkan_texts_are_in_the_pinned_build() -> None:
     found = {text: {e["file"] for e in hits} for text, hits in ft.library_strings().items()}
     for text in (
