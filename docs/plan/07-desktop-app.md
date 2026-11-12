@@ -232,8 +232,11 @@ sidecar ships MediaInfo (pymediainfo with its own library).
 - [ ] Windows: NSIS installer (per-user, no admin rights), WebView2 bootstrapper, optional MSI.
       Code signing is strongly recommended (SmartScreen warns about unsigned installers).
       Installed and run on Windows: *(Windows testing phase)*.
-- [ ] Linux: AppImage (built on the oldest supported distro image, for glibc compatibility),
+- [x] Linux: AppImage (built on the oldest supported distro image, for glibc compatibility),
       `.deb`, `.rpm`. Flatpak comes later (its sandbox complicates file access and GPU access).
+      Built in `ubuntu:22.04` by `desktop/packaging/linux/build.sh`; installed and run in Ubuntu
+      22.04, Debian 12 and Fedora 45 containers, the AppImage on the host in a virtual session
+      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) task L).
 - [ ] Updater: signed `latest.json` in GitHub Releases.
 
 ### D-9 Desktop smoke tests
