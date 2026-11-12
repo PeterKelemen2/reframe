@@ -482,3 +482,30 @@ def test_a_started_owner_leaves_out_every_option_of_the_server() -> None:
 
     kept = {"CONFIG_DIR", "DATA_DIR", "ENDPOINT_FILE"}
     assert {name.upper() for name in ServerConfig.model_fields} - kept == SERVER_OPTIONS
+
+
+def test_an_owner_started_by_a_frozen_cli_gets_the_users_library_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The frozen owner's bootloader would keep the CLI's ``_internal`` as the user's path, and
+    its tools would load the CLI's libraries."""
+    created: list[dict[str, Any]] = []
+
+    class Process:
+        pid = 4242
+        returncode = None
+
+        def __init__(self, argv: list[str], **kwargs: Any) -> None:
+            created.append(kwargs)
+
+        def wait(self) -> int:
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", Process)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/app/_internal:/opt/mine/lib")
+    monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/opt/mine/lib")
+    owner_module._start(["reframe-server"], tmp_path, "linux", launcher=detached)
+    [options] = created
+    assert options["env"]["LD_LIBRARY_PATH"] == "/opt/mine/lib"
+    assert options["env"]["REFRAME_DATA_DIR"] == str(tmp_path.absolute())

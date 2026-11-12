@@ -25,7 +25,7 @@ from pydantic import ValidationError
 
 from reframe import paths
 from reframe.models.queue import ServerEndpoint
-from reframe.platform.childproc import CREATE_NO_WINDOW, launch_detached
+from reframe.platform.childproc import CREATE_NO_WINDOW, launch_detached, user_environ
 from reframe.queue.lock import LOCK_FILE, StoreLock
 
 __all__ = [
@@ -235,7 +235,8 @@ def _start(
     :func:`owner_environment` and its stderr in :func:`server_log`. The handle is only read for
     the exit code, which ``launch_detached``'s reaper thread sets."""
     started: list[subprocess.Popen[bytes]] = []
-    env = owner_environment(data_dir, environ)
+    # A frozen owner's bootloader would keep this client's own library path as the user's.
+    env = owner_environment(data_dir, user_environ(environ))
     stderr = _open_log(server_log(data_dir))
 
     def popen(args: list[str], **kwargs: Any) -> subprocess.Popen[bytes]:
@@ -244,7 +245,8 @@ def _start(
             kwargs["creationflags"] = kwargs.get("creationflags", 0) | CREATE_NO_WINDOW
         if stderr is not None:
             kwargs["stderr"] = stderr
-        process = subprocess.Popen(args, env=env, **kwargs)
+        kwargs["env"] = env
+        process = subprocess.Popen(args, **kwargs)
         started.append(process)
         return process
 

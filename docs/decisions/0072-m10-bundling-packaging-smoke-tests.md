@@ -143,7 +143,12 @@ the CI job (S).
 Reframe's minimum). T2 ships libva 2.24.1 in the Linux layout: VAAPI then works wherever the
 distro's Mesa can encode the codec (0002 "Follow-up": all three on Ubuntu 24.04, Debian 13 and
 this host; on Ubuntu 22.04 and Debian 12 hevc only, as with their own FFmpeg). The libva pin
-must follow libva releases (a driver built against a newer VA-API is not loaded). The Windows Detelecine crash stays (no build without it; one filter thread
+must follow libva releases (a driver built against a newer VA-API is not loaded).
+T2 also gives every tool and user-facing program that the frozen app starts the user's
+environment (`reframe.platform.childproc.user_environ`, used by `reframe.tools.run`,
+`launch_detached` and the owner start in `reframe.remote.owner`; `childproc.py` and `owner.py`
+are outside T's file list, the lead gave T the tools' environment handling): PyInstaller's `LD_LIBRARY_PATH` and the AppImage's `$APPDIR` entries broke
+`mkvpropedit`, VAAPI, AMF and libplacebo inside L's AppImage on this host (0002 "Follow-up"). The Windows Detelecine crash stays (no build without it; one filter thread
 does not avoid it). The `status.md` open items on the
 Detelecine crash and on D-7's `LIBVA_DRIVERS_PATH` are answered by 0002 (the lead's rows).
 

@@ -298,3 +298,85 @@ def test_launch_detached_real_process() -> None:
             assert os.getsid(pid) == pid != os.getsid(0)
     finally:
         psutil.Process(pid).kill()
+
+
+# What PyInstaller's bootloader and an AppImage's AppRun (AppImageKit's, with linuxdeploy's GTK
+# hook) leave in the frozen sidecar's environment; the values follow their format strings.
+APPDIR = "/tmp/.mount_ReframXYZ"
+SIDECAR = f"{APPDIR}/usr/lib/Reframe/sidecar/reframe-server"
+APPIMAGE_ENV = {
+    "APPDIR": APPDIR,
+    "APPIMAGE": "/home/u/Reframe_0.1.0_amd64.AppImage",
+    "LD_LIBRARY_PATH": f"{APPDIR}/usr/lib/Reframe/sidecar/_internal:{APPDIR}/usr/lib/:"
+    f"{APPDIR}/usr/lib/x86_64-linux-gnu/:{APPDIR}/lib/:/opt/mine/lib",
+    "LD_LIBRARY_PATH_ORIG": f"{APPDIR}/usr/lib/:{APPDIR}/usr/lib/x86_64-linux-gnu/:"
+    f"{APPDIR}/lib/:/opt/mine/lib",
+    "PATH": f"{APPDIR}/usr/bin/:{APPDIR}/usr/sbin/:/usr/local/bin:/usr/bin",
+    "PYTHONHOME": f"{APPDIR}/usr/",
+    "XDG_DATA_DIRS": f"{APPDIR}/usr/share:/usr/share:{APPDIR}/usr/share/:",
+    "GTK_PATH": f"{APPDIR}//usr/lib/gtk-3.0",
+    "GTK_THEME": "Adwaita:light",
+    "HOME": "/home/u",
+}
+
+
+def test_a_frozen_app_gives_tools_the_library_path_it_was_started_with() -> None:
+    """Without this, a system tool loads PyInstaller's libstdc++ (CXXABI errors)."""
+    env = {
+        "LD_LIBRARY_PATH": "/app/_internal:/opt/mine/lib",
+        "LD_LIBRARY_PATH_ORIG": "/opt/mine/lib",
+    }
+    out = childproc.user_environ(env, frozen=True, executable="/app/reframe", platform="linux")
+    assert out == {"LD_LIBRARY_PATH": "/opt/mine/lib"}
+    unset = childproc.user_environ(
+        {"LD_LIBRARY_PATH": "/app/_internal", "HOME": "/h"},
+        frozen=True,
+        executable="/app/reframe",
+        platform="linux",
+    )
+    assert unset == {"HOME": "/h"}
+
+
+def test_inside_an_appimage_the_image_is_dropped_from_every_search_path() -> None:
+    out = childproc.user_environ(APPIMAGE_ENV, frozen=True, executable=SIDECAR, platform="linux")
+    assert out == {
+        "APPIMAGE": "/home/u/Reframe_0.1.0_amd64.AppImage",
+        "LD_LIBRARY_PATH": "/opt/mine/lib",
+        "PATH": "/usr/local/bin:/usr/bin",
+        "XDG_DATA_DIRS": "/usr/share",
+        "GTK_THEME": "Adwaita:light",
+        "HOME": "/home/u",
+    }
+
+
+@pytest.mark.parametrize(
+    ("frozen", "platform"),
+    [
+        (False, "linux"),  # from source: the user's own LD_LIBRARY_PATH stays
+        (True, "win32"),
+    ],
+)
+def test_the_environment_stays_when_not_a_frozen_linux_app(frozen: bool, platform: str) -> None:
+    out = childproc.user_environ(APPIMAGE_ENV, frozen=frozen, executable=SIDECAR, platform=platform)
+    assert out == APPIMAGE_ENV
+
+
+def test_an_appdir_that_is_not_the_apps_own_is_kept() -> None:
+    out = childproc.user_environ(
+        APPIMAGE_ENV, frozen=True, executable="/opt/reframe/sidecar/reframe", platform="linux"
+    )
+    assert out["PATH"] == APPIMAGE_ENV["PATH"]
+    assert out["LD_LIBRARY_PATH"] == APPIMAGE_ENV["LD_LIBRARY_PATH_ORIG"]
+
+
+def test_launch_detached_gives_the_program_the_users_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/app/_internal")
+    monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+    popen = _FakePopen()
+    childproc.launch_detached(["xdg-open", "/media/out.mkv"], platform="linux", popen=popen)
+    ((_, kwargs),) = popen.calls
+    assert "LD_LIBRARY_PATH" not in kwargs["env"]
+    assert kwargs["env"]["PATH"] == os.environ["PATH"]

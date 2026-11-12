@@ -11,11 +11,12 @@ from __future__ import annotations
 import contextlib
 import ctypes
 import os
+import posixpath
 import signal
 import subprocess
 import sys
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal, Protocol, cast
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "launch_detached",
     "linux_preexec",
     "spawn_options",
+    "user_environ",
     "windows_job",
 ]
 
@@ -292,6 +294,51 @@ def spawn_options(platform: str | None = None, *, user_facing: bool = False) -> 
     return options
 
 
+def user_environ(
+    environ: Mapping[str, str] | None = None,
+    *,
+    frozen: bool | None = None,
+    executable: str | None = None,
+    platform: str | None = None,
+) -> dict[str, str]:
+    """The environment for a program that Reframe starts: the user's, without what the
+    launchers of a frozen Linux app added for Reframe itself.
+
+    PyInstaller's bootloader puts its own library folder (with its libstdc++) first in
+    ``LD_LIBRARY_PATH`` and keeps the value it found in ``LD_LIBRARY_PATH_ORIG`` (none: the
+    variable was unset). Inside an AppImage, AppRun and its hooks point ``LD_LIBRARY_PATH``,
+    ``PATH``, ``PYTHONHOME``, the GTK and GIO variables and more into the image (``APPDIR``):
+    every entry under ``APPDIR`` is dropped. A system library or VA driver loaded by a tool
+    would otherwise get the app's copies of the libraries it links.
+    """
+    env = dict(os.environ if environ is None else environ)
+    platform = sys.platform if platform is None else platform
+    frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
+    if not frozen or not platform.startswith("linux"):
+        return env
+    original = env.pop("LD_LIBRARY_PATH_ORIG", None)
+    if original is None:
+        env.pop("LD_LIBRARY_PATH", None)
+    else:
+        env["LD_LIBRARY_PATH"] = original
+    appdir = env.get("APPDIR", "").rstrip("/")
+    exe = posixpath.abspath(executable or sys.executable)
+    if not appdir.startswith("/") or not exe.startswith(appdir + "/"):
+        return env
+    for name, value in list(env.items()):
+        entries = value.split(":")
+        kept = [e for e in entries if e != appdir and not e.startswith(appdir + "/")]
+        if len(kept) == len(entries):
+            continue
+        # An empty entry in a search path means the current folder.
+        kept = [e for e in kept if e]
+        if kept:
+            env[name] = ":".join(kept)
+        else:
+            del env[name]
+    return env
+
+
 def after_spawn(pid: int, platform: str | None = None) -> None:
     """Call with the pid of every new child (Windows ``per_child`` fallback; else a no-op)."""
     platform = sys.platform if platform is None else platform
@@ -322,6 +369,7 @@ def launch_detached(
         "stderr": subprocess.DEVNULL,
         "cwd": cwd,
         "close_fds": True,
+        "env": user_environ(platform=platform),
         **options,
     }
     try:

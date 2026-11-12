@@ -411,8 +411,20 @@ def test_a_vaapi_driver_without_the_codec_real() -> None:
     failure = explain_failure(text, ctx("av1_vaapi"), returncode=218)
     assert (failure.state, failure.reason) == (
         UNAVAILABLE,
-        "The VAAPI driver cannot encode AV1 on this GPU",
+        "The VAAPI driver has no AV1 encoder",
     )
+
+
+def test_a_vaapi_driver_without_any_profile_of_the_codec_real() -> None:
+    """Fedora 45's Mesa 26.2.6 has no H.264 or H.265 encoder."""
+    text = (
+        "[h264_vaapi @ 0x555a051dfcc0] No usable encoding profile found.\n"
+        "[vost#0:0/h264_vaapi @ 0x555a051df880] [enc:h264_vaapi @ 0x555a051dfc40] Error while "
+        "opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.\n"
+        "Conversion failed!\n"
+    )
+    failure = explain_failure(text, ctx("h264_vaapi"), returncode=218)
+    assert (failure.state, failure.reason) == (UNAVAILABLE, "The VAAPI driver has no H.264 encoder")
 
 
 def test_a_missing_library_of_the_bundled_libva_real() -> None:

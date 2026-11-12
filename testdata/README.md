@@ -3132,3 +3132,27 @@ The pinned BtbN build `n9.0.2-17-g2a571b6068-20260930`, MKVToolNix 103.0 and Med
   `SSL_CERT_FILE` set to certifi's `cacert.pem` works.
 - BtbN's repository is now `github.com/FFmpeg-Builds/FFmpeg-Builds`; the release URLs under
   `github.com/BtbN/FFmpeg-Builds` redirect there.
+- PyInstaller's bootloader (6.22.3, onedir) puts the sidecar's `_internal/` first in
+  `LD_LIBRARY_PATH` and keeps the value it found in `LD_LIBRARY_PATH_ORIG` (absent when the
+  variable was unset). Its `_internal/` has Ubuntu 22.04's `libstdc++.so.6`, so a system tool
+  started with that environment fails on a newer distro: `mkvpropedit` on Arch exits 1 with
+  `_internal/libstdc++.so.6: version 'CXXABI_1.3.15' not found (required by
+  /usr/lib/libicui18n.so.78)`.
+- An AppImage made by Tauri runs linuxdeploy's `AppRun` (a script that sources
+  `apprun-hooks/linuxdeploy-plugin-gtk.sh`, then AppImageKit's `AppRun.wrapped`). The hook
+  exports `APPDIR`, `GTK_DATA_PREFIX`, `GTK_THEME`, `XDG_DATA_DIRS`, `GSETTINGS_SCHEMA_DIR`,
+  `GI_TYPELIB_PATH`, `GIO_MODULE_DIR`, `GTK_EXE_PREFIX`, `GTK_PATH`, `GTK_IM_MODULE_FILE` and
+  `GDK_PIXBUF_MODULE_FILE` into `$APPDIR`; `AppRun.wrapped` puts `$APPDIR/usr/bin/…` first in
+  `PATH`, ten `$APPDIR/…lib…` folders first in `LD_LIBRARY_PATH` and sets `PYTHONHOME`,
+  `PYTHONPATH`, `PERLLIB`, `QT_PLUGIN_PATH`, `GST_PLUGIN_SYSTEM_PATH(_1_0)` into the image and
+  `PYTHONDONTWRITEBYTECODE=1` (its format strings, `strings AppRun.wrapped`). With that
+  environment (the extracted AppImage of task L, `Exec` pointed at a script that runs the frozen
+  CLI) on this host: `mkvpropedit` broken as above, VAAPI "VAAPI driver failed to start … (unknown
+  libva error)", AMF "AMD AMF could not start (Function not implemented)", libplacebo "No working
+  Vulkan driver". With the environment restored for the tools: all of them work.
+- The bundled FFmpeg needs nothing from `LD_LIBRARY_PATH`: `bin/ffmpeg` finds its libraries and
+  the bundled libva through `DT_RPATH $ORIGIN/../lib` (it runs with the variable unset).
+- Fedora 45: `mesa-dri-drivers` 26.2.6 installs `/usr/lib64/dri/radeonsi_drv_video.so` (there
+  is no `mesa-va-drivers` package), whose VAAPI offers no H.264 or H.265 encoding: FFmpeg says
+  `No usable encoding profile found.`; AV1 encodes. The `mkvtoolnix` and `mediainfo` packages
+  put their programs in `/usr/sbin`.

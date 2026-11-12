@@ -150,8 +150,8 @@ h264_nvenc, hevc_amf and av1_qsv jobs refused by validation with a software fix.
 `capabilities/test_real.py::test_libplacebo_without_a_vulkan_driver` passes there.
 
 **Not verified**: Intel (VAAPI with the iHD driver, QSV), NVIDIA (NVENC, on Linux and
-Windows), Windows with a GPU (AMF, NVENC, QSV, libplacebo), Fedora (the plan's second Linux
-family; Arch stands in), a real install of the packages (D-8), the GitHub runners.
+Windows), Windows with a GPU (AMF, NVENC, QSV, libplacebo), the GitHub runners. Fedora 45
+and the installed packages (AMD only) were tested in the follow-up below.
 
 ## Consequences
 
@@ -200,27 +200,54 @@ exists) agrees with the built-in path.
 **New reasons**: a library that the bundled libva needs is missing (libdrm in a bare
 container): "The system library libdrm.so.2 is not installed" (the dlopen error names it; it
 said `libva-drm.so.2` before); a VAAPI driver without an encoder for the codec (`No usable
-encoding entrypoint found for profile …`): "The VAAPI driver cannot encode AV1 on this GPU"
-(was `error`).
+encoding entrypoint found for profile …` or `No usable encoding profile found.`): "The VAAPI
+driver has no AV1 encoder" (was `error`).
 
-**Host tests** (the layout built once by the script in `ubuntu:22.04`, copied into each
-container's `REFRAME_DATA_DIR/tools`; RX 7600 through `/dev/dri`; Reframe's encoder detection
-and encodes of `multitrack.mkv` through the queue; the distro's own FFmpeg with the same
-encoder into Matroska to separate Mesa's limits from ours):
+**The environment of the tools** (found by task L, reproduced here). The frozen sidecar gave
+the tools it starts its own environment: PyInstaller's bootloader puts `_internal/` (Ubuntu
+22.04's libstdc++) first in `LD_LIBRARY_PATH`, and inside the AppImage AppRun and its GTK hook
+add `$APPDIR/…` entries to `LD_LIBRARY_PATH`, `PATH`, `XDG_DATA_DIRS`, `PYTHONHOME`, the GTK
+and GIO variables and more (`testdata/README.md` "The bundled tools (D-7)"). In the AppImage
+of task L, run through its own AppRun on this host: `mkvpropedit` broken (`CXXABI_1.3.15` not
+found), VAAPI "VAAPI driver failed to start … (unknown libva error)", AMF "AMD AMF could not
+start (Function not implemented)", libplacebo "No working Vulkan driver". Now
+`reframe.platform.childproc.user_environ()` gives every tool (`reframe.tools.run`) and every
+user-facing program (`launch_detached`), and the queue's owner that a frozen CLI starts (whose
+bootloader would otherwise keep the CLI's library path as the user's), the user's environment
+when Reframe runs frozen on Linux: `LD_LIBRARY_PATH` back from `LD_LIBRARY_PATH_ORIG` (unset without it), and every
+entry under `APPDIR` dropped from every variable when the executable is inside `APPDIR` (an
+empty variable is removed; an empty entry is dropped, as it would mean the current folder).
+The bundled FFmpeg needs nothing from it (its `RPATH`). From source nothing changes.
+
+**Host tests** through the packages that L's `desktop/packaging/linux/build.sh` built from
+this branch in `ubuntu:22.04` (the frozen sidecar's modules checked equal to the source):
+the `.deb` installed in Ubuntu 22.04 / 24.04, Debian 12 / 13 containers and the `.rpm` in
+Fedora 45, each with `/dev/dri` (RX 7600) and the distro's Mesa VA driver, the installed
+`/usr/bin/reframe` (the frozen CLI): `tools status`, `encoders --json`, encodes of
+`multitrack.mkv` through the queue (`encode --in-process`); the AppImage, extracted, run
+through its own AppRun on this host (its `Exec` pointed at a script that runs the frozen CLI
+the same way, and once without `--in-process`: the frozen CLI starts the frozen server as the
+queue's owner, the hevc_vaapi job is done there, and the owner's `LD_LIBRARY_PATH` holds only
+its own `_internal`). The same layout from the venv in the Debian/Ubuntu containers gave the same
+results, and the distro's own FFmpeg with the same encoder into Matroska tells Mesa's limits
+from ours:
 
 | Host (Mesa) | h264_vaapi | hevc_vaapi | av1_vaapi | Distro FFmpeg |
 |-------------|-----------|-----------|-----------|---------------|
-| Ubuntu 22.04 (23.2.1) | detected; the job fails: "Could not write header … Invalid data", then FFmpeg segfaults | encodes | `error` "The test encode failed: No quality level set…" (Mesa's AV1 fails "Failed to query config attribute") | 4.4.2: h264 into MKV fails the same way (no SPS/PPS: "Driver does not support some wanted packed headers", found 0), no crash; no av1_vaapi |
-| Debian 12 (22.3.6) | the same as 22.04 | encodes | unavailable: "The VAAPI driver cannot encode AV1 on this GPU" | 5.1.9: h264 the same; no av1_vaapi |
-| Ubuntu 24.04 (25.2.8) | encodes | encodes | encodes | 6.1.1: all three encode |
-| Debian 13 (25.0.7) | encodes | encodes | encodes | 7.1.5: all three encode |
-| This host, Arch (26.2.5, libva 2.24.1) | encodes | encodes | encodes | (also AMF h264/hevc/av1 and libx264 encode; nothing changed by the bundled libva) |
+| Ubuntu 22.04 (23.2.1), `.deb` | detected; the job fails: "Could not write header … Invalid data", then FFmpeg segfaults | encodes | `error` "The test encode failed: No quality level set…" (Mesa's AV1 fails "Failed to query config attribute") | 4.4.2: h264 into MKV fails the same way (no SPS/PPS: "Driver does not support some wanted packed headers", found 0), no crash; no av1_vaapi |
+| Debian 12 (22.3.6), `.deb` | the same as 22.04 | encodes | unavailable: "The VAAPI driver has no AV1 encoder" | 5.1.9: h264 the same; no av1_vaapi |
+| Ubuntu 24.04 (25.2.8), `.deb` | encodes | encodes | encodes | 6.1.1: all three encode |
+| Debian 13 (25.0.7), `.deb` | encodes | encodes | encodes | 7.1.5: all three encode |
+| Fedora 45 (26.2.6, libva 2.24.1), `.rpm` | unavailable (Fedora's Mesa has no H.264 / H.265 encoder): "The VAAPI driver has no H.264 encoder" (the run gave `error` "No usable encoding profile found", the rule came after it) | the same (H.265) | encodes | not installed |
+| This host, Arch (26.2.5, libva 2.24.1), AppImage | encodes | encodes | encodes | (also AMF h264/hevc/av1 and libx264 encode, and `mkvpropedit` works) |
 
-So VAAPI works on every tested distro where the distro's Mesa can encode the codec: h264
-into a file needs a Mesa that writes the parameter sets (24.04's 25.2 does, 22.04's 23.2 and
-Debian 12's 22.3 do not; Reframe's test encode to `null` does not see that, so h264_vaapi
-shows as available there and the job fails, a known limit), and AV1 needs a Mesa newer than
-23.2 on this GPU.
+In every package `mkvpropedit` and `mediainfo` from the distro work (Fedora's are in
+`/usr/sbin`), libplacebo works where the package's dependencies bring a Vulkan driver. So
+VAAPI works on every tested distro where the distro's Mesa can encode the codec: h264 into a
+file needs a Mesa that writes the parameter sets (24.04's 25.2 does, 22.04's 23.2 and Debian
+12's 22.3 do not; Reframe's test encode to `null` does not see that, so h264_vaapi shows as
+available there and the job fails, a known limit), and AV1 needs a Mesa newer than 23.2 on
+this GPU. Fedora is now tested (AMD only; its Mesa ships no H.264 / H.265 VAAPI encoder).
 
 ## Plan changes
 
