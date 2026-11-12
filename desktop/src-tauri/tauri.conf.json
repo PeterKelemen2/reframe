@@ -59,5 +59,13 @@
     "windows": {
       "nsis": { "installerHooks": "windows/hooks.nsh" }
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgwQjk4Q0IyNjhBMzI3NDMKUldSREo2Tm9zb3k1Z0szM2sxQVVKcWNhOEZrYzZkWlQ0WGNhRTJ3eW9pWHhZSnV0andkYXV6ZWMK",
+      "endpoints": ["https://github.com/PeterKelemen2/reframe/releases/latest/download/latest.json"],
+      "requireSignedVersion": true,
+      "windows": { "installMode": "passive" }
+    }
   }
 }

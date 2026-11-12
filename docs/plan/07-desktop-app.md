@@ -169,7 +169,8 @@ and confirms or revisits this choice. It lists the Windows items as not verified
       libraries). The `.deb` and `.rpm` link it as `/usr/bin/reframe`; the Windows installer
       offers to add the folder to the user's `PATH`; the AppImage does not put it on `PATH`
       ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 11).
-      The Windows installer's offer is written, not run: *(Windows testing phase)*.
+      The Windows installer's offer is checked on Windows, also that an update keeps the entry
+      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) task W).
 - [x] A smoke test runs the frozen binary with `--mode desktop --port 0` and waits for the ready
       line.
 
@@ -229,15 +230,23 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) "Task U").
 
 ### D-8 Packaging, signing, updates
-- [ ] Windows: NSIS installer (per-user, no admin rights), WebView2 bootstrapper, optional MSI.
+- [x] Windows: NSIS installer (per-user, no admin rights), WebView2 bootstrapper, optional MSI.
       Code signing is strongly recommended (SmartScreen warns about unsigned installers).
-      Installed and run on Windows: *(Windows testing phase)*.
+      Installed and run on Windows: *(Windows testing phase)*. The per-user install goes to
+      `%LOCALAPPDATA%\Programs\Reframe` (Tauri's default is Reframe's data folder); the MSI is
+      per machine, for administrators. Signed with a self-signed test certificate; a release
+      needs one from a certification authority. Installed, run, updated and removed on the
+      Windows VM ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md)
+      task W).
 - [x] Linux: AppImage (built on the oldest supported distro image, for glibc compatibility),
       `.deb`, `.rpm`. Flatpak comes later (its sandbox complicates file access and GPU access).
       Built in `ubuntu:22.04` by `desktop/packaging/linux/build.sh`; installed and run in Ubuntu
       22.04, Debian 12 and Fedora 45 containers, the AppImage on the host in a virtual session
       ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) task L).
-- [ ] Updater: signed `latest.json` in GitHub Releases.
+- [ ] Updater: signed `latest.json` in GitHub Releases. The plugin, the test key, the question,
+      the install through the quit flow and a signed `latest.json` are built and checked from a
+      test release served to the VM (0072 task W, with the release job's steps); a GitHub
+      release has not been made (no workflow runs, and the repository is private).
 
 ### D-9 Desktop smoke tests
 - [ ] `tauri-driver` (WebDriver) on Linux and Windows CI: the app starts, the backend becomes
