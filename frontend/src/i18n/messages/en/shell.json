@@ -45,6 +45,10 @@
   },
   "firstRun": {
     "title": "FFmpeg cannot be used",
+    "welcomeTitle": "Welcome to Reframe",
+    "welcomeIntro": "Reframe runs these programs to read and encode videos. To use other ones, set their paths in Settings → Tools.",
+    "continue": "Continue",
+    "openSettings": "Open Settings → Tools",
     "intro": "Reframe needs FFmpeg and FFprobe to read and encode videos. Until they work, the workspace is not available; presets and settings can still be used.",
     "tools": "The tools Reframe found",
     "useBundled": "Use bundled FFmpeg",

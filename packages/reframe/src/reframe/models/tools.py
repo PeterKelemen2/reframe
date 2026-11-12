@@ -83,6 +83,9 @@ class ToolInfo(ReframeModel):
     """The environment variable that overrides this tool (``REFRAME_FFMPEG``)."""
     next_to_ffmpeg: bool = False
     """ffprobe only: it was found next to an overridden ffmpeg (its ``origin`` is the ffmpeg's)."""
+    bundled: bool = False
+    """A bundled build of the tool's family (FFmpeg: ffmpeg and ffprobe) exists, so without a
+    Settings path discovery uses it. Also set while an override is in use."""
     fixes: list[Fix] = Field(default_factory=list)
 
 

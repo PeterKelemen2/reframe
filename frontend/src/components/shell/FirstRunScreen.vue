@@ -1,21 +1,29 @@
 <script setup lang="ts">
-import { Download, FolderCog, LoaderCircle, RefreshCw, Wrench } from '@lucide/vue'
+import { ArrowRight, Download, FolderCog, LoaderCircle, RefreshCw, Wrench } from '@lucide/vue'
 import Button from 'primevue/button'
 import ProgressBar from 'primevue/progressbar'
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, shallowRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 
 import { ApiError } from '@/api/client'
-import type { JsonPatchOp, Schemas } from '@/api/types'
+import type { Schemas, ValidationIssue } from '@/api/types'
 import KeyValue from '@/components/base/KeyValue.vue'
 import StatusDot from '@/components/base/StatusDot.vue'
-import type { StatusTone } from '@/components/base/types'
-import { FFMPEG_FAMILY, setByEnvironment } from '@/components/settings/tools'
+import RefusalList from '@/components/settings/RefusalList.vue'
+import {
+  FFMPEG_FAMILY,
+  resetOps,
+  setByEnvironment,
+  TOOL_NAMES,
+  toolTone,
+} from '@/components/settings/tools'
+import { useBundledTools } from '@/components/settings/useBundledTools'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
-import { useTasksStore } from '@/stores/tasks'
 
+import { useFirstRun } from './firstRun'
+import { focusWorkspace } from './focus'
 import FocusSafeButton from './FocusSafeButton'
 
 type ToolInfo = Schemas['ToolInfo']
@@ -24,27 +32,40 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const system = useSystemStore()
 const settings = useSettingsStore()
-const tasks = useTasksStore()
+const { firstStart, finish } = useFirstRun()
+const { fetching, fetchTask, use } = useBundledTools()
 
 const checking = ref(false)
 /** When the last *Check again* found the tools as they were: it says so, else nothing changes. */
 const unchangedAt = ref<string | null>(null)
+const bundledIssues = shallowRef<ValidationIssue[]>([])
 
+/** FFmpeg works: only the desktop app's first start shows the screen. */
+const welcome = computed(() => system.ffmpegProblem === null)
 const tools = computed<ToolInfo[]>(() => {
   const set = system.info?.tools
-  return set ? [set.ffmpeg, set.ffprobe] : []
+  if (!set) return []
+  return (firstStart.value ? TOOL_NAMES : FFMPEG_FAMILY).map((name) => set[name])
 })
-const fetchTask = computed(() =>
-  system.toolsFetch === null ? null : (tasks.tasks[system.toolsFetch] ?? null),
-)
-const fetching = computed(() => system.toolsFetch !== null)
 
-const failing = computed(() => tools.value.filter((tool) => tool.status !== 'found'))
+const failing = computed(() => {
+  const set = system.info?.tools
+  return set ? FFMPEG_FAMILY.map((name) => set[name]).filter((tool) => tool.status !== 'found') : []
+})
 /** The environment sets a tool that fails: it outranks Settings and a bundled build. */
 const setByEnv = computed(() => failing.value.filter(setByEnvironment))
 /** The server refuses tool paths from a browser; only the desktop app can choose one. */
 const desktop = computed(() => system.info?.mode === 'desktop')
-const canBundle = computed(() => setByEnv.value.length === 0)
+/**
+ * A bundled FFmpeg is used once no Settings path wins over it; without one the pinned build is
+ * downloaded first. A damaged bundled build with no path to remove is not fixed by either.
+ */
+const canBundle = computed(() => {
+  if (welcome.value || setByEnv.value.length > 0) return false
+  const set = system.info?.tools
+  const bundled = set !== undefined && FFMPEG_FAMILY.some((name) => set[name].bundled)
+  return !bundled || resetOps(FFMPEG_FAMILY, settings.settings?.tools).length > 0
+})
 const canChoosePath = computed(() => desktop.value && setByEnv.value.length === 0)
 const variables = computed(() =>
   (setByEnv.value.length > 0 ? setByEnv.value : failing.value)
@@ -53,14 +74,11 @@ const variables = computed(() =>
     .join(', '),
 )
 const note = computed(() => {
-  if (!canBundle.value) return t('shell.firstRun.envNote', { variables: variables.value })
+  if (welcome.value) return null
+  if (setByEnv.value.length > 0) return t('shell.firstRun.envNote', { variables: variables.value })
   if (!desktop.value) return t('shell.firstRun.webNote', { variables: variables.value })
   return null
 })
-
-function statusTone(tool: ToolInfo): StatusTone {
-  return tool.status === 'found' ? 'ok' : 'error'
-}
 
 function statusLabel(tool: ToolInfo): string {
   switch (tool.status) {
@@ -90,46 +108,10 @@ function originLabel(tool: ToolInfo): string {
   }
 }
 
-/** The API client has shown the problem as a toast; the screen stays as it is. */
-async function quietly(action: () => Promise<void>): Promise<void> {
-  try {
-    await action()
-  } catch (error) {
-    if (!(error instanceof ApiError)) throw error
-  }
-}
-
-/**
- * Downloads the pinned FFmpeg, then removes the Settings paths of ffmpeg and ffprobe, which would
- * still win over the bundled build.
- */
 async function useBundled(): Promise<void> {
   unchangedAt.value = null
-  let taskId: string | null = null
-  const stop = watch(
-    () => system.toolsFetch,
-    (id) => {
-      if (id !== null) taskId = id
-    },
-    { flush: 'sync' },
-  )
-  try {
-    await quietly(() => system.fetchTools())
-  } finally {
-    stop()
-  }
-  if (taskId === null || tasks.tasks[taskId]?.state !== 'done') return
-  const paths = settings.settings?.tools
-  const ops: JsonPatchOp[] = FFMPEG_FAMILY.filter((name) => paths?.[name]).map((name) => ({
-    op: 'replace',
-    path: `/tools/${name}`,
-    value: null,
-  }))
-  if (ops.length === 0) return
-  await quietly(async () => {
-    await settings.update(ops)
-    await system.rescanTools()
-  })
+  bundledIssues.value = []
+  bundledIssues.value = await use('ffmpeg')
 }
 
 function snapshot(): string {
@@ -141,12 +123,15 @@ async function checkAgain(): Promise<void> {
   unchangedAt.value = null
   const before = snapshot()
   try {
-    await quietly(() => system.rescanTools())
+    await system.rescanTools()
     if (snapshot() === before) {
       unchangedAt.value = new Intl.DateTimeFormat(locale.value, { timeStyle: 'medium' }).format(
         new Date(),
       )
     }
+  } catch (error) {
+    // The API client has shown it as a toast; the screen stays as it is.
+    if (!(error instanceof ApiError)) throw error
   } finally {
     checking.value = false
   }
@@ -155,22 +140,38 @@ async function checkAgain(): Promise<void> {
 async function choosePath(): Promise<void> {
   await router.push({ name: 'settings', hash: '#tools' })
 }
+
+/** The workspace replaces this screen, and its *Continue* button with it. */
+async function continueToWorkspace(): Promise<void> {
+  finish()
+  await nextTick()
+  focusWorkspace()
+}
 </script>
 
 <template>
   <section class="first-run" aria-labelledby="first-run-title" data-screen="first-run">
     <header class="first-run__header">
-      <Wrench class="first-run__icon" :size="32" aria-hidden="true" />
-      <h1 id="first-run-title" class="first-run__title">{{ t('shell.firstRun.title') }}</h1>
+      <Wrench
+        class="first-run__icon"
+        :class="{ 'first-run__icon--ok': welcome }"
+        :size="32"
+        aria-hidden="true"
+      />
+      <h1 id="first-run-title" class="first-run__title">
+        {{ welcome ? t('shell.firstRun.welcomeTitle') : t('shell.firstRun.title') }}
+      </h1>
     </header>
-    <p class="first-run__reason" role="alert">{{ system.ffmpegProblem }}</p>
-    <p class="first-run__intro">{{ t('shell.firstRun.intro') }}</p>
+    <p v-if="!welcome" class="first-run__reason" role="alert">{{ system.ffmpegProblem }}</p>
+    <p class="first-run__intro">
+      {{ welcome ? t('shell.firstRun.welcomeIntro') : t('shell.firstRun.intro') }}
+    </p>
 
     <h2 class="first-run__subtitle">{{ t('shell.firstRun.tools') }}</h2>
     <dl class="rf-kv-list first-run__tools">
       <KeyValue v-for="tool in tools" :key="tool.name" :label="tool.name">
         <span class="first-run__tool" :data-tool="tool.name">
-          <StatusDot :tone="statusTone(tool)" :label="statusLabel(tool)" show-label />
+          <StatusDot :tone="toolTone(tool)" :label="statusLabel(tool)" show-label />
           <span class="first-run__origin" data-field="origin">{{ originLabel(tool) }}</span>
           <code v-if="tool.path" class="first-run__path" data-field="path">{{ tool.path }}</code>
           <span v-else class="first-run__path first-run__path--none">
@@ -189,7 +190,18 @@ async function choosePath(): Promise<void> {
     </dl>
 
     <p v-if="note" class="first-run__note" data-field="note">{{ note }}</p>
+    <RefusalList :issues="bundledIssues" />
     <div class="first-run__actions">
+      <Button
+        v-if="welcome"
+        class="first-run__continue"
+        :label="t('shell.firstRun.continue')"
+        @click="continueToWorkspace"
+      >
+        <template #icon>
+          <ArrowRight :size="18" aria-hidden="true" />
+        </template>
+      </Button>
       <FocusSafeButton
         v-if="canBundle"
         class="first-run__bundled"
@@ -205,7 +217,7 @@ async function choosePath(): Promise<void> {
       <Button
         v-if="canChoosePath"
         class="first-run__choose"
-        :label="t('shell.firstRun.choosePath')"
+        :label="welcome ? t('shell.firstRun.openSettings') : t('shell.firstRun.choosePath')"
         severity="secondary"
         outlined
         @click="choosePath"
@@ -261,6 +273,10 @@ async function choosePath(): Promise<void> {
 
 .first-run__icon {
   color: var(--p-status-error-color);
+}
+
+.first-run__icon--ok {
+  color: var(--p-status-ok-color);
 }
 
 .first-run__title {

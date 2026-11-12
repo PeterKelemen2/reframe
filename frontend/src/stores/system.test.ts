@@ -13,7 +13,14 @@ type Tools = SystemInfo['tools']
 type Tool = Tools['ffmpeg']
 
 function tool(name: Tool['name'], extra: Partial<Tool> = {}): Tool {
-  return { name, status: 'found', next_to_ffmpeg: false, path: `/usr/bin/${name}`, ...extra }
+  return {
+    name,
+    status: 'found',
+    next_to_ffmpeg: false,
+    bundled: false,
+    path: `/usr/bin/${name}`,
+    ...extra,
+  }
 }
 
 function tools(extra: Partial<Tools> = {}): Tools {

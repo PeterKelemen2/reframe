@@ -4,10 +4,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/client'
 import { deferred } from '@/api/testing/fakes'
 import type { Schemas, SystemInfo, TaskInfo } from '@/api/types'
+import { platform } from '@/platform'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 import { useTasksStore } from '@/stores/tasks'
 
+import { FIRST_RUN_KEY } from './firstRun'
 import FirstRunScreen from './FirstRunScreen.vue'
 import { mountShell } from './testing'
 
@@ -18,6 +20,8 @@ const mounted: { unmount(): void }[] = []
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.replaceChildren()
+  Object.assign(platform, { kind: 'web' })
+  localStorage.clear()
 })
 
 function tool(name: ToolInfo['name'], extra: Partial<ToolInfo>): ToolInfo {
@@ -38,6 +42,14 @@ function info(
       mediainfo: tool('mediainfo', {}),
     },
   } as SystemInfo
+}
+
+/** A Settings path to a broken ffmpeg, with a bundled FFmpeg next to it. */
+function brokenOverride(): SystemInfo {
+  return info(
+    { status: 'broken', origin: 'settings', bundled: true, reason: 'not a program' },
+    { origin: 'settings', bundled: true, next_to_ffmpeg: true },
+  )
 }
 
 async function mountFirstRun(systemInfo: SystemInfo) {
@@ -221,5 +233,92 @@ describe('the first-run screen', () => {
     await wrapper.find('.first-run__choose').trigger('click')
     await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('settings'))
     expect(router.currentRoute.value.hash).toBe('#tools')
+  })
+
+  describe("the desktop app's first start", () => {
+    it('lists every tool, offers Continue only once FFmpeg works, and Continue is remembered', async () => {
+      Object.assign(platform, { kind: 'desktop' })
+      const { wrapper, system } = await mountFirstRun(
+        info({ status: 'missing', origin: 'bundled', reason: 'gone' }, {}),
+      )
+      expect(toolRow('mediainfo')).not.toBeNull()
+      expect(wrapper.find('.first-run__continue').exists()).toBe(false)
+
+      system.info = info(
+        { origin: 'bundled', path: '/app/tools/ffmpeg/bin/ffmpeg', version: '9.0.2' },
+        { origin: 'bundled', path: '/app/tools/ffmpeg/bin/ffprobe' },
+      )
+      await flushPromises()
+      expect(wrapper.find('#first-run-title').text()).toBe('Welcome to Reframe')
+      expect(wrapper.find('.first-run__reason').exists()).toBe(false)
+      expect(toolRow('ffmpeg')?.querySelector('[data-field="origin"]')?.textContent).toBe(
+        'Bundled with Reframe',
+      )
+      expect(toolRow('ffmpeg')?.querySelector('[data-field="path"]')?.textContent).toBe(
+        '/app/tools/ffmpeg/bin/ffmpeg',
+      )
+      expect(wrapper.find('.first-run__bundled').exists()).toBe(false)
+
+      await wrapper.find('.first-run__continue').trigger('click')
+      expect(localStorage.getItem(FIRST_RUN_KEY)).toBe('true')
+    })
+  })
+
+  describe('Use bundled FFmpeg with a bundled build', () => {
+    it('removes the Settings paths of ffmpeg and ffprobe, with no download', async () => {
+      const { wrapper, system } = await mountFirstRun(brokenOverride())
+      const settings = useSettingsStore()
+      settings.settings = { tools: { ffmpeg: '/opt/x/ffmpeg', ffprobe: '/opt/x/ffprobe' } } as never
+      settings.update = vi.fn<typeof settings.update>(async () => ({}) as never)
+      system.rescanTools = vi.fn<() => Promise<void>>(async () => {})
+      system.fetchTools = vi.fn<() => Promise<void>>(async () => {})
+      await flushPromises()
+      await wrapper.find('.first-run__bundled').trigger('click')
+      await flushPromises()
+      expect(system.fetchTools).not.toHaveBeenCalled()
+      expect(settings.update).toHaveBeenCalledExactlyOnceWith([
+        { op: 'replace', path: '/tools/ffmpeg', value: null },
+        { op: 'replace', path: '/tools/ffprobe', value: null },
+      ])
+      expect(system.rescanTools).toHaveBeenCalledTimes(1)
+    })
+
+    it('shows a refused change of the settings', async () => {
+      const { wrapper, system } = await mountFirstRun(brokenOverride())
+      const settings = useSettingsStore()
+      settings.settings = { tools: { ffmpeg: '/opt/x/ffmpeg' } } as never
+      settings.update = vi.fn<typeof settings.update>(async () => {
+        throw new ApiError(409, {
+          type: 'about:blank',
+          title: 'The settings changed',
+          status: 409,
+          code: 'settings.conflict',
+        })
+      })
+      system.rescanTools = vi.fn<() => Promise<void>>(async () => {})
+      await flushPromises()
+      await wrapper.find('.first-run__bundled').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('.refusal-list').text()).toContain('The settings changed')
+      expect(system.rescanTools).not.toHaveBeenCalled()
+    })
+
+    it('is not offered for a damaged bundled build that no Settings path overrides', async () => {
+      const { wrapper } = await mountFirstRun(
+        info(
+          { origin: 'bundled', bundled: true },
+          {
+            status: 'missing',
+            origin: 'bundled',
+            bundled: true,
+            reason: 'The bundled FFmpeg has no ffprobe: the installation is damaged.',
+          },
+        ),
+      )
+      useSettingsStore().settings = { tools: { ffmpeg: null, ffprobe: null } } as never
+      await flushPromises()
+      expect(wrapper.find('.first-run__bundled').exists()).toBe(false)
+      expect(wrapper.find('.first-run__check').exists()).toBe(true)
+    })
   })
 })
