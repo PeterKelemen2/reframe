@@ -104,6 +104,8 @@ mod tests {
         move |name| pairs.get(name).cloned()
     }
 
+    // An AppImage exists only on Linux; `/home/u/films` is not an absolute path on Windows.
+    #[cfg(unix)]
     #[test]
     fn an_appimage_started_from_a_folder_works_in_that_folder() {
         let image = vars(&[
