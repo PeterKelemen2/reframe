@@ -390,11 +390,9 @@ def _check_args(argv: Sequence[str], timeout: float | None, max_output: int) -> 
     return args
 
 
-def _child_env(extra_env: Mapping[str, str] | None) -> dict[str, str] | None:
-    if not extra_env:
-        return None
-    env = dict(os.environ)
-    env.update(extra_env)
+def _child_env(extra_env: Mapping[str, str] | None) -> dict[str, str]:
+    env = childproc.user_environ()
+    env.update(extra_env or {})
     return env
 
 

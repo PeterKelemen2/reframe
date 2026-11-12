@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import io
+import os
 import stat
 import sys
 import tarfile
@@ -48,9 +49,9 @@ def _zip(members: dict[str, bytes]) -> bytes:
     return buf.getvalue()
 
 
-def _tar_xz(members: dict[str, bytes]) -> bytes:
+def _tar_xz(members: dict[str, bytes], mode: str = "w:xz") -> bytes:
     buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:xz") as tf:
+    with tarfile.open(fileobj=buf, mode=mode) as tf:  # type: ignore[call-overload]
         for name, data in members.items():
             info = tarfile.TarInfo(name)
             info.mode = 0o755
@@ -108,6 +109,26 @@ class Setup:
             ),
         }
         self.mkvtoolnix_files = '["mkvpropedit.exe", "doc/COPYING.txt"]'
+        self.libraries = ""
+        self.write()
+
+    def add_libva(self, copying: bytes = b"MIT") -> None:
+        """Pin a libva source for Linux (the build itself is the ``fake_libva_build``'s)."""
+        name = "libva-9.9.tar.bz2"
+        self.files[name] = _tar_xz(
+            {"libva-9.9/COPYING": copying, "libva-9.9/meson.build": b"project('libva')"},
+            mode="w:bz2",
+        )
+        self.libraries = f"""[libraries.libva]
+version = "9.9"
+license = "MIT"
+license_file = "COPYING"
+source_repository = "https://example.invalid/libva"
+[libraries.libva.platforms.linux-x64]
+url = "{self.url(name)}"
+{self.pin(name)}format = "tar.bz2"
+root = "libva-9.9"
+"""
         self.write()
 
     def url(self, name: str) -> str:
@@ -172,7 +193,7 @@ url = "{self.url(mi)}"
 {self.pin(mi)}format = "zip"
 binary = "MediaInfo.exe"
 files = ["MediaInfo.exe", "LICENSE"]
-""",
+{self.libraries}""",
             encoding="utf-8",
         )
 
@@ -394,3 +415,88 @@ def test_main_reports_an_error_with_exit_code_1(
     )
     assert code == 1
     assert "notes.txt" in capsys.readouterr().err
+
+
+@pytest.fixture
+def fake_libva_build(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
+    """Replaces the meson build of libva: writes two libraries named as libva's are; the
+    source folders it was called with."""
+    calls: list[Path] = []
+
+    def build(source: Path, build_dir: Path) -> dict[str, Path]:
+        calls.append(source)
+        assert (source / "meson.build").is_file()
+        va = build_dir / "va"
+        va.mkdir(parents=True)
+        (va / "libva.so.2.2401.0").write_bytes(b"ELF libva")
+        (va / "libva-drm.so.2.2401.0").write_bytes(b"ELF libva-drm")
+        return {
+            "libva.so.2": va / "libva.so.2.2401.0",
+            "libva-drm.so.2": va / "libva-drm.so.2.2401.0",
+        }
+
+    monkeypatch.setitem(bt.LIBRARY_BUILDERS, "libva", build)
+    return calls
+
+
+@pytest.mark.usefixtures("no_discovery")
+def test_the_linux_layout_ships_the_built_libva_next_to_ffmpeg(
+    setup: Setup, fake_libva_build: list[Path]
+) -> None:
+    setup.add_libva(copying=b"MIT licence of libva")
+    setup.bundle("linux-x64")
+    lib = setup.dest / "ffmpeg" / "lib"
+    assert os.readlink(lib / "libva.so.2") == "libva.so.2.2401.0"
+    assert os.readlink(lib / "libva-drm.so.2") == "libva-drm.so.2.2401.0"
+    assert (lib / "libva.so.2").read_bytes() == b"ELF libva"
+    assert (setup.dest / "ffmpeg" / "LICENSE-libva.txt").read_bytes() == b"MIT licence of libva"
+    assert len(fake_libva_build) == 1
+    setup.bundle("windows-x64")  # the library is Linux only
+    assert not (setup.dest / "ffmpeg" / "LICENSE-libva.txt").exists()
+    assert len(fake_libva_build) == 1
+
+
+@pytest.mark.usefixtures("no_discovery")
+def test_a_new_library_pin_builds_the_ffmpeg_folder_again(
+    setup: Setup, fake_libva_build: list[Path]
+) -> None:
+    setup.add_libva(copying=b"old")
+    setup.bundle("linux-x64")
+    setup.bundle("linux-x64")
+    assert len(fake_libva_build) == 1  # a rerun keeps it
+    setup.add_libva(copying=b"new")
+    setup.bundle("linux-x64")
+    assert len(fake_libva_build) == 2
+    assert (setup.dest / "ffmpeg" / "LICENSE-libva.txt").read_bytes() == b"new"
+
+
+def test_building_libva_without_its_tools_names_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(FetchError, match="needs meson, ninja, pkg-config, cc"):
+        bt.LIBRARY_BUILDERS["libva"](tmp_path, tmp_path / "build")
+
+
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [
+        (("[libraries.libva]", "[libraries.libfoo]"), "no build is known"),
+        (('root = "libva-9.9"\n', ""), "needs its top folder"),
+        (('license_file = "COPYING"', 'license_file = "/COPYING"'), "relative"),
+    ],
+)
+def test_bad_library_pins_are_refused(setup: Setup, change: tuple[str, str], error: str) -> None:
+    setup.add_libva()
+    text = setup.tools_manifest.read_text(encoding="utf-8")
+    assert change[0] in text
+    setup.tools_manifest.write_text(text.replace(change[0], change[1], 1), encoding="utf-8")
+    with pytest.raises(FetchError, match=error):
+        bt.libraries(setup.tools_manifest, "linux-x64")
+
+
+def test_the_real_libva_pin_is_for_linux_only() -> None:
+    (libva,) = bt.libraries(bt.TOOLS_MANIFEST, "linux-x64")
+    assert (libva.name, libva.format, libva.license_file) == ("libva", "tar.bz2", "COPYING")
+    assert libva.url.startswith("https://")
+    assert bt.libraries(bt.TOOLS_MANIFEST, "windows-x64") == []

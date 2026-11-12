@@ -696,3 +696,17 @@ async def test_a_raising_on_start_kills_the_process_and_propagates() -> None:
         )
     assert pids
     await _wait_for(lambda: not _alive(pids[0]))
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="a frozen Linux app's library path")
+async def test_a_tool_started_from_a_frozen_app_gets_the_users_library_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/app/_internal:/opt/mine/lib")
+    monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/opt/mine/lib")
+    code = (
+        "import os; print(os.environ.get('LD_LIBRARY_PATH'), 'LD_LIBRARY_PATH_ORIG' in os.environ)"
+    )
+    result = await run([sys.executable, "-c", code], timeout=30)
+    assert result.stdout_text.split() == ["/opt/mine/lib", "False"]

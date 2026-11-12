@@ -3085,10 +3085,28 @@ PyInstaller 6.22.3 (hooks-contrib 2026.9, Python 3.14.8), Tauri CLI 2.12.4 and t
 The pinned BtbN build `n9.0.2-17-g2a571b6068-20260930`, MKVToolNix 103.0 and MediaInfo CLI
 26.10, 2026-11-12 ([0002](../docs/decisions/0002-bundled-ffmpeg.md)):
 
-- The BtbN Linux build carries no libva or Vulkan loader: `libavutil` and `libavcodec` load the
-  system's `libva.so.2` and `libva-drm.so.2` at run time through implib-gen stubs, so libva's
-  own driver folder applies (on Arch the encode works with and without `LIBVA_DRIVERS_PATH`;
-  `LIBVA_DRIVERS_PATH` set but empty makes device creation fail with -5).
+- The BtbN Linux build carries no libva or Vulkan loader: `libavutil` and `libavcodec` load
+  `libva.so.2` and `libva-drm.so.2` at run time through implib-gen stubs (on Arch the encode
+  works with and without `LIBVA_DRIVERS_PATH`; `LIBVA_DRIVERS_PATH` set but empty makes device
+  creation fail with -5). `bin/ffmpeg` has `DT_RPATH $ORIGIN/../lib`, so a `libva.so.2` in the
+  build's `lib/` is loaded before the system's (`LD_DEBUG=libs`: `…/bin/../lib/libva.so.2`),
+  also when the system's is newer.
+- libva 2.24.1 built with meson (DRM only) in `ubuntu:22.04` needs `GLIBC_2.34` at most; its
+  built-in driver path `/usr/lib/x86_64-linux-gnu/dri:/usr/lib64/dri:/usr/lib/dri` is tried
+  folder by folder (Arch: the second, a link to `/usr/lib`). libva loads a driver that exports
+  `__vaDriverInit_1_<n>` for its own VA-API minor or an older one (`va.c`); Mesa exports the
+  one of the libva it was built with (Arch's Mesa 26.2.5: `__vaDriverInit_1_24`).
+- With that libva on the RX 7600: Ubuntu 22.04's Mesa 23.2.1 and Debian 12's 22.3.6 write no
+  H.264 parameter sets ("Driver does not support some wanted packed headers (wanted 0xd, found
+  0)"): the encode to `null` works, into Matroska the header fails ("Could not write header
+  (incorrect codec parameters ?): Invalid data found when processing input") and FFmpeg 9.0
+  then segfaults (the distro's 4.4.2 / 5.1.9 fail the same way without a crash). Mesa 23.2.1
+  offers an AV1 entrypoint that fails ("Failed to query config attribute"); Mesa 22.3.6 has
+  none ("No usable encoding entrypoint found for profile VAProfileAV1Profile0 (32)"). Ubuntu
+  24.04 (Mesa 25.2.8) and Debian 13 (25.0.7) encode all three into Matroska.
+- Without libdrm2 the bundled `libva-drm.so.2` cannot load: `implib-gen: libva-drm.so.2:
+  failed to load library 'libva-drm.so.2' via dlopen: libdrm.so.2: cannot open shared object
+  file: No such file or directory`.
 - A stub aborts the process (SIGABRT, exit 134) when the library is missing
   (`implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: …`, the QSV
   test without `libva-drm2`) or lacks a function
@@ -3114,3 +3132,27 @@ The pinned BtbN build `n9.0.2-17-g2a571b6068-20260930`, MKVToolNix 103.0 and Med
   `SSL_CERT_FILE` set to certifi's `cacert.pem` works.
 - BtbN's repository is now `github.com/FFmpeg-Builds/FFmpeg-Builds`; the release URLs under
   `github.com/BtbN/FFmpeg-Builds` redirect there.
+- PyInstaller's bootloader (6.22.3, onedir) puts the sidecar's `_internal/` first in
+  `LD_LIBRARY_PATH` and keeps the value it found in `LD_LIBRARY_PATH_ORIG` (absent when the
+  variable was unset). Its `_internal/` has Ubuntu 22.04's `libstdc++.so.6`, so a system tool
+  started with that environment fails on a newer distro: `mkvpropedit` on Arch exits 1 with
+  `_internal/libstdc++.so.6: version 'CXXABI_1.3.15' not found (required by
+  /usr/lib/libicui18n.so.78)`.
+- An AppImage made by Tauri runs linuxdeploy's `AppRun` (a script that sources
+  `apprun-hooks/linuxdeploy-plugin-gtk.sh`, then AppImageKit's `AppRun.wrapped`). The hook
+  exports `APPDIR`, `GTK_DATA_PREFIX`, `GTK_THEME`, `XDG_DATA_DIRS`, `GSETTINGS_SCHEMA_DIR`,
+  `GI_TYPELIB_PATH`, `GIO_MODULE_DIR`, `GTK_EXE_PREFIX`, `GTK_PATH`, `GTK_IM_MODULE_FILE` and
+  `GDK_PIXBUF_MODULE_FILE` into `$APPDIR`; `AppRun.wrapped` puts `$APPDIR/usr/bin/…` first in
+  `PATH`, ten `$APPDIR/…lib…` folders first in `LD_LIBRARY_PATH` and sets `PYTHONHOME`,
+  `PYTHONPATH`, `PERLLIB`, `QT_PLUGIN_PATH`, `GST_PLUGIN_SYSTEM_PATH(_1_0)` into the image and
+  `PYTHONDONTWRITEBYTECODE=1` (its format strings, `strings AppRun.wrapped`). With that
+  environment (the extracted AppImage of task L, `Exec` pointed at a script that runs the frozen
+  CLI) on this host: `mkvpropedit` broken as above, VAAPI "VAAPI driver failed to start … (unknown
+  libva error)", AMF "AMD AMF could not start (Function not implemented)", libplacebo "No working
+  Vulkan driver". With the environment restored for the tools: all of them work.
+- The bundled FFmpeg needs nothing from `LD_LIBRARY_PATH`: `bin/ffmpeg` finds its libraries and
+  the bundled libva through `DT_RPATH $ORIGIN/../lib` (it runs with the variable unset).
+- Fedora 45: `mesa-dri-drivers` 26.2.6 installs `/usr/lib64/dri/radeonsi_drv_video.so` (there
+  is no `mesa-va-drivers` package), whose VAAPI offers no H.264 or H.265 encoding: FFmpeg says
+  `No usable encoding profile found.`; AV1 encodes. The `mkvtoolnix` and `mediainfo` packages
+  put their programs in `/usr/sbin`.

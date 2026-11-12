@@ -171,6 +171,16 @@ _RULES: tuple[_Rule, ...] = (
         _vaapi_driver,
     ),
     _Rule(re.compile(r"Failed to create a VAAPI device"), _vaapi_device),
+    # libavcodec/vaapi_encode.c: the driver has no encoder for the codec (no profile at all, as
+    # Fedora's Mesa for H.264 and H.265, or no encode entrypoint for the profile).
+    _Rule(
+        re.compile(
+            r"No usable encoding (?:entrypoint found for profile (?P<profile>\w+)|profile found)"
+        ),
+        lambda m, ctx, _t: (
+            f"The VAAPI driver has no {ctx.codec_label or m['profile'] or 'such'} encoder"
+        ),
+    ),
     # AMD AMF: libavutil/hwcontext_amf.c, libavcodec/amfenc*.c
     _Rule(
         re.compile(r"DLL (?P<lib>\S+) failed to open"),
@@ -236,8 +246,12 @@ _RULES: tuple[_Rule, ...] = (
         ),
     ),
     _Rule(
-        re.compile(r"^implib-gen: (?P<lib>\S+): failed to load library"),
-        lambda m, _ctx, _t: f"The system library {m['lib']} is not installed",
+        # The dlopen error names the library that is missing: the stub's own, or one it needs.
+        re.compile(
+            r"^implib-gen: (?P<lib>\S+): failed to load library .*via dlopen: "
+            r"(?:(?P<missing>[^:\s]+): cannot open shared object file)?"
+        ),
+        lambda m, _ctx, _t: f"The system library {m['missing'] or m['lib']} is not installed",
     ),
     # A hardware device option failed (fftools) and no device line said why.
     _Rule(

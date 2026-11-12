@@ -6,7 +6,7 @@ Pinned third-party tool builds. Plan: [02 §Bundled FFmpeg](../docs/plan/02-arch
 | File | Content |
 |------|---------|
 | `ffmpeg.toml` | The FFmpeg build that ships (`default`) and a second build for the CI job that tests the path override (`override-test`). For each platform: URL, SHA-256, size, archive layout. Also the exact version string, licence and the source commits (GPL source obligations). |
-| `bundled-tools.toml` | The MKVToolNix (`mkvpropedit.exe`) and MediaInfo CLI builds that the Windows package ships: URL, SHA-256, size, archive layout, the files kept, licence and source links. Linux packages use the distro's packages. |
+| `bundled-tools.toml` | The MKVToolNix (`mkvpropedit.exe`) and MediaInfo CLI builds that the Windows package ships (Linux packages use the distro's), and the libva source that the Linux layout builds into FFmpeg's `lib/`: URL, SHA-256, size, archive layout, the files kept, licence and source links. |
 
 ## Lay out the bundled tools of a package
 
@@ -21,7 +21,14 @@ archive's size and SHA-256 before it extracts anything, keeps a folder whose fil
 on a rerun, removes another platform's folders, and refuses to touch a destination that holds
 files it did not make. On the platform it lays out, it then runs tool discovery and checks that
 every tool is found as `bundled` with its pinned version. The Windows layout can be made on
-Linux; the Linux layout needs a Linux host (the archive has symbolic links).
+Linux; the Linux layout needs a Linux host (the archive has symbolic links) with meson,
+ninja, pkg-config, gcc and libdrm's headers (`apt install meson ninja-build pkg-config gcc
+libdrm-dev`), because it builds libva from source (DRM only) into `ffmpeg/lib/`: the distros'
+older libva lacks functions the FFmpeg build calls. Build the Linux layout on the oldest
+supported distro (Ubuntu 22.04): the libva library needs that host's glibc.
+
+Keep the libva pin at the newest libva release: libva does not load a VA driver built against
+a newer VA-API than its own.
 
 ## Fetch a build
 
@@ -97,6 +104,9 @@ FFmpeg: the builds use `--enable-gpl --enable-version3`: **GPL-3.0-or-later**. E
 source (or a written offer) for the exact build: the FFmpeg commit in `source_commit` and the
 BtbN build scripts at `build_scripts_commit`, which pin the source of every dependency
 (see [09 §Licensing](../docs/plan/09-quality-and-release.md#licensing)).
+
+libva (Linux layout) is MIT (`COPYING`, shipped as `ffmpeg/LICENSE-libva.txt`); its source is
+the release tarball the pin names.
 
 MKVToolNix is GPL-2.0-only (`doc/COPYING.txt`; `doc/README.txt` lists the licences of its
 third-party parts); its source is the release tarball in `source_url`. MediaInfo is

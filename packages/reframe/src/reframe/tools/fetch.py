@@ -40,7 +40,7 @@ import zipfile
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Literal
 
 from reframe import __version__
 from reframe.mediatask import TaskFailed
@@ -71,6 +71,7 @@ DEFAULT_MANIFEST = Path(__file__).with_name("ffmpeg.toml")
 SCHEMA_VERSION = 1
 PLATFORMS = ("linux-x64", "windows-x64")
 FORMATS = ("tar.xz", "zip")
+_TAR_MODES: dict[str, Literal["r:xz", "r:bz2"]] = {"tar.xz": "r:xz", "tar.bz2": "r:bz2"}
 #: The marker that ``scripts/fetch-tools.py`` writes too (same name and format).
 MARKER_NAME = ".fetch-tools.json"
 USER_AGENT = f"reframe/{__version__} (tools fetch)"
@@ -459,8 +460,10 @@ def _check_links(paths: list[PurePosixPath], links: Mapping[PurePosixPath, str],
             raise FetchError(f"the link {member} -> {text!r} points outside {root!r} (or loops)")
 
 
-def _extract_tar(archive: Path, root: str, dest: Path, cancel: CancelToken) -> None:
-    with tarfile.open(archive, "r:xz") as tf:
+def _extract_tar(
+    archive: Path, mode: Literal["r:xz", "r:bz2"], root: str, dest: Path, cancel: CancelToken
+) -> None:
+    with tarfile.open(archive, mode) as tf:
         members = tf.getmembers()
         links: dict[PurePosixPath, str] = {}
         paths = []
@@ -508,14 +511,15 @@ def _extract_zip(archive: Path, root: str | None, dest: Path, cancel: CancelToke
 def safe_extract(
     archive: Path, fmt: str, root: str | None, dest: Path, cancel: CancelToken
 ) -> None:
-    """Extract ``archive`` into ``dest``; every member is checked before a file is written.
-    Only a zip archive may lack a top folder (``root`` ``None``): a tar's links are checked
-    against it. :raises FetchError: an unsafe member, or an archive that cannot be read."""
+    """Extract ``archive`` (``tar.xz``, ``tar.bz2`` or ``zip``) into ``dest``; every member is
+    checked before a file is written. Only a zip archive may lack a top folder (``root``
+    ``None``): a tar's links are checked against it. :raises FetchError: an unsafe member, or
+    an archive that cannot be read."""
     try:
-        if fmt == "tar.xz":
+        if fmt in _TAR_MODES:
             if root is None:
-                raise FetchError(f"{archive.name}: a tar.xz archive needs a top folder")
-            _extract_tar(archive, root, dest, cancel)
+                raise FetchError(f"{archive.name}: a {fmt} archive needs a top folder")
+            _extract_tar(archive, _TAR_MODES[fmt], root, dest, cancel)
         elif fmt == "zip":
             _extract_zip(archive, root, dest, cancel)
         else:  # pragma: no cover - the manifest parser allows only these
