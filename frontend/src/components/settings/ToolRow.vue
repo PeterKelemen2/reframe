@@ -53,10 +53,15 @@ const bundledIssues = shallowRef<ValidationIssue[]>([])
  * behind would still win over the bundled ffprobe.
  */
 const canUseBundled = computed(
-  () =>
-    props.tool.bundled &&
-    !byEnvironment.value &&
-    resetOps(familyOf(props.tool.name), settings.settings?.tools).length > 0,
+  () => props.tool.bundled && !byEnvironment.value && saved.value !== null,
+)
+/** The other tools of the family whose Settings paths *Use bundled* removes too. */
+const alsoReset = computed(() =>
+  canUseBundled.value
+    ? familyOf(props.tool.name).filter(
+        (name) => name !== props.tool.name && resetOps([name], settings.settings?.tools).length > 0,
+      )
+    : [],
 )
 const fieldIssues = computed(() => [...override.issues.value, ...bundledIssues.value])
 
@@ -254,6 +259,9 @@ async function remove(): Promise<void> {
         </div>
       </template>
     </Field>
+    <p v-if="alsoReset.length > 0" class="tool-row__note" data-field="bundled-note">
+      {{ t('settings.tools.useBundledAlso', { tools: alsoReset.join(', ') }) }}
+    </p>
     <p v-if="note" class="tool-row__note" data-field="note">{{ note }}</p>
 
     <div

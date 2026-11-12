@@ -883,6 +883,45 @@ from a scheduled task (`schtasks /Create … /IT`, a `.cmd` with msedgedriver 15
 
 *Placeholder: filled by the lead.*
 
+**Fix round — FU** (Settings → Tools and the first-run screen; reviewer R2's two minors; this
+amends "Task U" items 1 and 3).
+
+1. *A damaged fetched FFmpeg could not be repaired from the web UI.* `ToolInfo.bundled` is
+   true as soon as ffmpeg or ffprobe is in a bundled root, and that includes `<data dir>/tools`,
+   where *Use bundled FFmpeg* (`POST /api/system/tools/fetch`) installs. A fetched build that
+   lost a file hid the section's download and the first-run screen's *Use bundled FFmpeg*. A web
+   user then had only *Check again* on the blocking screen, but the server's fetch installs the
+   build again over the damaged one (`is_installed` compares the marker's file hashes).
+   Now the download is offered again in **web mode** when an FFmpeg tool with origin `bundled`
+   is not `found`. Settings paths no longer stop it: the click downloads first, then removes the
+   paths, as M4 did. It is **not offered in the desktop app**. There the fetch also installs into
+   `<data dir>/tools`, but discovery searches the app's own `<exe dir>/../tools` first, so a
+   damaged install folder stays the one that is found. The reason says to reinstall. Limit: a
+   web server whose damaged build is in a system root (`/opt/reframe/tools` in the Docker
+   image, `/usr/lib/reframe/tools`) also gets the button, and the download into the data folder
+   (searched last) does not fix that build. `SystemInfo` does not give the client the data
+   folder, so the client cannot tell these cases apart. A file in the read-only image layer is
+   damaged only by a user's own change, so the button is accepted there.
+2. *The ffmpeg row offered "Use bundled" when ffmpeg already ran the bundled build, and the
+   click removed only ffprobe's path.* *Use bundled* now shows on a row only when that row's
+   own tool has a Settings path. It still resets the whole family. When the click also removes
+   the other FFmpeg tool's path, a note under the row says so: "Use bundled also removes the
+   path of ffprobe."
+
+Checked (2026-11-12, this host): unit tests, each failing before the fix (4 of the new ones;
+the desktop guard passes before and after). Then the web app (`build:web`) against
+`scripts/dev-server.py` (port 8745, then 8747 after the last change) in headless Chromium. The
+pinned build was fetched into the server's data folder through the API. Then `bin/ffprobe` was
+deleted and the tools were found again. The blocking screen showed "…has no ffprobe: the
+installation is damaged…" with *Use bundled FFmpeg* and *Check again*. The click sent only
+`POST /api/system/tools/fetch` (`downloaded: true`), ffprobe was back, and the workspace showed.
+The same damage found by Settings → Tools *Check again* showed the section's download button,
+and it repaired the build the same way. With a working fetched build the section showed no
+download and no *Use bundled*. Port 8746, with `{"tools": {"ffprobe": "/usr/bin/ffprobe"}}` and
+a fetched build: the ffmpeg row ("Bundled with Reframe") had no *Use bundled* and the ffprobe
+row had one. Its click sent one `PUT /api/settings` (`/tools/ffprobe` → `null`) and the rescan,
+and ffprobe was then "Bundled with Reframe".
+
 ## Consequences
 
 *Filled at the end.*

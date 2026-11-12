@@ -303,7 +303,30 @@ describe('the first-run screen', () => {
       expect(system.rescanTools).not.toHaveBeenCalled()
     })
 
-    it('is not offered for a damaged bundled build that no Settings path overrides', async () => {
+    it('downloads a damaged bundled build again in a browser', async () => {
+      const { wrapper, system } = await mountFirstRun(
+        info(
+          { origin: 'bundled', bundled: true },
+          { status: 'missing', origin: 'bundled', bundled: true, reason: 'damaged' },
+          'web',
+        ),
+      )
+      const settings = useSettingsStore()
+      settings.settings = { tools: { ffmpeg: null, ffprobe: null } } as never
+      settings.update = vi.fn<typeof settings.update>(async () => ({}) as never)
+      system.fetchTools = vi.fn<() => Promise<void>>(async () => {
+        system.toolsFetch = 't1'
+        useTasksStore().tasks = { t1: { id: 't1', kind: 'tools_fetch', state: 'done' } as TaskInfo }
+        system.toolsFetch = null
+      })
+      await flushPromises()
+      await wrapper.find('.first-run__bundled').trigger('click')
+      await flushPromises()
+      expect(system.fetchTools).toHaveBeenCalledTimes(1)
+      expect(settings.update).not.toHaveBeenCalled()
+    })
+
+    it('is not offered in the desktop app for a damaged bundled build that no Settings path overrides', async () => {
       const { wrapper } = await mountFirstRun(
         info(
           { origin: 'bundled', bundled: true },

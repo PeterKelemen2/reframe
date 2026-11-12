@@ -14,6 +14,13 @@ export function familyOf(name: ToolName): readonly ToolName[] {
   return FFMPEG_FAMILY.includes(name) ? FFMPEG_FAMILY : [name]
 }
 
+/** The bundled FFmpeg is in use and one of its two tools fails: a file is gone or damaged. */
+export function bundledFfmpegDamaged(set: Record<ToolName, ToolInfo>): boolean {
+  return FFMPEG_FAMILY.some(
+    (name) => set[name].origin === 'bundled' && set[name].status !== 'found',
+  )
+}
+
 /** Removes the Settings paths of `names` that are set: each would win over a bundled build. */
 export function resetOps(
   names: readonly ToolName[],
