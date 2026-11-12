@@ -65,6 +65,28 @@ measured as 0070 did: **median 1.38 s, worst 1.43 s** (10 runs; the first run af
 4.7 s of 0071 was the laptop VM's CPU ([0071](0071-server-start-and-windows-cold-start.md)
 "Follow-up").
 
+**The "Not verified" Windows leftovers that need no second user** (2026-11-12, the release build
+of 096836f in the owner's logged-on console session, started by a scheduled task, read over
+WebView2's DevTools port; clicks with `SetCursorPos` + `mouse_event` and screenshots of the
+whole screen from a task in the same session):
+
+- **Theme follow: passes.** With Appearance → Theme *System* (the default), setting
+  `HKCU\…\Themes\Personalize\AppsUseLightTheme` to 0 while the app runs turned the page dark
+  (`prefers-color-scheme: dark` true, the `reframe-dark` class) and the native title bar dark
+  within 3 s; 1 turned both light again. No restart, no code: WebView2 and Tauri follow the
+  setting.
+- **The tray menu: passes.** Tray switched on (Settings → Desktop's command). Windows puts a new
+  icon in the hidden-icons panel. Its menu: the progress line (disabled; *No job is running*,
+  *Queue: 15 %* while a CLI's job ran), **Pause all**, **Show Reframe**, **Quit**. With a running
+  job, closing the window asked *Quit Reframe? 1 job is running or paused* with **Keep running in
+  tray**, which hid the window and kept the job running; **Pause all** paused the job (19.5 %,
+  `reframe queue list`); **Show Reframe** brought the window back (*Queue: 1 paused*); **Quit**
+  showed the same dialog, and **Stop jobs and quit** ended the app, the sidecar and FFmpeg, left
+  no `.part`, and the job `interrupted`. With no job, closing the window quits at once (0069's
+  design: the tray keeps the app only through the dialog's button).
+- Seen on the way: the app's icon is a placeholder (a blue square; `icons/icon.png` is 104
+  bytes). The lead makes a real icon set for the packages (D-8).
+
 ## Task T — the bundled tools (D-7)
 
 *Placeholder: filled by task T.*

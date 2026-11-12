@@ -217,8 +217,9 @@ hands its jobs to the server or desktop app that owns the queue, or starts one
   for D-7 the bundled tools on Windows; for D-9 the smoke tests. Open-with brings the running
   window to the front when the second launch comes from a window that has the foreground
   (checked 2026-11-10; not with a real Explorer double-click, which needs D-8's file
-  associations). Not checked: the magnifier's update rate (no GPU in the VM), the tray icon's
-  menu, the theme.
+  associations). The tray icon's menu and the theme follow pass (2026-11-12, the desktop VM,
+  [0072](decisions/0072-m10-bundling-packaging-smoke-tests.md) "Part 1"). Not checked: the
+  magnifier's update rate (no GPU in the VM).
 - **Windows-specific risks** (checked 2026-11-10, [0070](decisions/0070-windows-testing-phase.md)
   "The Windows-specific risks"): display scaling at 125 % and 150 % (also changed while the app
   runs) keeps the window in the work area; below 1100×700 logical pixels the editor is cramped
