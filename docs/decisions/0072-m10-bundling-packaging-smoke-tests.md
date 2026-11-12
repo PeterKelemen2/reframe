@@ -407,7 +407,264 @@ rule, inside the folder because the root `.gitignore` is the lead's) ships in th
 
 ## Task W — Windows installers and the updater (D-8)
 
-*Placeholder: filled by task W.*
+Built and checked 2026-11-12 on the VM `win10` (22H2) in the owner's logged-on console session:
+the scripts ran there through a scheduled task (`/IT`, the user's filtered token, as a user who
+double-clicks), with clicks by `SetCursorPos` + `mouse_event`, UI Automation for the native
+windows, WebView2's DevTools port where the page was read, and screenshots of the whole screen.
+The bundles were built on the VM (`npx tauri build`, `CARGO_TARGET_DIR` shared) from the frozen
+sidecar, `bundle-tools.py --platform windows-x64` (with `SSL_CERT_FILE` from `certifi`, as T
+found) and `third-party-notices.py --platform windows-x64`.
+
+**What the bundler does by itself** (Tauri CLI 2.12.4, bundler 2.10.4): it downloads and checks
+NSIS 3.13, `nsis_tauri_utils` 0.5.3 and WiX 3.14.1 into `%LOCALAPPDATA%\tauri\` (nothing was
+installed by hand). With a certificate in the config it signs `Reframe.exe`, the uninstaller,
+both installers and **every unsigned `.exe` and `.dll` under `bundle.resources`**: the frozen
+sidecar's executables and DLLs and the bundled FFmpeg (it writes the signatures into
+`resources/` in place; MKVToolNix's and MediaInfo's executables are already signed by their
+publishers and are left alone). So the sidecar needs no signing step of its own.
+
+### The installers
+
+1. **NSIS, per user** (`tauri.windows.conf.json`: `installMode` `currentUser`). Started from the
+   user's filtered token, the installer and the installed app run unelevated (token elevation
+   type 3) and no UAC prompt appears. **Defect found and fixed: the default folder.** Tauri's
+   per-user default is `%LOCALAPPDATA%\Reframe`, which is Reframe's data folder (`platformdirs`:
+   the queue, settings, logs, cache and `tools\`): the installer's `tools\ffmpeg\bin\` is exactly
+   where *Use bundled FFmpeg* downloads the pinned build, so an install overwrote it and an
+   uninstall deleted it (the lead's fetched FFmpeg on this VM sits there). The hook moves the
+   program to `%LOCALAPPDATA%\Programs\Reframe` (Windows' per-user programs folder), on the
+   directory page (`MUI_CUSTOMFUNCTION_GUIINIT`) and for a silent install (the pre-install hook).
+   Checked: the directory page shows the new folder, the files land there, the uninstall entry
+   (`HKCU\…\Uninstall\Reframe`, publisher `reframe`) points there.
+2. **WebView2**: `webviewInstallMode` `downloadBootstrapper` (Tauri's default, written out): the
+   installer reads WebView2's `pv` from the registry and runs the bootstrapper only when the
+   runtime is missing. On the VM (WebView2 157) the NSIS install log has no WebView2 line, and the
+   MSI log says `INSTALLED_WEBVIEW2_VERSION` 157.0.4341.46, *Skipping action:
+   DownloadAndInvokeBootstrapper (condition is false)*. A machine without WebView2 (none here)
+   needs the internet during the install; not checked.
+3. **MSI** (optional, WiX): **per machine by nature**: it needs an administrator (UAC), installs
+   into `C:\Program Files\Reframe` for every user, puts the Start menu shortcut in
+   `ProgramData` and a desktop shortcut on the *Public* desktop, and registers the file classes in
+   `HKLM`. It has no PATH offer (Tauri's "PATH Environment Variable" feature only holds the main
+   binary) and the app never offers updates to an MSI install (an administrator deploys the next
+   MSI). For administrators who deploy software; the NSIS installer is the one for users.
+   Installed and removed quietly from an elevated shell (`msiexec /i … /qn`, `/x`): nothing left.
+4. `notices\THIRD_PARTY_NOTICES` (1 MB, with the updater's crates) is in both installs (L's
+   `notices\.gitignore` ships too). **Found in task L's script (not my file)**: on Windows
+   `third-party-notices.py` fails reading `cargo about`'s output with the ANSI code page
+   (`UnicodeDecodeError` in the reader thread, then `json.loads(None)`); run with
+   `PYTHONUTF8=1` it works. Its subprocess calls need `encoding="utf-8"`.
+
+**Signing** (`desktop/packaging/windows/test-certificate.ps1`, the owner's contract): a
+self-signed `CN=Reframe test signing` code-signing certificate in `Cert:\CurrentUser\My`
+(non-exportable key), its public part in `LocalMachine\Root` and `LocalMachine\TrustedPublisher`
+(the machine stores: an import into `CurrentUser\Root` waits for a click), and an overlay
+`{"bundle":{"windows":{"certificateThumbprint":…,"digestAlgorithm":"sha256"}}}` that the build
+takes as `npx tauri build --config <overlay>` (written outside the repository; the thumbprint is
+per machine). `signtool verify /pa`: *Successfully verified* for both installers;
+`Get-AuthenticodeSignature`: `Valid` for both, and for the installed `Reframe.exe`,
+`uninstall.exe` and `sidecar\reframe-server.exe`. No timestamp server was used, so the
+signatures end with the certificate (two years). **SmartScreen**, with a Mark of the Web
+(`Zone.Identifier` ZoneId 3) on a copy started from Explorer: unsigned, *Windows protected your
+PC*, *Publisher: Unknown publisher*; signed, the same warning with *Publisher: Reframe test
+signing*. SmartScreen warns about any installer without download reputation; a self-signed
+certificate is trusted only where its root was imported. **A real release needs a certificate
+from a certification authority** (an EV or Trusted Signing certificate builds SmartScreen
+reputation); the release job then passes its thumbprint, or a `signCommand` for a cloud key, in
+the same overlay.
+
+### Install, run, uninstall
+
+Installed version A (0.1.0) by its installer from the console session: Welcome, the folder
+page, the PATH question (below), Finish (*Run Reframe*, *Create desktop shortcut*). Started
+from the Start menu shortcut (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Reframe.lnk`,
+target `…\Programs\Reframe\Reframe.exe`): the sidecar is
+`…\Programs\Reframe\sidecar\reframe-server.exe`, the app's child; the first-run screen lists
+**ffmpeg and ffprobe (n9.0.2-17), mkvpropedit (103.0) and mediainfo (26.10), each "Bundled with
+Reframe"** at `…\Programs\Reframe\tools\…`; *Continue* stored `reframe.firstRun.seen`, and every
+later start (also after the update) went straight to the workspace, so WebView2 keeps the flag
+(task U's open item). A real encode: `reframe encode vfr.mkv -o …` from a console opened through
+Explorer handed its job to the app's sidecar ("Queue: Reframe 0.1.0.dev0 (pid 1316)"), done in
+1 s with the bundled FFmpeg.
+
+Uninstalled with the uninstaller's two choices. **What it removes and what it keeps:**
+
+| | Unticked "Delete the application data" | Ticked |
+|---|---|---|
+| `%LOCALAPPDATA%\Programs\Reframe` (the program), Start menu and desktop shortcuts, the uninstall key, the PATH entry, the file classes `Reframe.<ext>` and the extensions' saved classes | removed | removed |
+| `%LOCALAPPDATA%\Reframe` (queue, settings, presets, logs, cache, fetched tools) | kept | removed (the hook) |
+| `%LOCALAPPDATA%\org.reframe.desktop` (WebView2's profile, the first-run flag), `%APPDATA%\org.reframe.desktop` (`desktop.json`, window state) | kept | removed (Tauri) |
+| `HKCU\Software\reframe\Reframe` (install folder, installer language) | kept | removed (Tauri) |
+
+User data and settings stay unless the user ticks the box; a tick removes everything the app
+made. Left in both cases: `%LOCALAPPDATA%\Programs` itself (Windows' folder, empty) and Explorer's
+own "Open with" history (`FileExts\.mkv\OpenWithList`), which Windows writes. Checked after
+updates too (below).
+
+**Defect found and fixed: an update broke the file associations' restore.** Tauri's
+`APP_ASSOCIATE` saves an extension's class as `Reframe.<ext>_backup` and the uninstaller puts it
+back; installed over itself (the update) it saved Reframe's own class, so the uninstall left
+`HKCU\Software\Classes\.mkv` (and the six others) pointing at the deleted `Reframe.mkv`, plus the
+`_backup` values. The pre-install hook now puts the earlier class back before Tauri saves it,
+and the post-uninstall hook drops the saved value, an empty class and an extension key that held
+nothing else (`.ts` and `.webm` had none before). Checked with C (0.1.2) updated to D (0.1.3)
+and uninstalled: every extension key as before the first install.
+`testing/tests/test_windows_packaging.py` checks the hook lists every extension and class of
+`bundle.fileAssociations`.
+
+### The PATH offer
+
+- The question (*Add the reframe command-line tool to your PATH?* with the folder): **Yes** wrote
+  `…\Programs\Reframe\sidecar` at the end of `HKCU\Environment\Path` (REG_EXPAND_SZ, the other
+  entries unexpanded); a console opened from Explorer afterwards found it (`where reframe`,
+  `reframe version` → 0.1.0.dev0) and encoded. **No** left the PATH unchanged. The uninstall
+  removed the entry.
+- **An update keeps the entry, and asks nothing.** The updater runs the installer with
+  `/P /UPDATE /R`; in update mode Tauri's installer overwrites the folder without running the
+  old uninstaller, so the entry stays valid. The question was shown before in passive mode (only
+  `/S` skipped it): it now shows only in an interactive, non-update install, and an uninstall that
+  is part of an update keeps the entry. Checked: A installed with Yes, updated to B: the entry
+  is still there; C installed with No, updated to D: still no entry; no question appeared during
+  either update. A newer installer run by hand shows Tauri's "uninstall before installing"
+  choice; with it the old uninstaller removes the entry and the new installer asks again (read
+  from the template, not run).
+
+### File associations and the Explorer double-click
+
+The installer registers `HKCU\Software\Classes\Reframe.mkv` (and `.mp4`, `.m2ts`/`.ts`, `.avi`,
+`.mov`, `.webm`) with `"…\Reframe.exe" "%1"` and makes it the extension's class. Explorer shows
+the files with Reframe's icon, the context menu's default verb is **Open with Reframe**, and
+**Open with** lists Reframe (with Photos and Windows Media Player). A Windows 10 per-user
+`UserChoice` (here Movies & TV for `.mkv`) is not changed by an installer.
+
+**A real double-click** (an Explorer window on the fixtures in the console session, a mouse
+double-click by `mouse_event` on the file's row, as a person's): with the app closed, `vfr.mkv`
+started `Reframe.exe "C:\Users\TestWin\w-media\vfr.mkv"` (Explorer's child), the file opened,
+Reframe's window in the foreground. With the app running, a click on Explorer (Explorer in the
+foreground) and a double-click on `vfr.mp4`: the second process handed the path over and exited
+(one `Reframe.exe` left), `vfr.mp4` opened in the running window (grouped with `vfr.mkv`), and
+Reframe's window came to the front. 0070's open item is closed.
+
+### The notification's identity
+
+The NSIS shortcut carries `System.AppUserModel.ID` = `org.reframe.desktop`, and the notification
+plugin uses the bundle identifier when the app does not run from a `target\…` folder. A *Job
+done* toast while the window had no focus (a CLI job handed to the installed app): Windows'
+notification store (`wpndatabase.db`) has it under the handler `org.reframe.desktop`
+(`app:desktop`), and a screenshot shows the toast titled **Reframe** with the app's icon. The
+installed app's identity is right; nothing to fix.
+The MSI's Start menu shortcut sets the same AUMID (WiX template). Owner: confirm the look by eye.
+
+### Long paths
+
+**The installer does not offer to turn on long paths.** `LongPathsEnabled` is a machine policy
+in `HKLM`: the per-user installer has no administrator rights by design and cannot write it, and
+asking for elevation for this one value would bring back the UAC prompt the per-user installer
+exists to avoid; it also changes every program on the machine. The app already says, wherever a
+path is refused, that Windows refuses it and how to turn on long paths
+([0070](0070-windows-testing-phase.md) "The Windows-specific risks"). The MSI could write it, but
+an application installer that silently changes a system policy is not wanted either. The VM
+stayed at `LongPathsEnabled` 0.
+
+### The updater
+
+`tauri-plugin-updater` 2.14.1 (the newest 2.x; without its `zip` feature, which only the v1
+archives and macOS need), registered in `main.rs` with a small plugin of `updater.rs`. No
+frontend part and no capability: the check, the question and the install run in Rust, the page
+is reached only through the quit flow. The smallest UI the plan needs (07 names no UI):
+
+- **When**: once per start, in the background, only in an app an installer made
+  (`bundle_type()` NSIS, AppImage or deb). A build run from its folder (`--no-bundle`, the smoke
+  tests, development) never asks the network; an rpm install is left out (the plugin would take
+  the AppImage path and fail after the user agreed); an MSI install too (above). A failed check
+  shows nothing (offline is normal).
+- **How the user agrees**: a native dialog *Update Reframe*: "Reframe 0.1.1 is available (this
+  is 0.1.0). Reframe downloads it in the background, then quits to install it and starts again.
+  If jobs are running, you are asked first." with **Install and restart** · **Later** (Later asks
+  again at the next start).
+- **Then**: the download (verified against the public key before anything else); then the quit
+  flow of D-3 (`request_quit`): with a running or paused job the page asks *Quit Reframe? 1 job
+  is running or paused* (Cancel keeps the app and the update waits for the next quit; *Keep
+  running in tray* likewise); the install runs as the app exits, after the sidecar has stopped
+  (the plugin exits the process when it starts the installer, so the hook stops the backend
+  first). A failed download or signature shows *The update could not be installed* with the
+  reason. The NSIS installer runs passive and starts the new version (`/R`).
+- **Defect found and fixed**: the plugin keeps the installer it ran in
+  `%TEMP%\Reframe-<version>-updater-<random>\` (115 MB; it cannot delete itself while it runs).
+  The next start removes such folders (checked: C's start removed B's, the second start of D
+  removed D's; the first start right after an update finds the installer still running and leaves
+  it).
+
+`plugins.updater` in `tauri.conf.json`: the endpoint
+`https://github.com/PeterKelemen2/reframe/releases/latest/download/latest.json`, `windows.installMode`
+`passive`, `requireSignedVersion` `true` (the signature must carry the version the manifest
+announces), and the public key. **The committed `pubkey` is the test key** (minisign key id
+`80B98CB268A32743`), generated with `tauri signer generate` on the host into
+`~/.config/reframe-test-keys/` (the private key and its password there, mode 600, never on the
+VM or in the repository). A real release replaces it with the release key's public part.
+
+**The test** (the host served `latest.json` and the installer on `192.168.122.1:8740`, reachable
+from the VM; the test builds took an overlay with that `http://` endpoint and
+`dangerousInsecureTransportProtocol`, not committed): the installers were built on the VM,
+copied to the host and signed there (`tauri signer sign -f … --app-version 0.1.1`), the
+`.sig` went into a static `latest.json` (`platforms."windows-x86_64-nsis"`).
+
+1. A manifest whose signature belongs to another file: A downloaded the installer and showed
+   *The update could not be installed. The signature verification failed*; A stayed.
+2. A manifest announcing 0.1.2 with 0.1.1's (version-bound) signature: *The update was signed for
+   version 0.1.1 but the update endpoint announced version 0.1.2* — refused.
+3. The right manifest, with a paused job: **Install and restart** → download → *Quit Reframe? 1
+   job is running or paused* → Cancel (A ran on) → closing the window asked again → **Stop jobs
+   and quit**: A and its sidecar ended, the passive installer ran for 16 s without a question, and
+   B started by itself. After it: the uninstall entry says 0.1.1, the new `Reframe.exe` is signed
+   (`Valid`), the PATH entry is still there, `settings.json` is byte-equal (MD5), the first-run
+   flag kept (straight to the workspace), the paused job `interrupted` ("Reframe was closed while
+   the job was running"). The same with C → D (no job: the app quit at once).
+
+**The release endpoint and the release job** (not built: no workflow runs on GitHub in this
+run). The endpoint is GitHub's "latest release" asset URL, so it answers only when the
+repository's releases are public (the repository is private today: every check then fails
+quietly). The Windows job of a release, after CI's steps:
+
+1. `uv sync --frozen`; `npm ci` in `frontend/` and `desktop/`; `uv run python
+   scripts/bundle-tools.py --platform windows-x64`; `uv run python desktop/sidecar/build.py`;
+   `PYTHONUTF8=1 uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py
+   --platform windows-x64` (`cargo-about` 0.9.3 installed with `--features cli`).
+2. Write the signing overlay with the release certificate (thumbprint, `digestAlgorithm`
+   `sha256`, a `timestampUrl`) and run `npx tauri build --config <overlay>` (version from
+   `tauri.conf.json`).
+3. Sign the updater artefact with the release key from a secret: `tauri signer sign -f <key>
+   --app-version <version> Reframe_<version>_x64-setup.exe` (password in
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`). Setting `bundle.createUpdaterArtifacts` with
+   `TAURI_SIGNING_PRIVATE_KEY` in the build does the same; it stays off in the committed config
+   because every build would then need the private key.
+4. Write `latest.json`: `version`, `notes`, `pub_date` (RFC 3339) and
+   `platforms."windows-x86_64-nsis"` with `signature` (the `.sig` file's content) and `url` (the
+   release asset's download URL). No generic `windows-x86_64` key (it would also reach other
+   Windows installs) and no MSI entry. Linux entries (`linux-x86_64-appimage`,
+   `linux-x86_64-deb`) only after the Linux update is checked (not done).
+5. Upload the two installers, the `.sig` and `latest.json` to a GitHub release that is not a
+   pre-release.
+
+**Not verified**: the Linux update (AppImage, deb); an update from an MSI install (left out on
+purpose); a machine without WebView2; the MSI's UAC prompt (owner, below); a manually run newer
+NSIS installer over an older one; the GitHub release path.
+
+**Tests**: `desktop/src-tauri/src/updater.rs` (2: which installs check — mutations: MSI added
+to the list, rpm added, deb removed, each failed; the installer folders the
+start removes — mutations: no `-` after the name, an empty version accepted, each failed),
+`testing/tests/test_windows_packaging.py` (2: every extension and class of
+`bundle.fileAssociations` is in the hook — mutation: the `ts` line removed, failed; the per-user
+mode and the folder the hook moves away from — mutation: the hook's target set back to
+`%LOCALAPPDATA%\Reframe`, failed). The rest is installer behaviour, checked on the VM above.
+
+**For the owner's session** (on the VM, nothing else needed): the UAC prompt of the signed MSI
+(`C:\Users\TestWin\w-out\D\msi\Reframe_0.1.3_x64_en-US.msi`, double-click: it should name
+*Verified publisher: Reframe test signing*; the prompt is on the secure desktop, so no screenshot
+was possible; Cancel, or install and remove it); the toast's look (install
+`C:\Users\TestWin\w-out\D\nsis\Reframe_0.1.3_x64-setup.exe`, finish any job while another window
+has the focus; the update check of this test build fails quietly since the test server is
+stopped).
 
 ## Task S — the smoke tests (D-9)
 
