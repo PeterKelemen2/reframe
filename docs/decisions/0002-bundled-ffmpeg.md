@@ -63,7 +63,8 @@ build and switch the `windows-x64` pin only if it is clean and meets 02's requir
    that libva already looks in its distro's folder. On this host the encode works with and
    without the variable; in the Ubuntu 24.04 and Debian 13 containers too. So the variable is
    not needed on the tested distros and does no harm; it stays for distros whose libva looks
-   elsewhere (not seen).
+   elsewhere (not seen). With the bundled libva of the follow-up below, its built-in path
+   names the same three folders, so the variable still agrees with it.
 5. **New capability reasons** (`reframe/capabilities/reasons.py`) for what the host tests
    found reported as `error`:
    - libplacebo without a Vulkan loader (the Windows VM has no `vulkan-1.dll`; a container
@@ -154,14 +155,12 @@ family; Arch stands in), a real install of the packages (D-8), the GitHub runner
 
 ## Consequences
 
-- **VAAPI does not work with the bundled build on Ubuntu 22.04 and 24.04 LTS and Debian 12**
+- **VAAPI with the system's libva did not work on Ubuntu 22.04 and 24.04 LTS and Debian 12**
   (libva 2.14, 2.20, 2.17; each checked in a container with `/dev/dri`): the build calls
-  `vaMapBuffer2`, which those lack and libva 2.22 (Debian 13) has. Settings shows the
-  reason; software encoders, NVENC and AMF are not affected. The plan's remedy (07, risk
-  table: point the override to the distro FFmpeg) does not help there: those distros' FFmpeg
-  (4.4.2, 6.1.1, 5.1.9; `apt-cache policy ffmpeg`) is below Reframe's minimum 7.0. A fix needs
-  a build that checks the libva version at run time (to report upstream to BtbN / FFmpeg) or
-  a newer libva on the host. Known limit.
+  `vaMapBuffer2`, which those lack and libva 2.22 (Debian 13) has, and those distros' FFmpeg
+  (4.4.2, 6.1.1, 5.1.9; `apt-cache policy ffmpeg`) is below Reframe's minimum 7.0, so the 07
+  risk table's remedy (the distro FFmpeg as the override) does not help. Fixed by shipping
+  libva with the Linux layout: see "Follow-up: the bundled libva".
 - The Windows Detelecine crash stays a known limit ([0070](0070-windows-testing-phase.md)):
   2 of 400 runs here. A job fails as "ffmpeg crashed"; a retry usually works.
 - On a Windows that has not yet fetched the SSL.com / SecureTrust root (Windows fetches roots
@@ -173,9 +172,59 @@ family; Arch stands in), a real install of the packages (D-8), the GitHub runner
   `/usr/lib/Reframe/tools/ffmpeg/`; the core finds it next to the sidecar
   (`<exe dir>/../tools`). The plan's `/usr/lib/reframe/tools/ffmpeg/` is corrected.
 
+## Follow-up: the bundled libva (2026-11-12, task T2)
+
+**Decision.** The Linux layout ships libva **2.24.1** (the newest release; VA-API 1.24), built
+from its release tarball (pinned in `tools/bundled-tools.toml`, `[libraries.libva]`: URL,
+SHA-256 `eec6050b…3d67` equal to the GitHub release asset's digest, MIT, `COPYING`) by
+`scripts/bundle-tools.py --platform linux-x64`: meson, DRM only (`-Dwith_x11=no
+-Dwith_glx=no -Dwith_wayland=no`), `-Ddriverdir=/usr/lib/x86_64-linux-gnu/dri:/usr/lib64/dri:/usr/lib/dri`
+(Debian/Ubuntu, Fedora, Arch; libva splits its built-in path at `:` as it does
+`LIBVA_DRIVERS_PATH`). `libva.so.2.2400.0` and `libva-drm.so.2.2400.0` go into the FFmpeg
+folder's `lib/` with their soname links, the licence as `LICENSE-libva.txt` next to FFmpeg's.
+The build host needs meson (≥ 0.53; 22.04 has 0.61.2), ninja, pkg-config, gcc and libdrm's
+headers (`apt install meson ninja-build pkg-config gcc libdrm-dev`); the script names what is
+missing. Built in `ubuntu:22.04`, the libraries need at most `GLIBC_2.34` (`objdump -T`), so
+the layout must be built there (L's image), not on a newer distro.
+
+**Why the bundled libva is the one used.** `ffmpeg` and `ffprobe` carry `DT_RPATH
+$ORIGIN/../lib`, and the stubs in `libavutil` / `libavcodec` `dlopen("libva.so.2")`, which
+searches the executable's `DT_RPATH` first: `LD_DEBUG=libs` shows `…/bin/../lib/libva.so.2`
+and `…/libva-drm.so.2` loaded on every host below, also on this host whose own libva is 2.24.1.
+libva loads a driver only if it exports `__vaDriverInit_1_<minor>` for its own VA-API minor or
+an older one: a driver built against a newer VA-API than the bundled libva's is not loaded. So
+the pin must follow libva releases (a distro with libva 2.25 and a Mesa built against it would
+fail until then). `LIBVA_DRIVERS_PATH` as the core sets it (the first of the three folders that
+exists) agrees with the built-in path.
+
+**New reasons**: a library that the bundled libva needs is missing (libdrm in a bare
+container): "The system library libdrm.so.2 is not installed" (the dlopen error names it; it
+said `libva-drm.so.2` before); a VAAPI driver without an encoder for the codec (`No usable
+encoding entrypoint found for profile …`): "The VAAPI driver cannot encode AV1 on this GPU"
+(was `error`).
+
+**Host tests** (the layout built once by the script in `ubuntu:22.04`, copied into each
+container's `REFRAME_DATA_DIR/tools`; RX 7600 through `/dev/dri`; Reframe's encoder detection
+and encodes of `multitrack.mkv` through the queue; the distro's own FFmpeg with the same
+encoder into Matroska to separate Mesa's limits from ours):
+
+| Host (Mesa) | h264_vaapi | hevc_vaapi | av1_vaapi | Distro FFmpeg |
+|-------------|-----------|-----------|-----------|---------------|
+| Ubuntu 22.04 (23.2.1) | detected; the job fails: "Could not write header … Invalid data", then FFmpeg segfaults | encodes | `error` "The test encode failed: No quality level set…" (Mesa's AV1 fails "Failed to query config attribute") | 4.4.2: h264 into MKV fails the same way (no SPS/PPS: "Driver does not support some wanted packed headers", found 0), no crash; no av1_vaapi |
+| Debian 12 (22.3.6) | the same as 22.04 | encodes | unavailable: "The VAAPI driver cannot encode AV1 on this GPU" | 5.1.9: h264 the same; no av1_vaapi |
+| Ubuntu 24.04 (25.2.8) | encodes | encodes | encodes | 6.1.1: all three encode |
+| Debian 13 (25.0.7) | encodes | encodes | encodes | 7.1.5: all three encode |
+| This host, Arch (26.2.5, libva 2.24.1) | encodes | encodes | encodes | (also AMF h264/hevc/av1 and libx264 encode; nothing changed by the bundled libva) |
+
+So VAAPI works on every tested distro where the distro's Mesa can encode the codec: h264
+into a file needs a Mesa that writes the parameter sets (24.04's 25.2 does, 22.04's 23.2 and
+Debian 12's 22.3 do not; Reframe's test encode to `null` does not see that, so h264_vaapi
+shows as available there and the job fails, a known limit), and AV1 needs a Mesa newer than
+23.2 on this GPU.
+
 ## Plan changes
 
 - `docs/plan/07-desktop-app.md` §Tool bundling (the `.deb`/`.rpm` folder) and §D-7 (bullet 1
   done; bullet 2: `resources/tools/` per build platform, not `resources/tools/<os>/`).
 - `docs/plan/02-architecture.md` §Bundled FFmpeg: the `.deb`/`.rpm` install location; the build
-  choice is confirmed here.
+  choice is confirmed here; the Linux layout ships its own libva (follow-up).

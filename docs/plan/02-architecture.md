@@ -105,8 +105,9 @@ build behaves the same.
   libx265, libsvtav1, libopus, libplacebo + Vulkan, libvpl (QSV), NVENC, AMF (Windows) and
   VAAPI (Linux), and it must run on the oldest supported distro. The BtbN release-branch GPL
   build, shared-library variant (`ffmpeg` and `ffprobe` share one set of libraries), is the
-  choice ([decision 0002](../decisions/0002-bundled-ffmpeg.md)); its VAAPI needs the
-  system's libva 2.22 or newer, so not on Ubuntu 22.04 / 24.04 or Debian 12.
+  choice ([decision 0002](../decisions/0002-bundled-ffmpeg.md)). Its VAAPI needs a libva
+  newer than Ubuntu 22.04 / 24.04 or Debian 12 have, so the Linux layout ships libva (built
+  from its pinned source on the oldest supported distro) in the FFmpeg folder's `lib/`.
 - **Install location**: `<app>/tools/ffmpeg/` (Windows, AppImage), `/usr/lib/Reframe/tools/ffmpeg/`
   (.deb/.rpm: the package's resource folder next to the sidecar, so it does not conflict with
   the distro's `ffmpeg` package),

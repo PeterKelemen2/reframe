@@ -107,6 +107,11 @@ uv run python scripts/bundle-tools.py --platform linux-x64     # on Linux
 uv run python scripts/bundle-tools.py --platform windows-x64   # on Windows (or on Linux)
 ```
 
+The Linux layout builds libva from its pinned source (0002 "Follow-up"), so the Linux job or
+image also needs `apt install meson ninja-build pkg-config gcc libdrm-dev` (the script names
+what is missing), and it must run on `ubuntu:22.04`: the built libva needs that glibc (2.34 at
+most there); built on a newer distro it would not load on 22.04.
+
 It exits 1 with the reason on stderr (a checksum, a download, a foreign file in the folder,
 a tool that discovery does not find as `bundled` with its pinned version). Its downloads can
 be cached keyed on `tools/ffmpeg.toml` and `tools/bundled-tools.toml` (cache the archives, not
@@ -120,21 +125,25 @@ root store lacks mediaarea.net's root the MediaInfo download fails with
 resource folder; the core finds it next to the sidecar), not 02's `/usr/lib/reframe/tools/`
 (plan corrected). The licence files are `tools/ffmpeg/LICENSE.txt`,
 `tools/mkvtoolnix/doc/COPYING.txt` (+ `README.txt`), `tools/mediainfo/LICENSE`
-(+ `License.html`); the source links are in the two manifests (`source_commit`,
-`build_scripts_commit`; `source_url`, `source_repository`, `source_tag`). The FFmpeg folder is
+(+ `License.html`), `tools/ffmpeg/LICENSE-libva.txt` (MIT, Linux); the source links are in the two manifests (`source_commit`,
+`build_scripts_commit`; `source_url`, `source_repository`, `source_tag`; libva:
+`[libraries.libva]` `url`, `source_repository`, `source_tag`). The FFmpeg folder is
 the archive root as it is (234 MB on Linux, `ffplay` and the headers included).
 
 **Plan changes (in the same commit as 0002)**: 07 §D-7 bullet 2 said `resources/tools/<os>/`,
 but one build makes one platform's package, so the layout is `resources/tools/` per build;
 07 §Tool bundling and 02 §Bundled FFmpeg named `/usr/lib/reframe/tools/ffmpeg/` for the
 `.deb` / `.rpm`, but Tauri installs resources under `/usr/lib/<productName>/`; 02 notes that
-the build's VAAPI needs libva 2.22 or newer. 07 §D-7 bullet 1 is ticked; bullet 2 waits for
+the build's VAAPI needs a newer libva than the oldest distros have, so the Linux layout ships
+one (T2). 07 §D-7 bullet 1 is ticked; bullet 2 waits for
 the CI job (S).
 
-**Found for the lead and the owner**: VAAPI is unavailable with the bundled build on Ubuntu
-22.04 / 24.04 and Debian 12 (their libva lacks `vaMapBuffer2`), and their distro FFmpeg is
-older than Reframe's minimum, so the 07 risk table's remedy does not help there (0002
-"Consequences"). The Windows Detelecine crash stays (no build without it; one filter thread
+**Found for the lead and the owner**: with the system's libva, VAAPI was unavailable on Ubuntu
+22.04 / 24.04 and Debian 12 (their libva lacks `vaMapBuffer2`, their FFmpeg is older than
+Reframe's minimum). T2 ships libva 2.24.1 in the Linux layout: VAAPI then works wherever the
+distro's Mesa can encode the codec (0002 "Follow-up": all three on Ubuntu 24.04, Debian 13 and
+this host; on Ubuntu 22.04 and Debian 12 hevc only, as with their own FFmpeg). The libva pin
+must follow libva releases (a driver built against a newer VA-API is not loaded). The Windows Detelecine crash stays (no build without it; one filter thread
 does not avoid it). The `status.md` open items on the
 Detelecine crash and on D-7's `LIBVA_DRIVERS_PATH` are answered by 0002 (the lead's rows).
 

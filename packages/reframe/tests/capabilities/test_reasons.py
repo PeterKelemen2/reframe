@@ -398,6 +398,38 @@ def test_a_missing_system_library_real() -> None:
     )
 
 
+def test_a_vaapi_driver_without_the_codec_real() -> None:
+    """Debian 12's Mesa 22.3 on an RX 7600 has no AV1 encoder."""
+    text = (
+        "[av1_vaapi @ 0x55d862b8cdc0] No usable encoding entrypoint found for profile "
+        "VAProfileAV1Profile0 (32).\n"
+        "[vost#0:0/av1_vaapi @ 0x55d862bf3d40] [enc:av1_vaapi @ 0x55d862be27c0] Error while "
+        "opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.\n"
+        "[vf#0:0 @ 0x55d862d658c0] Error sending frames to consumers: Function not implemented\n"
+        "Conversion failed!\n"
+    )
+    failure = explain_failure(text, ctx("av1_vaapi"), returncode=218)
+    assert (failure.state, failure.reason) == (
+        UNAVAILABLE,
+        "The VAAPI driver cannot encode AV1 on this GPU",
+    )
+
+
+def test_a_missing_library_of_the_bundled_libva_real() -> None:
+    """Ubuntu 24.04 without libdrm2: the bundled libva-drm.so.2 loads, its libdrm does not."""
+    text = (
+        "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: "
+        "libdrm.so.2: cannot open shared object file: No such file or directory\n"
+        'ffmpeg: libva-drm.so.2.init.c:122: load_library: Assertion `0 && "Assertion in '
+        "generated code\"' failed.\n"
+    )
+    failure = explain_failure(text, ctx("h264_vaapi"), returncode=-6)
+    assert (failure.state, failure.reason) == (
+        UNAVAILABLE,
+        "The system library libdrm.so.2 is not installed",
+    )
+
+
 def test_the_vulkan_texts_are_in_the_pinned_build() -> None:
     found = {text: {e["file"] for e in hits} for text, hits in ft.library_strings().items()}
     for text in (

@@ -1,11 +1,13 @@
 """Lay out the pinned tools that a desktop package ships (the app's ``tools`` resource folder).
 
 FFmpeg is the ``default`` build of ``tools/ffmpeg.toml``; the Windows layout also gets
-MKVToolNix and MediaInfo from ``tools/bundled-tools.toml``. Each archive's size and SHA-256 are
-checked before anything is extracted. A rerun keeps a tool folder whose files still have the
-hashes recorded when it was laid out, and the destination holds nothing but its ``README.md``
-and the platform's tool folders afterwards. On the platform the layout is for, tool discovery
-must then find every bundled tool with its pinned version.
+MKVToolNix and MediaInfo from ``tools/bundled-tools.toml``, and the Linux layout a libva built
+from its pinned source into FFmpeg's ``lib/`` (the libva of older distros lacks functions the
+build calls). Each archive's size and SHA-256 are checked before anything is extracted. A rerun
+keeps a tool folder whose files still have the hashes recorded when it was laid out, and the
+destination holds nothing but its ``README.md`` and the platform's tool folders afterwards. On
+the platform the layout is for, tool discovery must then find every bundled tool with its
+pinned version.
 """
 
 from __future__ import annotations
@@ -16,12 +18,13 @@ import os
 import posixpath
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 import tomllib
 import urllib.parse
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
 from reframe.models.tools import ToolOrigin, ToolStatus
@@ -43,8 +46,29 @@ FOLDER_TOOLS: Mapping[str, tuple[str, ...]] = {
     "mkvtoolnix": ("mkvpropedit",),
     "mediainfo": ("mediainfo",),
 }
+#: Archive formats of the pins in ``tools/bundled-tools.toml``.
+FORMATS = ("tar.xz", "tar.bz2", "zip")
+#: Where the bundled libva looks for VA drivers: Debian/Ubuntu, Fedora, Arch.
+LIBVA_DRIVER_DIRS = "/usr/lib/x86_64-linux-gnu/dri:/usr/lib64/dri:/usr/lib/dri"
+#: The libraries of the libva build that FFmpeg loads.
+LIBVA_SONAMES = ("libva.so.2", "libva-drm.so.2")
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+@dataclass(frozen=True, slots=True)
+class Library:
+    """A library built from a pinned source archive into the FFmpeg folder's ``lib/``."""
+
+    name: str
+    version: str
+    url: str
+    sha256: str
+    size: int
+    format: str
+    root: str
+    license_file: str
+    """Relative to ``root``; copied as ``LICENSE-<name>.txt`` next to FFmpeg's licence."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +88,7 @@ class Archive:
     """The paths (relative to ``root``) to keep; ``None`` keeps everything."""
     required: tuple[str, ...]
     """Paths that must be in the laid-out folder: the binaries and the licence file."""
+    libraries: tuple[Library, ...] = ()
 
 
 def _log(message: str) -> None:
@@ -123,6 +148,31 @@ def ffmpeg_archive(manifest: Path, platform: str) -> Archive:
     )
 
 
+def _pin(table: Mapping[str, object], where: str) -> tuple[str, str, int, str, str | None]:
+    """``(url, sha256, size, format, root)`` of one pinned archive."""
+    url = _str(table, "url", where)
+    scheme = urllib.parse.urlsplit(url).scheme
+    if scheme not in ("https", "file"):
+        raise fetch.FetchError(f"{where}.url: expected an https:// URL, got {url!r}")
+    sha256 = _str(table, "sha256", where)
+    if not _SHA256_RE.match(sha256):
+        raise fetch.FetchError(f"{where}.sha256: expected 64 lowercase hex digits")
+    size = table.get("size")
+    if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+        raise fetch.FetchError(f"{where}.size: expected a positive integer, got {size!r}")
+    fmt = _str(table, "format", where)
+    if fmt not in FORMATS or not url.endswith("." + fmt):
+        raise fetch.FetchError(f"{where}.format: {fmt!r} is not one of {FORMATS} or the URL's")
+    root = table.get("root")
+    if root is not None:
+        root = _rel_path(root, f"{where}.root")
+        if "/" in root:
+            raise fetch.FetchError(f"{where}.root: expected one folder name, got {root!r}")
+    elif fmt != "zip":
+        raise fetch.FetchError(f"{where}.root: a {fmt} archive needs its top folder")
+    return url, sha256, size, fmt, root
+
+
 def _tool_archive(folder: str, tool: Mapping[str, object], platform: str) -> Archive | None:
     where = f"tools.{folder}"
     version = _str(tool, "version", where)
@@ -138,28 +188,7 @@ def _tool_archive(folder: str, tool: Mapping[str, object], platform: str) -> Arc
     where = f"{where}.platforms.{platform}"
     if not isinstance(table, dict):
         raise fetch.FetchError(f"{where}: expected a table")
-    url = _str(table, "url", where)
-    scheme = urllib.parse.urlsplit(url).scheme
-    if scheme not in ("https", "file"):
-        raise fetch.FetchError(f"{where}.url: expected an https:// URL, got {url!r}")
-    sha256 = _str(table, "sha256", where)
-    if not _SHA256_RE.match(sha256):
-        raise fetch.FetchError(f"{where}.sha256: expected 64 lowercase hex digits")
-    size = table.get("size")
-    if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
-        raise fetch.FetchError(f"{where}.size: expected a positive integer, got {size!r}")
-    fmt = _str(table, "format", where)
-    if fmt not in fetch.FORMATS or not url.endswith("." + fmt):
-        raise fetch.FetchError(
-            f"{where}.format: {fmt!r} is not one of {fetch.FORMATS} or the URL's"
-        )
-    root = table.get("root")
-    if root is not None:
-        root = _rel_path(root, f"{where}.root")
-        if "/" in root:
-            raise fetch.FetchError(f"{where}.root: expected one folder name, got {root!r}")
-    elif fmt != "zip":
-        raise fetch.FetchError(f"{where}.root: a {fmt} archive needs its top folder")
+    url, sha256, size, fmt, root = _pin(table, where)
     binary = _rel_path(table.get("binary"), f"{where}.binary")
     files_value = table.get("files")
     files: tuple[str, ...] | None = None
@@ -184,12 +213,16 @@ def _tool_archive(folder: str, tool: Mapping[str, object], platform: str) -> Arc
     )
 
 
-def tool_archives(manifest: Path, platform: str) -> list[Archive]:
-    """The MKVToolNix and MediaInfo archives pinned for ``platform`` (none on Linux)."""
+def _load_tools_manifest(manifest: Path) -> dict[str, object]:
     data = _load_toml(manifest)
     if data.get("schema_version") != 1:
         raise fetch.FetchError(f"{manifest}: schema_version: expected 1")
-    tools = data.get("tools")
+    return data
+
+
+def tool_archives(manifest: Path, platform: str) -> list[Archive]:
+    """The MKVToolNix and MediaInfo archives pinned for ``platform`` (none on Linux)."""
+    tools = _load_tools_manifest(manifest).get("tools")
     if not isinstance(tools, dict):
         raise fetch.FetchError(f"{manifest}: expected a [tools] table")
     archives = []
@@ -205,12 +238,39 @@ def tool_archives(manifest: Path, platform: str) -> list[Archive]:
     return archives
 
 
+def libraries(manifest: Path, platform: str) -> list[Library]:
+    """The libraries built into the FFmpeg folder for ``platform`` (libva on Linux)."""
+    tables = _load_tools_manifest(manifest).get("libraries", {})
+    if not isinstance(tables, dict):
+        raise fetch.FetchError(f"{manifest}: libraries: expected a table")
+    found = []
+    for name, lib in tables.items():
+        where = f"{manifest}: libraries.{name}"
+        if name not in LIBRARY_BUILDERS or not isinstance(lib, dict):
+            raise fetch.FetchError(f"{where}: no build is known for this library")
+        platforms = lib.get("platforms")
+        table = platforms.get(platform) if isinstance(platforms, dict) else None
+        if not isinstance(table, dict):
+            continue
+        version = _str(lib, "version", where)
+        for key in ("license", "source_repository"):
+            _str(lib, key, where)
+        license_file = _rel_path(lib.get("license_file"), f"{where}.license_file")
+        url, sha256, size, fmt, root = _pin(table, f"{where}.platforms.{platform}")
+        if root is None:
+            raise fetch.FetchError(f"{where}: a source archive needs its top folder")
+        found.append(Library(name, version, url, sha256, size, fmt, root, license_file))
+    return found
+
+
 def _is_laid_out(folder: Path, archive: Archive) -> bool:
     marker = fetch.installed_build(folder)
     if marker is None or marker.get("sha256") != archive.sha256:
         return False
     kept = None if archive.files is None else list(archive.files)
     if marker.get("kept") != kept:
+        return False
+    if marker.get("libraries", {}) != {lib.name: lib.sha256 for lib in archive.libraries}:
         return False
     files = marker.get("files")
     return isinstance(files, dict) and bool(files) and fetch.tree_digest(folder) == files
@@ -244,6 +304,76 @@ def _clear_destination(dest: Path, wanted: Sequence[str]) -> None:
         shutil.rmtree(entry)
 
 
+def _fetch(url: str, sha256: str, size: int, fmt: str, root: str | None, into: Path) -> Path:
+    """Download, verify and extract one archive into the new folder ``into``; the folder that
+    holds its contents (``into/root``)."""
+    into.mkdir()
+    downloaded = into.with_name(into.name + "." + fmt)
+    _log(f"downloading {url}")
+    fetch.download(url, downloaded, size=size, cancel=CancelToken())
+    fetch.verify_file(downloaded, sha256, size)
+    _log(f"SHA-256 verified: {sha256}")
+    fetch.safe_extract(downloaded, fmt, root, into, CancelToken())
+    downloaded.unlink()
+    return into / root if root is not None else into
+
+
+def _run(argv: list[str]) -> None:
+    _log(" ".join(argv))
+    result = subprocess.run(argv, stdout=sys.stderr, check=False)
+    if result.returncode != 0:
+        raise fetch.FetchError(f"{' '.join(argv[:2])} failed with exit code {result.returncode}")
+
+
+def _build_libva(source: Path, build: Path) -> dict[str, Path]:
+    """Build libva with DRM only (FFmpeg needs no X11 or Wayland); its libraries by soname."""
+    missing = [tool for tool in ("meson", "ninja", "pkg-config", "cc") if not shutil.which(tool)]
+    if missing:
+        raise fetch.FetchError(
+            f"building libva needs {', '.join(missing)} and libdrm's headers "
+            "(Debian/Ubuntu: apt install meson ninja-build pkg-config gcc libdrm-dev)"
+        )
+    _run(
+        [
+            "meson", "setup", str(build), str(source), "--buildtype=release", "--prefix=/usr",
+            "-Ddisable_drm=false", "-Dwith_x11=no", "-Dwith_glx=no", "-Dwith_wayland=no",
+            f"-Ddriverdir={LIBVA_DRIVER_DIRS}",
+        ]
+    )  # fmt: skip
+    _run(["meson", "compile", "-C", str(build)])
+    return {soname: (build / "va" / soname).resolve() for soname in LIBVA_SONAMES}
+
+
+#: How each library of the manifest is built: ``(source folder, build folder)`` → its shared
+#: libraries by soname.
+LIBRARY_BUILDERS: dict[str, Callable[[Path, Path], dict[str, Path]]] = {"libva": _build_libva}
+
+
+def _add_library(library: Library, work: Path, folder: Path) -> None:
+    """Build ``library`` into ``folder/lib`` (each file under its own name, linked from its
+    soname) and put its licence next to FFmpeg's."""
+    source = _fetch(
+        library.url,
+        library.sha256,
+        library.size,
+        library.format,
+        library.root,
+        work / f"src-{library.name}",
+    )
+    built = LIBRARY_BUILDERS[library.name](source, work / f"build-{library.name}")
+    lib = folder / "lib"
+    lib.mkdir(exist_ok=True)
+    for soname, path in built.items():
+        if not path.is_file():
+            raise fetch.FetchError(f"the {library.name} build made no {soname}")
+        shutil.copyfile(path, lib / path.name)
+        if path.name != soname:
+            (lib / soname).unlink(missing_ok=True)
+            (lib / soname).symlink_to(path.name)
+    shutil.copyfile(source / library.license_file, folder / f"LICENSE-{library.name}.txt")
+    _log(f"built {library.name} {library.version} into {lib}")
+
+
 def _lay_out(archive: Archive, dest: Path) -> None:
     folder = dest / archive.folder
     if _is_laid_out(folder, archive):
@@ -252,16 +382,9 @@ def _lay_out(archive: Archive, dest: Path) -> None:
     work = Path(tempfile.mkdtemp(prefix=WORK_PREFIX, dir=dest))
     try:
         file_name = posixpath.basename(urllib.parse.urlsplit(archive.url).path)
-        downloaded = work / file_name
-        _log(f"downloading {archive.url}")
-        fetch.download(archive.url, downloaded, size=archive.size, cancel=CancelToken())
-        fetch.verify_file(downloaded, archive.sha256, archive.size)
-        _log(f"SHA-256 verified: {archive.sha256}")
-        extracted = work / "extract"
-        extracted.mkdir()
-        fetch.safe_extract(downloaded, archive.format, archive.root, extracted, CancelToken())
-        downloaded.unlink()
-        source = extracted / archive.root if archive.root is not None else extracted
+        source = _fetch(
+            archive.url, archive.sha256, archive.size, archive.format, archive.root, work / "x"
+        )
         if archive.files is None:
             new = source
         else:
@@ -276,6 +399,8 @@ def _lay_out(archive: Archive, dest: Path) -> None:
         for rel in archive.required:
             if not new.joinpath(*PurePosixPath(rel).parts).is_file():
                 raise fetch.FetchError(f"{file_name} has no {rel}")
+        for library in archive.libraries:
+            _add_library(library, work, new)
         marker = {
             "build": archive.folder,
             "version": archive.version,
@@ -284,6 +409,7 @@ def _lay_out(archive: Archive, dest: Path) -> None:
             "sha256": archive.sha256,
             "layout": "bundled",
             "kept": None if archive.files is None else list(archive.files),
+            "libraries": {lib.name: lib.sha256 for lib in archive.libraries},
             "files": fetch.tree_digest(new),
         }
         (new / fetch.MARKER_NAME).write_text(json.dumps(marker, indent=1), encoding="utf-8")
@@ -324,12 +450,12 @@ def bundle(
     """Lay out every tool of ``platform`` in ``dest``; the archives laid out.
 
     :raises FetchError: a bad manifest, a download or checksum failure, an archive without a
-        pinned file, a destination with foreign files, or a tool that discovery does not find.
+        pinned file, a failed library build, a destination with foreign files, or a tool that
+        discovery does not find.
     """
-    archives = [
-        ffmpeg_archive(ffmpeg_manifest, platform),
-        *tool_archives(tools_manifest, platform),
-    ]
+    ffmpeg = ffmpeg_archive(ffmpeg_manifest, platform)
+    ffmpeg = replace(ffmpeg, libraries=tuple(libraries(tools_manifest, platform)))
+    archives = [ffmpeg, *tool_archives(tools_manifest, platform)]
     dest.mkdir(parents=True, exist_ok=True)
     _clear_destination(dest, [a.folder for a in archives])
     for archive in archives:
