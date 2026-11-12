@@ -922,6 +922,14 @@ a fetched build: the ffmpeg row ("Bundled with Reframe") had no *Use bundled* an
 row had one. Its click sent one `PUT /api/settings` (`/tools/ffprobe` → `null`) and the rescan,
 and ffprobe was then "Bundled with Reframe".
 
+**The lead, after task S's Windows run** (2026-11-12): S's `comfort.rs` change made with a gate:
+only when `TAURI_WEBVIEW_AUTOMATION` is `true` (tauri-driver sets it) and
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` is set do the main and preview windows pass wry's own
+switches (`--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection`, read from wry 0.57.1's
+`webview2/mod.rs`) plus the driver's; a user's environment never changes the switches (ecd81cd,
+a unit test). The smoke test then passes 6 of 6 on the VM against a release build of ecd81cd
+with the bundled tools.
+
 ## Consequences
 
 *Filled at the end.*
