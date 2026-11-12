@@ -335,7 +335,7 @@ def _build_libva(source: Path, build: Path) -> dict[str, Path]:
         [
             "meson", "setup", str(build), str(source), "--buildtype=release", "--prefix=/usr",
             "-Ddisable_drm=false", "-Dwith_x11=no", "-Dwith_glx=no", "-Dwith_wayland=no",
-            f"-Ddriverdir={':'.join(str(d) for d in LIBVA_DRIVER_DIRS)}",
+            f"-Ddriverdir={':'.join(d.as_posix() for d in LIBVA_DRIVER_DIRS)}",
         ]
     )  # fmt: skip
     _run(["meson", "compile", "-C", str(build)])

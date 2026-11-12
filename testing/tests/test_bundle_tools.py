@@ -332,9 +332,12 @@ def test_the_bundled_libva_searches_the_cores_driver_folders(
 
     bt.LIBRARY_BUILDERS["libva"](tmp_path, tmp_path / "build")
 
-    folders = ":".join(str(d) for d in discovery.LIBVA_DRIVER_DIRS)
+    folders = ":".join(d.as_posix() for d in discovery.LIBVA_DRIVER_DIRS)
+    assert folders == (
+        "/usr/lib/x86_64-linux-gnu/dri:/usr/lib64/dri-nonfree:/usr/lib64/dri-freeworld"
+        ":/usr/lib64/dri:/usr/lib/dri"
+    )
     assert f"-Ddriverdir={folders}" in calls[0]
-    assert "/usr/lib64/dri-freeworld" in folders.split(":")
 
 
 @pytest.mark.parametrize(

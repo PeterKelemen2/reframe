@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+skip_windows = pytest.mark.skipif(sys.platform == "win32", reason="Linux package scripts")
 
 TAURI = Path(__file__).resolve().parents[2] / "desktop" / "src-tauri"
 
@@ -43,6 +46,7 @@ def leftovers(tmp_path: Path) -> Path:
     return tmp_path
 
 
+@skip_windows
 def test_an_erase_removes_the_empty_folders_but_keeps_other_files(leftovers: Path) -> None:
     _remove_app_dirs(leftovers, "0")
 
@@ -54,6 +58,7 @@ def test_an_erase_removes_the_empty_folders_but_keeps_other_files(leftovers: Pat
     ]
 
 
+@skip_windows
 def test_an_erase_of_everything_removes_the_app_folder(leftovers: Path) -> None:
     (leftovers / "usr" / "lib" / "Reframe" / "tools" / "ffmpeg" / "local.txt").unlink()
 

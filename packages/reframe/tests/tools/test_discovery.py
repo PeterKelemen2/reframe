@@ -803,7 +803,7 @@ def test_libva_drivers_path_names_every_driver_folder_in_order(
 def test_rpm_fusions_driver_folders_come_before_fedoras_own() -> None:
     """RPM Fusion's VA drivers replace Fedora's and live in these folders (Fedora's libva
     searches them in this order)."""
-    names = [str(d) for d in discovery.LIBVA_DRIVER_DIRS]
+    names = [d.as_posix() for d in discovery.LIBVA_DRIVER_DIRS]
     fedora = ["/usr/lib64/dri-nonfree", "/usr/lib64/dri-freeworld", "/usr/lib64/dri"]
     assert [n for n in names if n.startswith("/usr/lib64/")] == fedora
 
