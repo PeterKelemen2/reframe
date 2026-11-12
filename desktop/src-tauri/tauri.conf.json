@@ -28,9 +28,9 @@
     }
   },
   "bundle": {
-    "active": false,
+    "active": true,
     "icon": ["icons/icon.png", "icons/icon.ico"],
-    "resources": { "resources/sidecar/": "sidecar/" },
+    "resources": { "resources/sidecar/": "sidecar/", "resources/tools/": "tools/" },
     "fileAssociations": [
       { "ext": ["mkv"], "mimeType": "video/x-matroska", "name": "Reframe.mkv", "description": "Matroska video" },
       { "ext": ["mp4"], "mimeType": "video/mp4", "name": "Reframe.mp4", "description": "MPEG-4 video" },
