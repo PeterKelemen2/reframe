@@ -55,6 +55,6 @@ size = 4186111
 format = "zip"
 # The archive has no top folder: its files are at the top level.
 binary = "MediaInfo.exe"
-# MediaInfo.exe loads LIBCURL.DLL; License.html lists the licences of its components (curl
-# among them).
-files = ["MediaInfo.exe", "LIBCURL.DLL", "LICENSE", "License.html"]
+# MediaInfo.exe reads local files without LIBCURL.DLL (it needs it only for URLs).
+# License.html lists the licences of the libraries built into it.
+files = ["MediaInfo.exe", "LICENSE", "License.html"]

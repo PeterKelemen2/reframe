@@ -99,4 +99,5 @@ BtbN build scripts at `build_scripts_commit`, which pin the source of every depe
 
 MKVToolNix is GPL-2.0-only (`doc/COPYING.txt`; `doc/README.txt` lists the licences of its
 third-party parts); its source is the release tarball in `source_url`. MediaInfo is
-BSD-2-Clause (`LICENSE`; `License.html` lists its third-party libraries, curl among them).
+BSD-2-Clause (`LICENSE`; `License.html` lists the third-party libraries built into it). The
+bundle leaves out `LIBCURL.DLL`: MediaInfo needs it only to read URLs.

@@ -209,6 +209,9 @@ def _is_laid_out(folder: Path, archive: Archive) -> bool:
     marker = fetch.installed_build(folder)
     if marker is None or marker.get("sha256") != archive.sha256:
         return False
+    kept = None if archive.files is None else list(archive.files)
+    if marker.get("kept") != kept:
+        return False
     files = marker.get("files")
     return isinstance(files, dict) and bool(files) and fetch.tree_digest(folder) == files
 
@@ -280,6 +283,7 @@ def _lay_out(archive: Archive, dest: Path) -> None:
             "url": archive.url,
             "sha256": archive.sha256,
             "layout": "bundled",
+            "kept": None if archive.files is None else list(archive.files),
             "files": fetch.tree_digest(new),
         }
         (new / fetch.MARKER_NAME).write_text(json.dumps(marker, indent=1), encoding="utf-8")

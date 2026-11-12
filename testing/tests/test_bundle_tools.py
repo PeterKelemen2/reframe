@@ -256,6 +256,15 @@ def test_a_rerun_keeps_an_intact_layout_and_repairs_a_changed_one(
 
 
 @pytest.mark.usefixtures("no_discovery")
+def test_a_changed_list_of_kept_files_is_laid_out_again(setup: Setup) -> None:
+    setup.bundle()
+    setup.mkvtoolnix_files = '["mkvpropedit.exe", "doc/COPYING.txt", "doc/NEWS.txt"]'
+    setup.write()
+    setup.bundle()
+    assert (setup.dest / "mkvtoolnix" / "doc" / "NEWS.txt").read_bytes() == b"news"
+
+
+@pytest.mark.usefixtures("no_discovery")
 def test_a_linux_layout_after_a_windows_one_drops_the_windows_tools(setup: Setup) -> None:
     setup.bundle()
     (setup.dest / ".bundle-killed").mkdir()  # the work folder of a killed run
