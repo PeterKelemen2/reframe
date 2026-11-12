@@ -360,6 +360,13 @@ hands its jobs to the server or desktop app that owns the queue, or starts one
 Each is built with a default that is easy to change. M2 and the core-complete work did not stop
 for them.
 
+- **GPL corresponding source for releases** (M10 review R1, [0072](decisions/0072-m10-bundling-packaging-smoke-tests.md)
+  "Review and fix round"): every artefact bundles GPL builds (FFmpeg with x264 / x265 and the
+  rest of the BtbN build; MKVToolNix on Windows), and the AppImage carries LGPL libraries from
+  Ubuntu 22.04. `THIRD_PARTY_NOTICES` gives repository and commit links only. Before a public
+  release: attach the source archives to each release (the default plan for Q-5), or add a
+  written offer. Not legal advice.
+
 - **Audio**:
   - an explicit bitrate the encoder cannot do goes **down** to the next allowed step, as in
     HandBrake ([0025](decisions/0025-audio-bitrate-snaps-down.md)), not to the nearest;

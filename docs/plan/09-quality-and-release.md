@@ -123,9 +123,16 @@ This is not legal advice. Review it before any public or commercial distribution
 
 - [ ] Recommended licence for Reframe: **GPL-3.0-or-later** (open question 2 in
       [01-scope.md](01-scope.md#open-questions-owner-to-decide)).
-- [x] CI generates `THIRD_PARTY_NOTICES` (`pip-licenses`, `license-checker`, `cargo about`) and
+- [ ] CI generates `THIRD_PARTY_NOTICES` (`pip-licenses`, `license-checker`, `cargo about`) and
       bundles it with every artefact. It also writes source links for the bundled tool builds.
-      `scripts/third-party-notices.py`, run by the package build before `tauri build`; shipped as
-      `notices/THIRD_PARTY_NOTICES` next to `sidecar/` and `tools/`. Checked in the Linux
-      packages; the Docker image does not carry it yet
-      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) task L).
+      **Built, not in CI yet**: `scripts/third-party-notices.py` is run by the package builds
+      before `tauri build` (`desktop/packaging/linux/build.sh`, and the Windows build) and ships
+      as `notices/THIRD_PARTY_NOTICES` next to `sidecar/` and `tools/`; checked in the Linux
+      packages and the Windows installers. No workflow runs a package build yet (Q-5's release
+      workflow will), and the Docker image does not carry the file
+      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) tasks L and W).
+- [ ] **The corresponding source** of the GPL parts (FFmpeg and the libraries the BtbN build
+      links, MKVToolNix on Windows), or a written offer, ships with each release. The notices
+      give only repository and commit links today. Open: attach the source archives to each
+      release (Q-5) or write an offer (the owner decides; [decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md)
+      "Review and fix round").
