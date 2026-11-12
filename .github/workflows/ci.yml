@@ -187,12 +187,14 @@ jobs:
             frontend/package-lock.json
             desktop/package-lock.json
 
-      # webkit2gtk-driver is WebKitWebDriver; python3-xlib closes the window as a user does.
-      - name: Tauri's Linux libraries, WebKitWebDriver and Xvfb
+      # Tauri's libraries; meson, ninja and libdrm for bundle-tools.py's libva build;
+      # WebKitWebDriver, Xvfb, and python3-xlib to close the window as a user does. The same
+      # list builds desktop/tests/smoke/linux/Dockerfile.
+      - name: Tauri's Linux libraries, the libva build tools, WebKitWebDriver and Xvfb
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev webkit2gtk-driver xvfb python3-xlib
+          xargs sudo apt-get install -y < desktop/tests/smoke/linux/apt-packages.txt
 
       - run: uv sync --frozen
 

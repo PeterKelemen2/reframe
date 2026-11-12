@@ -11,6 +11,7 @@ uv run python scripts/bundle-tools.py --platform linux-x64
 uv run python desktop/sidecar/build.py
 (cd frontend && npm ci --no-audit --no-fund)
 (cd desktop && npm ci --no-audit --no-fund && npx tauri build --no-bundle)
+cargo install --locked tauri-driver@2.1.0
 
 ffmpeg_bin=$PWD/desktop/src-tauri/resources/tools/ffmpeg/bin
 REFRAME_FFMPEG=$ffmpeg_bin/ffmpeg REFRAME_FFPROBE=$ffmpeg_bin/ffprobe \

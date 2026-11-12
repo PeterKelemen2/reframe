@@ -1,19 +1,16 @@
 #!/bin/sh
 # Runs the desktop smoke test in Ubuntu 22.04, for a host without WebKitWebDriver: builds the
-# release app from a clean copy of the working tree (its tracked and untracked files), as the CI
-# job does, and runs the test under Xvfb.
-# REFRAME_BUILD_NAME: the image that desktop/packaging/linux/build.sh built (default
-# reframe-linux-build). REFRAME_SMOKE_NAME: this test's image and cache volumes (default
-# reframe-smoke).
+# release app from a clean copy of the working tree (its tracked and untracked files) with the CI
+# job's steps, and runs the test under Xvfb. REFRAME_SMOKE_NAME names the image and its cache
+# volumes (default reframe-smoke).
 # Usage: desktop/tests/smoke/linux/run.sh [COMMAND…]   (default: in-container.sh)
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(git -C "$here" rev-parse --show-toplevel)
-base=${REFRAME_BUILD_NAME:-reframe-linux-build}
 name=${REFRAME_SMOKE_NAME:-reframe-smoke}
 
-DOCKER_BUILDKIT=0 docker build -t "$name" --build-arg "BUILD_IMAGE=$base" "$here"
+DOCKER_BUILDKIT=0 docker build -t "$name" "$here"
 
 [ $# -gt 0 ] || set -- sh desktop/tests/smoke/linux/in-container.sh
 cd "$repo"

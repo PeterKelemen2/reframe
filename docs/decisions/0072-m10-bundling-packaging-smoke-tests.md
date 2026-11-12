@@ -683,7 +683,9 @@ stopped).
 ## Task S — the smoke tests (D-9)
 
 Built on `m10-hardening` 1d8398d (2026-11-12): the Linux run, the CI job and the Windows
-preparation. The Windows run waits for the VM's GUI session (below).
+preparation; the Windows run on 2907ded (after T2 and W). **On Windows the unchanged app cannot
+be driven by msedgedriver** (the app drops msedgedriver's browser arguments); with a five-line
+change to `comfort.rs`, which this task does not own, all six steps pass (below).
 
 **The test** (`desktop/tests/smoke/smoke.test.ts`, `processes.ts`, `close-window.py`): Node's own
 test runner (`node --test`, TypeScript run by Node 24's type stripping) and `selenium-webdriver`
@@ -691,14 +693,15 @@ test runner (`node --test`, TypeScript run by Node 24's type stripping) and `sel
 3.0 is an alpha) in front of `WebKitWebDriver` or `msedgedriver`. `npm run smoke` in `desktop/`
 starts `tauri-driver` on 8770/8771 with this run's own `REFRAME_DATA_DIR`, `REFRAME_CONFIG_DIR`,
 `REFRAME_CACHE_DIR`, `REFRAME_POWER_DRY_RUN=1` and, on Linux, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`,
-`XDG_CACHE_HOME` (on Windows `WEBVIEW2_USER_DATA_FOLDER`), all in one temp folder that it removes.
+`XDG_CACHE_HOME`, all in one temp folder that it removes (on Windows msedgedriver gives WebView2
+its own profile in `%TEMP%\scoped_dir…`).
 The app is `REFRAME_SMOKE_APP`, else the release build in `$CARGO_TARGET_DIR` (or
 `src-tauri/target`). Six steps, each skipped once one before it failed; a failed step prints the
 sidecar log's last lines and the page's text:
 
-1. **starts**: a WebDriver session with `tauri:options` `{application, args: [<temp>/media/multitrack.mkv]}`,
-   the page's title is *Reframe*, and the app runs below `tauri-driver`. The session must open
-   within 60 s.
+1. **starts**: a WebDriver session with `tauri:options` `{application, args: [<temp>/media/multitrack.mkv]}`
+   (no `args` on Windows, see 4), the page's title becomes *Reframe*, and the app runs below
+   `tauri-driver`. The session must open within 60 s.
 2. **reaches its backend**: the page shows `[data-connection="open"]` (or the backend error
    screen, reported with its text), and the app's own child is `reframe-server` (the frozen
    sidecar; the folder above it is the app's resource folder).
@@ -706,7 +709,9 @@ sidecar log's last lines and the page's text:
    folder (the bundled build), **Continue** opens the workspace (task U's screen, the way a user
    goes past it).
 4. **the file from argv**: a source item with the fixture's exact path, probed (its summary holds
-   the probe's `320×180`), and the editor has its job.
+   the probe's `320×180`), and the editor has its job. On Windows the path comes from a second
+   launch, `Reframe.exe <fixture>` (open-with), which must hand it over and exit 0: msedgedriver
+   cannot pass a path (below).
 5. **a job**: the preset picker → *Fast 720p30* (libx264), **Add to queue**, the output path from
    the status bar (next to the file, in the temp folder), **Start**, the status bar's queue link;
    the one row of the queue table reaches `done` (any end state fails at once), and the output
@@ -736,7 +741,7 @@ sidecar log's last lines and the page's text:
 
 - `tauri-driver` 2.1.0 passes `tauri:options.args` to `webkitgtk:browserOptions.args` (Linux)
   and `ms:edgeOptions.args` (Windows) and sets `TAURI_WEBVIEW_AUTOMATION=true` for the native
-  driver; the release build accepts the session with no change to the app.
+  driver. On Linux the release build accepts the session with no change to the app.
 - **`WebKitWebDriver` waits without end** for an app that exits before its page loads (the
   session request never answered in 10 minutes): the test gives the session 60 s.
 - WebDriver's element text is the *visible* text: in the 1280×800 window under Xvfb the sources
@@ -745,14 +750,19 @@ sidecar log's last lines and the page's text:
 - The queue view fills its table a moment after it opens (zero rows at first).
 
 **Linux run** (2026-11-12, this host, Docker 29.9.2): `desktop/tests/smoke/linux/run.sh` builds
-the image `reframe-s` from task L's `reframe-l` (`REFRAME_BUILD_NAME=reframe-l`) plus
-`webkit2gtk-driver` (WebKitGTK 2.50 of Ubuntu 22.04), `xvfb`, `python3-xlib` and `tauri-driver`
-2.1.0, pipes a clean copy of the working tree into a container and runs
-`linux/in-container.sh`: the CI job's steps (`uv sync --frozen`, `bundle-tools.py --platform
-linux-x64`, the frozen sidecar, `npm ci`, `npx tauri build --no-bundle`, `make-testdata.py
---only multitrack` with the bundled FFmpeg, the type check, oxlint and oxfmt of the test) and
-`dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' npm run smoke`. Volumes
-`reframe-s-{cargo,target,cache}`. The output (the last full run):
+an image from plain `ubuntu:22.04` (task L's pinned digest) with what GitHub's runner and the
+job's setup steps bring (build-essential, Git, Python 3, Rust 1.99.1, Node 24.22.1, uv 0.13.5)
+and **exactly the job's apt list**, `linux/apt-packages.txt` (the CI step installs the same
+file), pipes a clean copy of the working tree into a container and runs `linux/in-container.sh`:
+the CI job's steps (`uv sync --frozen`, `bundle-tools.py --platform linux-x64`, the frozen
+sidecar, `npm ci`, `npx tauri build --no-bundle`, `cargo install --locked tauri-driver@2.1.0`,
+`make-testdata.py --only multitrack` with the bundled FFmpeg, the type check, oxlint and oxfmt of
+the test) and `dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' npm run smoke`.
+WebKitWebDriver is Ubuntu 22.04's `webkit2gtk-driver` 2.50.4. Volumes
+`reframe-s-{cargo,target,cache}`. The first runs used an image built on task L's `reframe-l`,
+which hid that the job's apt line lacked T2's libva build tools (meson, ninja, libdrm's headers:
+`bundle-tools.py` stops without them); the lead found it, and the list now has them. The output
+(the last full run, on the plain image):
 
 ```
 ▶ the desktop app
@@ -766,8 +776,9 @@ linux-x64`, the frozen sidecar, `npm ci`, `npx tauri build --no-bundle`, `make-t
 ℹ tests 6 · pass 6 · fail 0
 ```
 
-The steps took 0.3, 0.9, 0.4, 0.5, 2.2 and 0.6 s (the whole test 5.1 s); the release build
-1 min 22 s on warm volumes.
+The steps took 0.5, 0.8, 0.5, 0.9, 2.1 and 0.6 s (the whole test 5.6 s); `bundle-tools.py`
+built libva 2.24.1 with the list's meson and ninja; the release build took 1 min 50 s on warm
+volumes. The mutations below ran on the earlier `reframe-l`-based image (1d8398d).
 
 **Mutation check** (Linux container; each run against a broken copy of the release app, or of
 the test, in `/tmp/m/target/release/`; an unchanged copy passed before and after them, 5 times
@@ -790,8 +801,9 @@ With the kill, the sidecar and the WebKit processes still ended within 20 s (the
 `PR_SET_PDEATHSIG` and parent watch), so only the log check tells the kill from a quit on Linux.
 
 **The CI job** (`desktop-smoke` in `ci.yml`, `ubuntu-22.04` and `windows-latest`, 60 min): the
-steps of `in-container.sh`, plus `cargo install --locked tauri-driver@2.1.0`, Tauri's Linux
-packages with `webkit2gtk-driver xvfb python3-xlib`, and on Windows
+steps of `in-container.sh`, the apt packages of `linux/apt-packages.txt` (Tauri's, meson,
+ninja-build, pkg-config, gcc, libdrm-dev, webkit2gtk-driver, xvfb, xauth, python3-xlib), and on
+Windows
 `desktop/tests/smoke/msedgedriver.ps1`: it reads the WebView2 runtime's version (`pv` of the
 EdgeUpdate client `{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}`, machine or user), downloads
 `https://msedgedriver.microsoft.com/<version>/edgedriver_win64.zip`, checks the driver's
@@ -800,10 +812,11 @@ same version, and the job puts the folder on `PATH` (where `tauri-driver` looks)
 runner is `ubuntu-22.04`, the oldest supported distro and the image of the Linux run; it must
 move when GitHub retires that image. Not run (nothing is pushed): **actionlint was not run**
 (its release download was refused by this session's permission rules); the file parses as YAML
-(PyYAML 6.0.3) with the job and its 17 steps as written, and every Linux step ran in the
+(PyYAML 6.0.3) with the job and its 16 steps as written, and every Linux step ran in the
 container above. The Windows runner's own steps are not verified: its MediaInfo download may
 need `SSL_CERT_FILE` as on the VM (task T), and whether its WebView2 matches an msedgedriver on
-the new download host.
+the new download host. **The Windows leg fails at "starts" until the app forwards msedgedriver's
+browser arguments** (below).
 
 **Windows preparation** (the VM, over SSH, no GUI): `tauri-driver` 2.1.0 installed in
 `~/.cargo/bin`; `msedgedriver.ps1` fetched `msedgedriver` **157.0.4341.46** for WebView2
@@ -815,7 +828,56 @@ passed); the clone `~/wt/s` built with `bundle-tools.py --platform windows-x64` 
 generated with the bundled FFmpeg. The process listing (`Get-CimInstance Win32_Process` through
 `-EncodedCommand`, 154 processes in about 1 s) and the path rules work there.
 
-**The Windows run**: *waits for the VM's GUI session (phase 2).*
+**The Windows run** (2026-11-12, the VM, `m10-hardening` 2907ded with this task's test; the
+release build rebuilt there with T2's sidecar and W's updater and copied to `wt\s-app`;
+`query user`: `testwin`, console, Active). `npm run smoke` ran in the logged-on console session
+from a scheduled task (`schtasks /Create … /IT`, a `.cmd` with msedgedriver 157.0.4341.46 and
+`tauri-driver` on `PATH` and `REFRAME_SMOKE_APP`).
+
+1. **The unchanged app: "starts" fails** (twice): `SessionNotCreatedError: session not created:
+   DevToolsActivePort file doesn't exist`, the page never reached by the driver although the app
+   ran, its sidecar served the page and the page connected (`sidecar.log`). A stand-in program
+   started through the same session showed what msedgedriver hands the app: the argument
+   `--c:\users\testwin\appdata\local\temp\reframe-smoke-ddykqv\media\multitrack.mkv`, and the
+   environment `WEBVIEW2_USER_DATA_FOLDER=%TEMP%\scoped_dir6360_755741909` and
+   `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--allow-pre-commit-input … --remote-debugging-port=0
+   --test-type=webdriver …`. The app's `msedgewebview2.exe` ran with
+   `--user-data-dir=%TEMP%\scoped_dir…\EBWebView` (the folder variable is used) but its switches
+   were wry's own (`--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection
+   --autoplay-policy=no-user-gesture-required`) and **no `--remote-debugging-port`**: wry 0.57.1
+   always sets `AdditionalBrowserArguments` in the environment options
+   (`webview2/mod.rs` `create_environment`), and WebView2 157 then ignores the variable. So
+   msedgedriver finds no DevTools port.
+2. **msedgedriver turns every `args` entry into a switch**: `--` in front, in lower case (Chromium's
+   switch parsing on Windows). The app drops `--…` as a flag, so a path cannot be given at the
+   first launch through WebDriver; the test gives it through a second launch (open-with, D-5)
+   on Windows.
+3. **An experiment build** (the VM clone only, not committed): `comfort.rs`'s main window with
+   ```rust
+   #[cfg(windows)]
+   let window = match std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") {
+       Ok(extra) => window.additional_browser_args(&format!(
+           "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection {extra}"
+       )),
+       Err(_) => window,
+   };
+   ```
+   (wry's default switches plus the variable's). With it **all six steps pass**: starts 1.5 s,
+   backend 0.8 s, first-run screen 0.1 s (ffmpeg bundled from `wt\s-app\tools`), the file from a
+   second launch 0.5 s, the job 1.1 s, the quit 1.6 s; the whole test 6.8 s. W's updater check
+   did not get in the way. Windows mutation: the app killed (`process.kill`, `TerminateProcess`)
+   instead of closed: the Job Object ended the sidecar and the WebView2 processes within the
+   20 s, and the step failed with "no shutdown request" (as on Linux).
+4. **For the lead (the app's code, not this task's files)**: the change above, better gated on
+   `TAURI_WEBVIEW_AUTOMATION=true` (what `tauri-driver` sets) so that a user's environment never
+   changes the webview's switches, and also for the preview window. Without it the CI job's
+   Windows leg fails at "starts".
+5. Seen on the way: the session opens before the page has loaded (the title is empty at first:
+   the test waits for it); after each run msedgedriver's `%TEMP%\scoped_dir…` profile stays (the
+   app ends before the session is deleted). The run left the shared
+   `%LOCALAPPDATA%\org.reframe.desktop` and `%APPDATA%\org.reframe.desktop` (`.window-state.json`
+   of 18:59) unchanged; the five `scoped_dir…` folders of these runs, the scheduled tasks and the
+   stand-in program were removed.
 
 ## Review and fix round
 

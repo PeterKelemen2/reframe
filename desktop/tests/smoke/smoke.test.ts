@@ -6,12 +6,13 @@
  * `$CARGO_TARGET_DIR`, else `src-tauri/target`). `tauri-driver` and the platform's WebDriver
  * (`WebKitWebDriver`, `msedgedriver`) must be on `PATH`; on Linux it needs a display.
  */
-import { type ChildProcess, spawn } from 'node:child_process'
+import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { promisify } from 'node:util'
 import { after, before, describe, it, type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
 
@@ -60,6 +61,7 @@ const app = appPath()
 let work = ''
 let fixture = ''
 let dataDir = ''
+let env: NodeJS.ProcessEnv = {}
 let driverProcess: ChildProcess | undefined
 let driver: WebDriver | undefined
 let appProc: Proc | undefined
@@ -154,17 +156,16 @@ describe('the desktop app', { concurrency: 1 }, () => {
     fixture = join(media, basename(FIXTURE))
     assert.ok(existsSync(FIXTURE), `no ${FIXTURE}: run scripts/make-testdata.py`)
     await copyFile(FIXTURE, fixture)
-    // Each folder the app, its server and its webview write to is this run's own.
-    const env: NodeJS.ProcessEnv = {
+    // Each folder the app, its server and its webview write to is this run's own; on Windows
+    // msedgedriver gives WebView2 a profile of its own.
+    env = {
       ...process.env,
       REFRAME_DATA_DIR: dataDir,
       REFRAME_CONFIG_DIR: join(work, 'config'),
       REFRAME_CACHE_DIR: join(work, 'cache'),
       REFRAME_POWER_DRY_RUN: '1',
     }
-    if (WINDOWS) {
-      env.WEBVIEW2_USER_DATA_FOLDER = join(work, 'webview2')
-    } else {
+    if (!WINDOWS) {
       env.XDG_CONFIG_HOME = join(work, 'xdg-config')
       env.XDG_DATA_HOME = join(work, 'xdg-data')
       env.XDG_CACHE_HOME = join(work, 'xdg-cache')
@@ -200,7 +201,9 @@ describe('the desktop app', { concurrency: 1 }, () => {
     assert.ok(existsSync(app), `the app ${app} does not exist`)
     const capabilities = new Capabilities()
     capabilities.setBrowserName('wry')
-    capabilities.set('tauri:options', { application: app, args: [fixture] })
+    // msedgedriver passes each argument as a `--` switch, which the app ignores: on Windows the
+    // file comes from a second launch.
+    capabilities.set('tauri:options', { application: app, args: WINDOWS ? [] : [fixture] })
     const candidate = new Builder()
       .usingServer(`http://127.0.0.1:${DRIVER_PORT}/`)
       .withCapabilities(capabilities)
@@ -208,6 +211,7 @@ describe('the desktop app', { concurrency: 1 }, () => {
     // WebKitWebDriver waits without end for an app that exits before its page loads.
     const session = candidate.getSession()
     session.catch(() => undefined)
+    candidate.catch(() => undefined)
     const timer = new AbortController()
     try {
       const expired = sleep(SESSION_TIMEOUT, true, { signal: timer.signal }).catch(() => false)
@@ -218,7 +222,8 @@ describe('the desktop app', { concurrency: 1 }, () => {
       timer.abort()
     }
     driver = candidate
-    assert.equal(await driver.getTitle(), 'Reframe')
+    // WebView2's session can open before the page has loaded.
+    await driver.wait(until.titleIs('Reframe'), 30_000, 'the page is not Reframe')
     const name = programName(app)
     appProc = (await started()).find((proc) => procName(proc) === name)
     assert.ok(appProc, `no ${name} process below tauri-driver`)
@@ -258,6 +263,10 @@ describe('the desktop app', { concurrency: 1 }, () => {
   })
 
   step('opens and probes the file given on its command line', async () => {
+    if (WINDOWS) {
+      // It hands the path to the running app and exits 0.
+      await promisify(execFile)(app, [fixture], { env, timeout: 30_000 })
+    }
     const message = `${fixture} from the command line is not in the sources`
     await page().wait(
       async () => {
