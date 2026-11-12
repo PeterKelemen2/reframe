@@ -398,16 +398,16 @@ def verify_file(path: Path, sha256: str, size: int, cancel: CancelToken | None =
         raise FetchError(f"{path.name}: the SHA-256 is {actual}, expected {sha256}")
 
 
-def member_path(name: str, root: str) -> PurePosixPath:
+def member_path(name: str, root: str | None) -> PurePosixPath:
     """The safe relative path of an archive member. Every member must be inside the folder
-    ``root``; absolute paths, drive letters, backslashes, NUL, ``..`` and ``:`` (NTFS streams)
-    are refused. :raises FetchError:"""
+    ``root`` (``None``: an archive without a top folder); absolute paths, drive letters,
+    backslashes, NUL, ``..`` and ``:`` (NTFS streams) are refused. :raises FetchError:"""
     if not name or name.startswith("/") or "\\" in name or "\x00" in name or _DRIVE_RE.match(name):
         raise FetchError(f"unsafe archive member name: {name!r}")
     parts = [part for part in name.split("/") if part not in ("", ".")]
     if not parts or any(part == ".." or ":" in part for part in parts):
         raise FetchError(f"unsafe archive member name: {name!r}")
-    if parts[0] != root:
+    if root is not None and parts[0] != root:
         raise FetchError(f"archive member {name!r} is outside the folder {root!r}")
     return PurePosixPath(*parts)
 
@@ -482,7 +482,7 @@ def _extract_tar(archive: Path, root: str, dest: Path, cancel: CancelToken) -> N
             tf.extract(m, dest, filter="data")
 
 
-def _extract_zip(archive: Path, root: str, dest: Path, cancel: CancelToken) -> None:
+def _extract_zip(archive: Path, root: str | None, dest: Path, cancel: CancelToken) -> None:
     with zipfile.ZipFile(archive) as zf:
         infos = zf.infolist()
         paths = []
@@ -505,11 +505,16 @@ def _extract_zip(archive: Path, root: str, dest: Path, cancel: CancelToken) -> N
                 target.chmod(0o755)
 
 
-def safe_extract(archive: Path, fmt: str, root: str, dest: Path, cancel: CancelToken) -> None:
+def safe_extract(
+    archive: Path, fmt: str, root: str | None, dest: Path, cancel: CancelToken
+) -> None:
     """Extract ``archive`` into ``dest``; every member is checked before a file is written.
-    :raises FetchError: an unsafe member, or an archive that cannot be read."""
+    Only a zip archive may lack a top folder (``root`` ``None``): a tar's links are checked
+    against it. :raises FetchError: an unsafe member, or an archive that cannot be read."""
     try:
         if fmt == "tar.xz":
+            if root is None:
+                raise FetchError(f"{archive.name}: a tar.xz archive needs a top folder")
             _extract_tar(archive, root, dest, cancel)
         elif fmt == "zip":
             _extract_zip(archive, root, dest, cancel)

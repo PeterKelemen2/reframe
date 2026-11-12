@@ -6,8 +6,22 @@ Pinned third-party tool builds. Plan: [02 §Bundled FFmpeg](../docs/plan/02-arch
 | File | Content |
 |------|---------|
 | `ffmpeg.toml` | The FFmpeg build that ships (`default`) and a second build for the CI job that tests the path override (`override-test`). For each platform: URL, SHA-256, size, archive layout. Also the exact version string, licence and the source commits (GPL source obligations). |
+| `bundled-tools.toml` | The MKVToolNix (`mkvpropedit.exe`) and MediaInfo CLI builds that the Windows package ships: URL, SHA-256, size, archive layout, the files kept, licence and source links. Linux packages use the distro's packages. |
 
-MKVToolNix and MediaInfo pins come with `D-7`.
+## Lay out the bundled tools of a package
+
+```sh
+uv run python scripts/bundle-tools.py --platform linux-x64     # or windows-x64
+```
+
+The script puts the `default` FFmpeg build (and, for `windows-x64`, MKVToolNix and MediaInfo)
+into `desktop/src-tauri/resources/tools/` (`--dest DIR` for another folder): `ffmpeg/`,
+`mkvtoolnix/`, `mediainfo/`, each with its licence file (decision 0005's layout). It checks each
+archive's size and SHA-256 before it extracts anything, keeps a folder whose files still match
+on a rerun, removes another platform's folders, and refuses to touch a destination that holds
+files it did not make. On the platform it lays out, it then runs tool discovery and checks that
+every tool is found as `bundled` with its pinned version. The Windows layout can be made on
+Linux; the Linux layout needs a Linux host (the archive has symbolic links).
 
 ## Fetch a build
 
@@ -43,6 +57,8 @@ builds. The `latest` release floats. So:
 
 ## Update a pin
 
+FFmpeg (`ffmpeg.toml`):
+
 1. List the releases: `curl -s "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases?per_page=100"`.
    Choose the newest month-end `autobuild-…` release.
 2. In that release, find the `ffmpeg-n<X.Y.Z>-…-linux64-gpl-shared-<X.Y>.tar.xz` and
@@ -59,10 +75,28 @@ builds. The `latest` release floats. So:
 6. Run `uv run python scripts/fetch-tools.py` for both builds, and `uv run pytest`.
    The CI caches of `.tools/` and `testdata/media/` are keyed on this file, so they refresh.
 
+MKVToolNix and MediaInfo (`bundled-tools.toml`):
+
+1. Find the newest release: <https://mkvtoolnix.download/windows/releases/> (the portable
+   `mkvtoolnix-64-bit-<version>.zip`) and <https://mediaarea.net/download/binary/mediainfo/>
+   (`MediaInfo_CLI_<version>_Windows_x64.zip`).
+2. Download the archive and compute the SHA-256 yourself. MKVToolNix publishes
+   `<archive>.sha256` next to it: compare. MediaArea publishes no checksum: download it a second
+   time on another day (or another machine) and compare.
+3. Update `version` (what `mkvpropedit --version` / `mediainfo --Version` prints), the URLs,
+   `sha256`, `size`, `root` and `files` (the binary, what it loads, the licence files), and the
+   source links.
+4. Run `uv run python scripts/bundle-tools.py --platform windows-x64` (on Windows it also checks
+   the versions through tool discovery).
+
 ## Licence
 
-The builds use `--enable-gpl --enable-version3`: **GPL-3.0-or-later**. Each archive contains
+FFmpeg: the builds use `--enable-gpl --enable-version3`: **GPL-3.0-or-later**. Each archive contains
 `LICENSE.txt`. Every artefact that bundles a build must ship that licence and the corresponding
 source (or a written offer) for the exact build: the FFmpeg commit in `source_commit` and the
 BtbN build scripts at `build_scripts_commit`, which pin the source of every dependency
 (see [09 §Licensing](../docs/plan/09-quality-and-release.md#licensing)).
+
+MKVToolNix is GPL-2.0-only (`doc/COPYING.txt`; `doc/README.txt` lists the licences of its
+third-party parts); its source is the release tarball in `source_url`. MediaInfo is
+BSD-2-Clause (`LICENSE`; `License.html` lists its third-party libraries, curl among them).

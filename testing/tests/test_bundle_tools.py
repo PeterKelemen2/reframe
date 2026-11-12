@@ -1,0 +1,387 @@
+"""scripts/bundle-tools.py: the layout of the bundled tools. No network: the manifests point at
+local archives through ``file:`` URLs."""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import io
+import stat
+import sys
+import tarfile
+import zipfile
+from pathlib import Path
+from types import ModuleType
+from typing import Any
+
+import pytest
+
+from reframe.tools.fetch import FetchError
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT = REPO_ROOT / "scripts" / "bundle-tools.py"
+FF_ROOT = "ffmpeg-test-win64"
+LINUX_ROOT = "ffmpeg-test-linux64"
+
+
+def _load_script() -> ModuleType:
+    # The script name has a hyphen, so it cannot be imported by name.
+    spec = importlib.util.spec_from_file_location("bundle_tools", SCRIPT)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclasses look the module up by name
+    spec.loader.exec_module(module)
+    return module
+
+
+bt = _load_script()
+
+
+def _zip(members: dict[str, bytes]) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        for name, data in members.items():
+            info = zipfile.ZipInfo(name)
+            info.external_attr = (stat.S_IFREG | 0o755) << 16
+            zf.writestr(info, data)
+    return buf.getvalue()
+
+
+def _tar_xz(members: dict[str, bytes]) -> bytes:
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:xz") as tf:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.mode = 0o755
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def _fake_ffmpeg(tool: str, version: str) -> bytes:
+    return (
+        f"#!/bin/sh\necho '{tool} version {version} Copyright (c) the FFmpeg developers'\n".encode()
+    )
+
+
+class Setup:
+    """Archives in ``tmp/archives``, manifests that pin them, the destination ``tmp/dest``
+    with its README."""
+
+    def __init__(self, tmp: Path) -> None:
+        self.archives = tmp / "archives"
+        self.archives.mkdir()
+        self.dest = tmp / "dest"
+        self.dest.mkdir()
+        (self.dest / "README.md").write_text("committed\n")
+        self.ffmpeg_manifest = tmp / "ffmpeg.toml"
+        self.tools_manifest = tmp / "bundled-tools.toml"
+        self.ffmpeg_version = "n9.0.2-test"
+        self.files: dict[str, bytes] = {
+            f"{FF_ROOT}.zip": _zip(
+                {
+                    f"{FF_ROOT}/bin/ffmpeg.exe": b"MZ ffmpeg",
+                    f"{FF_ROOT}/bin/ffprobe.exe": b"MZ ffprobe",
+                    f"{FF_ROOT}/bin/avcodec-63.dll": b"MZ dll",
+                    f"{FF_ROOT}/LICENSE.txt": b"GPL-3",
+                }
+            ),
+            f"{LINUX_ROOT}.tar.xz": _tar_xz(
+                {
+                    f"{LINUX_ROOT}/bin/ffmpeg": _fake_ffmpeg("ffmpeg", self.ffmpeg_version),
+                    f"{LINUX_ROOT}/bin/ffprobe": _fake_ffmpeg("ffprobe", self.ffmpeg_version),
+                    f"{LINUX_ROOT}/lib/libavcodec.so.63": b"ELF",
+                    f"{LINUX_ROOT}/LICENSE.txt": b"GPL-3",
+                }
+            ),
+            "mkvtoolnix-64-bit.zip": _zip(
+                {
+                    "mkvtoolnix/mkvpropedit.exe": b"MZ mkvpropedit",
+                    "mkvtoolnix/mkvtoolnix-gui.exe": b"MZ gui",
+                    "mkvtoolnix/doc/COPYING.txt": b"GPL-2",
+                    "mkvtoolnix/doc/NEWS.txt": b"news",
+                }
+            ),
+            "MediaInfo_CLI_x64.zip": _zip(
+                {"MediaInfo.exe": b"MZ mediainfo", "LICENSE": b"BSD-2", "History.txt": b"h"}
+            ),
+        }
+        self.mkvtoolnix_files = '["mkvpropedit.exe", "doc/COPYING.txt"]'
+        self.write()
+
+    def url(self, name: str) -> str:
+        return (self.archives / name).as_uri()
+
+    def pin(self, name: str) -> str:
+        data = self.files[name]
+        return f'sha256 = "{hashlib.sha256(data).hexdigest()}"\nsize = {len(data)}\n'
+
+    def write(self) -> None:
+        for name, data in self.files.items():
+            (self.archives / name).write_bytes(data)
+        lin, win = f"{LINUX_ROOT}.tar.xz", f"{FF_ROOT}.zip"
+        self.ffmpeg_manifest.write_text(
+            f"""schema_version = 1
+[builds.default]
+version = "{self.ffmpeg_version}"
+release_version = "9.0.2"
+release_tag = "test"
+license = "GPL-3.0-or-later"
+license_file = "LICENSE.txt"
+source_repository = "https://example.invalid/ffmpeg"
+source_commit = "{"0" * 40}"
+[builds.default.platforms.linux-x64]
+url = "{self.url(lin)}"
+{self.pin(lin)}format = "tar.xz"
+root = "{LINUX_ROOT}"
+bin_dir = "bin"
+ffmpeg = "bin/ffmpeg"
+ffprobe = "bin/ffprobe"
+[builds.default.platforms.windows-x64]
+url = "{self.url(win)}"
+{self.pin(win)}format = "zip"
+root = "{FF_ROOT}"
+bin_dir = "bin"
+ffmpeg = "bin/ffmpeg.exe"
+ffprobe = "bin/ffprobe.exe"
+""",
+            encoding="utf-8",
+        )
+        mkv, mi = "mkvtoolnix-64-bit.zip", "MediaInfo_CLI_x64.zip"
+        self.tools_manifest.write_text(
+            f"""schema_version = 1
+[tools.mkvtoolnix]
+version = "103.0"
+license = "GPL-2.0-only"
+license_file = "doc/COPYING.txt"
+source_url = "https://example.invalid/mkvtoolnix.tar.xz"
+[tools.mkvtoolnix.platforms.windows-x64]
+url = "{self.url(mkv)}"
+{self.pin(mkv)}format = "zip"
+root = "mkvtoolnix"
+binary = "mkvpropedit.exe"
+files = {self.mkvtoolnix_files}
+[tools.mediainfo]
+version = "26.10"
+license = "BSD-2-Clause"
+license_file = "LICENSE"
+source_url = "https://example.invalid/mediainfo.tar.xz"
+[tools.mediainfo.platforms.windows-x64]
+url = "{self.url(mi)}"
+{self.pin(mi)}format = "zip"
+binary = "MediaInfo.exe"
+files = ["MediaInfo.exe", "LICENSE"]
+""",
+            encoding="utf-8",
+        )
+
+    def bundle(self, platform: str = "windows-x64") -> Any:
+        return bt.bundle(
+            platform,
+            self.dest,
+            ffmpeg_manifest=self.ffmpeg_manifest,
+            tools_manifest=self.tools_manifest,
+        )
+
+    def tree(self) -> list[str]:
+        return sorted(
+            p.relative_to(self.dest).as_posix()
+            for p in self.dest.rglob("*")
+            if p.is_file() and p.name != ".fetch-tools.json"
+        )
+
+
+@pytest.fixture
+def setup(tmp_path: Path) -> Setup:
+    return Setup(tmp_path)
+
+
+@pytest.fixture
+def no_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fake Windows binaries cannot run: lay the layout out as on another platform."""
+    monkeypatch.setattr(bt.fetch, "host_platform", lambda: None)
+
+
+@pytest.mark.usefixtures("no_discovery")
+def test_windows_layout_has_each_tool_its_licence_and_nothing_else(setup: Setup) -> None:
+    setup.bundle()
+    assert setup.tree() == [
+        "README.md",
+        "ffmpeg/LICENSE.txt",
+        "ffmpeg/bin/avcodec-63.dll",
+        "ffmpeg/bin/ffmpeg.exe",
+        "ffmpeg/bin/ffprobe.exe",
+        "mediainfo/LICENSE",
+        "mediainfo/MediaInfo.exe",
+        "mkvtoolnix/doc/COPYING.txt",
+        "mkvtoolnix/mkvpropedit.exe",
+    ]
+    assert (setup.dest / "mkvtoolnix" / "mkvpropedit.exe").read_bytes() == b"MZ mkvpropedit"
+
+
+@pytest.mark.usefixtures("no_discovery")
+@pytest.mark.parametrize("field", ["sha256", "size"])
+def test_a_download_that_does_not_match_its_pin_is_never_extracted(
+    setup: Setup, field: str
+) -> None:
+    name = "mkvtoolnix-64-bit.zip"
+    pinned = setup.files[name]
+    setup.write()
+    # The server now serves other bytes of the same size, or one byte more.
+    other = bytes(len(pinned)) if field == "sha256" else pinned + b"x"
+    (setup.archives / name).write_bytes(other)
+    with pytest.raises(FetchError, match=r"SHA-256|size"):
+        setup.bundle()
+    assert not (setup.dest / "mkvtoolnix").exists()
+    assert not [p for p in setup.dest.iterdir() if p.name.startswith(".bundle-")]
+
+
+@pytest.mark.usefixtures("no_discovery")
+def test_a_rerun_keeps_an_intact_layout_and_repairs_a_changed_one(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(bt.fetch, "_sleep", lambda seconds, cancel: None)
+    setup.bundle()
+    archive = setup.archives / "MediaInfo_CLI_x64.zip"
+    archive.unlink()
+    setup.bundle()  # nothing to download: every folder still matches its marker
+    exe = setup.dest / "mediainfo" / "MediaInfo.exe"
+    exe.write_bytes(b"changed")
+    with pytest.raises(FetchError, match="download failed"):
+        setup.bundle()
+    archive.write_bytes(setup.files["MediaInfo_CLI_x64.zip"])
+    setup.bundle()
+    assert exe.read_bytes() == b"MZ mediainfo"
+
+
+@pytest.mark.usefixtures("no_discovery")
+def test_a_linux_layout_after_a_windows_one_drops_the_windows_tools(setup: Setup) -> None:
+    setup.bundle()
+    (setup.dest / ".bundle-killed").mkdir()  # the work folder of a killed run
+    setup.bundle("linux-x64")
+    assert setup.tree() == [
+        "README.md",
+        "ffmpeg/LICENSE.txt",
+        "ffmpeg/bin/ffmpeg",
+        "ffmpeg/bin/ffprobe",
+        "ffmpeg/lib/libavcodec.so.63",
+    ]
+    assert sorted(p.name for p in setup.dest.iterdir()) == ["README.md", "ffmpeg"]
+
+
+@pytest.mark.usefixtures("no_discovery")
+@pytest.mark.parametrize("foreign", ["notes.txt", "ffmpeg/ffmpeg.exe", "other/x"])
+def test_files_the_script_did_not_make_are_refused_and_kept(setup: Setup, foreign: str) -> None:
+    path = setup.dest / foreign
+    path.parent.mkdir(exist_ok=True)
+    path.write_text("mine")
+    (setup.archives / f"{FF_ROOT}.zip").unlink()  # it must fail before any download
+    with pytest.raises(FetchError, match="did not make"):
+        setup.bundle()
+    assert path.read_text() == "mine"
+
+
+@pytest.mark.usefixtures("no_discovery")
+def test_an_archive_without_a_pinned_file_lays_out_nothing(setup: Setup) -> None:
+    setup.mkvtoolnix_files = '["mkvpropedit.exe", "doc/COPYING.txt", "mkvmerge.exe"]'
+    setup.write()
+    with pytest.raises(FetchError, match=r"has no mkvmerge\.exe"):
+        setup.bundle()
+    assert not (setup.dest / "mkvtoolnix").exists()
+
+
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [
+        (('files = ["mkvpropedit.exe", "doc/COPYING.txt"]', 'files = ["mkvpropedit.exe"]'),
+         "does not keep doc/COPYING.txt"),
+        (('root = "mkvtoolnix"\n', ""), None),
+        (('format = "zip"\nroot', 'format = "tar.xz"\nroot'), "format"),
+        (("file://", "http://"), "https"),
+        (('binary = "mkvpropedit.exe"', 'binary = "../mkvpropedit.exe"'), "relative"),
+        (("[tools.mediainfo]", "[tools.mkvmerge]"), "unknown tool"),
+        (('version = "26.10"\n', ""), "version"),
+    ],
+)  # fmt: skip
+def test_bad_tool_pins_are_refused(
+    setup: Setup, change: tuple[str, str], error: str | None
+) -> None:
+    text = setup.tools_manifest.read_text(encoding="utf-8")
+    assert change[0] in text
+    setup.tools_manifest.write_text(text.replace(change[0], change[1], 1), encoding="utf-8")
+    if error is None:  # a zip without its top folder is fine to parse
+        assert [a.root for a in bt.tool_archives(setup.tools_manifest, "windows-x64")] == [
+            None,
+            None,
+        ]
+        return
+    with pytest.raises(FetchError, match=error):
+        bt.tool_archives(setup.tools_manifest, "windows-x64")
+
+
+def test_a_tar_xz_tool_archive_needs_its_top_folder(setup: Setup) -> None:
+    text = setup.tools_manifest.read_text(encoding="utf-8")
+    text = text.replace("MediaInfo_CLI_x64.zip", "mi.tar.xz").replace(
+        'format = "zip"\nbinary', 'format = "tar.xz"\nbinary'
+    )
+    setup.tools_manifest.write_text(text, encoding="utf-8")
+    with pytest.raises(FetchError, match="needs its top folder"):
+        bt.tool_archives(setup.tools_manifest, "windows-x64")
+
+
+def test_the_real_pins_keep_each_binary_and_licence() -> None:
+    windows = bt.tool_archives(bt.TOOLS_MANIFEST, "windows-x64")
+    assert {a.folder: a.required[0] for a in windows} == {
+        "mkvtoolnix": "mkvpropedit.exe",
+        "mediainfo": "MediaInfo.exe",
+    }
+    for archive in windows:
+        assert archive.files is not None
+        assert set(archive.required) <= set(archive.files)
+        assert archive.url.startswith("https://")
+    assert bt.tool_archives(bt.TOOLS_MANIFEST, "linux-x64") == []
+    for platform in ("linux-x64", "windows-x64"):
+        ffmpeg = bt.ffmpeg_archive(bt.FFMPEG_MANIFEST, platform)
+        assert ffmpeg.files is None
+        assert len(ffmpeg.required) == 3
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the fake binaries are shell scripts")
+def test_on_its_own_platform_discovery_must_find_the_pinned_version(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(bt.fetch, "host_platform", lambda: "linux-x64")
+    monkeypatch.setenv("REFRAME_FFMPEG", "/nonexistent/ffmpeg")  # an override is ignored
+    setup.bundle("linux-x64")
+    setup.ffmpeg_version = "n9.0.3-test"
+    setup.files[f"{LINUX_ROOT}.tar.xz"] = _tar_xz(
+        {
+            f"{LINUX_ROOT}/bin/ffmpeg": _fake_ffmpeg("ffmpeg", "n9.0.2-test"),
+            f"{LINUX_ROOT}/bin/ffprobe": _fake_ffmpeg("ffprobe", "n9.0.2-test"),
+            f"{LINUX_ROOT}/LICENSE.txt": b"GPL-3",
+        }
+    )
+    setup.write()
+    with pytest.raises(FetchError, match=r"expected 'n9\.0\.3-test'"):
+        setup.bundle("linux-x64")
+
+
+def test_main_reports_an_error_with_exit_code_1(
+    setup: Setup, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (setup.dest / "notes.txt").write_text("mine")
+    code = bt.main(
+        [
+            "--platform",
+            "windows-x64",
+            "--dest",
+            str(setup.dest),
+            "--ffmpeg-manifest",
+            str(setup.ffmpeg_manifest),
+            "--tools-manifest",
+            str(setup.tools_manifest),
+        ]
+    )
+    assert code == 1
+    assert "notes.txt" in capsys.readouterr().err
