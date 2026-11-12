@@ -881,7 +881,42 @@ from a scheduled task (`schtasks /Create … /IT`, a `.cmd` with msedgedriver 15
 
 ## Review and fix round
 
-*Placeholder: filled by the lead.*
+Two fresh reviews (opus, high) of `3a5a2cb..m10-hardening` at a243d0e: R1 (the bundled tools,
+the frozen app's tool environment, the Linux packages, the notices) and R2 (the Windows
+installers, the updater, Settings → Tools and the first run, the smoke test and its CI job).
+No blocker. The lead reproduced every major before a fix:
+
+| # | Finding | Severity | Reproduced | Outcome |
+|---|---------|----------|------------|---------|
+| R1-1 | Fedora with RPM Fusion's VA drivers (`/usr/lib64/dri-freeworld`, `dri-nonfree`) gets no h264/hevc VAAPI | major | Fedora 45's libva searches `/usr/lib64/dri-nonfree:/usr/lib64/dri-freeworld:/usr/lib64/dri` | fixed (FB) |
+| R1-2 | Programs the AppImage opens (player, browser) get the AppImage's `LD_LIBRARY_PATH` and GTK variables | major | `/usr/bin/mpv` and `gio` fail with symbol errors under the AppImage's library folders | fixed (FA) |
+| R1-3 | In the AppImage a relative file argument is read in `$APPDIR/usr` | major | AppRun's binary changes to `%s/usr`; R1 saw the cwd | fixed (FA; R1's own fix would have broken WebKit) |
+| R1-4 = R2-1 | The `desktop-smoke` CI job's Linux leg cannot build libva (no meson, no libdrm-dev) | major | `bundle-tools.py --platform linux-x64` exits 1 without meson | fixed (S): one package list for the job and the container, proved in a plain `ubuntu:22.04` |
+| R1-5 | No GPL corresponding source or written offer ships | major (release) | read | recorded: 09 §Licensing and an owner question; Q-5 |
+| R1-6 | libva missing from the notices | minor | — | fixed (FB) |
+| R1-7 | A library that fails to load is called "not installed" | minor | — | fixed (FB) |
+| R1-8 | 09's notices box ticked though no CI job runs the package build | minor | read | box re-worded and unticked (0ad8fbe) |
+| R2-2 | A damaged fetched FFmpeg cannot be repaired from the web UI | minor | — | fixed (FU) |
+| R2-3 | *Use bundled* on a row already bundled silently removes ffprobe's path | minor | — | fixed (FU) |
+| R1-9, R2-4…6 | nits (`GTK_THEME` kept by the core's rule, a stale `.fetch-tools.json` digest, the libva rerun marker, the PATH removal's exact match, *Delete the application data* also removing a pip-installed CLI's data, the test certificate helper) | nit | — | recorded, not changed (the notices' version header fixed by FB) |
+
+After the fixes: the Windows smoke run needed the lead's `comfort.rs` change (above); the full
+pytest on the VM found four tests of this run that assumed Linux and `bundle-tools.py` writing
+libva's driver folders with the host's separator (fixed, 7a0430f); FA's AppImage folder test
+assumed a POSIX absolute path (`#[cfg(unix)]`, 5291d9b).
+
+**Final checks** (2026-11-12, `m10-hardening` 7a0430f, the lead):
+
+- Linux: `uv lock --check`, ruff, ruff format, mypy (also `--platform win32`), the whole
+  `pytest -m "not needs_gpu"` in chunks: 7792 passed, 2 skipped; the frozen sidecar rebuilt and
+  `test_frozen_sidecar.py` 14 passed; `gen-api.sh --check`; frontend lint, fmt:check, typecheck,
+  vitest 2025 (unit and server projects), build:web, build:desktop, e2e 22; Rust fmt, clippy,
+  `cargo test` 79; the smoke test in the plain Ubuntu 22.04 container (the CI job's package
+  list) 6 of 6.
+- The VM: every Python and frontend CI command and the Rust job pass (`cargo test` 29);
+  the whole `uv run pytest` 7559 passed, 6 failed: two `needs_gpu` tests that need a GPU, and
+  the four Linux assumptions above, then fixed and their files re-run there (81 passed,
+  6 skipped). The smoke test passed 6 of 6 against a release build of ecd81cd.
 
 **Fix round — FU** (Settings → Tools and the first-run screen; reviewer R2's two minors; this
 amends "Task U" items 1 and 3).
@@ -1000,8 +1035,31 @@ build time") has to join; not changed here.
 
 ## Consequences
 
-*Filled at the end.*
+- Every desktop package carries the pinned FFmpeg (Linux also libva 2.24.1), and the Windows
+  one also MKVToolNix and MediaInfo, laid out by one script from checksummed pins; the pins
+  must follow upstream (BtbN keeps month-end builds about two years; libva must not be older
+  than the VA-API of the users' drivers).
+- The Windows `fieldmatch` crash of the FFmpeg build stays a known limit (every candidate
+  crashes about as often).
+- On Mesa 23.2 and older (Ubuntu 22.04, Debian 12) `h264_vaapi` is detected as available but a
+  job fails to write its header; encoder detection writes to `null` and cannot see it.
+- The packages are built locally (Docker for Linux, the VM for Windows): no workflow runs a
+  package build, publishes a release or a `latest.json` yet (Q-5). The updater's endpoint is
+  GitHub's latest release of a private repository, so it finds nothing until releases are
+  public.
+- A real release needs a code-signing certificate from a certification authority, the
+  updater's real key kept as a secret, and the GPL corresponding source (or an offer).
+- Not verified: Intel (VAAPI, QSV), NVIDIA, Windows with a GPU, Windows 11, the GitHub
+  runners (every new CI job), a machine without WebView2, the Linux update path (AppImage, deb),
+  two monitors.
 
 ## Plan changes
 
-*Filled at the end.*
+- `07-desktop-app.md`: §Tool bundling (the `.deb`/`.rpm` path `/usr/lib/Reframe/`); D-7, D-8
+  and D-9 bullets ticked where done (the updater's GitHub release bullet stays open);
+  §Native integrations (the external player through the shell's command).
+- `02-architecture.md` §Bundled FFmpeg: the choice made, libva shipped on Linux, the install
+  location.
+- `05-core.md` C-1: `LIBVA_DRIVERS_PATH` names every existing driver folder.
+- `09-quality-and-release.md`: §Q-3's Windows note, §Licensing (the notices box re-worded and
+  open; the corresponding-source box added).

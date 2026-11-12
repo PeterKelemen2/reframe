@@ -221,9 +221,11 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       Windows *(Windows testing phase)*. Record each host and its result in `docs/decisions/0002-bundled-ffmpeg.md`, and
       list there the hosts that were not tested as not verified
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 7).
-- [ ] CI downloads the pinned FFmpeg / MKVToolNix / MediaInfo builds, verifies the checksums,
+- [x] CI downloads the pinned FFmpeg / MKVToolNix / MediaInfo builds, verifies the checksums,
       and puts them in `resources/tools/` (`scripts/bundle-tools.py`; one build platform per
-      layout, so no sub-folder per OS). The same step feeds the .deb/.rpm layout.
+      layout, so no sub-folder per OS). The same step feeds the .deb/.rpm layout. The
+      `desktop-smoke` CI job and the Linux package build run it; the job has not run on GitHub
+      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md)).
 - [x] Settings → Tools: a path override per tool, **Test**, **Use bundled**, env overrides shown
       read-only. The first-run check runs before the main UI. On Linux; the Windows rows of the
       bundled MKVToolNix and MediaInfo are checked with D-8's installer
