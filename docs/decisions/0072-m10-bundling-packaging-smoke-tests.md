@@ -236,7 +236,183 @@ only while FFmpeg fails; read from the code, not tried).
 
 ## Task L — Linux packages and licence notices (D-8)
 
-*Placeholder: filled by task L.*
+Built and checked 2026-11-12 on the AMD desktop (CachyOS, Docker 29.9.2 with the classic
+builder, KWin 6.8 for the virtual session), Tauri CLI 2.12.4.
+
+**The build** (`desktop/packaging/linux/`): `Dockerfile` is `ubuntu:22.04` (pinned by digest)
+with Tauri's Linux build packages, Node 24.22.1 and rustup 1.29.3 (both checked by SHA-256),
+Rust 1.99.1, uv 0.13.5 with CPython 3.14.8, `cargo-about` 0.9.3 (only for the notices), and
+`meson`, `ninja-build` and `libdrm-dev` for task T's libva build.
+`build.sh OUT` builds the image and pipes the working tree's tracked and untracked files (not the
+ignored ones) into a container that runs `build-in-container.sh`: `uv sync --frozen`, the tools
+layout, the frozen sidecar, `npm ci`, the notices, `npx tauri build --verbose` (the targets of
+`tauri.linux.conf.json`), then the three packages, `THIRD_PARTY_NOTICES` and `glibc.txt` to
+`OUT`. Cargo's registry, the target folder and the download caches are volumes
+(`$REFRAME_BUILD_NAME-{cargo,target,cache}`). A release job runs, from the repository root:
+
+```sh
+desktop/packaging/linux/build.sh dist/linux            # AppImage, .deb, .rpm, notices, glibc.txt
+desktop/packaging/linux/install-test.sh dist/linux     # ubuntu:22.04, debian:12, fedora:45
+desktop/packaging/linux/appimage-test.sh dist/linux/Reframe_0.1.0_amd64.AppImage  # needs KWin
+```
+
+The tools layout is one line of `build-in-container.sh`: `bundle-tools.py --platform linux-x64`
+(before task T merged, `fetch-tools.py --install-dir` gave the same `ffmpeg/` folder).
+
+**What the Tauri bundler and linuxdeploy do with the bundled FFmpeg** (checked):
+
+1. **The bundler copies a symbolic link in `bundle.resources` as one more copy of its target.**
+   The archive's `lib/` names each library three times (`libavcodec.so`, `libavcodec.so.63` →
+   `libavcodec.so.63.1.102`): the first `.deb` and `.rpm` were 327 MB (`libavcodec`, 120 MB,
+   three times). The build deletes the links and renames each library to its soname
+   (`readelf -d`), the name the programs ask the loader for: 153 MiB each.
+2. **linuxdeploy fails on libraries that find each other only through the program's RPATH**
+   (`ffmpeg` has `RPATH $ORIGIN/../lib`; `libswscale.so.10` has none): `ERROR: Could not find
+   dependency: libavutil.so.61`. With `LD_LIBRARY_PATH` set to that folder it succeeds but copies
+   all seven FFmpeg libraries a second time into the AppImage's `usr/lib/`.
+   `LINUXDEPLOY_EXCLUDED_LIBRARIES` (a `;`-separated list that linuxdeploy 07333c6 reads: found
+   in its strings, then tried) with the bundled libraries' names avoids both; the build sets it.
+3. **linuxdeploy rewrites the ELF files already in the AppDir**: `ffmpeg`'s
+   `RPATH $ORIGIN/../lib` becomes `RUNPATH $ORIGIN/../lib:$ORIGIN`, and the frozen
+   `reframe-server` changes (its SHA-256 differs). Both still run (the AppImage checks below).
+4. Tauri downloads `linuxdeploy-07333c6`, `linuxdeploy-plugin-appimage` (continuous) and its
+   `AppRun` from GitHub during the build; this repository pins none of them.
+
+**glibc** (`glibc-report.sh`: the newest `GLIBC_` version in `objdump -T` of every ELF file in the
+AppImage, the sidecar's `_internal/` included): the newest is **`GLIBC_2.35`**, needed by
+`sidecar/_internal/libgcc_s.so.1`, `libwebkit2gtk-4.1.so.0`, `libjavascriptcoregtk-4.1.so.0` and
+`libcairo.so.2` (Ubuntu 22.04's own libraries); `reframe-desktop` needs 2.34, the FFmpeg build
+2.28, the AppImage runtime nothing (static).
+
+**The packages** (`tauri.linux.conf.json`, `linux/`):
+
+- **Install location: the plan was wrong.** Tauri puts the resources in `/usr/lib/<productName>/`,
+  so FFmpeg is in `/usr/lib/Reframe/tools/ffmpeg/`, next to `/usr/lib/Reframe/sidecar/`; the
+  frozen programs find it as `<exe dir>/../tools` (the CLI through `/usr/bin/reframe` too:
+  PyInstaller resolves the link). 02 §Bundled FFmpeg and 07 §Tool bundling now say (task T found the same)
+  `/usr/lib/Reframe/`. The core's `/usr/lib/reframe/tools` root stays (no code change).
+- `.deb` `Depends: libayatana-appindicator3-1, libwebkit2gtk-4.1-0, libgtk-3-0` (Tauri's),
+  `Recommends: mkvtoolnix, mediainfo`; the `.rpm` requires the three sonames and recommends
+  `mkvtoolnix` and `mediainfo` (rpm's weak dependency, which dnf installs). Neither names FFmpeg.
+- **The desktop entry** comes from `linux/Reframe.desktop.hbs` (Tauri's own template with
+  `Exec={{exec}} %F` and `Categories=AudioVideo;Video;`): `Reframe.desktop`,
+  `StartupWMClass=reframe-desktop`, the `MimeType=` of the file associations;
+  `desktop-file-validate` passes.
+- **The `.rpm` left its folders behind**: the bundler's spec owns the files under
+  `/usr/lib/Reframe/` but not the folders, so `dnf remove` left the empty tree (checked).
+  `linux/remove-app-dirs.sh` is the `.rpm`'s `postRemoveScript`: on an erase (`0`) it removes
+  the empty folders under `/usr/lib/Reframe` (a file that the package did not install stays).
+  dpkg removes its folders itself.
+- `link-cli.sh` and `unlink-cli.sh` run as 0069 wrote them: `/usr/bin/reframe` →
+  `/usr/lib/Reframe/sidecar/reframe` after install, gone after removal, with apt and dnf.
+- **The AppImage** carries FFmpeg (`usr/lib/Reframe/tools/ffmpeg/`); the CLI is not on `PATH`
+  (no install step); mkvpropedit and MediaInfo come from the system. linuxdeploy copies the
+  copyright files of the 102 distro packages whose libraries it bundles into `usr/share/doc/`.
+  It leaves the libraries of the AppImage exclude list to the host: a bare `debian:12` needed
+  `libdrm2 libegl1 libexpat1 libfontconfig1 libfreetype6 libfribidi0 libgbm1 libgl1
+  libharfbuzz0b libwayland-client0 libx11-6 libx11-xcb1 libxcb1` (`ldd` in the extracted
+  AppImage). Every desktop has them.
+
+**Install tests** (`install-test.sh` runs `install-test-in-container.sh` in each image with the
+packages and `testdata/media` mounted; last run 2026-11-12, all `PASS`): `ubuntu:22.04`
+(22.04.5), `debian:12` and `fedora:45`: installed with `apt-get install ./….deb` /
+`dnf install ./….rpm` (dependencies and recommends resolved; no `ffmpeg` package, no FFmpeg in
+Depends/Requires); `/usr/bin/reframe` is the link; `notices/THIRD_PARTY_NOTICES` is there with
+the FFmpeg source link; the desktop entry is valid with `%F`; `reframe version`;
+`reframe tools status --json`: ffmpeg and ffprobe `bundled` at `/usr/lib/Reframe/tools/ffmpeg/bin/`
+(n9.0.2-17-g2a571b6068-20260930); `reframe encode -p very-fast-1080p30` of `multitrack.mkv`
+through the frozen server (341 512 bytes: h264, 3 × aac, 3 × mov_text); `reframe-desktop` under
+Xvfb and `dbus-run-session`, with private `XDG_*` and `REFRAME_*_DIR` and
+`REFRAME_POWER_DRY_RUN=1`: its sidecar `/usr/lib/Reframe/sidecar/reframe-server` publishes
+`server.json` and answers `GET /api/system` (mode `desktop`, ffmpeg `bundled` at the installed
+path); SIGTERM to the app ends the app and the sidecar; removal leaves no `/usr/bin/reframe`, no
+`/usr/lib/Reframe`, no desktop entry. In `debian:12` another package's recommends bring the
+distro's `libavcodec59` (not Reframe's; which package was not checked; the `ffmpeg` program is
+not installed).
+
+**The AppImage** (`appimage-test.sh`): on this host in `kwin_wayland --virtual` (socket
+`reframe-l`, private folders, `REFRAME_POWER_DRY_RUN=1`) the AppImage mounts itself (FUSE), the
+sidecar `/tmp/.mount_…/usr/lib/Reframe/sidecar/reframe-server` answers, ffmpeg is `bundled` at
+`/tmp/.mount_…/usr/lib/Reframe/tools/ffmpeg/bin/ffmpeg`, and the screenshot shows the workspace;
+SIGTERM to `reframe-desktop` ends the runtime, the webview and the sidecar. In `debian:12`
+without `/dev/fuse`, `--appimage-extract-and-run` under Xvfb: the same from
+`/tmp/appimage_extracted_…/`.
+
+**A defect found, not fixed (core code, not this task's files): system tools run with the
+sidecar's library path.** The frozen sidecar's `LD_LIBRARY_PATH` starts with its `_internal/`
+(PyInstaller); in the AppImage it also holds the AppImage's library folders (its `AppRun` sets
+them; PyInstaller keeps that value in `LD_LIBRARY_PATH_ORIG`). The core starts mkvpropedit and
+mediainfo with it, so a system tool built against a newer `libstdc++` than Ubuntu 22.04's fails:
+
+- Fedora 45 (`.rpm`): `mkvpropedit` `broken`: `/usr/lib/Reframe/sidecar/_internal/libstdc++.so.6:
+  version 'CXXABI_1.3.15' not found (required by /lib64/libicui18n.so.78)`; `mediainfo` `broken`
+  (`GLIBCXX_3.4.35`, required by `/lib64/libmediainfo.so.0`).
+- The AppImage on this host: `mkvpropedit` `broken` the same way.
+- Ubuntu 22.04 and Debian 12: both `found` (their `libstdc++` is not newer).
+
+FFmpeg is not affected (its own libraries through its RPATH). The fix belongs in
+`reframe.tools`: start external programs with PyInstaller's `LD_LIBRARY_PATH_ORIG` restored
+(unset when there was none) and, when `APPIMAGE` / `APPDIR` are set, without the entries under
+`$APPDIR`. Until then, 07's "System packages, if installed" holds only on distros as old as the
+build image.
+
+**`THIRD_PARTY_NOTICES`** (`scripts/third-party-notices.py --platform linux-x64|windows-x64`, run
+by the build as `uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py …`, with
+`npx` and `cargo about` on `PATH`): one text file in `desktop/src-tauri/resources/notices/`,
+mapped to `notices/` in `bundle.resources`, so every Tauri artefact (the Windows ones too)
+carries it. Sections:
+
+- **Bundled tools**: one entry per folder in `resources/tools/` with every field of its pin
+  (version, the platform's download URL and SHA-256, `source_repository`, `source_branch`,
+  `source_commit`, `build_scripts_repository` / `_commit`, the release page) and the folder's
+  licence file. A folder without a pin or a licence file stops the run. The pin is
+  `[builds.default]` of `tools/<folder>.toml`, or `[tools.<folder>]` of another
+  `tools/*.toml` (task T's `tools/bundled-tools.toml` for MKVToolNix and MediaInfo).
+- **Python**: CPython's `LICENSE.txt`; the distributions whose modules are in the frozen
+  executables' archives (read with PyInstaller's `CArchiveReader`) or in `_internal/`, mapped
+  with `importlib.metadata.packages_distributions()`, without Reframe's own, plus PyInstaller
+  (its bootloader is in every executable): 42 distributions through pip-licenses (licence and
+  notice texts; `--with-system`, else it drops setuptools); and MediaInfoLib: pymediainfo's
+  wheel carries `libmediainfo` 24.12 without its licence, so its BSD-2-Clause text is read from
+  `MediaArea/MediaInfoLib` at the tag of the loaded version.
+- **JavaScript**: `npx license-checker@25.0.1 --production --excludePrivatePackages` on
+  `frontend/` (105 packages; the text of a file named like a licence, not the README that it
+  sometimes names).
+- **Rust**: `cargo about generate --format json --locked` with a generated config (the
+  platform's target, no build or dev dependencies, the accepted licences of today's crates: a
+  new licence stops the run until someone reads it and adds it). `cargo-about` 0.9.3 needs
+  `--features cli`: without it `cargo install` installs nothing and exits 0.
+
+The file is 958 KB. Found in it: the frozen sidecar ships `_pytest` and `setuptools` modules
+(PyInstaller's analysis pulls them in), so pytest and setuptools are listed; license-checker's
+production tree holds build-time packages of `vue` and `vue-router` (`@vue/compiler-*`, vite,
+rolldown, typescript), listed though not all of them ship. **Not covered**: the libraries that
+python-build-standalone links into CPython (OpenSSL, libffi, SQLite, ncurses and others: the
+`LICENSE.txt` names only CPython), and ZenLib inside `libmediainfo`.
+
+**The Docker image (S-6)** also bundles FFmpeg, but it ships the server's virtual environment
+(not a frozen sidecar), the web frontend and no Rust: the script would need a mode that reads
+the environment instead of `_internal/` and leaves Rust out, and the Dockerfile a stage with
+Node and the script's tools. Not a one-line change: not done.
+
+**Tests**: `testing/tests/test_third_party_notices.py` (18 tests: which distributions are listed;
+the real frozen sidecar's archives (skipped without a build); pip-licenses' skipped package;
+license-checker's README; cargo-about's own crate and target; each pin shape and the real
+Windows manifest; a tool without a
+pin or a licence; the MediaInfoLib URL for the loaded version; the rendering; the
+`bundle.resources` entry) and `testing/tests/test_linux_packaging.py` (4: the template with `%F`
+and the recommends of both packages; `remove-app-dirs.sh` on erase and upgrade). Each test
+function failed under a mutation of the code it covers (27 mutations) and passed again after.
+
+**For later tasks**: T: the bundler copies links, so the layout needs one file per library under
+its soname; `include/`, `lib/pkgconfig/`, `man/` and `doc/` of the archive ship too. The build's
+link step and `LINUXDEPLOY_EXCLUDED_LIBRARIES` work on whatever `resources/tools/*/lib/` holds.
+W: the notices are in `notices/` of the NSIS/MSI install too (`--platform windows-x64` gives the
+Windows crates and pins). The lead: the core fix above; `notices/.gitignore` (the folder's ignore
+rule, inside the folder because the root `.gitignore` is the lead's) ships in the packages, as
+`sidecar/README.md` does; Tauri installs `icons/128x128@2x.png` as
+`usr/share/icons/hicolor/256x256@2/apps/reframe-desktop.png`, which is not an icon theme folder;
+`reframe encode -p very-fast-1080p30 -o out.mkv` writes MP4 into the `.mkv` name.
 
 ## Task W — Windows installers and the updater (D-8)
 

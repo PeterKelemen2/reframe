@@ -223,15 +223,20 @@ sidecar ships MediaInfo (pymediainfo with its own library).
 - [ ] CI downloads the pinned FFmpeg / MKVToolNix / MediaInfo builds, verifies the checksums,
       and puts them in `resources/tools/` (`scripts/bundle-tools.py`; one build platform per
       layout, so no sub-folder per OS). The same step feeds the .deb/.rpm layout.
-- [ ] Settings → Tools: a path override per tool, **Test**, **Use bundled**, env overrides shown
-      read-only. The first-run check runs before the main UI.
+- [x] Settings → Tools: a path override per tool, **Test**, **Use bundled**, env overrides shown
+      read-only. The first-run check runs before the main UI. On Linux; the Windows rows of the
+      bundled MKVToolNix and MediaInfo are checked with D-8's installer
+      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) "Task U").
 
 ### D-8 Packaging, signing, updates
 - [ ] Windows: NSIS installer (per-user, no admin rights), WebView2 bootstrapper, optional MSI.
       Code signing is strongly recommended (SmartScreen warns about unsigned installers).
       Installed and run on Windows: *(Windows testing phase)*.
-- [ ] Linux: AppImage (built on the oldest supported distro image, for glibc compatibility),
+- [x] Linux: AppImage (built on the oldest supported distro image, for glibc compatibility),
       `.deb`, `.rpm`. Flatpak comes later (its sandbox complicates file access and GPU access).
+      Built in `ubuntu:22.04` by `desktop/packaging/linux/build.sh`; installed and run in Ubuntu
+      22.04, Debian 12 and Fedora 45 containers, the AppImage on the host in a virtual session
+      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) task L).
 - [ ] Updater: signed `latest.json` in GitHub Releases.
 
 ### D-9 Desktop smoke tests
