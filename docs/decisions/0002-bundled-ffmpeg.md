@@ -249,6 +249,35 @@ file needs a Mesa that writes the parameter sets (24.04's 25.2 does, 22.04's 23.
 available there and the job fails, a known limit), and AV1 needs a Mesa newer than 23.2 on
 this GPU. Fedora is now tested (AMD only; its Mesa ships no H.264 / H.265 VAAPI encoder).
 
+## Follow-up: Fedora with RPM Fusion's VA drivers (2026-11-12, review fix FB)
+
+Fedora's libva 2.24.1 has the built-in path `/usr/lib64/dri-nonfree:/usr/lib64/dri-freeworld:/usr/lib64/dri`
+(`grep -a` in fedora:45's `libva.so.2`). RPM Fusion's `mesa-va-drivers-freeworld` puts the
+full `radeonsi_drv_video.so` (H.264, HEVC, AV1) into `/usr/lib64/dri-freeworld/`, while
+Fedora 45's `mesa-dri-drivers` keeps a `/usr/lib64/dri/radeonsi_drv_video.so` without H.264 /
+H.265. The bundled libva (built-in path) and the core (`LIBVA_DRIVERS_PATH`, the first
+existing folder) knew only `/usr/lib64/dri`, so a Fedora user with RPM Fusion's driver got
+h264_vaapi and hevc_vaapi `unavailable` ("The VAAPI driver has no H.264 encoder").
+
+**Decision.** `LIBVA_DRIVER_DIRS` (core) gets the two folders before `/usr/lib64/dri`, in
+Fedora's order, and the core sets `LIBVA_DRIVERS_PATH` to **every** folder of the list that
+exists, joined by `:` (libva 2.24.1 splits both the variable and its built-in path at `:` and
+uses the first folder whose driver loads: `va.c`, `va_openDriver`). `scripts/bundle-tools.py`
+builds libva with the same list as `-Ddriverdir` (it imports the core's tuple), so the variable
+and the built-in path stay equal. The variable is kept rather than dropped: it changes nothing
+for the bundled libva, and dropping it would be a larger change (the plan's C-1 rule, the
+`ToolInfo.env` plumbing) for no tested gain.
+
+**Host tests** (the `.rpm` / `.deb` built by `desktop/packaging/linux/build.sh` from this fix,
+RX 7600, the installed frozen CLI, private folders): Fedora 45 + RPM Fusion free
+(`mesa-va-drivers-freeworld` 26.2.6): `LIBVA_DRIVERS_PATH=/usr/lib64/dri-nonfree:/usr/lib64/dri-freeworld:/usr/lib64/dri`,
+h264 / hevc / av1 VAAPI `available`, `multitrack.mkv` encoded with "H.265 VAAPI 1080p" and an
+H.264 VAAPI copy of it (outputs probed hevc / h264). With the old value
+(`LIBVA_DRIVERS_PATH=/usr/lib64/dri`) the same package gives h264 / hevc `unavailable` "The
+VAAPI driver has no H.264 / H.265 encoder"; the bundled FFmpeg without the variable (the
+built-in path alone) encodes h264_vaapi. Debian 13 (`mesa-va-drivers` 25.0.7): the variable is
+`/usr/lib/x86_64-linux-gnu/dri`, all three `available`, h264 and hevc encode as before.
+
 ## Plan changes
 
 - `docs/plan/07-desktop-app.md` §Tool bundling (the `.deb`/`.rpm` folder) and §D-7 (bullet 1

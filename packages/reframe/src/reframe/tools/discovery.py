@@ -54,10 +54,13 @@ ENV_VARS: Mapping[ToolName, str] = {
     "mkvpropedit": "REFRAME_MKVPROPEDIT",
     "mediainfo": "REFRAME_MEDIAINFO",
 }
-#: Distro folders with libva drivers. The bundled libva may not look there, so the bundled
-#: FFmpeg on Linux gets the first one that exists as ``LIBVA_DRIVERS_PATH``.
+#: Distro folders with libva drivers, in search order: Debian/Ubuntu, Fedora (RPM Fusion's
+#: drivers first, as Fedora's libva has them), Arch. The bundled FFmpeg on Linux gets those that
+#: exist as ``LIBVA_DRIVERS_PATH``.
 LIBVA_DRIVER_DIRS = (
     Path("/usr/lib/x86_64-linux-gnu/dri"),
+    Path("/usr/lib64/dri-nonfree"),
+    Path("/usr/lib64/dri-freeworld"),
     Path("/usr/lib64/dri"),
     Path("/usr/lib/dri"),
 )
@@ -166,10 +169,8 @@ def _bundled_dir(ctx: _Context, tool: ToolName) -> tuple[Path | None, Path | Non
 def _libva_env(ctx: _Context) -> dict[str, str]:
     if not ctx.platform.startswith("linux") or ctx.environ.get("LIBVA_DRIVERS_PATH"):
         return {}
-    for directory in LIBVA_DRIVER_DIRS:
-        if directory.is_dir():
-            return {"LIBVA_DRIVERS_PATH": str(directory)}
-    return {}
+    found = [str(directory) for directory in LIBVA_DRIVER_DIRS if directory.is_dir()]
+    return {"LIBVA_DRIVERS_PATH": ":".join(found)} if found else {}
 
 
 def _override(

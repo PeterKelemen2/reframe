@@ -321,6 +321,22 @@ def test_an_archive_without_a_pinned_file_lays_out_nothing(setup: Setup) -> None
     assert not (setup.dest / "mkvtoolnix").exists()
 
 
+def test_the_bundled_libva_searches_the_cores_driver_folders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from reframe.tools import discovery
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(bt.shutil, "which", lambda tool: f"/usr/bin/{tool}")
+    monkeypatch.setattr(bt, "_run", calls.append)
+
+    bt.LIBRARY_BUILDERS["libva"](tmp_path, tmp_path / "build")
+
+    folders = ":".join(str(d) for d in discovery.LIBVA_DRIVER_DIRS)
+    assert f"-Ddriverdir={folders}" in calls[0]
+    assert "/usr/lib64/dri-freeworld" in folders.split(":")
+
+
 @pytest.mark.parametrize(
     ("change", "error"),
     [
