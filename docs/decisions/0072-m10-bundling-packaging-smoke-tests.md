@@ -232,7 +232,8 @@ builder, KWin 6.8 for the virtual session), Tauri CLI 2.12.4.
 
 **The build** (`desktop/packaging/linux/`): `Dockerfile` is `ubuntu:22.04` (pinned by digest)
 with Tauri's Linux build packages, Node 24.22.1 and rustup 1.29.3 (both checked by SHA-256),
-Rust 1.99.1, uv 0.13.5 with CPython 3.14.8, and `cargo-about` 0.9.3 (only for the notices).
+Rust 1.99.1, uv 0.13.5 with CPython 3.14.8, `cargo-about` 0.9.3 (only for the notices), and
+`meson`, `ninja-build` and `libdrm-dev` for task T's libva build.
 `build.sh OUT` builds the image and pipes the working tree's tracked and untracked files (not the
 ignored ones) into a container that runs `build-in-container.sh`: `uv sync --frozen`, the tools
 layout, the frozen sidecar, `npm ci`, the notices, `npx tauri build --verbose` (the targets of
@@ -246,8 +247,8 @@ desktop/packaging/linux/install-test.sh dist/linux     # ubuntu:22.04, debian:12
 desktop/packaging/linux/appimage-test.sh dist/linux/Reframe_0.1.0_amd64.AppImage  # needs KWin
 ```
 
-The tools layout is one line of `build-in-container.sh` (`fetch-tools.py --build default
---install-dir "$tools/ffmpeg"`); `bundle-tools.py --platform linux-x64` replaces it.
+The tools layout is one line of `build-in-container.sh`: `bundle-tools.py --platform linux-x64`
+(before task T merged, `fetch-tools.py --install-dir` gave the same `ffmpeg/` folder).
 
 **What the Tauri bundler and linuxdeploy do with the bundled FFmpeg** (checked):
 
@@ -279,7 +280,7 @@ AppImage, the sidecar's `_internal/` included): the newest is **`GLIBC_2.35`**, 
 - **Install location: the plan was wrong.** Tauri puts the resources in `/usr/lib/<productName>/`,
   so FFmpeg is in `/usr/lib/Reframe/tools/ffmpeg/`, next to `/usr/lib/Reframe/sidecar/`; the
   frozen programs find it as `<exe dir>/../tools` (the CLI through `/usr/bin/reframe` too:
-  PyInstaller resolves the link). 02 §Bundled FFmpeg and 07 §Tool bundling now say
+  PyInstaller resolves the link). 02 §Bundled FFmpeg and 07 §Tool bundling now say (task T found the same)
   `/usr/lib/Reframe/`. The core's `/usr/lib/reframe/tools` root stays (no code change).
 - `.deb` `Depends: libayatana-appindicator3-1, libwebkit2gtk-4.1-0, libgtk-3-0` (Tauri's),
   `Recommends: mkvtoolnix, mediainfo`; the `.rpm` requires the three sonames and recommends
@@ -356,8 +357,8 @@ carries it. Sections:
   (version, the platform's download URL and SHA-256, `source_repository`, `source_branch`,
   `source_commit`, `build_scripts_repository` / `_commit`, the release page) and the folder's
   licence file. A folder without a pin or a licence file stops the run. The pin is
-  `[builds.default]` of `tools/<folder>.toml`, or of a `[<folder>]` table in another
-  `tools/*.toml`: task T's MKVToolNix and MediaInfo manifest is found in either shape.
+  `[builds.default]` of `tools/<folder>.toml`, or `[tools.<folder>]` of another
+  `tools/*.toml` (task T's `tools/bundled-tools.toml` for MKVToolNix and MediaInfo).
 - **Python**: CPython's `LICENSE.txt`; the distributions whose modules are in the frozen
   executables' archives (read with PyInstaller's `CArchiveReader`) or in `_internal/`, mapped
   with `importlib.metadata.packages_distributions()`, without Reframe's own, plus PyInstaller
@@ -385,13 +386,14 @@ python-build-standalone links into CPython (OpenSSL, libffi, SQLite, ncurses and
 the environment instead of `_internal/` and leaves Rust out, and the Dockerfile a stage with
 Node and the script's tools. Not a one-line change: not done.
 
-**Tests**: `testing/tests/test_third_party_notices.py` (17 tests: which distributions are listed;
+**Tests**: `testing/tests/test_third_party_notices.py` (18 tests: which distributions are listed;
 the real frozen sidecar's archives (skipped without a build); pip-licenses' skipped package;
-license-checker's README; cargo-about's own crate and target; each pin shape; a tool without a
+license-checker's README; cargo-about's own crate and target; each pin shape and the real
+Windows manifest; a tool without a
 pin or a licence; the MediaInfoLib URL for the loaded version; the rendering; the
 `bundle.resources` entry) and `testing/tests/test_linux_packaging.py` (4: the template with `%F`
 and the recommends of both packages; `remove-app-dirs.sh` on erase and upgrade). Each test
-function failed under a mutation of the code it covers (23 mutations) and passed again after.
+function failed under a mutation of the code it covers (27 mutations) and passed again after.
 
 **For later tasks**: T: the bundler copies links, so the layout needs one file per library under
 its soname; `include/`, `lib/pkgconfig/`, `man/` and `doc/` of the archive ship too. The build's

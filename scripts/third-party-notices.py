@@ -313,19 +313,20 @@ def parse_cargo_about(report: Mapping[str, Any]) -> list[Entry]:
 
 
 def _pin_tables(tool: str, manifests: Path) -> tuple[Mapping[str, Any], Path] | None:
-    """The ``[builds.default]`` table that pins ``tool``: from ``tools/<tool>.toml``, or from a
-    table named after the tool in another manifest there."""
+    """The table that pins ``tool``: ``[builds.default]`` of ``tools/<tool>.toml``, or
+    ``[tools.<tool>]`` of another manifest there."""
     own = manifests / f"{tool}.toml"
     candidates = [own, *sorted(p for p in manifests.glob("*.toml") if p != own)]
     for path in candidates:
         if not path.is_file():
             continue
         data = tomllib.loads(path.read_text(encoding="utf-8"))
-        table = data if path == own else data.get(tool)
+        if path == own:
+            table = data.get("builds", {}).get("default")
+        else:
+            table = data.get("tools", {}).get(tool)
         if isinstance(table, dict):
-            build = table.get("builds", {}).get("default")
-            if isinstance(build, dict):
-                return build, path
+            return table, path
     return None
 
 

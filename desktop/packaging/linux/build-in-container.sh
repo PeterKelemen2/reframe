@@ -8,7 +8,7 @@ export UV_PROJECT_ENVIRONMENT=/build/venv UV_LINK_MODE=copy
 tools=desktop/src-tauri/resources/tools
 
 uv sync --frozen
-uv run --no-project python scripts/fetch-tools.py --build default --install-dir "$tools/ffmpeg"
+uv run python scripts/bundle-tools.py --platform linux-x64 --dest "$tools"
 
 # The bundler copies each symbolic link as one more copy of the file it points to: keep every
 # library once, under the name the programs ask the loader for (its soname).

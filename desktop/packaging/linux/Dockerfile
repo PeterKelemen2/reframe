@@ -9,11 +9,12 @@ FROM ${UV_IMAGE} AS uv
 
 FROM ${UBUNTU_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive
+# libdrm-dev, meson and ninja-build: bundle-tools.py builds libva next to the bundled FFmpeg.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential ca-certificates curl file git pkg-config wget xz-utils \
         libayatana-appindicator3-dev librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev libxdo-dev \
-        desktop-file-utils \
+        desktop-file-utils libdrm-dev meson ninja-build gcc \
     && rm -rf /var/lib/apt/lists/*
 
 ARG NODE_VERSION=24.22.1

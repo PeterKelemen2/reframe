@@ -182,24 +182,25 @@ def test_the_bundled_ffmpeg_gets_its_pin_with_the_source_links(tmp_path: Path) -
     assert entry.text.endswith("ffmpeg licence text")
 
 
-def _write_pin(path: Path, table: str = "") -> None:
-    prefix = f"{table}." if table else ""
+def _write_pin(path: Path, table: str) -> None:
     path.write_text(
-        f"[{prefix}builds.default]\n"
+        f"[{table}]\n"
         'version = "103.0"\nlicense = "GPL-2.0-only"\nlicense_file = "COPYING"\n'
         'source_url = "https://mkvtoolnix.download/sources/mkvtoolnix-103.0.tar.xz"\n'
-        f"[{prefix}builds.default.platforms.windows-x64]\n"
+        f"[{table}.platforms.windows-x64]\n"
         'url = "https://mkvtoolnix.download/windows/mkvtoolnix-64-bit-103.0.7z"\n'
     )
 
 
-@pytest.mark.parametrize("table", ["", "mkvtoolnix"])
+@pytest.mark.parametrize("table", ["builds.default", "tools.mkvtoolnix"])
 def test_another_tools_pin_is_found_in_its_own_or_a_shared_manifest(
     tmp_path: Path, table: str
 ) -> None:
     manifests = tmp_path / "manifests"
     manifests.mkdir()
-    _write_pin(manifests / ("mkvtoolnix.toml" if not table else "bundled.toml"), table)
+    _write_pin(
+        manifests / ("mkvtoolnix.toml" if table == "builds.default" else "bundled.toml"), table
+    )
     tools = tmp_path / "tools"
     _layout(tools, "mkvtoolnix", licence="COPYING")
 
@@ -209,6 +210,29 @@ def test_another_tools_pin_is_found_in_its_own_or_a_shared_manifest(
     assert "source_url: https://mkvtoolnix.download/sources/mkvtoolnix-103.0.tar.xz" in entry.text
     assert "windows-x64.url: https://mkvtoolnix.download/windows/" in entry.text
     assert entry.text.endswith("mkvtoolnix licence text")
+
+
+def test_the_windows_tools_get_their_pins_from_the_repositorys_manifest(tmp_path: Path) -> None:
+    tools = tmp_path / "tools"
+    (tools / "mkvtoolnix" / "doc").mkdir(parents=True)
+    (tools / "mkvtoolnix" / "doc" / "COPYING.txt").write_text("GPL-2.0 text")
+    (tools / "mediainfo").mkdir()
+    (tools / "mediainfo" / "LICENSE").write_text("BSD-2-Clause text")
+    manifest = tpn.tomllib.loads((REPO_ROOT / "tools" / "bundled-tools.toml").read_text())
+
+    entries = tpn.tool_entries(tools, REPO_ROOT / "tools", "windows-x64")
+
+    assert [entry.name for entry in entries] == ["mediainfo", "mkvtoolnix"]
+    for entry in entries:
+        pin = manifest["tools"][entry.name]
+        assert (entry.version, entry.license) == (pin["version"], pin["license"])
+        for value in (
+            pin["source_url"],
+            pin["source_tag"],
+            pin["platforms"]["windows-x64"]["sha256"],
+        ):
+            assert value in entry.text
+    assert entries[1].text.endswith("GPL-2.0 text")
 
 
 def test_a_bundled_tool_without_a_pin_is_an_error(tmp_path: Path) -> None:
