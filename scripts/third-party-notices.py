@@ -80,8 +80,10 @@ def _run(argv: Sequence[str], *, cwd: Path | None = None) -> str:
     executable = shutil.which(argv[0])
     if executable is None:
         raise NoticesError(f"{argv[0]} is not on PATH")
+    # The tools write UTF-8 (licence texts have names in every script); Windows' default
+    # would decode with the ANSI code page and fail.
     result = subprocess.run(
-        [executable, *argv[1:]], cwd=cwd, capture_output=True, text=True, check=False
+        [executable, *argv[1:]], cwd=cwd, capture_output=True, encoding="utf-8", check=False
     )
     if result.returncode != 0:
         raise NoticesError(f"{' '.join(argv[:3])} failed: {result.stderr.strip()[-2000:]}")
