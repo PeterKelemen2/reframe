@@ -153,10 +153,10 @@ Tab, the stop is looked at again, and when the focus has moved on, it is judged:
   inner shadow, underline) is measured against what it lies on: the colour found by hit testing
   just outside the element on each side (a slider's handle sticks out of its track), the best
   side counts. A border, fill or text colour that changes is measured against its unfocused
-  colour, since it was there before: a grey border that turns indigo is 1.3:1 and is not
-  reported as an indicator. This is stricter than 1.4.11 alone and closer to 2.4.13; the
-  choice is the lead's request "decide against item 1 point 3" (K1's list, item 4): the shared
-  layer now gives form fields a ring, so they pass.
+  colour, since it was there before: a grey border that turns indigo is 1.3:1, too little to
+  show the focus, and is reported. This is stricter than 1.4.11 alone and closer to 2.4.13;
+  it is the answer to K1's question (its list, item 4). The shared layer now gives form fields
+  a ring, so they pass.
 - `obscured` (2.4.11): something else covers the part of the stop inside the window at its
   centre and at four inner corners.
 
@@ -192,7 +192,10 @@ only (Firefox paints some focus differently), and an entry that must happen in b
 in the other. The gate fails on a finding that no entry matches and on an entry that matched
 nothing; its message prints the unlisted findings as entries to paste.
 
-**Runtime.** `npm run e2e` before: 1 min 20 s (24 tests). After: RUNTIME (TESTS tests). The two
+**Runtime.** `npm run e2e` on this host, the whole run with the server start and the build:
+before, 1 min 20 s (24 tests); after, 4 min 23 s and 4 min 25 s in two runs in a row (124
+tests: the flows and layout tests, 42 screens, the list test and the gate's own 7 tests, in both browsers). Under the load of
+four agents at once a run took up to 10 min. The two
 browsers run side by side, each with one worker on its own server (the queue is shared).
 
 ### `REFRAME_E2E_PORT`
@@ -222,6 +225,9 @@ servers also serve `text-subs.en.srt`, for the `subtitles` screen's external sub
 - `i18n/index.ts`: a count goes into `{n}` and `{count}` formatted with the locale
   (`1,234 files`, not `1234 files`), whether it is the plural argument or a named `n`/`count`.
   vue-i18n puts it in raw. Test: `i18n/index.test.ts`.
+- `components/base/motion.ts`, installed by `main.ts`: while reduced motion is asked for, a
+  scroll that code asks to be smooth jumps (PrimeVue's Listbox scrolls its options into view
+  smoothly). Test: `motion.test.ts`.
 - `useReveal.ts`: in a group of buttons the pressed one takes the focus (the Summary's "10-bit"
   link landed on "8-bit"). Test: `Field.test.ts`.
 - `primevueLocale.test.ts`: every locale text that a PrimeVue component the app imports reads
@@ -235,6 +241,22 @@ Not changed, with the reason:
   PrimeVue focuses in `onAfterEnter`.
 - The readonly input of Settings → Tools paints the disabled colours (4.07:1 in dark); that is
   ToolRow's choice of tokens (K1), not the tokens' contrast: disabled controls are exempt.
+
+The shared findings that K1, K2 and K3 sent in phase 1, and what became of each:
+
+| Finding | Done |
+|---------|------|
+| Select stops every Escape, so its dialog stays open | `keyboard.ts`, for every dialog; the local handlers can go |
+| A popup Menu opened with Enter has no item in focus | `keyboard.ts` |
+| VirtualScroller removes its outline | `main.css` |
+| Inputs, Select, InputNumber show focus by a border colour only | the form-field ring; the gate measures a changed border against its old colour |
+| A Menu's focused item is a faint tint | `main.css`, the ring of the focused list option |
+| Counts go into `{n}`/`{count}` raw | `i18n/index.ts` formats them |
+| InputNumber uses the browser's locale | `:locale="locale"` on each, as the areas did; the script-text check reports one without it |
+| 0.01 ms durations under reduced motion | 0 |
+| `useReveal` focuses the first button of a SelectButton | the pressed one |
+| The split-compare ring is drawn on a frame's `::after` | the walk looks at the parents' and the next sibling's pseudo-elements |
+| A modal Dialog takes the focus only after its enter transition | not changed (above) |
 
 ### The i18n checks
 
