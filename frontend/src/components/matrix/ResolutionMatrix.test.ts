@@ -325,6 +325,11 @@ describe("a row's issues without a fix", () => {
     )
     expect(panel.querySelector('[data-role="fix"]')).toBeNull()
     expect(document.activeElement).toBe(panel.querySelector('summary'))
+    // Tab past the notes lands on the focus trap's sentinel, which sends the focus round.
+    const sentinels = panel.querySelectorAll<HTMLElement>('[data-p-hidden-focusable="true"]')
+    expect(sentinels.length).toBe(2)
+    sentinels[1]?.focus()
+    expect(document.activeElement).toBe(panel.querySelector('summary'))
   })
 })
 

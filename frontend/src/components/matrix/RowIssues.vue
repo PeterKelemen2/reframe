@@ -82,8 +82,9 @@ async function apply(fix: Fix): Promise<void> {
       </li>
     </ul>
     <details v-if="notes.length > 0" class="row-issues__notes">
-      <!-- The popover lives outside the matrix dialog: without the focus, Tab never reaches it. -->
-      <summary v-bind="notesFocus">
+      <!-- The popover lives outside the matrix dialog: without the focus, Tab never reaches it.
+           Its focus trap counts a summary only with a tabindex. -->
+      <summary tabindex="0" v-bind="notesFocus">
         {{ t('matrix.issues.notes', notes.length) }}
       </summary>
       <ul class="row-issues__list">
