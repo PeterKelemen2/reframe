@@ -12,6 +12,7 @@ import type { AudioCodecRule } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import { describeTag } from '@/components/language/catalog'
 import LanguageListEditor from '@/components/language/LanguageListEditor.vue'
+import { kiloHertz } from '@/components/media/streams'
 import { useDefaultsStore } from '@/stores/defaults'
 import { useSystemStore } from '@/stores/system'
 
@@ -73,7 +74,7 @@ const samplerateOptions = computed(() => {
       .toSorted((a, b) => a - b)
       .map((rate) => ({
         value: String(rate),
-        label: t('defaults.units.khz', { value: n(rate / 1000, { maximumFractionDigits: 3 }) }),
+        label: t('defaults.units.khz', { value: kiloHertz(rate, n) }),
       })),
   ]
 })

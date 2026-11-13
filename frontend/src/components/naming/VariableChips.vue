@@ -71,8 +71,9 @@ function label(variable: NamingVariable): string {
             :aria-label="label(variable)"
             @click="emit('insert', variable.name)"
           >
-            <code class="naming-chip__name">{{ braced(variable.name) }}</code>
-            <span
+            <code class="naming-chip__name">{{ braced(variable.name) }}</code
+            >{{ ' '
+            }}<span
               v-if="values !== null"
               class="naming-chip__value"
               :class="{ 'naming-chip__value--empty': valueOf(variable.name) === null }"

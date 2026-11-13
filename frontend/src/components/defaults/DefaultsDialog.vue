@@ -76,7 +76,7 @@ function onKey(event: KeyboardEvent): void {
   defaults.close()
 }
 
-/** A Select stops every Escape, open or not: on a closed one, the dialog closes here first. */
+/** A closed Select's Escape comes prevented, which `onKey` takes as handled: it closes here. */
 function onKeyCapture(event: KeyboardEvent): void {
   const target = event.target as HTMLElement | null
   if (event.key !== 'Escape' || target?.getAttribute('role') !== 'combobox') return

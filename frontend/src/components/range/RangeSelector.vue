@@ -253,16 +253,6 @@ function hidden(): void {
   if (focused === document.body || panel?.contains(focused)) setTimeout(() => trigger()?.focus())
 }
 
-// A Select stops every Escape, open or not: the popover closes here first, unless a list is open.
-function keydown(event: KeyboardEvent): void {
-  if (event.key !== 'Escape' || event.defaultPrevented) return
-  const target = event.target as HTMLElement | null
-  if (target?.closest('[aria-expanded="true"]')) return
-  event.preventDefault()
-  event.stopPropagation()
-  popover.value?.hide()
-}
-
 function reset(): void {
   editor.resetRangeToGroup()
 }
@@ -294,8 +284,9 @@ function reset(): void {
         :size="14"
         aria-hidden="true"
       />
-      <span class="range-selector__label" data-field="range-label">{{ label }}</span>
-      <span v-if="length !== null" class="range-selector__length" data-field="range-length">{{
+      <span class="range-selector__label" data-field="range-label">{{ label }}</span
+      >{{ ' '
+      }}<span v-if="length !== null" class="range-selector__length" data-field="range-length">{{
         length
       }}</span>
       <ChevronDown :size="16" aria-hidden="true" />
@@ -308,7 +299,7 @@ function reset(): void {
       @show="shownPopover"
       @hide="hidden"
     >
-      <div :id="bodyId" class="range-popover__body" @keydown.capture="keydown">
+      <div :id="bodyId" class="range-popover__body">
         <h2 :id="titleId" class="range-popover__title">{{ t('range.title') }}</h2>
         <p v-if="inGroup" class="range-popover__note">{{ t('range.fileOnly') }}</p>
         <Field
