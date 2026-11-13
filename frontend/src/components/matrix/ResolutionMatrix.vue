@@ -13,7 +13,7 @@ import type {
   SourceEntry,
   TrackMatch,
 } from '@/api/types'
-import { fileName } from '@/components/shell/format'
+import { fileName, formatList } from '@/components/shell/format'
 import { useEditorStore } from '@/stores/editor'
 import { useSourcesStore } from '@/stores/sources'
 
@@ -139,8 +139,9 @@ function cellLabel(item: MatrixRow, column: MatrixColumn, match: TrackMatch): st
   return t('matrix.cell.open', {
     column: column.label,
     label: item.label,
-    state: new Intl.ListFormat(locale.value, { style: 'short', type: 'unit' }).format(
-      state.filter(Boolean),
+    state: formatList(
+      state.filter((part): part is string => Boolean(part)),
+      locale.value,
     ),
   })
 }

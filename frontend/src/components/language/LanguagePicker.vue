@@ -409,11 +409,11 @@ function onDialogKey(event: KeyboardEvent): void {
   border-color: var(--p-inputtext-hover-border-color);
 }
 
+/* The app's focus ring: a field's own ring has no width, and its border change alone is faint. */
 .language-picker__trigger:focus-visible {
   border-color: var(--p-inputtext-focus-border-color);
-  outline: var(--p-inputtext-focus-ring-width) var(--p-inputtext-focus-ring-style)
-    var(--p-inputtext-focus-ring-color);
-  outline-offset: var(--p-inputtext-focus-ring-offset);
+  outline: var(--p-focus-ring-width) var(--p-focus-ring-style) var(--p-focus-ring-color);
+  outline-offset: var(--p-focus-ring-offset);
 }
 
 .language-picker__trigger--invalid {
