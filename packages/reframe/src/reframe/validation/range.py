@@ -77,11 +77,7 @@ def source_range(ctx: JobContext) -> Iterator[ValidationIssue]:
     selected = ctx.job.range
     if isinstance(selected, FullRange):
         return
-    if (
-        isinstance(selected, FrameRange)
-        and ctx.video_stream is not None
-        and _fps(ctx) is None
-    ):
+    if isinstance(selected, FrameRange) and ctx.video_stream is not None and _fps(ctx) is None:
         yield error(
             "range.no_frame_rate",
             "range",

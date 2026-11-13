@@ -432,17 +432,12 @@ describe('the range in a group', () => {
     expect(document.activeElement).toBe(el('[data-range-mode="full"]'))
   })
 
-  it('shows the file’s issues from its matrix row in scope group', async () => {
+  it('shows the file’s issues in scope group, where the shown job carries its range', async () => {
     const { editor } = await mountInGroup()
     editor.setRange({ kind: 'chapters', start: 2, end: 9 })
-    // The matrix the change asked for comes first; the fake server gives rows without issues.
     await vi.waitFor(() => expect(editor.resolving).toBe(false))
-    const shown = editor.resolution?.rows?.find((found) => found.path === '/media/e1.mkv')
-    expect(shown).toBeDefined()
-    editor.resolution = {
-      ...editor.resolution!,
-      rows: [{ ...shown!, issues: [issue('range.end_beyond', 'range.end', 'warning')] }],
-    }
+    expect(editor.job?.range).toEqual({ kind: 'chapters', start: 2, end: 9 })
+    useValidationStore().issues = [issue('range.end_beyond', 'range.end', 'warning')]
     await flushPromises()
     expect(button().classList).toContain('range-selector__trigger--warning')
     await openPopover()
@@ -479,12 +474,14 @@ describe('the keyboard', () => {
     )
   })
 
-  it('a “show me” of the whole range lands on the button while the popover is closed', async () => {
+  it('a “show me” of the whole range lands on the button, and of another field opens nothing', async () => {
     await mountSelector()
     Element.prototype.scrollIntoView = () => {}
     useUiStore().reveal('range')
     await flushPromises()
     expect(document.activeElement).toBe(button())
+    useUiStore().reveal('video.encoder')
+    await new Promise((resolve) => setTimeout(resolve, 20))
     expect(button().getAttribute('aria-expanded')).toBe('false')
   })
 

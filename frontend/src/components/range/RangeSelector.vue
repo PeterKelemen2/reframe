@@ -5,17 +5,7 @@ import InputText from 'primevue/inputtext'
 import Popover from 'primevue/popover'
 import RadioButton from 'primevue/radiobutton'
 import Select from 'primevue/select'
-import {
-  type ComponentPublicInstance,
-  computed,
-  nextTick,
-  reactive,
-  ref,
-  shallowRef,
-  useId,
-  useTemplateRef,
-  watch,
-} from 'vue'
+import { computed, nextTick, reactive, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { ValidationIssue } from '@/api/types'
@@ -55,24 +45,8 @@ const root = useTemplateRef<HTMLElement>('root')
 const popover = useTemplateRef<InstanceType<typeof Popover>>('popover')
 const open = ref(false)
 
-// The fields of an edge live in the popover: a "show me" of one opens it, and the field takes
-// the focus once it is there.
-type FieldRef = (instance: Element | ComponentPublicInstance | null) => void
-const fieldElements = {
-  start: shallowRef<HTMLElement | null>(null),
-  end: shallowRef<HTMLElement | null>(null),
-}
-function fieldRef(edge: Edge): FieldRef {
-  return (instance) => {
-    fieldElements[edge].value =
-      instance === null ? null : ((instance as ComponentPublicInstance).$el as HTMLElement)
-  }
-}
-const fieldRefs: Record<Edge, FieldRef> = { start: fieldRef('start'), end: fieldRef('end') }
-
 useReveal('range', root)
-for (const edge of EDGES) useReveal(`range.${edge}`, fieldElements[edge])
-
+// A field of an edge lives in the popover and shows itself (`Field`) once the popover is open.
 watch(
   () => ui.revealed,
   (request) => {
@@ -240,8 +214,7 @@ function focusMode(): void {
 async function shownPopover(): Promise<void> {
   open.value = true
   await nextTick()
-  // A "show me" may have put the focus on its field already.
-  if (!document.getElementById(bodyId)?.contains(document.activeElement)) focusMode()
+  focusMode()
 }
 
 // An undo or *Reset to group* can take the focused control away: the focus stays inside.
@@ -366,7 +339,6 @@ function reset(): void {
 
         <template v-if="range.kind === 'chapters'">
           <Field
-            :ref="fieldRefs.start"
             :label="t('range.chapters.from')"
             path="range.start"
             :overridden="false"
@@ -387,7 +359,6 @@ function reset(): void {
             </template>
           </Field>
           <Field
-            :ref="fieldRefs.end"
             :label="t('range.chapters.to')"
             path="range.end"
             :overridden="false"
@@ -414,7 +385,6 @@ function reset(): void {
           <Field
             v-for="edge in EDGES"
             :key="`${range.kind}-${edge}`"
-            :ref="fieldRefs[edge]"
             :label="fieldText[range.kind][edge]"
             :path="`range.${edge}`"
             :description="helpId"
