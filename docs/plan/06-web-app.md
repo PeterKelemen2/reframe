@@ -593,6 +593,21 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] Preview (M8): number of sample frames, cache size limit, the cache size and *Clear cache*
       ([decision 0067](../decisions/0067-m8-picture.md), "Task E").
 
+### F-19 Range selector
+- [ ] The Range button and popover in the source header from [03 §Range](03-features.md#range):
+      the four modes, the modes the source cannot use disabled with the reason, chapter
+      selects with names and start times, time fields that parse `H:MM:SS.mmm` / `MM:SS` /
+      seconds, frames as the model has them (0-based, exclusive end), and the span kept on a
+      mode change ([decision 0074](../decisions/0074-range-selector-in-m10.md)).
+- [ ] Each change is one JSON patch on `/range` (one undo step). The `range.*` issues show on
+      its fields and on the button, with their fixes.
+- [ ] Group target: always the shown file's override, with the override dot and *Reset to
+      group*. No *Apply to whole group*.
+- [ ] The Summary's Source and Estimate cards show the range. Playwright flow 5 (F-17).
+
+(Added in M10 by [decision 0074](../decisions/0074-range-selector-in-m10.md): numbered after
+F-18, built before F-16.)
+
 ### F-16 i18n and accessibility
 - [ ] Audit that every string goes through vue-i18n (English first; the rule and its check
       start in F-1). Full keyboard paths. Visible focus. WCAG AA contrast in both themes.
@@ -606,6 +621,10 @@ Done when: a component sandbox page (dev only) shows every base component in bot
   3. A preset with an unavailable encoder → banner → use the fallback → queue.
   4. Manual crop → magnifier shows the crop lines → the command contains the matching
      `crop=` filter.
+  5. Open `chapters.mkv` → Range *Chapters* 2–3 → the header shows the range and its length,
+     the output name has `{chapters}` = `2-3`, and the command drawer has the matching `-ss`
+     and `-t` → queue → the queued job has the range (F-19, M10;
+     [decision 0074](../decisions/0074-range-selector-in-m10.md)).
 
   (M4 built the set-up and flow 3, in headless Chromium and Firefox, each with its own server;
   [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task M". M6 built flow 1, which
@@ -615,7 +634,7 @@ Done when: a component sandbox page (dev only) shows every base component in bot
   "Task E". M8 built flow 4, which reads the magnifier's canvases back against the frame;
   [decision 0067](../decisions/0067-m8-picture.md), "Task F".)
 - [ ] Each flow comes with its screens: the Playwright set-up and flow 3 in M4, flow 1 in M6,
-      flow 2 in M7, flow 4 in M8. M10 runs all four in Chromium and WebKit
+      flow 2 in M7, flow 4 in M8, flow 5 with F-19 in M10. M10 runs all five in Chromium and WebKit
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).
 
 ### F-18 Naming editor

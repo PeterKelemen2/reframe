@@ -268,5 +268,7 @@ fix round".
   `CurrentUser\My`, `LocalMachine\Root`, `TrustedPublisher`), `cargo-about`, tauri-driver,
   msedgedriver, the agents' clones and outputs under `C:\Users\TestWin\wt` and `w-*`, the
   test user and `C:\ReframeTest`.
-- **Rest of M10**: F-16, F-17 in WebKit, Q-4, Q-5 (the release workflow: package builds,
+- **Rest of M10**: F-19 (the Range selector, added on 2026-11-13 by
+  [0074](decisions/0074-range-selector-in-m10.md); before F-16), F-16, F-17 in WebKit (five
+  flows), Q-4, Q-5 (the release workflow: package builds,
   signing, `latest.json`, source archives), the release checklist.

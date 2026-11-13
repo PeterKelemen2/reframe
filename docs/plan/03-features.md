@@ -4,7 +4,7 @@ This is the functional spec. Each section says what HandBrake does, what Reframe
 how it should behave. The core implements the logic ([05-core.md](05-core.md)). The frontend
 renders it ([06-web-app.md](06-web-app.md)).
 
-Contents: [App layout](#app-layout) · [Summary](#summary) · [Dimensions](#dimensions) ·
+Contents: [App layout](#app-layout) · [Summary](#summary) · [Range](#range) · [Dimensions](#dimensions) ·
 [Filters](#filters) · [Video](#video) · [Advanced encoder options](#advanced-encoder-options) ·
 [Audio](#audio) · [Subtitles](#subtitles) · [Track metadata & languages](#track-metadata--languages) ·
 [Chapters](#chapters) · [Tags](#tags) · [Output naming](#output-naming) · [Preview](#preview) · [Presets](#presets) ·
@@ -60,6 +60,33 @@ Batch / season editing has its own document: [04-batch-mode.md](04-batch-mode.md
 
 Done when: every card updates live while you edit other tabs, and every chip and issue links
 to the field it describes.
+
+---
+
+## Range
+
+HandBrake encodes a range of chapters, seconds or frames. Reframe does the same, with the
+selector in the source header ([decision 0074](../decisions/0074-range-selector-in-m10.md)).
+
+- A button between the duration and the preset picker shows the range ("Whole source",
+  "Chapters 2–3", "0:01:30 – 0:45:00", "Frames 0 – 1440") and the length it covers. It opens a
+  popover with the modes **Whole source**, **Chapters**, **Seconds** and **Frames**.
+- **Chapters**: *From* and *To* list each chapter's number, name and start time, 1-based and
+  inclusive. Disabled, with the reason, when the source has no chapters.
+- **Seconds**: *Start* and *End* accept `H:MM:SS.mmm`, `MM:SS` or seconds. An empty *End* means
+  to the end.
+- **Frames**: *From frame* (0-based) and *To frame (not included)*. Disabled, with the reason,
+  when the video has no frame rate.
+- Changing the mode keeps the span when the source gives the data (chapter times, the frame
+  rate).
+- A range outside the source is a validation issue with a fix ("Encode the whole source", "End
+  at the end of the source"). It is not a blocked input.
+- A range is part of the job, not of a preset, so picking a preset keeps it. In a batch group
+  the range is always the shown file's own override (a group's template has no range).
+- The Summary, the `{chapters}` naming variable, the estimate and the command follow the range.
+
+Done when: picking chapters 2–3 of a source updates the header, the Summary, the output name
+and the command at once, and the encoded file lasts as long as those chapters.
 
 ---
 
