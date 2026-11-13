@@ -6,7 +6,9 @@ import { FakeServer, type Recorded } from '@/api/testing/fakes'
 import type {
   BatchGroup,
   BatchRun,
+  Fix,
   JobDraft,
+  JobSettings,
   JobTemplate,
   JsonPatchOp,
   Resolution,
@@ -15,7 +17,7 @@ import type { Range } from '@/components/range/range'
 import { applyOps } from '@/editor/patch'
 import { sampleDraft, sampleJob, samplePreset } from '@/editor/testing/samples'
 
-import { useEditorStore } from './editor'
+import { EDIT_DEBOUNCE, useEditorStore } from './editor'
 import { useSourcesStore } from './sources'
 import { useToastStore } from './toasts'
 
@@ -23,6 +25,11 @@ const PRESET = 'h265-mkv-1080p'
 const IDS = ['e1', 'e2']
 const CHAPTERS: Range = { kind: 'chapters', start: 2, end: 3 }
 const TIME: Range = { kind: 'time', start: 1, end: 4 }
+const WHOLE_SOURCE: Fix = {
+  label: 'Encode the whole source',
+  target: 'job',
+  patch: [{ op: 'replace', path: '/range', value: { kind: 'full' } }],
+}
 
 function pathOf(id: string): string {
   return `/media/${id}.mkv`
@@ -100,6 +107,10 @@ beforeEach(() => {
         rows: source_ids.map((id) => row(template, id, overrides[id])),
         issues: [],
       }
+    })
+    .on('POST /api/batch/derive', (request) => {
+      const { job, base } = body<{ job: JobSettings; base: JobTemplate }>(request)
+      return { ...base, video: { ...job.video!, metadata: {} } }
     })
     .on('POST /api/batch/resolve-run', (request): BatchRun => {
       const { template, source_ids, overrides } = body<ResolveBody>(request)
@@ -214,8 +225,7 @@ describe('the range in a group', () => {
     })
     expect((editor.target as { template: JobTemplate }).template).toEqual(template)
     expect(editor.rangeOverridden).toBe(true)
-    // The shown job of scope group leaves the override out; the range is the file's.
-    expect(editor.job?.range).toEqual({ kind: 'full' })
+    expect(editor.job?.range).toEqual(CHAPTERS)
     expect(editor.range).toEqual(CHAPTERS)
 
     editor.setRange(TIME)
@@ -260,7 +270,7 @@ describe('the range in a group', () => {
     expect(overridesOf(editor).e1).toEqual([name])
   })
 
-  it('reset to group is one undo step, and drops a fix’s whole-source override too', async () => {
+  it('reset to group and a row fix to the whole source: one undo step, no override left', async () => {
     const editor = await edited('file')
     editor.setRange(CHAPTERS)
     editor.resetRangeToGroup()
@@ -269,17 +279,13 @@ describe('the range in a group', () => {
     editor.undo()
     expect(editor.range).toEqual(CHAPTERS)
 
-    // A row fix ("Encode the whole source") leaves an override that says what the group says.
-    await editor.applyRowFix('e1', {
-      label: 'Encode the whole source',
-      target: 'job',
-      patch: [{ op: 'replace', path: '/range', value: { kind: 'full' } }],
-    })
+    // A row fix ("Encode the whole source") leaves no override, as the whole source picked does.
+    await editor.applyRowFix('e1', WHOLE_SOURCE)
     await flush()
-    expect(editor.rangeOverridden).toBe(true)
-    expect(editor.range).toEqual({ kind: 'full' })
-    editor.resetRangeToGroup()
+    expect(editor.rangeOverridden).toBe(false)
     expect(overridesOf(editor)).toEqual({})
+    editor.undo()
+    expect(editor.range).toEqual(CHAPTERS)
   })
 
   it('a whole source picked by hand leaves no override', async () => {
@@ -300,6 +306,127 @@ describe('the range in a group', () => {
     })
     await flush()
     expect(editor.range).toEqual({ kind: 'chapters', start: 2, end: 4 })
+  })
+})
+
+function lastResolve(): ResolveBody {
+  const sent = server.requests.filter((request) => request.path === '/api/batch/resolve')
+  return body<ResolveBody>(sent.at(-1))
+}
+
+function templateOf(editor: ReturnType<typeof useEditorStore>): JobTemplate {
+  return (editor.target as { template: JobTemplate }).template
+}
+
+describe('the shown job of scope group', () => {
+  const FULL_RANGE: Range = { kind: 'full' }
+
+  it('has the file’s range through undo, redo, a scope change and another file', async () => {
+    const editor = await edited()
+    editor.setRange(CHAPTERS)
+    expect(editor.job?.range).toEqual(CHAPTERS)
+    await flush()
+    expect(editor.job?.range).toEqual(CHAPTERS)
+
+    editor.undo()
+    expect(editor.job?.range).toEqual(FULL_RANGE)
+    await flush()
+    expect(editor.job?.range).toEqual(FULL_RANGE)
+    editor.redo()
+    expect(editor.job?.range).toEqual(CHAPTERS)
+    await flush()
+    expect(editor.job?.range).toEqual(CHAPTERS)
+
+    await editor.setScope('file')
+    await flush()
+    expect(editor.job?.range).toEqual(CHAPTERS)
+    await editor.setScope('group')
+    await flush()
+    expect(editor.job?.range).toEqual(CHAPTERS)
+
+    await editor.showFile('e2')
+    await flush()
+    expect(editor.job?.range).toEqual(FULL_RANGE)
+    await editor.showFile('e1')
+    await flush()
+    expect(editor.job?.range).toEqual(CHAPTERS)
+  })
+
+  it('is resolved with the file’s range and none of its other overrides', async () => {
+    const editor = await edited()
+    editor.setNameField('e1', 'episode', '7')
+    editor.setRange(CHAPTERS)
+    await flush()
+    expect(lastResolve().overrides).toEqual({
+      e1: [{ op: 'replace', path: '/job/range', value: CHAPTERS }],
+    })
+    expect(editor.job?.output?.naming?.field_overrides).toEqual({})
+  })
+
+  it('keeps the range out of the template when an edit is derived into it', async () => {
+    const editor = await edited()
+    editor.setRange(CHAPTERS)
+    editor.set('/video/rate_control/value', 19)
+    await vi.advanceTimersByTimeAsync(EDIT_DEBOUNCE + 5)
+
+    expect(useToastStore().items).toEqual([])
+    expect(templateOf(editor).video?.rate_control).toMatchObject({ value: 19 })
+    expect(templateOf(editor)).not.toHaveProperty('range')
+    expect(overridesOf(editor)).toEqual({
+      e1: [{ op: 'replace', path: '/job/range', value: CHAPTERS }],
+    })
+    expect(editor.job?.range).toEqual(CHAPTERS)
+    expect(editor.get('/video/rate_control/value')).toBe(19)
+
+    editor.undo()
+    await flush()
+    expect(editor.get('/video/rate_control/value')).not.toBe(19)
+    expect(editor.job?.range).toEqual(CHAPTERS)
+    editor.undo()
+    await flush()
+    expect(editor.job?.range).toEqual(FULL_RANGE)
+  })
+
+  it('takes a range fix into the file’s override: no toast, one undo step each', async () => {
+    const editor = await edited()
+    editor.setRange({ kind: 'chapters', start: 2, end: 9 })
+    await flush()
+    const toChapter4: Range = { kind: 'chapters', start: 2, end: 4 }
+    await editor.applyFix({
+      label: 'End at chapter 4',
+      target: 'job',
+      patch: [{ op: 'replace', path: '/range/end', value: 4 }],
+    })
+    expect(useToastStore().items).toEqual([])
+    expect(overridesOf(editor)).toEqual({
+      e1: [{ op: 'replace', path: '/job/range', value: toChapter4 }],
+    })
+    expect(editor.job?.range).toEqual(toChapter4)
+
+    await editor.applyFix(WHOLE_SOURCE)
+    await flush()
+    expect(useToastStore().items).toEqual([])
+    expect(overridesOf(editor)).toEqual({})
+    expect(editor.job?.range).toEqual(FULL_RANGE)
+
+    editor.undo()
+    expect(editor.range).toEqual(toChapter4)
+    editor.undo()
+    expect(editor.range).toEqual({ kind: 'chapters', start: 2, end: 9 })
+  })
+})
+
+describe('a fix to the whole source in scope file', () => {
+  it('leaves no range override, in one undo step', async () => {
+    const editor = await edited('file')
+    editor.setRange(CHAPTERS)
+    await editor.applyFix(WHOLE_SOURCE)
+    expect(overridesOf(editor)).toEqual({})
+    expect(editor.rangeOverridden).toBe(false)
+    expect(editor.job?.range).toEqual({ kind: 'full' })
+    editor.undo()
+    expect(editor.range).toEqual(CHAPTERS)
+    expect(editor.rangeOverridden).toBe(true)
   })
 })
 

@@ -74,8 +74,8 @@ export type EditorTarget =
       /** The file the tabs show: the group's representative until another is chosen. */
       sourceId: string
       /**
-       * What the tabs show and edit. Scope `group`: the template resolved in `sourceId` without
-       * its override; scope `file`: that file's job with its override.
+       * What the tabs show and edit. Scope `group`: the template resolved in `sourceId` with only
+       * the range of its override; scope `file`: that file's job with its override.
        */
       job: JobSettings
       template: JobTemplate
@@ -182,15 +182,19 @@ function draftOf(row: Resolution): JobDraft {
   return row as unknown as JobDraft
 }
 
-/** `batch/resolve` of the template in one file, with its override or without; frozen. */
+/**
+ * `batch/resolve` of the template in one file, frozen: with the file's whole override for scope
+ * `file`, with its range only for scope `group`, without it for `null`.
+ */
 async function resolved(
   client: typeof api,
   document: GroupDocument,
   sourceId: string,
-  withOverride: boolean,
+  scope: GroupScope | null,
   signal?: AbortSignal,
 ): Promise<Resolution> {
-  const override = withOverride ? (document.overrides[sourceId] ?? []) : []
+  const ops = document.overrides[sourceId] ?? []
+  const override = scope === 'file' ? ops : scope === 'group' ? rangeOps(ops) : []
   const body = {
     template: document.template,
     source_ids: [sourceId],
@@ -211,22 +215,49 @@ async function derived(
   return deepFreeze(cloneJson(unwrap(await api.POST('/api/batch/derive', { body }))))
 }
 
+/** A file's override operations on its range. */
+function rangeOps(override: readonly JsonPatchOp[]): JsonPatchOp[] {
+  return override.filter((op) => op.op !== 'test' && within(op.path, FILE_RANGE))
+}
+
+/** The range a file's override gives (a template has none); `null` when it does not apply. */
+function rangeOf(override: readonly JsonPatchOp[]): Range | null {
+  try {
+    return applyOps({ job: { range: FULL } }, rangeOps(override)).job.range
+  } catch (error) {
+    if (!(error instanceof PatchError)) throw error
+    return null
+  }
+}
+
+/** `document` with `ops` as the file's override; a range that is the whole source is none. */
 function overriddenWith(
   document: GroupDocument,
   sourceId: string,
   ops: JsonPatchOp[],
 ): GroupDocument {
+  const own =
+    rangeOps(ops).length > 0 && sameJson(rangeOf(ops), FULL)
+      ? withoutOps(ops, (op) => within(op.path, FILE_RANGE))
+      : ops
   const { [sourceId]: _old, ...others } = document.overrides
   return {
     ...document,
-    overrides: ops.length > 0 ? { ...document.overrides, [sourceId]: ops } : others,
+    overrides: own.length > 0 ? { ...document.overrides, [sourceId]: own } : others,
   }
 }
 
-/** The shown file's override operations on its range. */
-function rangeOps(current: GroupTarget): JsonPatchOp[] {
-  return (current.overrides[current.sourceId] ?? []).filter(
-    (op) => op.op !== 'test' && within(op.path, FILE_RANGE),
+/** `job` with the range of the state's shown file, at once: the resolve follows. */
+function withFileRange(job: JobSettings, state: GroupState): JobSettings {
+  const range = rangeOf(state.document.overrides[state.sourceId] ?? [])
+  if (range === null || sameJson(job.range ?? FULL, range)) return job
+  return deepFreeze({ ...job, range })
+}
+
+/** Every operation is on the range: in a group it goes into the shown file's override. */
+function onRange(ops: readonly JsonPatchOp[]): boolean {
+  return ops.every(
+    (op) => within(op.path, '/range') && (!('from' in op) || within(op.from, '/range')),
   )
 }
 
@@ -461,6 +492,10 @@ export const useEditorStore = defineStore('editor', () => {
   function patch(ops: JsonPatchOp[], options?: PatchOptions): void {
     const current = target.value
     if (current === null) throw new Error('editor.patch: no job is open')
+    if (current.kind === 'group' && onRange(ops)) {
+      setRange(applyOps({ range: range.value }, ops).range ?? FULL)
+      return
+    }
     const next = applyOps(current.job, ops)
     const key = options?.coalesce ?? null
     if (diffJson(current.job, next).length === 0) {
@@ -772,7 +807,7 @@ export const useEditorStore = defineStore('editor', () => {
     async send(signal) {
       const state = requireGroup('resolve')
       const { sourceId, scope } = state
-      const row = await resolved(apiQuiet, state.document, sourceId, scope === 'file', signal)
+      const row = await resolved(apiQuiet, state.document, sourceId, scope, signal)
       return { row, state, sourceId, scope }
     },
     done({ row, state, sourceId, scope }) {
@@ -856,7 +891,7 @@ export const useEditorStore = defineStore('editor', () => {
   function show(state: GroupState): void {
     const current = target.value
     if (current?.kind !== 'group') return
-    target.value = groupTarget(state, current.job)
+    target.value = groupTarget(state, withFileRange(current.job, state))
     shown.schedule(0)
     requestMatrix()
   }
@@ -1122,7 +1157,7 @@ export const useEditorStore = defineStore('editor', () => {
         const sourceId = memberIdsOf(found, sources).includes(state.sourceId)
           ? state.sourceId
           : representativeOf(found, sources)
-        const row = await resolved(api, state.document, sourceId, state.scope === 'file')
+        const row = await resolved(api, state.document, sourceId, state.scope)
         return { state, version, sourceId, row }
       },
       ({ state, version, sourceId, row }) => {
@@ -1146,7 +1181,7 @@ export const useEditorStore = defineStore('editor', () => {
     await load(
       async () => {
         const version = state.version
-        return { version, row: await resolved(api, state.document, sourceId, scope === 'file') }
+        return { version, row: await resolved(api, state.document, sourceId, scope) }
       },
       ({ version, row }) => {
         if (editedState() !== state) return
@@ -1296,40 +1331,32 @@ export const useEditorStore = defineStore('editor', () => {
 
   /**
    * The range the shown file encodes: the job's. In a group it is the whole source with the
-   * shown file's override (a template has no range), known before the shown job is resolved
-   * again, and also in scope `group`, whose shown job leaves the override out.
+   * shown file's override (a template has no range), known before the shown job is resolved.
    */
   const range = computed<Range>(() => {
     const current = target.value
     if (current === null) return FULL
     if (current.kind === 'job') return current.job.range ?? FULL
-    try {
-      return applyOps({ job: { range: FULL } }, rangeOps(current)).job.range
-    } catch (error) {
-      if (!(error instanceof PatchError)) throw error
-      return current.job.range ?? FULL
-    }
+    return rangeOf(current.overrides[current.sourceId] ?? []) ?? current.job.range ?? FULL
   })
 
   /** The edited group's shown file has a range of its own. */
   const rangeOverridden = computed(() => {
     const current = target.value
-    return current?.kind === 'group' && rangeOps(current).length > 0
+    return (
+      current?.kind === 'group' && rangeOps(current.overrides[current.sourceId] ?? []).length > 0
+    )
   })
 
   /** The shown file's range override becomes `next` (none for the whole source); one undo step. */
   function overrideRange(current: GroupTarget, value: Range): void {
-    const state = requireGroup('setRange')
     const next = deepFreeze(cloneJson(value))
-    changeOverride(current.sourceId, (ops) => {
-      const kept = withoutOps(ops, (op) => within(op.path, FILE_RANGE))
-      return next.kind === 'full'
-        ? kept
-        : ordered([...kept, { op: 'replace', path: FILE_RANGE, value: next }])
-    })
-    if (state.scope === 'file') {
-      target.value = groupTarget(state, deepFreeze({ ...current.job, range: next }))
-    }
+    changeOverride(current.sourceId, (ops) =>
+      ordered([
+        ...withoutOps(ops, (op) => within(op.path, FILE_RANGE)),
+        { op: 'replace', path: FILE_RANGE, value: next },
+      ]),
+    )
   }
 
   /**
@@ -1361,7 +1388,7 @@ export const useEditorStore = defineStore('editor', () => {
       refuse(text('editor.group.trackListPerFile'), text('editor.group.trackListPerFileDetail'))
       return
     }
-    const row = await resolved(api, state.document, sourceId, true)
+    const row = await resolved(api, state.document, sourceId, 'file')
     changeOverride(sourceId, (ops) =>
       mergeOverride(ops, fix.patch.map(inJob), row.job as JobSettings),
     )
@@ -1414,7 +1441,7 @@ export const useEditorStore = defineStore('editor', () => {
     const pointer = pointerOf(path)
     const value = get(pointer)
     await settled()
-    const groupJob = (await resolved(api, state.document, sourceId, false)).job as JobSettings
+    const groupJob = (await resolved(api, state.document, sourceId, null)).job as JobSettings
     let from: JobSettings
     try {
       const op = hasPointer(groupJob, pointer) ? 'replace' : 'add'
