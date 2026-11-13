@@ -293,11 +293,11 @@ describe('the other native integrations', () => {
 
   it('puts the progress on the taskbar, and a failure there breaks nothing', async () => {
     const platform = shell()
-    platform.setTaskbarProgress(0.42)
-    platform.setTaskbarProgress(null)
+    platform.setTaskbarProgress(0.42, '42%')
+    platform.setTaskbarProgress(null, null)
     expect(sent('set_taskbar_progress')).toEqual([{ value: 0.42 }, { value: null }])
     answers.set_taskbar_progress = () => Promise.reject('no window')
-    expect(() => platform.setTaskbarProgress(0.5)).not.toThrow()
+    expect(() => platform.setTaskbarProgress(0.5, '50%')).not.toThrow()
     await flushPromises()
     expect(console.error).toHaveBeenCalled()
   })

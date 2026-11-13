@@ -25,6 +25,7 @@ import { useSystemStore } from '@/stores/system'
 import { useFirstRun } from './firstRun'
 import { focusWorkspace } from './focus'
 import FocusSafeButton from './FocusSafeButton'
+import { formatList } from './format'
 
 type ToolInfo = Schemas['ToolInfo']
 
@@ -63,10 +64,13 @@ const canBundle = computed(() => {
 })
 const canChoosePath = computed(() => desktop.value && setByEnv.value.length === 0)
 const variables = computed(() =>
-  (setByEnv.value.length > 0 ? setByEnv.value : failing.value)
-    .map((tool) => tool.env_var)
-    .filter((name): name is string => Boolean(name))
-    .join(', '),
+  formatList(
+    (setByEnv.value.length > 0 ? setByEnv.value : failing.value)
+      .map((tool) => tool.env_var)
+      .filter((name): name is string => Boolean(name)),
+    locale.value,
+    'and',
+  ),
 )
 const note = computed(() => {
   if (welcome.value) return null

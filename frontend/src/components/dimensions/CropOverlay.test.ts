@@ -82,8 +82,11 @@ describe('the crop overlay', () => {
       tabindex: '0',
       'aria-label': 'Top crop edge',
       'aria-valuenow': '22',
-      'aria-valuemax': '180',
+      'aria-valuemin': '0',
+      // The largest top crop that leaves one chroma row above the bottom crop of 24.
+      'aria-valuemax': '154',
     })
+    expect(handle(wrapper, 'left').attributes('aria-valuemax')).toBe('318')
     expect(handle(wrapper, 'right').attributes('aria-orientation')).toBe('horizontal')
   })
 
@@ -104,6 +107,35 @@ describe('the crop overlay', () => {
     editor.undo()
     editor.undo()
     expect(editor.get('/dimensions/crop/rect')).toMatchObject({ top: 22, bottom: 24 })
+  })
+
+  it('moves an edge to either end of its range with Home and End', async () => {
+    const { wrapper, editor } = await mountOverlay(manualJob())
+    const top = handle(wrapper, 'top')
+    const outside = vi.fn<() => void>()
+    wrapper.element.parentElement?.addEventListener('keydown', outside)
+    await top.trigger('keydown', { key: 'End' })
+    expect(editor.get('/dimensions/crop/rect')).toMatchObject({ top: 154, bottom: 24 })
+    expect(top.attributes('aria-valuenow')).toBe('154')
+    await top.trigger('keydown', { key: 'Home' })
+    expect(editor.get('/dimensions/crop/rect')).toMatchObject({ top: 0, bottom: 24 })
+    expect(outside).not.toHaveBeenCalled()
+  })
+
+  it('moves an edge eight steps a page, the vertical ones the way the key points', async () => {
+    const { wrapper, editor } = await mountOverlay(manualJob())
+    const rect = () => editor.get('/dimensions/crop/rect')
+    await handle(wrapper, 'top').trigger('keydown', { key: 'PageDown' })
+    expect(rect()).toMatchObject({ top: 22 + 16 })
+    await handle(wrapper, 'top').trigger('keydown', { key: 'PageUp' })
+    expect(rect()).toMatchObject({ top: 22 })
+    await handle(wrapper, 'bottom').trigger('keydown', { key: 'PageUp' })
+    expect(rect()).toMatchObject({ bottom: 24 + 16 })
+    await handle(wrapper, 'right').trigger('keydown', { key: 'PageUp' })
+    await handle(wrapper, 'left').trigger('keydown', { key: 'PageUp' })
+    expect(rect()).toMatchObject({ left: 16, right: 16 })
+    await handle(wrapper, 'left').trigger('keydown', { key: 'PageDown' })
+    expect(rect()).toMatchObject({ left: 0 })
   })
 
   it('shows nothing while the video is copied', async () => {

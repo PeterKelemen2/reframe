@@ -15,8 +15,11 @@ export interface Platform {
   openExternal(target: string): Promise<void>
   /** Web: the Notification API. */
   notify(title: string, body: string): Promise<void>
-  /** `value` is 0…1, or `null` to clear. Web: shown in `document.title`. */
-  setTaskbarProgress(value: number | null): void
+  /**
+   * `value` is 0…1, or `null` to clear; `label` is it as the user reads it (`42%`). Web: the
+   * label is shown in `document.title`.
+   */
+  setTaskbarProgress(value: number | null, label: string | null): void
   /** What only the desktop shell has. Web: `null`. */
   desktop: DesktopShell | null
 }

@@ -148,6 +148,25 @@ describe('the language picker', () => {
     expect(activeTag()).toBe('fr')
   })
 
+  it('opens on the chosen language again after a search, so Enter keeps it', async () => {
+    const { changes } = await mountPicker({ modelValue: 'hu' })
+    await open()
+    await type('fren')
+    await key(search(), 'Enter')
+    expect(changes).toEqual(['fr'])
+    await key(trigger(), 'ArrowDown')
+    expect(search()?.value).toBe('')
+    expect(activeTag()).toBe('fr')
+    await key(search(), 'Enter')
+    expect(changes).toEqual(['fr'])
+  })
+
+  it('keeps the list out of the tab order: the search moves through it', async () => {
+    await mountPicker()
+    await open()
+    expect($('[role="listbox"]')?.getAttribute('tabindex')).toBe('-1')
+  })
+
   it('lists the favourites of the settings first, and a new favourite at once', async () => {
     await mountPicker({}, ['pt-BR', 'hu'])
     await open()

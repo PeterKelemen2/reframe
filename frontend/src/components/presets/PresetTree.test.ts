@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 
-import { mountShell } from '@/components/shell/testing'
+import { mountShell, setAppLocale } from '@/components/shell/testing'
 import type { PresetCategory } from '@/stores/presets'
 
 import PresetTree from './PresetTree.vue'
@@ -74,6 +74,24 @@ describe('the preset tree', () => {
     await press('End')
     expect(focused()).toBe('u1')
     expect(wrapper.emitted('select')).toEqual([['very-fast'], ['u1'], ['u1']])
+  })
+
+  it('moves to the item whose name starts with the typed keys', async () => {
+    const wrapper = await mountTree()
+    ;(wrapper.find('[data-preset="fast"]').element as HTMLElement).focus()
+    await press('m')
+    expect(focused()).toBe('u1')
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    await press('v')
+    expect(focused()).toBe('very-fast')
+    expect(wrapper.emitted('select')).toEqual([['u1'], ['very-fast']])
+  })
+
+  it('counts the presets of a category as the locale writes numbers', async () => {
+    const wrapper = await mountTree()
+    setAppLocale(wrapper, 'ar-EG')
+    await nextTick()
+    expect(wrapper.find('[data-category="General"] .preset-tree__count').text()).toBe('٢')
   })
 
   it('closes and opens a category with left and right, and goes from a preset to its category', async () => {

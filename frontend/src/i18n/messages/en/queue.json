@@ -15,7 +15,8 @@
     "encode": "Encoding",
     "mkvpropedit": "Writing tags",
     "finalize": "Finishing",
-    "of": "step {n} of {count}"
+    "of": "step {n} of {count}",
+    "withKind": "{kind} · {step}"
   },
   "units": {
     "fps": "{value} fps",
@@ -176,6 +177,7 @@
       "broken": "{name} does not work"
     },
     "encoders": "Encoder status changed ({n})",
+    "encoderLine": "{encoder}: {state}",
     "encoder": {
       "available": "available",
       "unavailable": "unavailable",

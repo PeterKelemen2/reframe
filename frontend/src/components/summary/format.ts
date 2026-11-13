@@ -2,6 +2,13 @@ import type { Schemas } from '@/api/types'
 
 /** `useI18n().t`, for the formatters that name a unit. */
 export type Translate = (key: string, named?: Record<string, unknown>) => string
+/** `useI18n().n`: numbers in the app's locale. */
+export type FormatNumber = (value: number, options: Intl.NumberFormatOptions) => string
+
+/** `value` with exactly `digits` decimals, in the app's locale. */
+export function decimals(value: number, digits: number, n: FormatNumber): string {
+  return n(value, { minimumFractionDigits: digits, maximumFractionDigits: digits })
+}
 
 type Rational = Schemas['Rational']
 type ColorInfo = Schemas['ColorInfo']
@@ -26,10 +33,9 @@ const HDR_FORMATS: Record<Schemas['HdrFormat'], string> = {
 }
 
 /** `23.976`, `25`, `29.97`; `null` for an unknown rate. */
-export function formatRate(rate: Rational | null | undefined): string | null {
+export function formatRate(rate: Rational | null | undefined, n: FormatNumber): string | null {
   if (!rate || rate.num <= 0 || rate.den <= 0) return null
-  const value = rate.num / rate.den
-  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(3)))
+  return n(rate.num / rate.den, { maximumFractionDigits: 3 })
 }
 
 /** `BT.2020 PQ`, `BT.709`; `null` when the stream does not say (the transfer of SDR is not named). */
@@ -45,12 +51,12 @@ export function hdrNames(hdr: HdrInfo | null | undefined): string[] {
 }
 
 /** The parts of `HEVC Main 10 · 3840×2160 · 23.976 fps · HDR10 · BT.2020 PQ`. */
-export function videoLine(video: VideoStream, t: Translate): string[] {
+export function videoLine(video: VideoStream, t: Translate, n: FormatNumber): string[] {
   const parts: string[] = []
   const codec = video.display_codec || video.codec
   if (codec) parts.push(codec)
   parts.push(`${video.width}×${video.height}`)
-  const rate = formatRate(video.avg_frame_rate ?? video.frame_rate)
+  const rate = formatRate(video.avg_frame_rate ?? video.frame_rate, n)
   if (rate !== null) {
     parts.push(
       video.vfr ? t('summary.units.fpsVariable', { rate }) : t('summary.units.fps', { rate }),
@@ -65,22 +71,23 @@ export function videoLine(video: VideoStream, t: Translate): string[] {
 const KIB = 1024
 
 /** Binary units, as the file managers of Linux and Windows count them. */
-export function formatBytes(bytes: number, t: Translate): string {
-  if (bytes < KIB) return t('summary.units.bytes', { value: Math.round(bytes) })
-  if (bytes < KIB ** 2) return t('summary.units.kib', { value: Math.round(bytes / KIB) })
-  if (bytes < KIB ** 3) return t('summary.units.mib', { value: (bytes / KIB ** 2).toFixed(1) })
-  return t('summary.units.gib', { value: (bytes / KIB ** 3).toFixed(2) })
+export function formatBytes(bytes: number, t: Translate, n: FormatNumber): string {
+  const fixed = (value: number, digits: number) => decimals(value, digits, n)
+  if (bytes < KIB) return t('summary.units.bytes', { value: fixed(bytes, 0) })
+  if (bytes < KIB ** 2) return t('summary.units.kib', { value: fixed(bytes / KIB, 0) })
+  if (bytes < KIB ** 3) return t('summary.units.mib', { value: fixed(bytes / KIB ** 2, 1) })
+  return t('summary.units.gib', { value: fixed(bytes / KIB ** 3, 2) })
 }
 
 /** Bits per second as `754 kb/s` or `12.3 Mb/s`. */
-export function formatBitrate(bitsPerSecond: number, t: Translate): string {
+export function formatBitrate(bitsPerSecond: number, t: Translate, n: FormatNumber): string {
   if (bitsPerSecond < 1_000_000) {
-    return t('summary.units.kbps', { value: Math.round(bitsPerSecond / 1000) })
+    return t('summary.units.kbps', { value: decimals(bitsPerSecond / 1000, 0, n) })
   }
-  return t('summary.units.mbps', { value: (bitsPerSecond / 1_000_000).toFixed(1) })
+  return t('summary.units.mbps', { value: decimals(bitsPerSecond / 1_000_000, 1, n) })
 }
 
 /** `2.40:1`. */
-export function formatAspect(ratio: number): string {
-  return `${ratio.toFixed(2)}:1`
+export function formatAspect(ratio: number, t: Translate, n: FormatNumber): string {
+  return t('summary.units.aspect', { ratio: decimals(ratio, 2, n) })
 }

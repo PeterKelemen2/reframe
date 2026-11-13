@@ -16,6 +16,7 @@
   "linkFailed": "The clip cannot be opened: {reason}",
   "compareFrames": "Compare frames",
   "play": "Play the clip",
+  "player": "The preview clip",
   "openExternal": "Open in external player",
   "playback": {
     "unsupported": "this browser cannot play {codec} video",

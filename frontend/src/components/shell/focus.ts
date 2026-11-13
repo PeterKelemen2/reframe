@@ -25,9 +25,9 @@ const FOCUSABLE = [
 ].join(', ')
 
 /**
- * Focuses the first control inside a popover that has just opened, else the panel itself (it
- * gets `tabindex="-1"`). PrimeVue's popover opens at the end of the page and keeps a focus that
- * is inside it there, but it does not take the focus from its trigger.
+ * Focuses the first control inside a popover that has just opened, else the panel itself.
+ * PrimeVue's popover opens at the end of the page and keeps a focus that is inside it there, but
+ * it does not take the focus from its trigger.
  */
 export function focusFirstIn(panel: HTMLElement | null): void {
   if (panel === null) return
@@ -38,6 +38,8 @@ export function focusFirstIn(panel: HTMLElement | null): void {
     first.focus()
     return
   }
-  panel.tabIndex = -1
+  // In the Tab order: the popover's focus trap sends Tab round to it, and without a stop
+  // inside, Tab would rest on the trap's invisible guard, where Escape loses the focus.
+  panel.tabIndex = 0
   panel.focus()
 }

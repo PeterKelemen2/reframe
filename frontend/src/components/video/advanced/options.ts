@@ -1,4 +1,5 @@
 import type { EncoderOption, JobSettings } from '@/api/types'
+import type { FormatNumber } from '@/components/summary/format'
 import type { ChoiceSetting, VideoEncoderDef } from '@/components/video/encoders'
 
 type Video = NonNullable<JobSettings['video']>
@@ -91,12 +92,21 @@ export function defaultValue(
   return preset === null ? undefined : fallback.values[preset]
 }
 
-export function valueText(option: EncoderOption, value: OptionValue, t: Translate): string {
+export function valueText(
+  option: EncoderOption,
+  value: OptionValue,
+  t: Translate,
+  n: FormatNumber,
+): string {
   if (typeof value === 'boolean') return value ? t('advanced.value.on') : t('advanced.value.off')
   if (option.type === 'enum') {
     return option.choices?.find((choice) => choice.value === String(value))?.label ?? String(value)
   }
-  return option.unit ? `${value} ${option.unit}` : String(value)
+  const shown =
+    typeof value === 'number'
+      ? n(value, { maximumFractionDigits: FLOAT_DIGITS, useGrouping: false })
+      : value
+  return option.unit ? t('advanced.value.unit', { value: shown, unit: option.unit }) : shown
 }
 
 /** What the encoder does while the option is not set: "4 frames (preset Slow)". */
@@ -105,11 +115,12 @@ export function defaultText(
   video: Video,
   encoder: VideoEncoderDef,
   t: Translate,
+  n: FormatNumber,
 ): string {
   const fallback = option.default
   switch (fallback.kind) {
     case 'fixed':
-      return valueText(option, fallback.value, t)
+      return valueText(option, fallback.value, t, n)
     case 'encoder':
       return fallback.note
         ? t('advanced.default.encoderNote', { note: fallback.note })
@@ -122,7 +133,7 @@ export function defaultText(
       const text =
         value === undefined
           ? t('advanced.default.notAtPreset', { preset: named })
-          : t('advanced.default.preset', { value: valueText(option, value, t), preset: named })
+          : t('advanced.default.preset', { value: valueText(option, value, t, n), preset: named })
       const tune = video.tune ?? null
       if (tune === null || !(fallback.tunes ?? []).includes(tune)) return text
       return t('advanced.default.tuned', { text, tune: choiceLabel(encoder.tunes, tune) })

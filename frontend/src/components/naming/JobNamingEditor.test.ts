@@ -228,6 +228,10 @@ describe('JobNamingEditor', () => {
     await settle()
     expect(editor.job?.output?.path).toBe('/picked/Hacksaw.Ridge.y.mkv')
     expect(wrapper.get('[data-testid="job-folder"]').text()).toBe('/picked')
+    // A screen reader reads the folder and where it comes from as separate words.
+    expect(wrapper.get('[data-testid="job-folder"]').element.parentElement?.textContent).toBe(
+      '/picked chosen for this file',
+    )
   })
 
   it('previews a per-file field override and keeps it in the job', async () => {

@@ -4,6 +4,7 @@ import { computed, nextTick, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { Preset } from '@/api/types'
+import { createTypeahead } from '@/components/shell/typeahead'
 import type { PresetCategory } from '@/stores/presets'
 
 /**
@@ -24,7 +25,7 @@ const emit = defineEmits<{
   remove: [id: string]
 }>()
 
-const { t } = useI18n()
+const { t, n } = useI18n()
 const id = useId()
 
 type Item =
@@ -96,6 +97,12 @@ async function focus(item: Item): Promise<void> {
   elements.get(item.key)?.focus()
 }
 
+const typeahead = createTypeahead()
+
+function itemName(item: Item): string {
+  return item.kind === 'category' ? item.name : item.preset.name
+}
+
 function onKeydown(event: KeyboardEvent): void {
   const items = visible.value
   const index = items.findIndex((item) => item.key === tabKey.value)
@@ -139,6 +146,10 @@ function onKeydown(event: KeyboardEvent): void {
       event.preventDefault()
       emit('remove', item.preset.id)
       return
+    default: {
+      const found = typeahead(event, items.map(itemName), index)
+      if (found !== null) move(items[found])
+    }
   }
 }
 
@@ -187,7 +198,7 @@ defineExpose({ focusPreset })
       >
         <ChevronRight class="preset-tree__chevron" :size="16" aria-hidden="true" />
         <span :id="`${id}-c${index}`">{{ category.name }}</span>
-        <span class="preset-tree__count">{{ category.presets.length }}</span>
+        <span class="preset-tree__count">{{ n(category.presets.length) }}</span>
       </div>
       <ul v-if="!collapsed.has(category.name)" role="group" class="preset-tree__group">
         <li
