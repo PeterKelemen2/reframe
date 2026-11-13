@@ -75,7 +75,7 @@ describe('the Summary’s range', () => {
     expect(text(estimate, '[data-field="basis"]')).toContain('for 0:01')
   })
 
-  it('is the shown file’s own in a group, also where the shown job leaves it out', async () => {
+  it('is the shown file’s own in a group, in scope group too', async () => {
     const { source, estimate, editor } = await mountCards()
     useSourcesStore().grouping = { groups: [rangeGroup()], issues: [] }
     await editor.editGroup('g1')
@@ -90,7 +90,7 @@ describe('the Summary’s range', () => {
     editor.setRange({ kind: 'chapters', start: 2, end: 3 })
     // The shown job comes back from the server with the template's bitrate.
     await vi.waitFor(() => expect(estimate.find('[data-field="basis"]').exists()).toBe(true))
-    expect(editor.job?.range).toEqual({ kind: 'full' })
+    expect(editor.job?.range).toEqual({ kind: 'chapters', start: 2, end: 3 })
     expect(text(source, '[data-field="range"]')).toBe('Chapters 2–3 (0:03)')
     expect(text(estimate, '[data-field="basis"]')).toContain('for 0:03')
   })
