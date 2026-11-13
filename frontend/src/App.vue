@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { RouterView, useRoute } from 'vue-router'
 
 import { desktopBackend } from '@/api/boot'
@@ -26,6 +27,7 @@ import { useSystemStore } from '@/stores/system'
 const system = useSystemStore()
 const queue = useQueueStore()
 const route = useRoute()
+const { n } = useI18n()
 
 // Follows the theme and density saved in the server's settings.
 useTheme()
@@ -62,7 +64,11 @@ function answerQuit(choice: QuitAnswer): void {
 
 watch(
   () => queue.overallProgress,
-  (value) => platform.setTaskbarProgress(value),
+  (value) =>
+    platform.setTaskbarProgress(
+      value,
+      value === null ? null : n(value, { style: 'percent', maximumFractionDigits: 0 }),
+    ),
   { immediate: true },
 )
 </script>

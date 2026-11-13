@@ -17,6 +17,7 @@ import type { Preset, Schemas } from '@/api/types'
 import KeyValue from '@/components/base/KeyValue.vue'
 import Section from '@/components/base/Section.vue'
 import FocusSafeButton from '@/components/shell/FocusSafeButton'
+import { formatList } from '@/components/shell/format'
 import { useDefaultsStore } from '@/stores/defaults'
 import { useSystemStore } from '@/stores/system'
 
@@ -42,7 +43,7 @@ const emit = defineEmits<{
   export: []
 }>()
 
-const { t } = useI18n()
+const { t, n, locale } = useI18n()
 const system = useSystemStore()
 const defaultsDialog = useDefaultsStore()
 
@@ -64,12 +65,13 @@ const video = computed(() => {
   const control = settings.rate_control
   if (control === undefined) return name
   if (control.mode === 'bitrate') {
-    return t('presets.details.videoBitrate', { encoder: name, kbps: control.kbps })
+    return t('presets.details.videoBitrate', { encoder: name, kbps: n(control.kbps) })
   }
-  const scale = encoder?.rate_control?.quality?.label ?? ''
+  const scale = encoder?.rate_control?.quality?.label
+  const value = n(control.value, { maximumFractionDigits: 2 })
   return t('presets.details.videoQuality', {
     encoder: name,
-    quality: `${scale} ${control.value}`.trim(),
+    quality: scale ? t('presets.value.onScale', { scale, value }) : value,
   })
 })
 
@@ -105,7 +107,7 @@ function languages(selection: Selection | undefined): string {
   const list = selection?.languages
   return list === null || list === undefined
     ? t('presets.details.languagesSettings')
-    : list.join(', ')
+    : formatList(list, locale.value)
 }
 
 function selectionWords(selection: Selection | undefined): string {
@@ -120,7 +122,7 @@ function codecRule(rule: CodecRule): string {
   const mixdown = system.definitions?.mixdowns?.[rule.mixdown]?.label ?? rule.mixdown
   const parts = [codec, mixdown]
   if (rule.max_bitrate !== null && rule.max_bitrate !== undefined) {
-    parts.push(t('presets.details.kbps', { kbps: rule.max_bitrate }))
+    parts.push(t('presets.details.kbps', { kbps: n(rule.max_bitrate) }))
   }
   return parts.join(' · ')
 }
@@ -140,8 +142,8 @@ const audio = computed(() => {
   const passthru = defaults.passthru?.allowed ?? []
   return {
     selection: selectionWords(defaults.selection),
-    rules: rules.length > 0 ? rules.join('; ') : t('presets.details.noRules'),
-    passthru: passthru.length > 0 ? passthru.join(', ') : null,
+    rules: rules.length > 0 ? formatList(rules, locale.value) : t('presets.details.noRules'),
+    passthru: passthru.length > 0 ? formatList(passthru, locale.value) : null,
   }
 })
 

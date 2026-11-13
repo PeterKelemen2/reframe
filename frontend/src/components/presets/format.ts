@@ -8,6 +8,12 @@ export interface Words {
   empty: string
   on: string
   off: string
+  number(value: number): string
+  list(items: string[]): string
+  /** One member of an object: `Codec: aac`. */
+  member(field: string, value: string): string
+  /** A numbered list item: `Codec rule 1`. */
+  item(field: string, number: string): string
   /** A settings value that has its own words (`Constant quality CQ 27`), else `undefined`. */
   known?(path: string, value: unknown): string | undefined
 }
@@ -30,9 +36,9 @@ export function pathWords(path: string, words: Words): string {
     const key = match?.[1] ?? segment
     if (key !== '') parts.push(words.field(key) ?? fallbackWord(key))
     for (const index of (match?.[2] ?? '').matchAll(/\[(\d+)\]/g)) {
-      const number = Number(index[1]) + 1
+      const number = words.number(Number(index[1]) + 1)
       const last = parts.pop()
-      parts.push(last === undefined ? `${number}` : `${last} ${number}`)
+      parts.push(last === undefined ? number : words.item(last, number))
     }
   }
   return parts.join(' › ')
@@ -52,18 +58,20 @@ export function valueWords(value: unknown, words: Words, path = ''): string {
   if (value === null || value === undefined) return words.none
   if (typeof value === 'boolean') return value ? words.on : words.off
   if (typeof value === 'string') return value === '' ? words.empty : clip(value)
-  if (typeof value === 'number') return String(value)
+  if (typeof value === 'number') return words.number(value)
   if (Array.isArray(value)) {
     return value.length === 0
       ? words.none
-      : clip(value.map((item) => valueWords(item, words)).join(', '))
+      : clip(words.list(value.map((item) => valueWords(item, words))))
   }
   if (typeof value !== 'object') return clip(String(value))
   const members = Object.entries(value as Record<string, unknown>)
     .filter(([, member]) => member !== null && member !== undefined)
-    .map(
-      ([key, member]) =>
-        `${words.field(key) ?? fallbackWord(key)}: ${valueWords(member, words, path ? `${path}.${key}` : key)}`,
+    .map(([key, member]) =>
+      words.member(
+        words.field(key) ?? fallbackWord(key),
+        valueWords(member, words, path ? `${path}.${key}` : key),
+      ),
     )
   return members.length === 0 ? words.none : clip(members.join(' · '))
 }

@@ -11,7 +11,9 @@ import { useI18n } from 'vue-i18n'
 
 import { ApiError, apiQuiet, unwrap } from '@/api/client'
 import type { FsListing, FsRoot, Problem } from '@/api/types'
-import { fileName } from '@/components/shell/format'
+import { focusLost, focusWorkspace } from '@/components/shell/focus'
+import { fileName, formatList } from '@/components/shell/format'
+import { createTypeahead } from '@/components/shell/typeahead'
 import { formatBytes } from '@/components/summary/format'
 
 import { type BrowseRequest, currentRequest, finish, listedExtensions } from './fileBrowser'
@@ -19,7 +21,7 @@ import { crumbsOf, extensionOf, folderOf, joinPath } from './paths'
 
 type Entry = FsListing['entries'][number]
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 /** Vue's types have no `autofocus` on a `div`; PrimeVue's dialog focuses the element that has it. */
 const autofocus: Record<string, string> = { autofocus: '' }
 const id = useId() ?? 'file-browser'
@@ -80,6 +82,9 @@ const canConfirm = computed(() => {
 })
 
 const empty = computed(() => listing.value !== null && visible.value.length === 0)
+const filterText = computed(() =>
+  t('sources.browser.filter', { types: formatList(request.value?.filters ?? [], locale.value) }),
+)
 
 function optionId(index: number): string {
   return `${id}-entry-${index}`
@@ -170,6 +175,13 @@ function onVisible(value: boolean): void {
   if (!value) close(null)
 }
 
+// Ctrl+O opens it with the focus on no control: PrimeVue then has nowhere to give it back to.
+function afterHide(): void {
+  if (focusLost() && !focusWorkspace()) {
+    document.querySelector<HTMLElement>('.nav-rail [aria-current="page"]')?.focus()
+  }
+}
+
 function goUp(): void {
   const current = listing.value
   if (current?.parent) void show(current.parent, current.path)
@@ -246,6 +258,8 @@ function moveTo(index: number, extend: boolean): void {
   )
 }
 
+const typeahead = createTypeahead()
+
 function onKeydown(event: KeyboardEvent): void {
   const entry = visible.value[cursor.value]
   const extend = event.shiftKey
@@ -282,14 +296,17 @@ function onKeydown(event: KeyboardEvent): void {
       }
       confirm()
       break
-    case 'a':
-      if (!(event.ctrlKey || event.metaKey) || !request.value?.multiple || mode.value !== 'files') {
-        return
+    default: {
+      if (event.key === 'a' && (event.ctrlKey || event.metaKey)) {
+        if (!request.value?.multiple || mode.value !== 'files') return
+        selected.value = files(0, visible.value.length - 1)
+        break
       }
-      selected.value = files(0, visible.value.length - 1)
-      break
-    default:
-      return
+      const names = visible.value.map((candidate) => candidate.name)
+      const found = typeahead(event, names, cursor.value)
+      if (found === null) return
+      moveTo(found, false)
+    }
   }
   event.preventDefault()
 }
@@ -312,6 +329,7 @@ const summary = computed(() => {
     :draggable="false"
     :data-mode="mode"
     @update:visible="onVisible"
+    @after-hide="afterHide"
   >
     <div class="file-browser">
       <nav class="file-browser__roots" :aria-label="t('sources.browser.roots')">
@@ -460,12 +478,12 @@ const summary = computed(() => {
             class="file-browser__filter"
             data-field="filter-note"
           >
-            {{ t('sources.browser.filter', { types: request?.filters.join(', ') ?? '' }) }}
+            {{ filterText }}
           </span>
           <div v-else-if="filtered && mode !== 'folder'" class="file-browser__filter">
             <Checkbox v-model="filterOn" :input-id="`${id}-filter`" binary data-field="filter" />
             <label :for="`${id}-filter`">
-              {{ t('sources.browser.filter', { types: request?.filters.join(', ') ?? '' }) }}
+              {{ filterText }}
             </label>
           </div>
           <form v-if="mode === 'save'" class="file-browser__save" @submit.prevent="confirm">

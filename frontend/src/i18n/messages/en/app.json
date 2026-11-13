@@ -1,5 +1,6 @@
 {
   "name": "Reframe",
+  "progressTitle": "{progress} · {title}",
   "tabs": {
     "summary": "Summary",
     "dimensions": "Dimensions",

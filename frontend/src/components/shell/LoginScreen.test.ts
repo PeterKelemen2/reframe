@@ -5,7 +5,7 @@ import { ApiError } from '@/api/client'
 import { useSystemStore } from '@/stores/system'
 
 import LoginScreen from './LoginScreen.vue'
-import { mountShell } from './testing'
+import { appI18n, mountShell } from './testing'
 
 const mounted: { unmount(): void }[] = []
 
@@ -82,6 +82,24 @@ describe('the login screen', () => {
     )
     await submit('pw')
     expect(problem()).toBe('Too many login attempts: Try again in 30 seconds.')
+  })
+
+  it("words the server's refusal with one message, which a translation may reorder", async () => {
+    const { wrapper, login, submit, problem } = await mountLogin('password')
+    appI18n(wrapper).global.mergeLocaleMessage('en', {
+      shell: { login: { refused: '{detail} ({title})' } },
+    })
+    login.mockRejectedValue(
+      new ApiError(503, {
+        type: 'about:blank',
+        title: 'Server busy',
+        detail: 'Wait a moment.',
+        status: 503,
+        code: 'server.busy',
+      }),
+    )
+    await submit('pw')
+    expect(problem()).toBe('Wait a moment. (Server busy)')
   })
 
   it('sends nothing for an empty field', async () => {

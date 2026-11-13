@@ -97,6 +97,14 @@ async function submit(): Promise<void> {
   }
 }
 
+// PrimeVue's select stops every Escape, also one with its list closed: the dialog would stay.
+function categoryKeydown(event: KeyboardEvent): void {
+  const field = event.target as Element | null
+  if (event.key === 'Escape' && field?.getAttribute('aria-expanded') !== 'true') {
+    visible.value = false
+  }
+}
+
 function useOffered(): void {
   if (offered.value !== null) name.value = offered.value
 }
@@ -135,14 +143,16 @@ function useOffered(): void {
       />
       <Field :label="t('presets.dialog.category')" stacked>
         <template #default="{ id }">
-          <Select
-            v-model="category"
-            :label-id="id"
-            class="preset-name-dialog__category"
-            :options="categories"
-            editable
-            fluid
-          />
+          <div @keydown.capture="categoryKeydown">
+            <Select
+              v-model="category"
+              :label-id="id"
+              class="preset-name-dialog__category"
+              :options="categories"
+              editable
+              fluid
+            />
+          </div>
         </template>
       </Field>
       <Field :label="t('presets.dialog.description')" stacked>

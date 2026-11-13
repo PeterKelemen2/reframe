@@ -50,7 +50,7 @@ import {
 
 const emit = defineEmits<{ openLog: [jobId: string, opener: HTMLElement] }>()
 
-const { t } = useI18n()
+const { t, n } = useI18n()
 const severityLabel = useSeverityLabel()
 const queue = useQueueStore()
 const editor = useEditorStore()
@@ -68,7 +68,7 @@ const rows = computed(() =>
     job,
     index,
     actions: jobActions(job, canReveal),
-    live: liveColumns(job, t),
+    live: liveColumns(job, t, n),
   })),
 )
 
@@ -409,7 +409,7 @@ async function move(index: number, to: number): Promise<void> {
               :pt="{ root: { 'aria-label': t('queue.columns.progress') } }"
             />
             <span class="queue-table__percent" data-field="percent">
-              {{ t('queue.units.percent', { value: data.live.percent.toFixed(1) }) }}
+              {{ data.live.percentText }}
             </span>
             <span v-if="data.live.step" class="queue-table__step" data-field="step">
               {{ data.live.step }}
