@@ -17,7 +17,7 @@ import { useCropStore } from '@/stores/crop'
 import { useEditorStore } from '@/stores/editor'
 import { useUiStore } from '@/stores/ui'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const crop = useCropStore()
 const editor = useEditorStore()
 const ui = useUiStore()
@@ -183,6 +183,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
               <div class="dimensions-tab__row">
                 <InputNumber
                   :input-id="id"
+                  :locale="locale"
                   :model-value="dimensions.custom_par?.num ?? null"
                   :min="0"
                   :use-grouping="false"
@@ -195,6 +196,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
                 <span aria-hidden="true">:</span>
                 <InputNumber
                   :model-value="dimensions.custom_par?.den ?? null"
+                  :locale="locale"
                   :min="1"
                   :use-grouping="false"
                   :disabled="locked"

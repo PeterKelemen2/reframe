@@ -518,7 +518,9 @@ function tagsOf(stream: SourceStream): [string, string][] {
                           : t('media.scan.measureLoudness')
                       "
                       :start-label="
-                        t('media.scan.measureLoudnessLabel', { n: trackNumber(stream) })
+                        loudnessOf(stream)
+                          ? t('media.scan.measureLoudnessAgainLabel', { n: trackNumber(stream) })
+                          : t('media.scan.measureLoudnessLabel', { n: trackNumber(stream) })
                       "
                       :progress-label="
                         t('media.scan.measuringLoudness', { n: trackNumber(stream) })
