@@ -1,5 +1,5 @@
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { configureClient } from '@/api/client'
 import { chaptersSource, rangeGroup, rangeServer } from '@/components/range/testing'
@@ -88,7 +88,8 @@ describe('the Summary’s range', () => {
       },
     ])
     editor.setRange({ kind: 'chapters', start: 2, end: 3 })
-    await flushPromises()
+    // The shown job comes back from the server with the template's bitrate.
+    await vi.waitFor(() => expect(estimate.find('[data-field="basis"]').exists()).toBe(true))
     expect(editor.job?.range).toEqual({ kind: 'full' })
     expect(text(source, '[data-field="range"]')).toBe('Chapters 2–3 (0:03)')
     expect(text(estimate, '[data-field="basis"]')).toContain('for 0:03')

@@ -354,7 +354,8 @@ describe('the range in a group', () => {
   it('shows the file’s issues from its matrix row in scope group', async () => {
     const { editor } = await mountInGroup()
     editor.setRange({ kind: 'chapters', start: 2, end: 9 })
-    await flushPromises()
+    // The matrix the change asked for comes first; the fake server gives rows without issues.
+    await vi.waitFor(() => expect(editor.resolving).toBe(false))
     const shown = editor.resolution?.rows?.find((found) => found.path === '/media/e1.mkv')
     expect(shown).toBeDefined()
     editor.resolution = {

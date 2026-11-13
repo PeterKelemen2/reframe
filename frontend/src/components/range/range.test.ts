@@ -168,6 +168,11 @@ describe('changing the mode', () => {
       start: 37,
       end: null,
     })
+    expect(convertRange({ kind: 'frames', start: 37, end: null }, 'time', source)).toEqual({
+      kind: 'time',
+      start: 1.48,
+      end: null,
+    })
   })
 
   it('picks the chapters that hold the start and the end', () => {
