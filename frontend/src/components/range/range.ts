@@ -304,22 +304,25 @@ export function convertRange(range: Range, kind: RangeKind, source: MediaSource 
   }
 }
 
-/** "Whole source", "Chapters 2–3", "0:01:30 – 0:45:00", "Frames 0 – 1440". */
-export function rangeLabel(range: Range, t: Translate): string {
+/** `useI18n().n`: a number in the app's locale. */
+export type FormatNumber = (value: number) => string
+
+/** "Whole source", "Chapters 2–3", "0:01:30 – 0:45:00", "Frames 0 – 1,440". */
+export function rangeLabel(range: Range, t: Translate, n: FormatNumber): string {
   switch (range.kind) {
     case 'full':
       return t('range.label.full')
     case 'chapters':
       return range.start === range.end
-        ? t('range.label.chapter', { number: range.start })
-        : t('range.label.chapters', { start: range.start, end: range.end })
+        ? t('range.label.chapter', { number: n(range.start) })
+        : t('range.label.chapters', { start: n(range.start), end: n(range.end) })
     case 'time':
       return range.end == null
         ? t('range.label.timeToEnd', { start: formatClock(range.start) })
         : t('range.label.time', { start: formatClock(range.start), end: formatClock(range.end) })
     case 'frames':
       return range.end == null
-        ? t('range.label.framesToEnd', { start: range.start })
-        : t('range.label.frames', { start: range.start, end: range.end })
+        ? t('range.label.framesToEnd', { start: n(range.start) })
+        : t('range.label.frames', { start: n(range.start), end: n(range.end) })
   }
 }

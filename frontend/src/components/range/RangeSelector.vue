@@ -12,6 +12,7 @@ import type { ValidationIssue } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import { bySeverity, SEVERITY_ICON, useSeverityLabel } from '@/components/base/severity'
 import { useReveal } from '@/composables/useReveal'
+import { sameJson } from '@/editor/patch'
 import { useEditorStore } from '@/stores/editor'
 import { useUiStore } from '@/stores/ui'
 
@@ -23,6 +24,7 @@ import {
   hasChapters,
   parseFrame,
   parseTime,
+  type Range,
   type RangeKind,
 } from './range'
 import { type RangePath, useRange } from './useRange'
@@ -98,8 +100,23 @@ const modes = computed<{ kind: RangeKind; label: string; reason: string | null }
   ]
 })
 
+/**
+ * The arrow keys check each mode they pass, so a mode converts from the range the user set, not
+ * from the previous mode's conversion: conversions of conversions would lose part of the span.
+ */
+let convertedFrom: Range | null = null
+let converted: Range | null = null
+
 function chooseMode(kind: RangeKind): void {
-  editor.setRange(convertRange(range.value, kind, source.value))
+  if (converted === null || !sameJson(range.value, converted)) convertedFrom = range.value
+  converted = convertRange(convertedFrom ?? range.value, kind, source.value)
+  editor.setRange(converted)
+}
+
+/** The popover's focus trap wraps onto its first radio: only the checked mode takes Tab. */
+function modeTabindex(kind: RangeKind): number | undefined {
+  const current = modes.value.find((mode) => mode.kind === range.value.kind)
+  return kind === range.value.kind || current?.reason !== null ? undefined : -1
 }
 
 const chapterOptions = computed(() =>
@@ -213,6 +230,7 @@ function focusMode(): void {
 
 async function shownPopover(): Promise<void> {
   open.value = true
+  converted = null
   await nextTick()
   focusMode()
 }
@@ -317,6 +335,7 @@ function reset(): void {
                   :pt="{
                     input: {
                       'data-range-mode': mode.kind,
+                      tabindex: modeTabindex(mode.kind),
                       'aria-disabled': mode.reason !== null ? 'true' : undefined,
                       'aria-describedby':
                         mode.reason !== null ? `${id}-reason-${mode.kind}` : undefined,

@@ -24,6 +24,9 @@ const editor = useEditorStore()
 
 const problems = computed(() => bySeverity(props.issues.filter((i) => i.severity !== 'info')))
 const notes = computed(() => props.issues.filter((issue) => issue.severity === 'info'))
+const fixable = computed(() => problems.value.some((issue) => (issue.fixes ?? []).length > 0))
+/** `autofocus`, which the popover moves the focus to; not a typed attribute of `summary`. */
+const notesFocus = computed((): Record<string, string> => (fixable.value ? {} : { autofocus: '' }))
 /** Every fix button waits for the fix under way, so that two fixes never race. */
 const applying = ref<Fix | null>(null)
 
@@ -79,7 +82,11 @@ async function apply(fix: Fix): Promise<void> {
       </li>
     </ul>
     <details v-if="notes.length > 0" class="row-issues__notes">
-      <summary>{{ t('matrix.issues.notes', notes.length) }}</summary>
+      <!-- The popover lives outside the matrix dialog: without the focus, Tab never reaches it.
+           Its focus trap counts a summary only with a tabindex. -->
+      <summary tabindex="0" v-bind="notesFocus">
+        {{ t('matrix.issues.notes', notes.length) }}
+      </summary>
       <ul class="row-issues__list">
         <li v-for="(issue, index) in notes" :key="`${issue.code}:${index}`" data-severity="info">
           {{ issue.message }}

@@ -43,7 +43,7 @@ const props = defineProps<{
   focus: string | null
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const editor = useEditorStore()
 const sources = useSourcesStore()
 
@@ -139,7 +139,9 @@ function cellLabel(item: MatrixRow, column: MatrixColumn, match: TrackMatch): st
   return t('matrix.cell.open', {
     column: column.label,
     label: item.label,
-    state: state.filter(Boolean).join(', '),
+    state: new Intl.ListFormat(locale.value, { style: 'short', type: 'unit' }).format(
+      state.filter(Boolean),
+    ),
   })
 }
 
@@ -437,6 +439,13 @@ onMounted(async () => {
 .matrix__table {
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/* The rows scroll with the keyboard once the scroller has the focus; PrimeVue hides its outline.
+   Inside the edge: the dialog's content would clip it outside. */
+.matrix__table :deep(.p-virtualscroller:focus-visible) {
+  outline: var(--p-focus-ring-width) var(--p-focus-ring-style) var(--p-focus-ring-color);
+  outline-offset: calc(-1 * var(--p-focus-ring-width));
 }
 
 .matrix__table :deep(tbody tr) {

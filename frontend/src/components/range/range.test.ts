@@ -18,7 +18,8 @@ import {
 } from './range'
 import { bareSource, chaptersSource } from './testing'
 
-const { t } = createAppI18n().global
+const { t, n } = createAppI18n().global
+const number = (value: number) => n(value)
 
 function seconds(range: Range, source = chaptersSource()): number | null {
   return rangeSeconds({ range }, source)
@@ -345,12 +346,18 @@ describe('changing the mode', () => {
 
 describe('the text of a range', () => {
   it('names the range as the header and the Summary show it', () => {
-    expect(rangeLabel({ kind: 'full' }, t)).toBe('Whole source')
-    expect(rangeLabel({ kind: 'chapters', start: 2, end: 3 }, t)).toBe('Chapters 2–3')
-    expect(rangeLabel({ kind: 'chapters', start: 2, end: 2 }, t)).toBe('Chapter 2')
-    expect(rangeLabel({ kind: 'time', start: 90, end: 2700 }, t)).toBe('0:01:30 – 0:45:00')
-    expect(rangeLabel({ kind: 'time', start: 2.5, end: null }, t)).toBe('0:00:02.500 – end')
-    expect(rangeLabel({ kind: 'frames', start: 0, end: 1440 }, t)).toBe('Frames 0 – 1440')
-    expect(rangeLabel({ kind: 'frames', start: 24, end: null }, t)).toBe('Frames 24 – end')
+    expect(rangeLabel({ kind: 'full' }, t, number)).toBe('Whole source')
+    expect(rangeLabel({ kind: 'chapters', start: 2, end: 3 }, t, number)).toBe('Chapters 2–3')
+    expect(rangeLabel({ kind: 'chapters', start: 2, end: 2 }, t, number)).toBe('Chapter 2')
+    expect(rangeLabel({ kind: 'time', start: 90, end: 2700 }, t, number)).toBe('0:01:30 – 0:45:00')
+    expect(rangeLabel({ kind: 'time', start: 2.5, end: null }, t, number)).toBe('0:00:02.500 – end')
+    expect(rangeLabel({ kind: 'frames', start: 24, end: null }, t, number)).toBe('Frames 24 – end')
+  })
+
+  it('writes frame numbers with the locale’s digit grouping', () => {
+    expect(rangeLabel({ kind: 'frames', start: 0, end: 1440 }, t, number)).toBe('Frames 0 – 1,440')
+    expect(rangeLabel({ kind: 'frames', start: 86400, end: null }, t, number)).toBe(
+      'Frames 86,400 – end',
+    )
   })
 })

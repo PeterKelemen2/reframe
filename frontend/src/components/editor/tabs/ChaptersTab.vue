@@ -34,7 +34,7 @@ import { platform } from '@/platform'
 import { useEditorStore } from '@/stores/editor'
 import { useValidationStore } from '@/stores/validation'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const editor = useEditorStore()
 const validation = useValidationStore()
 const { source } = useJobSource()
@@ -369,6 +369,7 @@ const hasRows = computed(() => rows.value.length > 0)
             >
               <template #field>
                 <InputNumber
+                  :locale="locale"
                   class="chapters-tab__every"
                   :model-value="every"
                   :min="0.01"

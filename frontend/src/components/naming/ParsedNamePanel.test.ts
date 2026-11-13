@@ -37,6 +37,19 @@ describe('ParsedNamePanel', () => {
     ])
   })
 
+  it('lists the skipped folders the way the locale writes a list', async () => {
+    const folders = ['Season 1', 'Disc 2', 'BDMV']
+    const wrapper = mountPanel({ result: { ...hacksawResult(), skipped_folders: folders } })
+    const skipped = () => wrapper.get('.parsed-name__skipped').text()
+    expect(skipped()).toBe('Skipped generic folders: Season 1, Disc 2, BDMV')
+    // Japanese joins a list without the English comma and space.
+    ;(wrapper.vm as unknown as { $i18n: { locale: string } }).$i18n.locale = 'ja'
+    await wrapper.vm.$nextTick()
+    const japanese = new Intl.ListFormat('ja', { style: 'short', type: 'unit' }).format(folders)
+    expect(japanese).not.toBe(folders.join(', '))
+    expect(skipped()).toBe(`Skipped generic folders: ${japanese}`)
+  })
+
   it('has no field inputs unless it is editable', () => {
     expect(mountPanel({}).find('input[data-field]').exists()).toBe(false)
   })

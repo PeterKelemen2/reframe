@@ -479,3 +479,24 @@ describe('an output subtitle track', () => {
     expect(editor.job?.subtitles?.[1]?.metadata).toMatchObject({ hearing_impaired: true })
   })
 })
+
+describe('the numbers of an output audio track', () => {
+  // Only English ships; a German locale shows the values that `toFixed` or `String` would
+  // write the English way.
+  it('are written in the app’s locale: DRC, sample rates and gain', async () => {
+    const { wrapper, editor } = await mountTab()
+    editor.set('/audio/0/action', 'encode')
+    editor.set('/audio/0/encoder', 'aac')
+    editor.set('/audio/0/drc', 1.5)
+    editor.set('/audio/0/gain', -1.5)
+    ;(wrapper.vm as unknown as { $i18n: { locale: string } }).$i18n.locale = 'de'
+    await flushPromises()
+    expect(wrapper.find('[data-path="audio[0].drc"] output').text()).toBe('1,5')
+    const rates = control(wrapper, 'audio[0].samplerate', Select).props().options as {
+      label: string
+    }[]
+    expect(rates.map((rate) => rate.label)).toContain('44,1\u00a0kHz')
+    const gain = wrapper.find<HTMLInputElement>('[data-path="audio[0].gain"] input')
+    expect(gain.element.value).toBe('-1,5 dB')
+  })
+})

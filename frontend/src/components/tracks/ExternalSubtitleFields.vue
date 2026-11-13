@@ -21,7 +21,7 @@ const props = defineProps<{
   disabled?: boolean
 }>()
 
-const { t } = useI18n()
+const { t, n, locale } = useI18n()
 const editor = useEditorStore()
 const validation = useValidationStore()
 const severityLabel = useSeverityLabel()
@@ -56,9 +56,9 @@ const described = computed(() => {
   if (found.events === null || found.events === undefined) {
     events = t('tracks.external.eventsUnknown')
   } else if (found.bitmap) {
-    events = t('tracks.external.displaySets', { count: found.events }, found.events)
+    events = t('tracks.external.displaySets', { count: n(found.events) }, found.events)
   } else {
-    events = t('tracks.external.events', { count: found.events }, found.events)
+    events = t('tracks.external.events', { count: n(found.events) }, found.events)
   }
   return found.charset
     ? t('tracks.external.describedCharset', { format, events, charset: found.charset })
@@ -146,6 +146,7 @@ function onOffset(value: number | null): void {
       >
         <template #default="{ id, invalid }">
           <InputNumber
+            :locale="locale"
             :input-id="id"
             class="external-fields__number"
             :model-value="external.offset_ms ?? 0"

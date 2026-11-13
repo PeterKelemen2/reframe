@@ -12,7 +12,6 @@ import type { AudioCodecRule } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import { describeTag } from '@/components/language/catalog'
 import LanguageListEditor from '@/components/language/LanguageListEditor.vue'
-import { kiloHertz } from '@/components/media/streams'
 import { useDefaultsStore } from '@/stores/defaults'
 import { useSystemStore } from '@/stores/system'
 
@@ -31,7 +30,7 @@ const props = defineProps<{
   catchAll: boolean
 }>()
 
-const { t } = useI18n()
+const { t, n, locale } = useI18n()
 const defaults = useDefaultsStore()
 const system = useSystemStore()
 const choices = useDefaultsOptions()
@@ -74,7 +73,7 @@ const samplerateOptions = computed(() => {
       .toSorted((a, b) => a - b)
       .map((rate) => ({
         value: String(rate),
-        label: t('defaults.units.khz', { value: kiloHertz(rate) }),
+        label: t('defaults.units.khz', { value: n(rate / 1000, { maximumFractionDigits: 3 }) }),
       })),
   ]
 })
@@ -125,8 +124,8 @@ const shown = computed(() => {
       samplerateOptions.value,
       value.samplerate == null ? SAME : String(value.samplerate),
     ),
-    gain: t('defaults.units.db', { value: value.gain ?? 0 }),
-    drc: value.drc ? String(value.drc) : t('defaults.shown.off'),
+    gain: t('defaults.units.db', { value: n(value.gain ?? 0, { maximumFractionDigits: 1 }) }),
+    drc: value.drc ? n(value.drc, { maximumFractionDigits: 1 }) : t('defaults.shown.off'),
     loudness: labelOf(choices.loudness, value.loudness ?? 'off'),
     name: value.name_template || t('defaults.rules.nameFromSource'),
     first: value.first_track_of_language_only ? t('defaults.shown.yes') : t('defaults.shown.no'),
@@ -140,7 +139,7 @@ function outputText(output: ExtraAudioOutput): string {
     bitrate:
       output.bitrate == null
         ? t('defaults.rules.encoderDefault')
-        : t('defaults.units.kbps', { value: output.bitrate }),
+        : t('defaults.units.kbps', { value: n(output.bitrate) }),
   })
 }
 </script>
@@ -231,6 +230,7 @@ function outputText(output: ExtraAudioOutput): string {
       <Field :label="t('defaults.rules.gain')" :issues="issuesAt('extras.gain')" stacked>
         <template #default="{ id: inputId, invalid }">
           <InputNumber
+            :locale="locale"
             :input-id="inputId"
             :ariaLabel="t('defaults.rules.named.gain', { n: number })"
             :model-value="extras.gain"
@@ -254,6 +254,7 @@ function outputText(output: ExtraAudioOutput): string {
       >
         <template #default="{ id: inputId, invalid }">
           <InputNumber
+            :locale="locale"
             :input-id="inputId"
             :ariaLabel="t('defaults.rules.named.drc', { n: number })"
             :model-value="extras.drc"
@@ -376,6 +377,7 @@ function outputText(output: ExtraAudioOutput): string {
           >
             <template #default="{ id: inputId, invalid }">
               <InputNumber
+                :locale="locale"
                 :input-id="inputId"
                 :ariaLabel="t('defaults.rules.named.outputBitrate', { n: number, output: at + 1 })"
                 :model-value="output.bitrate ?? null"

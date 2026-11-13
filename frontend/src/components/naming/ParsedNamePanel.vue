@@ -36,7 +36,11 @@ const emit = defineEmits<{
   commit: []
 }>()
 
-const { t } = useI18n()
+const { t, n, locale } = useI18n()
+
+function listText(items: string[]): string {
+  return new Intl.ListFormat(locale.value, { style: 'short', type: 'unit' }).format(items)
+}
 
 function sourceLabel(kind: 'file' | 'folder'): string {
   return kind === 'file' ? t('naming.parsed.fileName') : t('naming.parsed.folderName')
@@ -166,7 +170,7 @@ function issuesOf(field: OverrideField): ValidationIssue[] {
     </p>
     <p class="parsed-name__reason" data-testid="name-reason">{{ result.reason }}</p>
     <p v-if="(result.skipped_folders ?? []).length > 0" class="parsed-name__skipped">
-      {{ t('naming.parsed.skipped', { folders: (result.skipped_folders ?? []).join(', ') }) }}
+      {{ t('naming.parsed.skipped', { folders: listText(result.skipped_folders ?? []) }) }}
     </p>
 
     <ul class="parsed-name__candidates">
@@ -180,7 +184,7 @@ function issuesOf(field: OverrideField): ValidationIssue[] {
         <span class="parsed-name__kind">
           {{ sourceLabel(entry.candidate.kind) }}
           <span class="parsed-name__score">{{
-            t('naming.parsed.score', { n: entry.candidate.score }, entry.candidate.score)
+            t('naming.parsed.score', { n: n(entry.candidate.score) }, entry.candidate.score)
           }}</span>
           <span v-if="entry.chosen" class="parsed-name__badge">{{
             t('naming.parsed.chosen')

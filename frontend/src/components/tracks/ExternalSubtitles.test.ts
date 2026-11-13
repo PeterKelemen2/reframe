@@ -26,7 +26,7 @@ const FILES: Record<string, SubtitleFileInfo> = {
     format: 'subrip',
     bitmap: false,
     charset: 'UTF-8',
-    events: 120,
+    events: 1234,
     issues: [],
   },
   '/media/Film.cp1250.srt': {
@@ -145,14 +145,14 @@ describe('Add external subtitle…', () => {
 })
 
 describe('the row of an external subtitle file', () => {
-  it('shows the file, its format, events and detected encoding', async () => {
+  it('shows the file, its format, events (grouped digits) and detected encoding', async () => {
     const { wrapper } = await mountEditor(SubtitlesTab, {
       job: external('/media/Film.hu.srt'),
       server: inspectRoute,
     })
     const row = wrapper.find('[data-path="subtitles[0]"]')
     expect(row.find('[data-role="file"]').text()).toBe('Film.hu.srt')
-    expect(row.find('[data-role="file-info"]').text()).toBe('SRT · 120 events · UTF-8')
+    expect(row.find('[data-role="file-info"]').text()).toBe('SRT · 1,234 events · UTF-8')
     const charset = field(wrapper, 'subtitles[0].source.charset').findComponent(Select)
     expect(charset.props('modelValue')).toBe('auto')
     expect((charset.props('options') as { label: string }[])[0]?.label).toBe('As detected: UTF-8')
