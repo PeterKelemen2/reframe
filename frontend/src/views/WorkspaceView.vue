@@ -9,6 +9,7 @@ import { ApiError } from '@/api/client'
 import GroupBanner from '@/components/batch/GroupBanner.vue'
 import MatrixDialog from '@/components/matrix/MatrixDialog.vue'
 import PresetPicker from '@/components/presets/PresetPicker.vue'
+import RangeSelector from '@/components/range/RangeSelector.vue'
 import EditorTabs from '@/components/shell/EditorTabs.vue'
 import { useFirstRun } from '@/components/shell/firstRun'
 import FirstRunScreen from '@/components/shell/FirstRunScreen.vue'
@@ -20,10 +21,12 @@ import SourcesPanel from '@/components/sources/SourcesPanel.vue'
 import { useValidation } from '@/composables/useValidation'
 import { platform } from '@/platform'
 import { useCropStore } from '@/stores/crop'
+import { useEditorStore } from '@/stores/editor'
 import { useSourcesStore } from '@/stores/sources'
 
 const { t } = useI18n()
 const sources = useSourcesStore()
+const editor = useEditorStore()
 const { shown: firstRunShown } = useFirstRun()
 
 useValidation()
@@ -74,6 +77,7 @@ async function open(): Promise<void> {
           <span v-if="duration" class="workspace__duration" data-field="duration">
             {{ duration }}
           </span>
+          <RangeSelector v-if="sources.active !== null && editor.job !== null" />
         </div>
         <PresetPicker />
       </header>
