@@ -31,14 +31,6 @@ export const known: Known[] = [
     rule: 'label-content-name-mismatch',
     target: 'main.view.presets-view[data-view="presets"] li.preset-tree__category',
   },
-  // In dark, a preset row's focus is 1.1:1 against its unfocused look.
-  {
-    screen: 'presets',
-    check: 'focus',
-    theme: 'dark',
-    rule: 'indicator-contrast',
-    target: 'main.view.presets-view[data-view="presets"] li.preset-tree__preset[data-preset]',
-  },
   // The row actions of the queue table are covered where the focus lands on them.
   ...['', '[data-action="cancel"]', '[data-action="duplicate"]', '[data-action="edit"]']
     .concat(['[data-action="log"]', '[data-action="remove"]'])

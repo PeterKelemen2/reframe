@@ -140,8 +140,9 @@ export function installProbe(): void {
       pen.fillStyle = '#000'
       pen.fillStyle = color
       pen.fillRect(0, 0, 1, 1)
+      // getImageData gives straight (not premultiplied) RGBA.
       const [r = 0, g = 0, b = 0, a = 0] = pen.getImageData(0, 0, 1, 1).data
-      value = a === 0 ? [0, 0, 0, 0] : [(r * 255) / a, (g * 255) / a, (b * 255) / a, a / 255]
+      value = a === 0 ? [0, 0, 0, 0] : [r, g, b, a / 255]
     }
     parsed.set(color, value)
     return value

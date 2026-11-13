@@ -43,6 +43,42 @@ test('the focus walk reports a stop whose focus style is gone, and one that is t
   ])
 })
 
+test('the focus walk measures a ring against a translucent background as it is painted', async ({
+  page,
+}) => {
+  await preparePage(page)
+  await RAIL.setup(page)
+  // The rail is white at 50 % over black: mid grey (128) is what a ring outside a link lies on.
+  await page.addStyleTag({
+    content: `
+      html, body, *:has(.nav-rail) { background: #000 !important }
+      .nav-rail { background: rgb(255 255 255 / 50%) !important }
+      .nav-rail * { background: transparent !important }
+      .nav-rail__link:focus-visible {
+        outline: 2px solid var(--test-ring) !important;
+        outline-offset: 2px !important;
+        box-shadow: none !important;
+      }`,
+  })
+  const ring = (colour: string) =>
+    page.evaluate((value) => {
+      const doc = Reflect.get(globalThis, 'document') as {
+        documentElement: { style: { setProperty(name: string, value: string): void } }
+      }
+      doc.documentElement.style.setProperty('--test-ring', value)
+    }, colour)
+
+  // White on mid grey is 3.95:1. Read as if the tint were premultiplied, the grey turns white.
+  await ring('#fff')
+  expect(rules(await focusFindings(page, RAIL), WORKSPACE_LINK)).toEqual([])
+  // Light grey (200) on mid grey is 2.36:1.
+  await ring('rgb(200 200 200)')
+  expect(rules(await focusFindings(page, RAIL), WORKSPACE_LINK)).toEqual([
+    'light indicator-contrast',
+    'dark indicator-contrast',
+  ])
+})
+
 test('the motion check reports a transition, a script animation and a smooth scroll', async ({
   page,
 }) => {

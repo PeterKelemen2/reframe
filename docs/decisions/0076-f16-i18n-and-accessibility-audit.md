@@ -367,20 +367,21 @@ the pinned FFmpeg, so the frames and clips were real. After that came the gate (
   digits. The magnifier's strips follow the pointer along the edge. That is a view, not an
   action, so there is no keyboard way to move them.
 
-**Known entries left in `known/picture.ts`.**
+**A fault of the gate, fixed.** The `video-advanced` screen in dark reported
+`indicator-contrast` 1.23:1 on the reset and help buttons of a changed option. The page was
+not at fault. `probe.ts` reads a colour by painting it on a canvas, and it treated
+`getImageData` as premultiplied (`r * 255 / a`). The data is straight RGBA:
+`color(srgb 0.506 0.549 0.973 / 0.1)` reads as `128,137,245,26` in both browsers (checked).
+So a translucent background, here the 10 % tint of a changed row, became a backdrop close to the
+ring's own colour. As painted, the ring is 5.2:1 on that row. The probe now takes the data as
+it is. A test in `gate-checks.spec.ts` puts a white ring on the rail over white at 50 % on
+black, which is mid grey and 3.95:1. It must give no finding, and it failed with the old line
+in both browsers. A light grey ring (2.36:1) must still be reported. With the fix, the two
+`video-advanced` entries went away, and so did the shell's dark `presets` entry on the preset
+row (1.1:1). A run of the whole gate on the merged state changed no other finding.
 
-- `crop-manual` (a whole-page screen): the shell's source row (K1's) and the header's Range
-  button (K3's). They go when those areas' fixes merge.
-- `summary`: the naming editor's variable chips (K3's).
-- `video-advanced`, dark: `indicator-contrast` 1.23:1 on the reset and help buttons of a
-  changed option. This is a fault of the gate, not of the page. `probe.ts` reads a colour by
-  painting it on a canvas and treats `getImageData` as premultiplied (`r * 255 / a`). The data
-  is not premultiplied: `color(srgb 0.506 0.549 0.973 / 0.1)` reads as `128,137,245,26` in both
-  browsers (checked). So the translucent tint of a changed row becomes a backdrop near the
-  ring's own colour. As painted, the ring is 5.2:1 on that row. With the line changed to
-  `[r, g, b, a / 255]` (tried locally, not committed), these two entries go, and so does the
-  shell's dark preset-row entry (1.1:1); no other finding of the gate changed. The fix
-  belongs to the gate.
+**Known entries left in `known/picture.ts`.** One: on `crop-manual` (a whole-page screen), the
+shell's source row (K1's component). It goes when K1's fix merges.
 
 ## Task K3: the tracks and the batch
 
