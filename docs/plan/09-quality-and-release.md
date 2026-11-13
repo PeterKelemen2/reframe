@@ -106,6 +106,9 @@ Benchmarks run in CI as a non-blocking job. A regression of more than 20 % comme
   - Docker image → GHCR (`linux/amd64`, `linux/arm64` without HW encoders).
   - Windows NSIS (+ MSI) and Linux AppImage/deb/rpm → GitHub Release, signed.
   - Updater manifest `latest.json`.
+  - The sources release of [decision 0073](../decisions/0073-gpl-corresponding-source-per-tool-pin.md),
+    made before the packages if its manifest's hash is new, never "latest", and named in
+    `THIRD_PARTY_NOTICES`.
   - Optional: `reframe` wheel to PyPI, so others can script against the core.
 
 ## Licensing
@@ -133,6 +136,7 @@ This is not legal advice. Review it before any public or commercial distribution
       ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) tasks L and W).
 - [ ] **The corresponding source** of the GPL parts (FFmpeg and the libraries the BtbN build
       links, MKVToolNix on Windows), or a written offer, ships with each release. The notices
-      give only repository and commit links today. Open: attach the source archives to each
-      release (Q-5) or write an offer (the owner decides; [decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md)
-      "Review and fix round").
+      give only repository and commit links today. Decided
+      ([decision 0073](../decisions/0073-gpl-corresponding-source-per-tool-pin.md)): one
+      sources release for each set of pinned source versions, named by the hash of a source
+      manifest. Each app release's notices link to it. There is no written offer. Built by Q-5.

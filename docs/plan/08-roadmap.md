@@ -213,6 +213,9 @@ checklist below is done only after this phase.
 - [ ] The updater picks up a test release.
 - [ ] Performance budgets ([09 §Q-3](09-quality-and-release.md#q-3-performance-budgets)) are met.
 - [ ] Third-party licence notices are bundled ([09 §Licensing](09-quality-and-release.md#licensing)).
+- [ ] The release's notices name its sources release, and that release has the corresponding
+      source of every GPL and LGPL part
+      ([decision 0073](../decisions/0073-gpl-corresponding-source-per-tool-pin.md)).
 - [ ] User docs: quick start, presets, batch mode, keyboard shortcuts.
 
 ## After v1

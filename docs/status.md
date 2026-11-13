@@ -142,7 +142,7 @@ demo. What is left there is listed in [Not verified](#not-verified).
 | Q-2.4 Local samples suite | Not started | |
 | Q-3 Performance budgets | **Partial** | The `benchmark` marker and job exist. Checked: the probe budgets (one file: 58 ms of 500 ms; 24 files: 0.39 s of 5 s) and the 4K source frame (C-10, `tests/preview/test_benchmark.py`, `hdr10-4k` through the facade with libplacebo, one frame per task: cold 678–844 ms of 2 s, cached 1.4 ms mean / 3.8 ms max of 50 ms at load average 4 on 12 threads; up to 2.4 s cold at load 19, reported as a skip on an overloaded machine; a source with GOPs much longer than 10 s can exceed 2 s: [0033](decisions/0033-preview-frames-crop-and-clips.md)). **Windows** (the VM, no GPU, 2026-11-10, [0070](decisions/0070-windows-testing-phase.md) "The checks that need no GPU"): the `benchmark` tests pass (one file 104 ms, 24 files 1.15 s; the 4K frame with zscale + tonemap cold max 1.26 s, cached max 7.8 ms); **the desktop cold start misses its budget**: median 5.11 s, worst 5.36 s (10 runs); about 4.7 s after the server's start was shortened ([0071](decisions/0071-server-start-and-windows-cold-start.md)). **Measured again 2026-11-12 on the desktop VM** (Ryzen 5 5600 host, 22H2, 6 processors, no GPU, Defender on): **median 1.38 s, worst 1.43 s: the budget is met**; the frozen sidecar alone is ready in about 1 s (2.2–2.9 s on the laptop VM). The 4.7 s was the laptop VM's CPU: a known limit for slow machines only (0071 "Follow-up"; "Open items") |
 | Q-4 Logging and diagnostics | Not started | |
-| Q-5 Release process | Not started | Licence: GPL-3.0-or-later is set in the package metadata (open question 2, default) |
+| Q-5 Release process | Not started | Licence: GPL-3.0-or-later is set in the package metadata (open question 2, default). The GPL corresponding source is decided ([0073](decisions/0073-gpl-corresponding-source-per-tool-pin.md), 2026-11-13): one sources release for each set of pinned source versions, named by the hash of a source manifest and linked from each release's notices; the workflow is not built |
 
 ## Features
 
@@ -361,13 +361,6 @@ hands its jobs to the server or desktop app that owns the queue, or starts one
 
 Each is built with a default that is easy to change. M2 and the core-complete work did not stop
 for them.
-
-- **GPL corresponding source for releases** (M10 review R1, [0072](decisions/0072-m10-bundling-packaging-smoke-tests.md)
-  "Review and fix round"): every artefact bundles GPL builds (FFmpeg with x264 / x265 and the
-  rest of the BtbN build; MKVToolNix on Windows), and the AppImage carries LGPL libraries from
-  Ubuntu 22.04. `THIRD_PARTY_NOTICES` gives repository and commit links only. Before a public
-  release: attach the source archives to each release (the default plan for Q-5), or add a
-  written offer. Not legal advice.
 
 - **Audio**:
   - an explicit bitrate the encoder cannot do goes **down** to the next allowed step, as in

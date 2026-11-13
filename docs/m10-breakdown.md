@@ -257,9 +257,10 @@ fix round".
   `C:\ReframeTest`), and the signed MSI's UAC prompt by eye (on the secure desktop, no
   screenshot). The installed app's notification name and icon were checked by task W (the
   shortcut's AUMID and a screenshot); a look by eye is optional.
-- **Owner questions**: the GPL corresponding source for releases (status "Questions"); the
-  Windows FFmpeg build (every candidate crashes with `fieldmatch` about as often: keep BtbN,
-  and report upstream if wanted).
+- **Owner questions**: the GPL corresponding source for releases was answered on 2026-11-13
+  ([0073](decisions/0073-gpl-corresponding-source-per-tool-pin.md)); the Windows FFmpeg build
+  (every candidate crashes with `fieldmatch` about as often: keep BtbN, and report upstream if
+  wanted).
 - **Left in place**: Docker images `reframe-l` and `reframe-s` with their volumes (`reframe-l-*`,
   `reframe-s-*`) and their base images `ubuntu:22.04` and `ghcr.io/astral-sh/uv:0.13.5`; the
   updater test key in `~/.config/reframe-test-keys/`; on the VM the test certificate (in
