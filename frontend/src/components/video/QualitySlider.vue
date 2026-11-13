@@ -26,7 +26,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: number]; commit: [] }>()
 
-const { t, n } = useI18n()
+const { t, n, locale } = useI18n()
 
 const digits = computed(() => {
   const fraction = String(props.mode.step).split('.')[1]
@@ -153,6 +153,7 @@ function typed(value: number | null | undefined): void {
         :min-fraction-digits="digits"
         :max-fraction-digits="digits"
         :prefix="`${mode.label} `"
+        :locale="locale"
         :invalid="invalid"
         :disabled="disabled"
         @update:model-value="typed"

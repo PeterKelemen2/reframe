@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { deferred } from '@/api/testing/fakes'
 import type { EncoderOption, JobSettings } from '@/api/types'
 import { mountShell } from '@/components/shell/testing'
+import { browserLocale } from '@/components/summary/testing'
 import type { VideoEncoderDef } from '@/components/video/encoders'
 import { openJob, setUpVideo } from '@/components/video/testing'
 import { sampleJob } from '@/editor/testing/samples'
@@ -29,6 +30,7 @@ const mounted: { unmount(): void }[] = []
 Element.prototype.scrollIntoView ??= () => undefined
 
 afterEach(() => {
+  vi.restoreAllMocks()
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.replaceChildren()
   localStorage.clear()
@@ -340,6 +342,23 @@ describe('a number option', () => {
     const { wrapper } = await mountPanel(jobWith({ advanced: { 'psy-rd': 1.75 } }))
     await choose(wrapper, 'Psycho-visual')
     expect(row(wrapper, 'psy-rd').find('input').element).toHaveProperty('value', '1.75')
+  })
+
+  it("shows and reads decimals in the app's locale, whatever the browser's is", async () => {
+    browserLocale('de')
+    const stored = await mountPanel(jobWith({ advanced: { 'psy-rd': 1.75 } }))
+    await choose(stored.wrapper, 'Psycho-visual')
+    expect(row(stored.wrapper, 'psy-rd').find('input').element).toHaveProperty('value', '1.75')
+    stored.wrapper.unmount()
+    const { wrapper, editor } = await mountPanel()
+    await choose(wrapper, 'Psycho-visual')
+    const input = row(wrapper, 'psy-rd').find('input')
+    ;(input.element as HTMLInputElement).focus()
+    const paste = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(paste, 'clipboardData', { value: { getData: () => '0.5' } })
+    input.element.dispatchEvent(paste)
+    await input.trigger('keydown', { key: 'Enter', code: 'Enter' })
+    expect(editor.job?.video?.advanced).toEqual({ 'psy-rd': 0.5 })
   })
 
   it('writes nothing when the focus passes through without a change', async () => {

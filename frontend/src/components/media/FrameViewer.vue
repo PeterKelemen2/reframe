@@ -14,7 +14,7 @@ import { usePreviewStore, type ViewMode, type Zoom } from '@/stores/preview'
 
 import SplitCompare from './SplitCompare.vue'
 
-const { t, n } = useI18n()
+const { t, n, locale } = useI18n()
 const preview = usePreviewStore()
 const crop = useCropStore()
 const seekId = useId()
@@ -288,6 +288,7 @@ const notes = computed(() => [
       <label :for="seekId">{{ t('preview.seek.label') }}</label>
       <InputNumber
         v-model="seekValue"
+        :locale="locale"
         :input-id="seekId"
         :min="0"
         :min-fraction-digits="0"
