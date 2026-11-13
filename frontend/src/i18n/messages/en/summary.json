@@ -9,6 +9,7 @@
     "gib": "{value} GiB",
     "kbps": "{value} kb/s",
     "mbps": "{value} Mb/s",
+    "aspect": "{ratio}:1",
     "fps": "{rate} fps",
     "fpsVariable": "{rate} fps (variable)"
   },
@@ -89,8 +90,8 @@
     "rateControl": "Quality",
     "quality": "Constant quality {value}",
     "bitrate": "Average bitrate {kbps} kb/s",
-    "twoPass": "2-pass",
-    "twoPassTurbo": "2-pass, turbo first pass",
+    "bitrateTwoPass": "Average bitrate {kbps} kb/s · 2-pass",
+    "bitrateTwoPassTurbo": "Average bitrate {kbps} kb/s · 2-pass, turbo first pass",
     "speed": "Speed preset",
     "encoderDefault": "Encoder default",
     "bitDepth": "Bit depth",

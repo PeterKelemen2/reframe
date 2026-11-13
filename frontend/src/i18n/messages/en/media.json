@@ -30,13 +30,17 @@
     "ended": {
       "bitrate": "Track {n}: {value} kb/s, measured.",
       "noBitrate": "Track {n}: no bitrate could be measured.",
-      "events": "Track {n}: one event counted. | Track {n}: {count} events counted.",
-      "eventsForced": "Track {n}: {count} events counted, {forced} forced.",
+      "events": "Track {track}: one event counted. | Track {track}: {count} events counted.",
+      "eventsForced": "Track {track}: one event counted, {forced} forced. | Track {track}: {count} events counted, {forced} forced.",
       "eventsAll": "The events of every subtitle track are counted.",
       "loudness": "Track {n}: integrated loudness {integrated}, true peak {peak}, loudness range {range}.",
       "done": "{scan}: done.",
       "cancelled": "{scan}: cancelled."
     }
+  },
+  "delay": {
+    "ms": "{sign}{value} ms",
+    "seconds": "{sign}{value} s"
   },
   "events": {
     "forced": "{count} forced",

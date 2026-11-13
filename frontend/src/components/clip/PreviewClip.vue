@@ -89,7 +89,7 @@ const summary = computed(() => {
     duration: time(clip.duration),
     start: time(clip.start),
     codec: clip.video_codec ?? clip.container,
-    size: formatBytes(clip.size, t),
+    size: formatBytes(clip.size, t, n),
   })
 })
 
@@ -342,6 +342,7 @@ watch(running, async (now) => {
         v-else-if="link !== null"
         class="preview-clip__video"
         :src="link"
+        :aria-label="t('clip.player')"
         controls
         preload="metadata"
         data-field="clip-video"

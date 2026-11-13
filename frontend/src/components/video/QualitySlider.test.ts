@@ -1,5 +1,6 @@
 import InputNumber from 'primevue/inputnumber'
 import Slider from 'primevue/slider'
+import { flushPromises } from '@vue/test-utils'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { mountShell } from '@/components/shell/testing'
@@ -107,5 +108,17 @@ describe('QualitySlider', () => {
     wrapper.findComponent(InputNumber).vm.$emit('update:modelValue', 60)
     expect(wrapper.emitted('update:modelValue')).toEqual([[51]])
     expect(wrapper.emitted('commit')).toHaveLength(1)
+  })
+
+  it("writes every number in the app's locale, not the browser's", async () => {
+    const wrapper = await mountSlider()
+    const i18n = wrapper.vm.$i18n as unknown as { locale: string }
+    i18n.locale = 'de'
+    await flushPromises()
+    expect(wrapper.find('[role="slider"]').attributes('aria-valuetext')).toBe('RF 22,0')
+    expect(wrapper.find('[data-band-note]').text()).toBe(
+      'Recommended for 1080 lines: RF 20,0 to 24,0',
+    )
+    expect((wrapper.find('input').element as HTMLInputElement).value).toBe('RF 22,0')
   })
 })

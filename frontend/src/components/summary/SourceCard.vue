@@ -13,7 +13,7 @@ import { formatBitrate, formatBytes, videoLine } from './format'
 import { useJobSource } from './useJobSource'
 import { useThumbnail } from './useThumbnail'
 
-const { t } = useI18n()
+const { t, n } = useI18n()
 const editor = useEditorStore()
 const { sourceId, entry, source } = useJobSource()
 const { label: rangeLabel, length: rangeLength } = useRange()
@@ -25,13 +25,15 @@ const name = computed(() => fileName(entry.value?.path ?? editor.job?.source.pat
 const container = computed(() => source.value?.container ?? null)
 const size = computed(() => {
   const bytes = container.value?.size
-  return bytes == null ? null : formatBytes(bytes, t)
+  return bytes == null ? null : formatBytes(bytes, t, n)
 })
 const bitrate = computed(() => {
   const value = container.value?.bitrate
-  return value == null ? null : formatBitrate(value, t)
+  return value == null ? null : formatBitrate(value, t, n)
 })
-const line = computed(() => (video.value === null ? null : videoLine(video.value, t).join(' · ')))
+const line = computed(() =>
+  video.value === null ? null : videoLine(video.value, t, n).join(' · '),
+)
 const tracks = computed(() => {
   const media = source.value
   if (media === null) return null
@@ -47,7 +49,7 @@ const range = computed(() =>
 )
 const chapters = computed(() => {
   const count = source.value?.chapters?.length
-  return count === undefined ? null : count === 0 ? t('summary.source.noChapters') : String(count)
+  return count === undefined ? null : count === 0 ? t('summary.source.noChapters') : n(count)
 })
 </script>
 

@@ -6,7 +6,7 @@ import { useCropStore } from '@/stores/crop'
 import { useEditorStore } from '@/stores/editor'
 import { useUiStore } from '@/stores/ui'
 
-import { EDGES, type Edge } from './grid'
+import { EDGES, type Edge, snapCrop } from './grid'
 
 const { t } = useI18n()
 const crop = useCropStore()
@@ -14,7 +14,7 @@ const editor = useEditorStore()
 const ui = useUiStore()
 const root = useTemplateRef<HTMLElement>('root')
 
-/** Arrow presses per Shift + arrow press. */
+/** Arrow presses per Shift + arrow press, and per Page Up or Page Down. */
 const SHIFT_STEPS = 8
 const INWARD: Record<Edge, string> = {
   top: 'ArrowDown',
@@ -84,16 +84,46 @@ function move(edge: Edge, value: number, key: string): void {
   crop.setRect({ ...crop.rect, [edge]: value }, { coalesce: key, quiet: true })
 }
 
+/** The largest crop of `edge` that leaves a picture, with the other edges as they are. */
+function maxOf(edge: Edge): number {
+  const { rect, grid, sourceSize } = crop
+  if (rect === null || grid === null || sourceSize === null) return 0
+  const size = across(edge) ? sourceSize.width : sourceSize.height
+  return snapCrop({ ...rect, [edge]: size }, rect, grid).rect[edge]
+}
+
+/**
+ * The arrows move a handle where they point. Page Up and Page Down move the top and bottom
+ * handles the same way, and the left and right ones inward and outward (the slider's value).
+ */
+function directionOf(edge: Edge, key: string): number {
+  if (key === INWARD[edge]) return 1
+  if (key === OUTWARD[edge]) return -1
+  if (key !== 'PageUp' && key !== 'PageDown') return 0
+  const up = key === 'PageUp'
+  if (across(edge)) return up ? 1 : -1
+  return (edge === 'bottom') === up ? 1 : -1
+}
+
 function onKey(edge: Edge, event: KeyboardEvent): void {
-  if (!event.key.startsWith('Arrow')) return
-  // The panel's ←/→ step through the frames; on a handle the arrows move the edge.
+  const paging = event.key === 'PageUp' || event.key === 'PageDown'
+  const ends = event.key === 'Home' || event.key === 'End'
+  if (!event.key.startsWith('Arrow') && !paging && !ends) return
+  // The panel's ←/→ step through the frames and its keys scroll; on a handle they move the edge.
   event.preventDefault()
   event.stopPropagation()
-  const direction = event.key === INWARD[edge] ? 1 : event.key === OUTWARD[edge] ? -1 : 0
   const grid = crop.grid
-  if (direction === 0 || grid === null || crop.rect === null) return
-  const step = (across(edge) ? grid.stepX : grid.stepY) * (event.shiftKey ? SHIFT_STEPS : 1)
-  move(edge, crop.rect[edge] + direction * step, `crop.keys.${edge}`)
+  if (grid === null || crop.rect === null) return
+  const key = `crop.keys.${edge}`
+  if (ends) {
+    move(edge, event.key === 'Home' ? 0 : maxOf(edge), key)
+    return
+  }
+  const direction = directionOf(edge, event.key)
+  if (direction === 0) return
+  const steps = paging || event.shiftKey ? SHIFT_STEPS : 1
+  const step = (across(edge) ? grid.stepX : grid.stepY) * steps
+  move(edge, crop.rect[edge] + direction * step, key)
 }
 
 let drag: { edge: Edge; key: string } | null = null
@@ -179,7 +209,7 @@ function onPointerUp(): void {
         :aria-orientation="across(edge) ? 'horizontal' : 'vertical'"
         :aria-valuenow="crop.rect[edge]"
         aria-valuemin="0"
-        :aria-valuemax="across(edge) ? crop.sourceSize.width : crop.sourceSize.height"
+        :aria-valuemax="maxOf(edge)"
         :aria-valuetext="t('dimensions.overlay.handleValue', { value: crop.rect[edge] })"
         :data-crop-handle="edge"
         @keydown="onKey(edge, $event)"
