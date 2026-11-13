@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n'
 
 import type { NameResult, Schemas, ValidationIssue } from '@/api/types'
 import Field from '@/components/base/Field.vue'
+import { formatList } from '@/components/shell/format'
 
 import { type OverrideField, OVERRIDE_FIELDS } from './fields'
 import { segments, type SpanTone, toneOf } from './spans'
@@ -37,10 +38,6 @@ const emit = defineEmits<{
 }>()
 
 const { t, n, locale } = useI18n()
-
-function listText(items: string[]): string {
-  return new Intl.ListFormat(locale.value, { style: 'short', type: 'unit' }).format(items)
-}
 
 function sourceLabel(kind: 'file' | 'folder'): string {
   return kind === 'file' ? t('naming.parsed.fileName') : t('naming.parsed.folderName')
@@ -170,7 +167,9 @@ function issuesOf(field: OverrideField): ValidationIssue[] {
     </p>
     <p class="parsed-name__reason" data-testid="name-reason">{{ result.reason }}</p>
     <p v-if="(result.skipped_folders ?? []).length > 0" class="parsed-name__skipped">
-      {{ t('naming.parsed.skipped', { folders: listText(result.skipped_folders ?? []) }) }}
+      {{
+        t('naming.parsed.skipped', { folders: formatList(result.skipped_folders ?? [], locale) })
+      }}
     </p>
 
     <ul class="parsed-name__candidates">
