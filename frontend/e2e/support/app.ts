@@ -11,11 +11,18 @@ export async function openApp(page: Page): Promise<void> {
   await expect(page.locator('.sources-panel')).toBeVisible()
 }
 
-/** Opens a file of the media root through `Ctrl+O` and the file browser, and waits for its job. */
-export async function openFile(page: Page, name: string): Promise<void> {
+/**
+ * Opens a file through `Ctrl+O` and the file browser, and waits for its job. The file is in the
+ * media root, or in the root named `root` (`output` for an `--output-fixtures` file).
+ */
+export async function openFile(page: Page, name: string, root?: string): Promise<void> {
   await page.keyboard.press('ControlOrMeta+O')
   const dialog = page.locator('.file-browser-dialog')
   await expect(dialog).toBeVisible()
+  if (root !== undefined) {
+    const named = page.locator('.file-browser__root-name').getByText(root, { exact: true })
+    await dialog.locator('[data-role="root"]', { has: named }).first().click()
+  }
   await dialog.locator(`.file-browser__entry[data-name="${name}"]`).click()
   await dialog.locator('[data-action="confirm"]').click()
   await expect(dialog).toBeHidden()
