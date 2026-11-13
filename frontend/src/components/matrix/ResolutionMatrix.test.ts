@@ -86,6 +86,10 @@ function cell(episode: number, which: string): HTMLButtonElement {
   return button
 }
 
+function cellName(episode: number, which: string): string {
+  return cell(episode, which).getAttribute('aria-label') ?? ''
+}
+
 /** The element's texts, one space between two elements' texts (the template has none). */
 function text(element: Element | null | undefined): string {
   if (!element) return ''
@@ -177,6 +181,20 @@ describe('the matrix', () => {
     )
     const panel = await open(cell(11, 'audio:1'))
     expect(panel.querySelector('[data-role="message"]')?.textContent?.trim()).toBe(message)
+  })
+
+  it("lists a cell's state in its label the way the locale writes a list", async () => {
+    const wrapper = await mountMatrix()
+    expect(cellName(11, 'subtitle:0')).toContain(
+      'Matched after relaxing, #2, matched without title',
+    )
+    // Japanese joins a list without the English comma and space.
+    ;(wrapper.vm as unknown as { $i18n: { locale: string } }).$i18n.locale = 'ja'
+    await settle()
+    const parts = ['Matched after relaxing', '#2', 'matched without title']
+    const japanese = new Intl.ListFormat('ja', { style: 'short', type: 'unit' }).format(parts)
+    expect(japanese).not.toBe(parts.join(', '))
+    expect(cellName(11, 'subtitle:0')).toContain(japanese)
   })
 
   it("names the video size in the V cell's label", async () => {
@@ -291,6 +309,22 @@ describe("a row's issues", () => {
     // The popover's row changes under it: it closes, and the focus goes back to the row.
     expect(document.querySelector('.matrix-popover')).toBeNull()
     expect(document.activeElement?.getAttribute('data-row-mark')).toBe(sourceIdOf(11))
+  })
+})
+
+describe("a row's issues without a fix", () => {
+  it('moves the focus onto the folded notes, the one control of the popover', async () => {
+    const resolution = animeResolution()
+    const e11 = resolution.rows?.[10]
+    if (e11 === undefined) throw new Error('no E11')
+    for (const issue of e11.issues ?? []) issue.fixes = []
+    expect((e11.issues ?? []).some((issue) => issue.severity === 'info')).toBe(true)
+    await mountMatrix(resolution)
+    const panel = await open(
+      document.querySelector<HTMLElement>(`[data-row-mark="${sourceIdOf(11)}"]`) as HTMLElement,
+    )
+    expect(panel.querySelector('[data-role="fix"]')).toBeNull()
+    expect(document.activeElement).toBe(panel.querySelector('summary'))
   })
 })
 

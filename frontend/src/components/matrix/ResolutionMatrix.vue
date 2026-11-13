@@ -43,7 +43,7 @@ const props = defineProps<{
   focus: string | null
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const editor = useEditorStore()
 const sources = useSourcesStore()
 
@@ -139,7 +139,9 @@ function cellLabel(item: MatrixRow, column: MatrixColumn, match: TrackMatch): st
   return t('matrix.cell.open', {
     column: column.label,
     label: item.label,
-    state: state.filter(Boolean).join(', '),
+    state: new Intl.ListFormat(locale.value, { style: 'short', type: 'unit' }).format(
+      state.filter(Boolean),
+    ),
   })
 }
 

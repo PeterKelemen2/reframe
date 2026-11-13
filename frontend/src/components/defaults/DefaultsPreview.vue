@@ -26,7 +26,7 @@ import { outputLines } from './preview'
  * One row per source track: what the edited defaults take or drop, and why; in a group, one
  * table per file. Only the newest answer is shown.
  */
-const { t } = useI18n()
+const { t, n } = useI18n()
 const defaults = useDefaultsStore()
 const scans = useScansStore()
 const sources = useSourcesStore()
@@ -96,7 +96,8 @@ function sourceText(table: FileTable, decision: TrackDecision): string {
 
 function outputs(table: FileTable, decision: TrackDecision): string[] {
   const stream = streamOf(table, decision)
-  return outputLines(decision, stream?.kind === 'audio' ? stream : undefined, system.definitions, t)
+  const audioStream = stream?.kind === 'audio' ? stream : undefined
+  return outputLines(decision, audioStream, system.definitions, t, (value) => n(value))
 }
 
 function measureRun(table: FileTable, decision: TrackDecision) {

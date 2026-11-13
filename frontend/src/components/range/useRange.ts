@@ -17,12 +17,12 @@ export type RangePath = (typeof RANGE_PATHS)[number]
 export function useRange() {
   const editor = useEditorStore()
   const validation = useValidationStore()
-  const { t } = useI18n()
+  const { t, n } = useI18n()
   const { source } = useJobSource()
 
   const range = computed(() => editor.range)
   const seconds = computed(() => rangeSeconds({ range: range.value }, source.value))
-  const label = computed(() => rangeLabel(range.value, t))
+  const label = computed(() => rangeLabel(range.value, t, (value) => n(value)))
   const length = computed(() => formatDuration(seconds.value))
 
   function issuesAt(path: RangePath): ValidationIssue[] {

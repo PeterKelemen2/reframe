@@ -215,6 +215,63 @@ describe('the modes', () => {
   })
 })
 
+/** The modes that Tab can land on. */
+function stops(): (string | undefined)[] {
+  return [...document.querySelectorAll<HTMLInputElement>('[data-range-mode]')]
+    .filter((input) => input.tabIndex >= 0)
+    .map((input) => input.dataset.rangeMode)
+}
+
+describe('passing through the modes', () => {
+  // The arrow keys check every radio they pass; jsdom has no arrow-key radio navigation, so a
+  // click on each mode in turn stands in for them.
+  it('converts each mode from the whole source the popover opened with', async () => {
+    const { editor } = await mountSelector()
+    await openPopover()
+    await mode('chapters')
+    expect(editor.job?.range).toEqual({ kind: 'chapters', start: 1, end: 4 })
+    await mode('time')
+    expect(editor.job?.range).toEqual({ kind: 'time', start: 0, end: null })
+    await mode('frames')
+    expect(editor.job?.range).toEqual({ kind: 'frames', start: 0, end: null })
+    expect(textOf('[data-field="range-length"]')).toBe('0:05')
+  })
+
+  it('converts each mode from the range the user set, and comes back to it exactly', async () => {
+    const { editor } = await mountSelector()
+    editor.setRange({ kind: 'time', start: 1.5, end: 4.2 })
+    await openPopover()
+    await mode('chapters')
+    expect(editor.job?.range).toEqual({ kind: 'chapters', start: 2, end: 4 })
+    await mode('frames')
+    expect(editor.job?.range).toEqual({ kind: 'frames', start: 37, end: 105 })
+    await mode('time')
+    expect(editor.job?.range).toEqual({ kind: 'time', start: 1.5, end: 4.2 })
+  })
+
+  it('converts from a range picked in a mode once the user moves on', async () => {
+    const { editor } = await mountSelector()
+    await openPopover()
+    await mode('chapters')
+    await pick('range.start', '2 · Part One · 0:00:01')
+    await pick('range.end', '2 · Part One · 0:00:01')
+    await mode('time')
+    await mode('frames')
+    expect(editor.job?.range).toEqual({ kind: 'frames', start: 25, end: 63 })
+  })
+
+  it('makes only the checked mode a tab stop, so the focus never lands on another', async () => {
+    const { editor } = await mountSelector()
+    await openPopover()
+    expect(stops()).toEqual(['full'])
+    await mode('time')
+    expect(stops()).toEqual(['time'])
+    editor.undo()
+    await flushPromises()
+    expect(stops()).toEqual(['full'])
+  })
+})
+
 describe('the chapter selects', () => {
   it('list each chapter’s number, name and start', async () => {
     await mountSelector()
@@ -341,7 +398,7 @@ describe('the frame fields', () => {
     await type('range.start', '24')
     await type('range.end', '1440')
     expect(editor.job?.range).toEqual({ kind: 'frames', start: 24, end: 1440 })
-    expect(textOf('[data-field="range-label"]')).toBe('Frames 24 – 1440')
+    expect(textOf('[data-field="range-label"]')).toBe('Frames 24 – 1,440')
     await type('range.end', '12.5')
     expect(editor.job?.range).toEqual({ kind: 'frames', start: 24, end: 1440 })
     expect(issuesIn('range.end')).toEqual([
