@@ -391,3 +391,72 @@ same numbers came from a first run after task A (bcfc512).
 Done on Linux, on `m10-hardening`, not merged into `main`, not pushed. Every worktree and
 branch of the run (A, B, R1, R2, FX1, FX2) is removed. Recorded, not fixed: 0074 "Built". Rest
 of M10: F-16, F-17 in WebKit (five flows), Q-4, Q-5, the release checklist.
+
+## F-16: the i18n and accessibility audit (2026-11-13)
+
+The spec is [06 §F-16](plan/06-web-app.md#f-16-i18n-and-accessibility) and
+[0076](decisions/0076-f16-i18n-and-accessibility-audit.md) (item 1: what the audit checks, item
+2: the gate, item 5: what is not in F-16). Same rules as above ("Rules for every agent"); every
+agent `model: "opus"`, `effort: "high"`, a fresh agent, `isolation: "worktree"` on
+`m10-hardening` (`git merge --ff-only m10-hardening` first). Commits start with `F-16: `. Each
+task fills its own section of 0076.
+
+### Tasks and waves
+
+| Wave | Task | What | Ports |
+|------|------|------|-------|
+| 1 | G | the gate (0076 item 2): `@axe-core/playwright`, the screen list, axe in both themes, the focus walk, the reduced-motion check, the per-area known lists; `REFRAME_E2E_PORT`; the shared layer (tokens, theme, global CSS, `components/base`) fixed; the i18n checks extended to strings built in scripts where a check can see them | 871x, e2e 8750 |
+| 1 → 2 | K1, K2, K3 | phase 1 (with G): the keyboard paths, the focus and the strings of the area, walked in headless Chromium and Firefox with scripts of their own, fixed with tests. Phase 2 (resumed after G merges): the gate's findings of the area, the known list emptied | K1 872x (e2e 8720), K2 873x (e2e 8730), K3 874x (e2e 8740) |
+| 3 | R1, R2 | R1: the gate itself (does it check what 0076 item 1 says, on every screen; can a finding slip through) and contrast/focus by eye on screenshots; R2: the keyboard paths and the strings, area by area, with tests that fail on a user-visible defect | 878x, 879x |
+| 4 | fixes | one agent per area of the findings | 870x, 877x |
+| lead | | merges, checks, one mutation per task, the docs | 876x |
+
+### Who owns which files
+
+| Task | Owns |
+|------|------|
+| G | `frontend/src/styles/**`, `frontend/src/components/base/**`, `frontend/src/i18n/**` (index, checks; message files `base.json`, `editor.json`), `composables/useReveal.ts`, `composables/useTheme.ts`, `frontend/e2e/a11y/**` (the gate, `screens/<area>.ts` and `known/<area>.ts` until it merges), `frontend/e2e/support/**`, `frontend/playwright.config.ts`, `frontend/package.json` and `package-lock.json` (the dev dependency) |
+| K1 shell and pages | `components/{shell,sources,queue,settings,presets}/**` except `shell/PreviewPanel.vue`, `views/**`, `App.vue`, `router/**`, `platform/**`, `composables/{useShortcuts,useQuitFlow,useOpenPaths,useQueueActions,useQueueGroup}.ts`, messages `shell`, `sources`, `queue`, `settings`, `presets`, `app`, `desktop`, `window`, `api`; after G: `e2e/a11y/{screens,known}/shell.ts` |
+| K2 picture and video | `components/{video,summary,dimensions,crop,filters,clip,media}/**`, `shell/PreviewPanel.vue`, `editor/tabs/{Summary,Dimensions,Filters,Video}Tab.vue`, messages `video`, `summary`, `dimensions`, `crop`, `filters`, `preview`, `clip`, `media`, `advanced`, `params`; after G: `e2e/a11y/{screens,known}/picture.ts` |
+| K3 tracks and batch | `components/{tracks,language,chapters,naming,matrix,batch,defaults,range}/**`, `editor/tabs/{Audio,Subtitles,Chapters,Tags}Tab.vue`, messages `tracks`, `language`, `chapters`, `tags`, `naming`, `matrix`, `group`, `defaults`, `range`; after G: `e2e/a11y/{screens,known}/tracks.ts` |
+| lead | `docs/**`, the stores (`src/stores/**`: a change there goes to the lead), anything not listed |
+
+A change in another task's file goes back to the lead in the report.
+
+### Contracts
+
+**The screen list (G builds it; each area owns its file after G merges).** A screen is
+`{ id, area, setup(page) }` in `e2e/a11y/screens/<area>.ts`; `setup` brings the app to the screen
+through the UI from `openApp` (the e2e servers' fixtures: `multitrack`, the season,
+`letterbox`, and `chapters` in the output root). The ids are binding; an area may add screens.
+
+| Area | Screens |
+|------|---------|
+| shell | `workspace-empty`, `file-browser`, `preset-picker`, `status-issues` (the status bar's issue list open), `toast`, `queue` (waiting, done and failed jobs), `job-log`, `activity`, `presets`, `preset-name-dialog`, `settings-<section>` for each web section, `login` |
+| picture | `summary`, `dimensions`, `crop-manual` (letterbox, magnifier), `filters`, `video`, `video-advanced`, `command-drawer`, `preview-frames`, `split-compare`, `preview-clip` |
+| tracks | `audio`, `subtitles` (with an external subtitle), `chapters`, `tags`, `track-metadata`, `bulk-edit`, `language-picker`, `naming-editor`, `range` (`chapters.mkv`, the popover open), `group` (the banner, scope `file`), `matrix`, `queue-group`, `defaults`, `apply-to-group` |
+
+**The known lists.** `e2e/a11y/known/<area>.ts` exports `{ screen, check: 'axe' | 'focus' |
+'motion', theme?: 'light' | 'dark', rule?, target }[]`. The gate fails on a finding that is not
+listed and on a listed one that did not happen. At the end of F-16 every list is empty, except
+entries with a reason in 0076.
+
+**Ports.** `REFRAME_E2E_PORT` (default 8750) is the first port of `npm run e2e`'s servers
+(Chromium on it, Firefox on the next). K1 uses 8720, K2 8730, K3 8740 in phase 2.
+
+**Numbers.** A number shown to the user goes through vue-i18n's `n(value, options)` (or `Intl`
+with the app's `locale`), never `toFixed`/`String()` alone; a formatter in a `.ts` file takes
+`n` as it takes `t` today (`summary/format.ts`). `toFixed` for arithmetic stays.
+
+### Done when (word for word in each brief)
+
+06 §F-16: "Audit that every string goes through vue-i18n (English first; the rule and its check
+start in F-1). Full keyboard paths. Visible focus. WCAG AA contrast in both themes. Respect
+`prefers-reduced-motion`." 0076 item 1 (points 1–5) for every screen of the task's area; for G,
+0076 items 2–4 as well.
+
+### F-16 progress
+
+| Date | What |
+|------|------|
+| 2026-11-13 | This section and 0076 committed; wave 1 (G, K1, K2, K3 phase 1) next. |
