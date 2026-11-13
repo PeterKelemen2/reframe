@@ -28,6 +28,8 @@
     "subtitleTracks": "no subtitles | {n} subtitle track | {n} subtitle tracks",
     "chapters": "Chapters",
     "noChapters": "None",
+    "range": "Range",
+    "rangeValue": "{range} ({length})",
     "changed": "The file changed after it was probed. Open it again to see its details.",
     "notOpen": "The source is not open in this window."
   },
@@ -130,6 +132,8 @@
     "dependsOnContent": "Depends on content",
     "qualityHint": "In constant quality mode the size follows the picture; choose an average bitrate for a size you can plan.",
     "noVideoBitrate": "Cannot be estimated: the bitrate of the copied video is not known",
-    "noDuration": "Cannot be estimated: the duration of the source is not known"
+    "noDuration": "Cannot be estimated: the duration of the source is not known",
+    "range": "Range: {range} ({length})",
+    "rangeNoLength": "Range: {range}"
   }
 }
