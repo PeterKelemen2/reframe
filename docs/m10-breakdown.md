@@ -243,6 +243,7 @@ left on the VM or in Docker.
 | 2026-11-12 | Wave 0 committed (096836f). Part 1 step 1: the whole pytest on the VM 7481 passed, 3 failed (`needs_gpu`; one is a wrong libplacebo reason, given to T); step 2: cold start median 1.38 s, the budget is met (0071 "Follow-up"). Next: wave 1 (T, U, L). |
 | 2026-11-12 | U merged (0b7df9e); T merged (7c08a89: the Windows FFmpeg pin stays BtbN, every candidate crashes about 1 % with `fieldmatch`; the bundled FFmpeg's VAAPI aborts with libva < 2.22, so T2 ships libva 2.22 built on Ubuntu 22.04 next to FFmpeg). Theme and tray pass (35af7e0), real icon set (c4107e5). W launched (the VM's GUI session is W's). |
 | 2026-11-12 | L merged (f59cffb), T2 (1ad3733: libva 2.24.1 bundled; tools started by a frozen app get the user's environment), S phase 1 (b62f4d6), W (2907ded), S phase 2 (60cddb8) and the lead's `comfort.rs` change for msedgedriver (ecd81cd: the Windows smoke run 6 of 6). Reviews R1, R2 (no blocker; 5 majors, all reproduced); fixes FA (92b9374), FB (9900547), FU (af8d4b2), S (the CI job's packages); the lead's docs (0ad8fbe). Final checks on Linux and the VM (7a0430f). |
+| 2026-11-13 | The owner's answer on the GPL source (0073, 476f444). The owner's VM session: the `Zoé 東京` profile path, the toast and the MSI's UAC prompt pass. |
 
 ## Where this run ended (2026-11-12)
 
@@ -252,11 +253,11 @@ fix round".
 
 - **Done**: Part 1 steps 1 and 2, and step 3's tray menu and theme; D-7; D-8 except a GitHub
   release; D-9 on Linux and the VM.
-- **Waiting for the owner at the VM window**: a Windows user whose profile path has accents and
-  CJK (the user `Zoé 東京` exists; the signed test installers and a test file are in
-  `C:\ReframeTest`), and the signed MSI's UAC prompt by eye (on the secure desktop, no
-  screenshot). The installed app's notification name and icon were checked by task W (the
-  shortcut's AUMID and a screenshot); a look by eye is optional.
+- **The owner's VM session** (2026-11-13, passed): as the user `Zoé 東京` (profile
+  `C:\Users\Zoé 東京`), the per-user installer without UAC, the bundled tools, an Explorer
+  double-click on `Ünnepi film – 東京.mkv` and its encode, the toast (*Reframe* with its icon),
+  the theme kept after a restart, no process left after the quit; the signed MSI's UAC prompt
+  names *Verified publisher: Reframe test signing*.
 - **Owner questions**: the GPL corresponding source for releases was answered on 2026-11-13
   ([0073](decisions/0073-gpl-corresponding-source-per-tool-pin.md)); the Windows FFmpeg build
   (every candidate crashes with `fieldmatch` about as often: keep BtbN, and report upstream if
