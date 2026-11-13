@@ -1,5 +1,5 @@
 import type { JobGeometry, Schemas } from '@/api/types'
-import { formatAspect, type Translate } from '@/components/summary/format'
+import { type FormatNumber, formatAspect, type Translate } from '@/components/summary/format'
 import { pipelineOf, type Size } from '@/components/summary/pipeline'
 
 type Rational = Schemas['Rational']
@@ -27,19 +27,25 @@ function size({ width, height }: Size): string {
 }
 
 /** `16:9`, or `2.39:1` for a ratio without a name. */
-export function ratioOf(width: number, height: number, sar: Rational): string {
+export function ratioOf(
+  width: number,
+  height: number,
+  sar: Rational,
+  t: Translate,
+  n: FormatNumber,
+): string {
   const across = width * sar.num
   const down = height * sar.den
   const divisor = gcd(across, down)
   const named = `${across / divisor}:${down / divisor}`
-  return NAMED_RATIOS.has(named) ? named : formatAspect(across / down)
+  return NAMED_RATIOS.has(named) ? named : formatAspect(across / down, t, n)
 }
 
 /**
  * `Source 1920×1080 (16:9, square) → Crop 1920×800 → Output 1920×800 · 2.40:1 · square pixels`,
  * from the same `pipelineOf` as the Summary's picture card.
  */
-export function headerOf(answer: JobGeometry, t: Translate): string {
+export function headerOf(answer: JobGeometry, t: Translate, n: FormatNumber): string {
   const pipeline = pipelineOf(answer)
   if (pipeline.kind === 'no-video') return t('dimensions.header.noVideo')
   if (pipeline.kind === 'copied') {
@@ -50,7 +56,7 @@ export function headerOf(answer: JobGeometry, t: Translate): string {
   const steps = [
     t('dimensions.header.source', {
       size: size(pipeline.source),
-      aspect: ratioOf(source.width, source.height, sar),
+      aspect: ratioOf(source.width, source.height, sar, t, n),
       pixels:
         sar.num === sar.den
           ? t('dimensions.header.sourceSquare')
@@ -58,12 +64,17 @@ export function headerOf(answer: JobGeometry, t: Translate): string {
     }),
   ]
   if (pipeline.crop) steps.push(t('dimensions.header.crop', { size: size(pipeline.crop) }))
-  const turns = []
+  const flip = answer.geometry?.flip_horizontal === true
   if (pipeline.rotation !== 0) {
-    turns.push(t('dimensions.header.rotate', { degrees: pipeline.rotation }))
+    const degrees = pipeline.rotation
+    steps.push(
+      flip
+        ? t('dimensions.header.rotateFlip', { degrees })
+        : t('dimensions.header.rotate', { degrees }),
+    )
+  } else if (flip) {
+    steps.push(t('dimensions.header.flip'))
   }
-  if (answer.geometry?.flip_horizontal) turns.push(t('dimensions.header.flip'))
-  if (turns.length > 0) steps.push(turns.join(', '))
   const geometry = answer.geometry as NonNullable<JobGeometry['geometry']>
   steps.push(
     t('dimensions.header.output', {
@@ -73,5 +84,5 @@ export function headerOf(answer: JobGeometry, t: Translate): string {
   const pixels = pipeline.par
     ? t('dimensions.header.par', { par: `${pipeline.par.num}:${pipeline.par.den}` })
     : t('dimensions.header.square')
-  return [steps.join(' → '), formatAspect(pipeline.aspect), pixels].join(' · ')
+  return [steps.join(' → '), formatAspect(pipeline.aspect, t, n), pixels].join(' · ')
 }

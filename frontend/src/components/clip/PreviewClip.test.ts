@@ -255,6 +255,13 @@ describe('the preview clip', () => {
     expect(video(wrapper).attributes('src')).toBe('http://server/api/preview/clips/clip-1?sig=1')
   })
 
+  it('names the player, and leaves playing to the user', async () => {
+    const { wrapper } = await encoded()
+    expect(video(wrapper).attributes('aria-label')).toBe('The preview clip')
+    expect(video(wrapper).attributes('autoplay')).toBeUndefined()
+    expect(video(wrapper).attributes('controls')).toBeDefined()
+  })
+
   it('shows why the clip link failed', async () => {
     const { wrapper } = await encoded((fake) =>
       fake.on('GET /api/preview/clips/clip-1/link', () =>

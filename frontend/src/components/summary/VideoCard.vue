@@ -9,7 +9,7 @@ import { useSystemStore } from '@/stores/system'
 
 import SummaryLink from './SummaryLink.vue'
 
-const { t } = useI18n()
+const { t, n } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
 
@@ -24,16 +24,17 @@ const quality = computed(() => {
   const control = video.value?.rate_control
   if (control === undefined) return ''
   if (control.mode === 'bitrate') {
-    const parts = [t('summary.video.bitrate', { kbps: control.kbps })]
-    if (control.two_pass) {
-      parts.push(
-        control.turbo_first_pass ? t('summary.video.twoPassTurbo') : t('summary.video.twoPass'),
-      )
-    }
-    return parts.join(' · ')
+    const kbps = n(control.kbps)
+    if (!control.two_pass) return t('summary.video.bitrate', { kbps })
+    return control.turbo_first_pass
+      ? t('summary.video.bitrateTwoPassTurbo', { kbps })
+      : t('summary.video.bitrateTwoPass', { kbps })
   }
   const scale = encoder.value?.rate_control?.quality?.label
-  return t('summary.video.quality', { value: scale ? `${scale} ${control.value}` : control.value })
+  const value = n(control.value, { maximumFractionDigits: 3 })
+  return t('summary.video.quality', {
+    value: scale ? t('video.quality.valueText', { scale, value }) : value,
+  })
 })
 
 const speed = computed(() => {

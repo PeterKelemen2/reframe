@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import type { AudioStream, SubtitleStream } from '@/api/types'
+import { formatters } from '@/components/summary/testing'
 import { probedSource } from '@/components/tracks/testing'
 
 import {
   channelsText,
   delayText,
+  kiloHertz,
+  oneDecimal,
   preciseDuration,
   setDispositions,
   shownFlags,
@@ -74,10 +77,21 @@ describe('the label of a source choice', () => {
 
 describe('times', () => {
   it('shows a delay in milliseconds, with its sign', () => {
-    expect(delayText(0)).toBe('0 ms')
-    expect(delayText(0.2)).toBe('+200 ms')
-    expect(delayText(-1.5)).toBe('−1500 ms')
-    expect(delayText(12)).toBe('+12 s')
+    const { t, n } = formatters()
+    expect(delayText(0, t, n)).toBe('0 ms')
+    expect(delayText(0.2, t, n)).toBe('+200 ms')
+    expect(delayText(-1.5, t, n)).toBe('−1500 ms')
+    expect(delayText(12, t, n)).toBe('+12 s')
+    expect(delayText(-12.5, t, n)).toBe('−12.5 s')
+  })
+
+  it("writes delays, rates and loudness in the app's locale", () => {
+    const { t, n } = formatters('de')
+    expect(delayText(-12.5, t, n)).toBe('−12,5 s')
+    expect(kiloHertz(44_100, n)).toBe('44,1')
+    expect(oneDecimal(-22.54, n)).toBe('−22,5')
+    expect(oneDecimal(2, n)).toBe('2,0')
+    expect(oneDecimal(-0.01, n)).toBe('0,0')
   })
 
   it('shows a duration to the millisecond', () => {

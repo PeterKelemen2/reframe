@@ -2,22 +2,28 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import ToggleSwitch from 'primevue/toggleswitch'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { JobSettings } from '@/api/types'
 import { mountShell } from '@/components/shell/testing'
+import { browserLocale } from '@/components/summary/testing'
 import EncoderPicker from '@/components/video/EncoderPicker.vue'
 import QualitySlider from '@/components/video/QualitySlider.vue'
 import SpeedPresetSlider from '@/components/video/SpeedPresetSlider.vue'
 import { openJob, setUpVideo, snapshot, withStatus } from '@/components/video/testing'
 import { sampleJob } from '@/editor/testing/samples'
 import { useToastStore } from '@/stores/toasts'
+import { useUiStore } from '@/stores/ui'
 
 import VideoTab from './VideoTab.vue'
 
 const mounted: { unmount(): void }[] = []
 
+// jsdom lays nothing out; a revealed field scrolls itself into view.
+Element.prototype.scrollIntoView ??= () => undefined
+
 afterEach(() => {
+  vi.restoreAllMocks()
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.replaceChildren()
   localStorage.clear()
@@ -156,6 +162,27 @@ describe('the Video tab', () => {
     })
   })
 
+  it("shows the bitrate in the app's locale, whatever the browser's is", async () => {
+    browserLocale('de')
+    const rc = { mode: 'bitrate', kbps: 6000, two_pass: false, turbo_first_pass: false } as const
+    const { wrapper } = await mountTab({ job: jobWith({ rate_control: rc }) })
+    const input = field(wrapper, 'video.rate_control.kbps').find('input')
+    expect((input.element as HTMLInputElement).value).toBe('6,000 kb/s')
+  })
+
+  it('opens the advanced options and focuses them when the panel as a whole is asked for', async () => {
+    const { wrapper } = await mountTab()
+    const ui = useUiStore()
+    ui.advancedOpen = false
+    await flushPromises()
+    ui.reveal('video.advanced')
+    await flushPromises()
+    expect(ui.advancedOpen).toBe(true)
+    const section = wrapper.find('[data-section="advanced"]')
+    expect(section.find('button').attributes('aria-expanded')).toBe('true')
+    expect(document.activeElement).toBe(section.find('button').element)
+  })
+
   it('offers 2-pass only where the encoder has it', async () => {
     const rc = { mode: 'bitrate', kbps: 3000, two_pass: false, turbo_first_pass: false } as const
     const { wrapper } = await mountTab({
@@ -243,7 +270,20 @@ describe('the Video tab', () => {
     const options = control(wrapper, 'video.framerate', Select).prop('options') as {
       label: string
     }[]
-    expect(options.at(-1)?.label).toBe('18/1')
+    expect(options.at(-1)?.label).toBe('18')
+  })
+
+  it("names the frame rates in the app's locale", async () => {
+    const { wrapper } = await mountTab({ job: jobWith({ framerate: { num: 2997, den: 125 } }) })
+    const labels = () =>
+      (control(wrapper, 'video.framerate', Select).prop('options') as { label: string }[]).map(
+        (option) => option.label,
+      )
+    expect(labels()).toEqual(expect.arrayContaining(['23.976', '29.97', '59.94', '119.88', '25']))
+    expect(labels().at(-1)).toBe('23.976')
+    ;(wrapper.vm.$i18n as unknown as { locale: string }).locale = 'de'
+    await flushPromises()
+    expect(labels()).toEqual(expect.arrayContaining(['23,976', '29,97', '59,94', '119,88']))
   })
 
   it('makes one undo step of a speed preset drag', async () => {

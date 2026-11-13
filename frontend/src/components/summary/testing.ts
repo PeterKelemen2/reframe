@@ -1,6 +1,38 @@
 // Test data as the real server sends it: testdata's multitrack.mkv and hdr10.mkv as probed (trimmed),
 // and the definitions trimmed to what the Summary reads.
+import { vi } from 'vitest'
+import { createI18n } from 'vue-i18n'
+
 import type { Definitions, MediaSource } from '@/api/types'
+import { en } from '@/i18n'
+
+import type { FormatNumber, Translate } from './format'
+
+/**
+ * Makes `Intl.NumberFormat` without a locale use `locale`, as in a browser set to that language.
+ * `vi.restoreAllMocks()` undoes it.
+ */
+export function browserLocale(locale: string): void {
+  const Native = Intl.NumberFormat
+  vi.spyOn(Intl, 'NumberFormat').mockImplementation(function (
+    locales?: Intl.LocalesArgument,
+    options?: Intl.NumberFormatOptions,
+  ) {
+    return new Native(locales ?? locale, options)
+  } as typeof Intl.NumberFormat)
+}
+
+/**
+ * `t` and `n` with the English messages in `locale`: a test in `de` shows that a number follows
+ * the app's locale (a decimal comma) rather than `toFixed`'s point.
+ */
+export function formatters(locale = 'en'): { t: Translate; n: FormatNumber } {
+  const { global } = createI18n({ legacy: false, locale, messages: { [locale]: en } })
+  return {
+    t: global.t as Translate,
+    n: (value, options) => global.n(value, options),
+  }
+}
 
 const MULTITRACK = {
   schema_version: 1,

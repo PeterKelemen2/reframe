@@ -5,8 +5,8 @@ import { configureClient } from '@/api/client'
 import { type DevServer, startServer } from '@/api/testing/devServer.mjs'
 import { endedTask, http } from '@/api/testing/serverHelpers'
 import type { JsonPatchOp, Schemas } from '@/api/types'
+import { formatters } from '@/components/summary/testing'
 import { pinnedTools } from '@/editor/testing/tools.mjs'
-import { createAppI18n } from '@/i18n'
 import { useCropStore } from '@/stores/crop'
 import { useEditorStore } from '@/stores/editor'
 import { useTasksStore } from '@/stores/tasks'
@@ -15,7 +15,7 @@ import { headerOf } from './header'
 
 const PORT = 8722
 const SOON = { timeout: 30_000, interval: 50 }
-const t = createAppI18n().global.t as (key: string, named?: Record<string, unknown>) => string
+const { t, n } = formatters()
 
 let server: DevServer
 let letterbox: string
@@ -136,7 +136,7 @@ describe('the Dimensions tab against a real server', () => {
       expect(crop.geometryPending).toBe(false)
       expect(crop.geometry?.geometry?.crop).toEqual(editor.get('/dimensions/crop/rect'))
     }, SOON)
-    const header = headerOf(crop.geometry!, t)
+    const header = headerOf(crop.geometry!, t, n)
     const command = await filters(editor.job)
     expect(command.crop).toBe('314×134')
     expect(header).toContain(`Crop ${command.crop} →`)
