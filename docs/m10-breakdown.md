@@ -364,4 +364,30 @@ command drawer; a real encode; ffprobe of the output's duration and chapters; th
 
 | Date | What |
 |------|------|
-| 2026-11-13 | This section committed; wave 1 (A, B phase 1) next. |
+| 2026-11-13 | This section committed (5177b9c); wave 1 (A, B phase 1) launched. |
+| 2026-11-13 | A merged (bcfc512), B phase 2 merged (44ad5e3); the lead's mutation per task caught. Reviews R1 (1 major, 3 minors, 2 nits) and R2 (1 major, 4 minors, test and i18n gaps); both majors reproduced by the lead. Fixes FX1 (5b48f57, the group target: [0075](decisions/0075-the-range-in-a-group-and-the-shown-job.md)) and FX2 (aba9d76). Final checks and the demo: below and in [0074](decisions/0074-range-selector-in-m10.md) "Built". |
+
+#### F-19 results
+
+Demo, 2026-11-13, at aba9d76: headless Chromium, `dev-server.py --tools-dir` the pinned FFmpeg
+n9.0.2 (no fake), the default preset (H.265 software, MKV), `chapters.mkv` (5.021 s, 25 fps).
+The driver set the template through the Summary's naming editor, the range through the header,
+and read the command from the Video tab's drawer.
+
+| Range | Header | Summary (Source / Estimate) | Name | Command | Output (ffprobe, pinned) |
+|-------|--------|-----------------------------|------|---------|--------------------------|
+| *Chapters* 2–3 | *Chapters 2–3* · 0:03 | *Chapters 2–3 (0:03)* / *Range: Chapters 2–3 (0:03)* | preview `chapters 2-3.mkv` at once; the path after *Use this path* | `-ss 1` before `-i`, `-t 3` | file 3.021 s; video HEVC 3.000 s, 75 frames; audio AAC 3.021 s; chapters *Part One* 0–1.5, *Part Two* 1.5–3.0 |
+| *Seconds* (kept from the chapters) | *0:00:01 – 0:00:04* · 0:03 | the same label (0:03) | `chapters seconds.mkv` (template without `{chapters}`) | `-ss 1`, `-t 3` | the same: 3.021 s, 75 frames, the two chapters |
+| *Frames* (kept) | *Frames 25 – 100* · 0:03 | the same label (0:03) | `chapters frames.mkv` | `-ss 1`, `-t 3` | the same: 3.021 s, 75 frames, the two chapters |
+
+Chapters 2–3 last 3.0 s (75 frames). The video stream is exact; the file is 21 ms longer (the
+last AAC frame), within one frame (40 ms). Undo, eight Ctrl+Z, one step each: the template, the
+mode *Frames* → *Seconds*, the template, *Seconds* → *Chapters*, *Use this path*, *To* 3 → 4
+(*Chapters 2–4*, 0:04), *From* 2 → 1 (*Chapters 1–4*, 0:05), *Chapters* → *Whole source*. The
+same numbers came from a first run after task A (bcfc512).
+
+#### Where F-19 ended (2026-11-13)
+
+Done on Linux, on `m10-hardening`, not merged into `main`, not pushed. Every worktree and
+branch of the run (A, B, R1, R2, FX1, FX2) is removed. Recorded, not fixed: 0074 "Built". Rest
+of M10: F-16, F-17 in WebKit (five flows), Q-4, Q-5, the release checklist.

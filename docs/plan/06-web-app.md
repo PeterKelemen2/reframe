@@ -491,7 +491,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       (`JobTemplate` + overrides). The tabs use one API for both. (M4 builds the job target;
       the group target is typed and comes with F-13. It also holds the file the tabs show and
       that file's job, and a scope: an edit goes into the template or into that file's
-      override; [0066](../decisions/0066-m7-batch-season.md) item 1.)
+      override; [0066](../decisions/0066-m7-batch-season.md) item 1. The range always goes into
+      that file's override, and the shown job carries it in both scopes;
+      [0075](../decisions/0075-the-range-in-a-group-and-the-shown-job.md).)
 - [x] Undo/redo as JSON patch history (Ctrl+Z / Ctrl+Shift+Z).
 - [x] `useValidation`: debounced (250 ms) `jobs/validate`. Issues are indexed by path for `Field`.
 - [x] "Modified vs preset" uses `presets/diff` (the design: [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task D").
@@ -594,19 +596,21 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       ([decision 0067](../decisions/0067-m8-picture.md), "Task E").
 
 ### F-19 Range selector
-- [ ] The Range button and popover in the source header from [03 §Range](03-features.md#range):
+- [x] The Range button and popover in the source header from [03 §Range](03-features.md#range):
       the four modes, the modes the source cannot use disabled with the reason, chapter
       selects with names and start times, time fields that parse `H:MM:SS.mmm` / `MM:SS` /
       seconds, frames as the model has them (0-based, exclusive end), and the span kept on a
       mode change ([decision 0074](../decisions/0074-range-selector-in-m10.md)).
-- [ ] Each change is one JSON patch on `/range` (one undo step). The `range.*` issues show on
+- [x] Each change is one JSON patch on `/range` (one undo step). The `range.*` issues show on
       its fields and on the button, with their fixes.
-- [ ] Group target: always the shown file's override, with the override dot and *Reset to
+- [x] Group target: always the shown file's override, with the override dot and *Reset to
       group*. No *Apply to whole group*.
-- [ ] The Summary's Source and Estimate cards show the range. Playwright flow 5 (F-17).
+- [x] The Summary's Source and Estimate cards show the range. Playwright flow 5 (F-17).
 
 (Added in M10 by [decision 0074](../decisions/0074-range-selector-in-m10.md): numbered after
-F-18, built before F-16.)
+F-18, built before F-16. Built on 2026-11-13: 0074 "Built"; in a group the shown job of scope
+`group` carries the shown file's range, so the name, the command and the issues follow it:
+[0075](../decisions/0075-the-range-in-a-group-and-the-shown-job.md).)
 
 ### F-16 i18n and accessibility
 - [ ] Audit that every string goes through vue-i18n (English first; the rule and its check
@@ -632,7 +636,9 @@ F-18, built before F-16.)
   0065](../decisions/0065-m6-tracks-and-metadata.md), "Task G". M7 built flow 2, which reads
   the queued group through the server; [decision 0066](../decisions/0066-m7-batch-season.md),
   "Task E". M8 built flow 4, which reads the magnifier's canvases back against the frame;
-  [decision 0067](../decisions/0067-m8-picture.md), "Task F".)
+  [decision 0067](../decisions/0067-m8-picture.md), "Task F". M10 built flow 5 with F-19, which
+  reads the queued job back through the server; [decision
+  0074](../decisions/0074-range-selector-in-m10.md), "Built".)
 - [ ] Each flow comes with its screens: the Playwright set-up and flow 3 in M4, flow 1 in M6,
       flow 2 in M7, flow 4 in M8, flow 5 with F-19 in M10. M10 runs all five in Chromium and WebKit
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).

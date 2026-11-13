@@ -120,3 +120,148 @@ How F-19 works:
 - `06-web-app.md` Part B: **F-19 Range selector**.
 - `08-roadmap.md` §M10: F-19 in the step list.
 - `06-web-app.md` F-17: flow 5.
+
+## Built (2026-11-13)
+
+On `m10-hardening`, by the lead and fresh agents (Opus 5.5, `effort: high`, worktrees), as
+[m10-breakdown.md](../m10-breakdown.md) "F-19" planned:
+
+| Merge | What |
+|-------|------|
+| bcfc512 | task A, the selector |
+| 44ad5e3 | task B, Playwright flow 5 |
+| 5b48f57 | fix FX1, the group target |
+| aba9d76 | fix FX2, the selector and the arithmetic |
+
+Each merge was checked by the lead. One mutation per task was caught by its tests, except the
+one noted under "Recorded, not fixed".
+
+**What exists:**
+
+- `frontend/src/components/range/`:
+  - `range.ts`: parsing, formatting, `rangeSeconds` (the arithmetic of `range_duration`),
+    `convertRange`, the frame rate and the frame count.
+  - `useRange.ts`: the range, its label, its length and its issues, shared by the header and
+    the Summary.
+  - `RangeSelector.vue`: the button and a PrimeVue `Popover` with `role="dialog"`.
+- `editor.setRange`, `editor.rangeOverridden`, `editor.resetRangeToGroup` and `editor.range`.
+- The Summary: a *Range* row in the Source card and a *Range: …* line in the Estimate card.
+- `en/range.json`.
+
+**Choices made while building (within items 1–12):**
+
+1. **Labels.**
+   - One chapter shows as *Chapter 2*.
+   - An open end shows as *0:00:02.500 – end* and *Frames 24 – end*.
+   - Times in labels and chapter options show milliseconds only when they are not zero
+     (`3 · Part Two · 0:00:02.500`).
+   - The length is rounded to whole seconds with the header's `formatDuration` (*0:03*).
+2. **An empty *Start*** (seconds or frames) means 0. Item 4 says only what an empty *End*
+   does.
+3. ***Frames* without video.** *Frames* is also disabled, with its own reason, for a source
+   with no video. The command builder cannot cut frames there.
+4. **Picking *Whole source* in a group** removes the file's range override; it does not write
+   `{kind: full}`.
+5. **Escape.** A PrimeVue `Select` stops every Escape, even a closed one. So the popover
+   closes on Escape in a capture listener, unless the key is pressed inside an open list. There
+   it closes only the list.
+6. **Undo inside the popover.** Ctrl+Z and Ctrl+Y act on the editor from the popover's radios
+   and Selects (`useShortcuts`, as for the matrix popover). In a text field the browser's own
+   undo still applies.
+7. **Reveal.** `ui.reveal('range')` focuses the button. A reveal of `range.start` or
+   `range.end` opens the popover on that field.
+8. **Mode conversions.**
+   - Values converted into seconds keep their exact value; only typed times are rounded to the
+     millisecond.
+   - Chapter edges match within 1 µs, frame edges within 0.001 frame.
+   - So *Chapters* → *Seconds* → *Chapters* and NTSC *Frames* → *Seconds* → *Frames* keep the
+     span.
+9. **The output path.** A range change does not write the output path. The naming preview
+   follows it at once (`{chapters}` = `2-3`), and the naming editor offers *Use this path*, as
+   for any change from elsewhere ([0063](0063-m4-frontend-mvp.md) item 3). Flow 5 clicks it.
+10. **Picking a preset keeps the job's range** (item 9). Before F-19, `applyPreset` on a job
+    drafted the source again and lost it. *Remux only* (`applyRemuxDraft`) still drafts again
+    and goes back to the whole source; one undo brings the range back.
+11. **The group target.** The shown job of scope `group` carries the shown file's range, so
+    the name, the command and the issues follow it in both scopes:
+    [0075](0075-the-range-in-a-group-and-the-shown-job.md).
+12. **One frame rate with the command builder.** `reframe.validation.range` (`frame_count`,
+    `range_duration`, the `range.no_frame_rate` check) now uses the builder's `source_rate`
+    ([0013](0013-command-builder-details.md) item 7):
+    - the average rate;
+    - else frames ÷ duration, snapped to a standard rate;
+    - else `r_frame_rate`.
+
+    Before, the validation used `avg_frame_rate` or else `r_frame_rate`. On the VFR probe
+    `testdata/probes/vfr.json`, *Frames 0 – 57* showed 0.475 s while the builder cut 1.49 s.
+    The UI's `frameRate` follows the same order with the same snapping, and counts frames
+    half to even as Python does. `range/rate.server.test.ts` pins the UI against Python on
+    all 32 recorded probes.
+
+**Reviews and fixes.** R1 checked correctness against this record and the group target. R2
+checked the tests, the keyboard and i18n. Both majors were reproduced by the lead and fixed,
+each with a test that failed first:
+
+- **R1-1:** in scope `group`, the name and the command ignored the file's range. Fixed by FX1
+  (0075).
+- **R2-1:** Ctrl+Z did nothing while the focus was in the popover. Fixed by FX2.
+
+Fixed minors:
+
+- the focus went to `<body>` after *Reset to group*;
+- a reveal of a range field stopped at the closed button;
+- text that does not parse was lost when the other field was committed;
+- conversions lost a frame or a chapter on sub-millisecond chapter edges;
+- the frame rate differed from the builder's;
+- half-to-even frame counts;
+- a fix to the whole source left an override dot;
+- template-literal message keys that the i18n check could not see.
+
+R2's test gaps got tests (float noise, an empty *Start*, `1:60:00`, issues on the chapter
+*From*, the mode group's description, unnamed chapters, an unknown length).
+
+**Recorded, not fixed:**
+
+- **The arrow keys commit every mode they pass.** These are native radios. ↓ from *Whole
+  source* goes through *Chapters* 1–4 → *Seconds* 0–5 → *Frames* 0–125, one undo step each.
+  On `chapters.mkv` the last chapter ends at 5.0 s and the file at 5.021 s, so this path cuts
+  21 ms that a click on *Frames* (0 – end) keeps.
+- **Escape commits valid text.** Escape with valid typed text in a time or frame field commits
+  it, because the field blurs as the popover closes.
+- **Frame numbers are not formatted for the locale** (*Frames 0 – 1440*). This is for F-16.
+- **Frame ranges past the end disagree a little.** Validation clamps a frame range to the
+  stream's frame count; the builder clamps to the container duration. On `vfr.json`,
+  *Frames 60–120* gives 1.413 s against the plan's 1.451 s. This was there before F-19.
+- **A lead mutation survived.** `onRange` (every operation on `/range`) changed to *some* was
+  not caught. Only a patch that mixes the range with other fields takes that path, and no
+  control or fix makes one.
+- **Duplicate root keys in the file browser.** The file browser lists the output folder twice
+  when it is also a media root (`dev-server.py --output-fixtures`), with duplicate `v-for`
+  keys. Nothing visible breaks.
+
+**Checks on Linux (2026-11-13, at aba9d76 plus the docs):**
+
+| Check | Result |
+|-------|--------|
+| `uv run ruff check` | all checks passed |
+| `uv run ruff format --check` | 549 files formatted |
+| `uv run mypy` and `uv run mypy --platform win32` | no issues in 546 files |
+| `uv run pytest -m "not needs_gpu"` (four parts) | 7798 passed, 2 skipped, 26 deselected |
+| `npm run lint`, `fmt:check`, `typecheck` | clean |
+| `npm test` | 2055 passed |
+| `npm run test:server` | 105 passed |
+| `npm run e2e` | 24 passed, twice in a row (flows 1–5, Chromium and Firefox) |
+| `npm run build:web` | built |
+
+**The demo** (headless Chromium, `dev-server.py` with the pinned FFmpeg n9.0.2, the default
+preset, `chapters.mkv` 5.021 s at 25 fps; the numbers are in
+[m10-breakdown.md](../m10-breakdown.md) "F-19 results"):
+
+- *Chapters* 2–3: the header, the Summary, the name `chapters 2-3.mkv` and the command
+  (`-ss 1 … -t 3`) follow it.
+- *Seconds* (1–4, kept from the chapters) and *Frames* (25–100, kept) give the same command.
+- Each of the three real encodes has a 3.000 s video stream of 75 frames and a 3.021 s file
+  (the AAC stream). Both are within one frame (40 ms) of chapters 2–3 (3.0 s).
+- Each has the chapters *Part One* 0–1.5 s and *Part Two* 1.5–3.0 s.
+- Eight Ctrl+Z went back one step each: template, mode, template, mode, *Use this path*, *To*,
+  *From*, mode.
