@@ -24,14 +24,14 @@ afterEach(() => {
 })
 
 /** The Source and Estimate cards of `src` (chapters.mkv), at 6000 kb/s. */
-async function mountCards() {
+async function mountCards(media = chaptersSource()) {
   const { wrapper, pinia } = await mountShell(SourceCard, {
     setup() {
       useSystemStore().definitions = sampleDefinitions()
       useSourcesStore().entries = ['src', 'e1', 'e2'].map((id) => ({
         id,
         path: `/media/${id}.mkv`,
-        source: chaptersSource(),
+        source: structuredClone(media),
       }))
     },
   })
@@ -65,6 +65,15 @@ describe('the Summary’s range', () => {
     expect(text(source, '[data-field="range"]')).toBe('Chapters 2–3 (0:03)')
     expect(text(estimate, '[data-field="range"]')).toBe('Range: Chapters 2–3 (0:03)')
     expect(text(estimate, '[data-field="basis"]')).toContain('for 0:03')
+  })
+
+  it('leaves out a length that the source does not give', async () => {
+    const media = chaptersSource()
+    media.chapters = []
+    const { estimate, editor } = await mountCards(media)
+    editor.setRange({ kind: 'chapters', start: 2, end: 3 })
+    await flushPromises()
+    expect(text(estimate, '[data-field="range"]')).toBe('Range: Chapters 2–3')
   })
 
   it('stops at the end of the source, as the encode does', async () => {

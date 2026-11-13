@@ -20,6 +20,7 @@ import reframe.command
 from reframe.command import PlanError, build_plan
 from reframe.definitions import Definitions, load_definitions
 from reframe.models import (
+    AppSettings,
     AudioOutputTrack,
     AverageBitrate,
     CapabilitySnapshot,
@@ -40,7 +41,8 @@ from reframe.models import (
     ValidationIssue,
 )
 from reframe.textfile import TextCharset
-from reframe.validation import validate
+from reframe.validation import JobContext, validate
+from reframe.validation.range import range_duration
 
 _COMMAND_TESTS = Path(__file__).resolve().parents[1] / "command"
 
@@ -504,3 +506,28 @@ def test_deinterlaced_crop_is_on_the_frame_grid() -> None:
     plan = build_plan(s.job, s.source, s.caps, s.tools)
     argv = [str(a) for step in plan.steps for a in step.argv]
     assert any("crop=1920:1076:0:2" in a for a in argv), argv
+
+
+@pytest.mark.parametrize(
+    "probe", ["vfr", "mkvmerge-vfr", "chapters.mkv", "multitrack.mkv", "vfr.mkv", "vfr.mp4"]
+)
+def test_frame_range_lasts_what_the_builder_cuts(probe: str) -> None:
+    """The length that validation, the estimate and the UI give a frame range is the cut of the
+    plan, with and without an average frame rate in the source (``vfr`` has none)."""
+    src = cmd_tests.recorded(probe)
+    job = cmd_tests.draft(src, video={"encoder": "libx264"})
+    job.range = FrameRange(start=10, end=50)
+    caps, tools = cmd_tests.caps(), cmd_tests.tools()
+    plan = build_plan(job, src, caps, tools)
+    settings = AppSettings()
+    ctx = JobContext(
+        job=job,
+        source=src,
+        caps=caps,
+        tools=tools,
+        fs=file_system(job, src),
+        settings=settings,
+        definitions=DEFS,
+        naming=settings.output.naming,
+    )
+    assert range_duration(ctx) == pytest.approx(plan.expected_duration, abs=1e-6)

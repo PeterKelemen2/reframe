@@ -5,13 +5,14 @@ import type { Translate } from '@/components/summary/format'
 export type Range = NonNullable<JobSettings['range']>
 export type RangeKind = Range['kind']
 
-type Rational = Schemas['Rational']
 type VideoStream = Schemas['VideoStream']
 
 export const FULL: Range = { kind: 'full' }
 
-/** Float noise (`4.000000001 × 25`) must not round a frame number past its true value. */
-const EPSILON = 1e-6
+/** Chapter times come in whole microseconds, so a frame edge in seconds can be off by half of one. */
+const SECONDS_TOLERANCE = 1e-6
+/** The same in frames (up to 240 fps), and float noise: `1.04 × 25` is 26.000000000000004. */
+const FRAMES_TOLERANCE = 1e-3
 
 const SECONDS = /^(\d+(?:\.\d*)?|\.\d+)$/
 const MINUTES = /^(\d+):([0-5]?\d(?:\.\d*)?)$/
@@ -73,15 +74,101 @@ export function sourceDuration(source: MediaSource | null): number | null {
   return source?.container?.duration ?? videoOf(source)?.duration ?? null
 }
 
-function usable(rate: Rational | null | undefined): rate is Rational {
-  return rate != null && rate.num > 0 && rate.den > 0
+/** Rates that a counted rate snaps to, within 0.2 %, as the command builder snaps them. */
+const STANDARD_RATES: readonly (readonly [bigint, bigint])[] = [
+  [24000n, 1001n],
+  [24n, 1n],
+  [25n, 1n],
+  [30000n, 1001n],
+  [30n, 1n],
+  [48n, 1n],
+  [50n, 1n],
+  [60000n, 1001n],
+  [60n, 1n],
+  [100n, 1n],
+  [120000n, 1001n],
+  [120n, 1n],
+]
+
+function abs(value: bigint): bigint {
+  return value < 0n ? -value : value
 }
 
-/** The average frame rate (else the stream's frame rate) in frames per second. */
+function gcd(a: bigint, b: bigint): bigint {
+  return b === 0n ? a : gcd(b, a % b)
+}
+
+/** The exact value of a non-negative float as `[numerator, denominator]`. */
+function exactly(value: number): [bigint, bigint] {
+  let scaled = value
+  let den = 1n
+  while (!Number.isInteger(scaled)) {
+    scaled *= 2
+    den *= 2n
+  }
+  return [BigInt(scaled), den]
+}
+
+/** Python's `Fraction.limit_denominator`: the closest fraction with a denominator up to `max`. */
+function limitDenominator(num: bigint, den: bigint, max: bigint): number {
+  if (den <= max) return Number(num) / Number(den)
+  let [p0, q0, p1, q1] = [0n, 1n, 1n, 0n]
+  let [n, d] = [num, den]
+  for (;;) {
+    const a = n / d
+    const q2 = q0 + a * q1
+    if (q2 > max) break
+    ;[p0, q0, p1, q1] = [p1, q1, p0 + a * p1, q2]
+    ;[n, d] = [d, n - a * d]
+  }
+  const k = (max - q0) / q1
+  return 2n * d * (q0 + k * q1) <= den
+    ? Number(p1) / Number(q1)
+    : Number(p0 + k * p1) / Number(q0 + k * q1)
+}
+
+/** `frames ÷ seconds` snapped to a standard rate, with the builder's exact arithmetic. */
+function countedRate(frames: number, seconds: number): number {
+  const [secondsNum, secondsDen] = exactly(seconds)
+  const num = BigInt(frames) * secondsDen
+  const den = secondsNum
+  let closest: readonly [bigint, bigint] = STANDARD_RATES[0]!
+  let closestOff: readonly [bigint, bigint] | null = null
+  for (const standard of STANDARD_RATES) {
+    const [sn, sd] = standard
+    const off = [abs(num * sd - sn * den), den * sd] as const
+    if (closestOff === null || off[0] * closestOff[1] < closestOff[0] * off[1]) {
+      closest = standard
+      closestOff = off
+    }
+  }
+  const [sn, sd] = closest
+  if (abs(num * sd - sn * den) * 500n <= sn * den) return Number(sn) / Number(sd)
+  const divisor = gcd(num, den)
+  return limitDenominator(num / divisor, den / divisor, 1001n)
+}
+
+/**
+ * The frame rate the command builder turns frames into time with, in frames per second: the
+ * average one, else the frame count ÷ the stream's duration snapped to a standard rate, else
+ * the stream's rate.
+ */
 export function frameRate(source: MediaSource | null): number | null {
   const video = videoOf(source)
-  const rate = video?.avg_frame_rate ?? video?.frame_rate
-  return usable(rate) ? rate.num / rate.den : null
+  if (video === null) return null
+  const average = video.avg_frame_rate
+  if (average != null && average.num > 0) return average.num / average.den
+  if (video.frame_count && video.duration) return countedRate(video.frame_count, video.duration)
+  const rate = video.frame_rate
+  return rate != null && rate.num > 0 ? rate.num / rate.den : null
+}
+
+/** Python's `round()`: a half goes to the even neighbour. */
+function roundHalfEven(value: number): number {
+  const floor = Math.floor(value)
+  const fraction = value - floor
+  if (fraction !== 0.5) return Math.round(value)
+  return floor % 2 === 0 ? floor : floor + 1
 }
 
 /** Frames of the main video stream: its count, else duration × frame rate. */
@@ -91,21 +178,12 @@ export function frameCount(source: MediaSource | null): number | null {
   if (video.frame_count != null) return video.frame_count
   const fps = frameRate(source)
   const duration = sourceDuration(source)
-  return fps === null || duration === null ? null : Math.round(duration * fps)
+  return fps === null || duration === null ? null : roundHalfEven(duration * fps)
 }
 
-/**
- * The source can take a range in frames: the command builder needs a main video stream with a
- * frame rate, or with a frame count and a duration.
- */
+/** The source can take a range in frames: the command builder finds a frame rate. */
 export function canUseFrames(source: MediaSource | null): boolean {
-  const video = videoOf(source)
-  if (video === null) return false
-  return (
-    usable(video.avg_frame_rate) ||
-    usable(video.frame_rate) ||
-    Boolean(video.frame_count && video.duration)
-  )
+  return frameRate(source) !== null
 }
 
 export function hasChapters(source: MediaSource | null): boolean {
@@ -190,17 +268,19 @@ function chaptersHolding(
 ): Range | null {
   const chapters = source?.chapters ?? []
   if (chapters.length === 0) return null
-  let first = chapters.findLastIndex((chapter) => chapter.start <= start + EPSILON)
+  let first = chapters.findLastIndex((chapter) => chapter.start <= start + SECONDS_TOLERANCE)
   if (first < 0) first = 0
-  let last = end === null ? -1 : chapters.findIndex((chapter) => chapter.end >= end - EPSILON)
+  let last =
+    end === null ? -1 : chapters.findIndex((chapter) => chapter.end >= end - SECONDS_TOLERANCE)
   if (last < 0) last = chapters.length - 1
   return { kind: 'chapters', start: first + 1, end: Math.max(first, last) + 1 }
 }
 
 /**
  * `range` in another mode, keeping its span where the source gives the data: seconds from
- * chapters or frames, frames from seconds with the average frame rate (the start rounded
- * down, the end up), and the chapters that hold the start and the end. Else the mode's default.
+ * chapters or frames (not rounded: the span stays exact), frames from seconds with the
+ * builder's frame rate (the start rounded down, the end up), and the chapters that hold the
+ * start and the end. Else the mode's default.
  */
 export function convertRange(range: Range, kind: RangeKind, source: MediaSource | null): Range {
   if (range.kind === kind) return range
@@ -209,18 +289,14 @@ export function convertRange(range: Range, kind: RangeKind, source: MediaSource 
   if (span === null) return defaultOf(kind, source)
   switch (kind) {
     case 'time':
-      return {
-        kind: 'time',
-        start: milliseconds(span.start),
-        end: span.end === null ? null : milliseconds(span.end),
-      }
+      return { kind: 'time', start: span.start, end: span.end }
     case 'frames': {
       const fps = frameRate(source)
       if (fps === null) return defaultOf(kind, source)
       return {
         kind: 'frames',
-        start: Math.max(0, Math.floor(span.start * fps + EPSILON)),
-        end: span.end === null ? null : Math.ceil(span.end * fps - EPSILON),
+        start: Math.max(0, Math.floor(span.start * fps + FRAMES_TOLERANCE)),
+        end: span.end === null ? null : Math.ceil(span.end * fps - FRAMES_TOLERANCE),
       }
     }
     case 'chapters':

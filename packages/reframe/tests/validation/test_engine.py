@@ -243,7 +243,7 @@ def test_range_duration_and_frames() -> None:
     s.job.range = ChapterRange(start=3, end=3)
     assert range_duration(context(s)) is None
     s.job.range = FrameRange(start=0, end=2400)
-    assert range_duration(context(s)) == 2400 * 1001 / 24000
+    assert range_duration(context(s)) == 2400 / (24000 / 1001)
     s.job.range = TimeRange(start=10)
     s.source.container.duration = None
     assert range_duration(context(s)) is None
@@ -252,7 +252,7 @@ def test_range_duration_and_frames() -> None:
     s.source.video[0].frame_count = 1000
     assert frame_count(context(s)) == 1000
     s.job.range = FrameRange(start=0)
-    assert range_duration(context(s)) == 1000 * 1001 / 24000
+    assert range_duration(context(s)) == 1000 / (24000 / 1001)
     s.source.video[0].frame_rate = None
     s.source.video[0].avg_frame_rate = None
     assert range_duration(context(s)) is None

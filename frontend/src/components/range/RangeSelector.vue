@@ -5,7 +5,17 @@ import InputText from 'primevue/inputtext'
 import Popover from 'primevue/popover'
 import RadioButton from 'primevue/radiobutton'
 import Select from 'primevue/select'
-import { computed, nextTick, reactive, ref, useId, useTemplateRef, watch } from 'vue'
+import {
+  type ComponentPublicInstance,
+  computed,
+  nextTick,
+  reactive,
+  ref,
+  shallowRef,
+  useId,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { ValidationIssue } from '@/api/types'
@@ -13,6 +23,7 @@ import Field from '@/components/base/Field.vue'
 import { bySeverity, SEVERITY_ICON, useSeverityLabel } from '@/components/base/severity'
 import { useReveal } from '@/composables/useReveal'
 import { useEditorStore } from '@/stores/editor'
+import { useUiStore } from '@/stores/ui'
 
 import {
   canUseFrames,
@@ -24,7 +35,7 @@ import {
   parseTime,
   type RangeKind,
 } from './range'
-import { RANGE_PATHS, type RangePath, useRange } from './useRange'
+import { type RangePath, useRange } from './useRange'
 
 const EDGES = ['start', 'end'] as const
 type Edge = (typeof EDGES)[number]
@@ -32,6 +43,7 @@ type Edge = (typeof EDGES)[number]
 const { t } = useI18n()
 const severityLabel = useSeverityLabel()
 const editor = useEditorStore()
+const ui = useUiStore()
 const { range, source, label, length, issues, issuesAt } = useRange()
 
 const id = useId()
@@ -43,7 +55,34 @@ const root = useTemplateRef<HTMLElement>('root')
 const popover = useTemplateRef<InstanceType<typeof Popover>>('popover')
 const open = ref(false)
 
-for (const path of RANGE_PATHS) useReveal(path, root)
+// The fields of an edge live in the popover: a "show me" of one opens it, and the field takes
+// the focus once it is there.
+type FieldRef = (instance: Element | ComponentPublicInstance | null) => void
+const fieldElements = {
+  start: shallowRef<HTMLElement | null>(null),
+  end: shallowRef<HTMLElement | null>(null),
+}
+function fieldRef(edge: Edge): FieldRef {
+  return (instance) => {
+    fieldElements[edge].value =
+      instance === null ? null : ((instance as ComponentPublicInstance).$el as HTMLElement)
+  }
+}
+const fieldRefs: Record<Edge, FieldRef> = { start: fieldRef('start'), end: fieldRef('end') }
+
+useReveal('range', root)
+for (const edge of EDGES) useReveal(`range.${edge}`, fieldElements[edge])
+
+watch(
+  () => ui.revealed,
+  (request) => {
+    if (open.value) return
+    if (request?.path !== 'range.start' && request?.path !== 'range.end') return
+    // Not while the click that asked is still going up the page: the popover would take it
+    // for a click outside and close.
+    setTimeout(() => trigger()?.click())
+  },
+)
 
 const severity = computed(() => bySeverity(issues.value)[0]?.severity ?? null)
 const inGroup = computed(() => editor.target?.kind === 'group')
@@ -121,24 +160,46 @@ function shown(edge: Edge): string {
   return current.kind === 'time' ? formatTime(value) : String(value)
 }
 
-// The typed text, kept while it does not parse; a change of the range shows the range again.
+// The typed text, kept while it does not parse; a change of its own edge shows the range again.
 const texts = reactive<Record<Edge, string>>({ start: '', end: '' })
 const unparsed = reactive<Record<Edge, boolean>>({ start: false, end: false })
-watch(
-  () => [shown('start'), shown('end')] as const,
-  ([start, end]) => {
-    texts.start = start
-    texts.end = end
-    unparsed.start = false
-    unparsed.end = false
+for (const edge of EDGES) {
+  watch(
+    [() => range.value.kind, () => shown(edge)],
+    ([, text]) => {
+      texts[edge] = text
+      unparsed[edge] = false
+    },
+    { immediate: true },
+  )
+}
+
+const fieldText = computed(() => ({
+  time: {
+    start: t('range.time.start'),
+    end: t('range.time.end'),
+    toEnd: t('range.time.toEnd'),
+    help: t('range.time.help'),
+    invalid: t('range.time.invalid'),
   },
-  { immediate: true },
-)
+  frames: {
+    start: t('range.frames.start'),
+    end: t('range.frames.end'),
+    toEnd: t('range.frames.toEnd'),
+    help: t('range.frames.help'),
+    invalid: t('range.frames.invalid'),
+  },
+}))
 
 function commit(edge: Edge): void {
   const current = range.value
   if (current.kind !== 'time' && current.kind !== 'frames') return
   const text = texts[edge].trim()
+  // The field shows a converted time to the millisecond: as it is, it changes nothing.
+  if (text === shown(edge)) {
+    unparsed[edge] = false
+    return
+  }
   let value: number | null = null
   if (text !== '') {
     value = current.kind === 'time' ? parseTime(text) : parseFrame(text)
@@ -158,8 +219,7 @@ function fieldIssues(edge: Edge): ValidationIssue[] {
   const path: RangePath = `range.${edge}`
   const own = issuesAt(path)
   if (!unparsed[edge]) return own
-  const kind = range.value.kind === 'frames' ? 'frames' : 'time'
-  const message = kind === 'frames' ? t('range.frames.invalid') : t('range.time.invalid')
+  const message = fieldText.value[range.value.kind === 'frames' ? 'frames' : 'time'].invalid
   return [{ severity: 'error', code: 'range.text', path, message }, ...own]
 }
 
@@ -171,13 +231,27 @@ function toggle(event: Event): void {
   popover.value?.toggle(event)
 }
 
-async function shownPopover(): Promise<void> {
-  open.value = true
-  await nextTick()
+function focusMode(): void {
   const body = document.getElementById(bodyId)
   const checked = body?.querySelector<HTMLElement>('input[type="radio"]:checked')
   ;(checked ?? body?.querySelector<HTMLElement>('input, button'))?.focus()
 }
+
+async function shownPopover(): Promise<void> {
+  open.value = true
+  await nextTick()
+  // A "show me" may have put the focus on its field already.
+  if (!document.getElementById(bodyId)?.contains(document.activeElement)) focusMode()
+}
+
+// An undo or *Reset to group* can take the focused control away: the focus stays inside.
+watch(
+  () => range.value.kind,
+  () => {
+    if (open.value && document.activeElement === document.body) focusMode()
+  },
+  { flush: 'post' },
+)
 
 function hidden(): void {
   open.value = false
@@ -292,6 +366,7 @@ function reset(): void {
 
         <template v-if="range.kind === 'chapters'">
           <Field
+            :ref="fieldRefs.start"
             :label="t('range.chapters.from')"
             path="range.start"
             :overridden="false"
@@ -312,6 +387,7 @@ function reset(): void {
             </template>
           </Field>
           <Field
+            :ref="fieldRefs.end"
             :label="t('range.chapters.to')"
             path="range.end"
             :overridden="false"
@@ -334,13 +410,12 @@ function reset(): void {
         </template>
 
         <template v-else-if="range.kind === 'time' || range.kind === 'frames'">
-          <p :id="helpId" class="range-popover__help">
-            {{ range.kind === 'time' ? t('range.time.help') : t('range.frames.help') }}
-          </p>
+          <p :id="helpId" class="range-popover__help">{{ fieldText[range.kind].help }}</p>
           <Field
             v-for="edge in EDGES"
             :key="`${range.kind}-${edge}`"
-            :label="t(`range.${range.kind}.${edge}`)"
+            :ref="fieldRefs[edge]"
+            :label="fieldText[range.kind][edge]"
             :path="`range.${edge}`"
             :description="helpId"
             :overridden="false"
@@ -351,7 +426,7 @@ function reset(): void {
                 :model-value="texts[edge]"
                 :id="inputId"
                 :inputmode="range.kind === 'frames' ? 'numeric' : 'text'"
-                :placeholder="edge === 'end' ? t(`range.${range.kind}.toEnd`) : undefined"
+                :placeholder="edge === 'end' ? fieldText[range.kind].toEnd : undefined"
                 :invalid="invalid"
                 fluid
                 @update:model-value="texts[edge] = $event ?? ''"

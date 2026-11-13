@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+from reframe.command.video import source_rate
 from reframe.models.issues import Fix, ValidationIssue
 from reframe.models.job import ChapterRange, FrameRange, FullRange, TimeRange
 from reframe.validation.common import error, fix, replace, warning
@@ -15,6 +16,12 @@ from reframe.validation.registry import job_rule
 __all__ = ["frame_count", "range_duration", "source_range"]
 
 
+def _fps(ctx: JobContext) -> float | None:
+    """The frame rate the command builder turns frames into time with."""
+    rate = source_rate(ctx.video_stream) if ctx.video_stream is not None else None
+    return float(rate) if rate is not None else None
+
+
 def frame_count(ctx: JobContext) -> int | None:
     """Frames of the main video stream: the stream's count, else duration x frame rate."""
     stream = ctx.video_stream
@@ -22,10 +29,10 @@ def frame_count(ctx: JobContext) -> int | None:
         return None
     if stream.frame_count is not None:
         return stream.frame_count
-    rate = stream.avg_frame_rate or stream.frame_rate
-    if ctx.duration is None or rate is None or rate.num <= 0:
+    fps = _fps(ctx)
+    if ctx.duration is None or fps is None:
         return None
-    return round(ctx.duration * rate.num / rate.den)
+    return round(ctx.duration * fps)
 
 
 def range_duration(ctx: JobContext) -> float | None:
@@ -45,9 +52,8 @@ def range_duration(ctx: JobContext) -> float | None:
             return None
         final = chapters[min(selected.end, len(chapters)) - 1]
         return max(0.0, final.end - chapters[selected.start - 1].start)
-    stream = ctx.video_stream
-    rate = (stream.avg_frame_rate or stream.frame_rate) if stream is not None else None
-    if rate is None or rate.num <= 0:
+    fps = _fps(ctx)
+    if fps is None:
         return None
     total = frame_count(ctx)
     last = selected.end if selected.end is not None else total
@@ -55,19 +61,7 @@ def range_duration(ctx: JobContext) -> float | None:
         return None
     if total is not None:
         last = min(last, total)
-    return max(0, last - selected.start) * rate.den / rate.num
-
-
-def has_frame_rate(ctx: JobContext) -> bool:
-    """The command builder can turn frames into time: the main video stream needs a frame rate,
-    or a frame count and a duration."""
-    stream = ctx.video_stream
-    if stream is None:
-        return False
-    rates = (stream.avg_frame_rate, stream.frame_rate)
-    return any(r is not None and r.num > 0 for r in rates) or bool(
-        stream.frame_count and stream.duration
-    )
+    return max(0, last - selected.start) / fps
 
 
 def _full(ctx: JobContext) -> Fix:
@@ -86,7 +80,7 @@ def source_range(ctx: JobContext) -> Iterator[ValidationIssue]:
     if (
         isinstance(selected, FrameRange)
         and ctx.video_stream is not None
-        and not has_frame_rate(ctx)
+        and _fps(ctx) is None
     ):
         yield error(
             "range.no_frame_rate",
