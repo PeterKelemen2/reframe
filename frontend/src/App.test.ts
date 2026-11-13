@@ -9,6 +9,7 @@ import App from '@/App.vue'
 import { browse } from '@/components/sources/fileBrowser'
 import { platform } from '@/platform'
 import type { DesktopShell } from '@/platform/types'
+import type { createAppI18n } from '@/i18n'
 import { createAppRouter } from '@/router'
 import { installPlugins } from '@/setup'
 import { type AppPhase, useSystemStore } from '@/stores/system'
@@ -151,7 +152,7 @@ describe('the app shell', () => {
   it('puts the progress of the running jobs on the taskbar', async () => {
     const setTaskbarProgress = vi.spyOn(platform, 'setTaskbarProgress')
     await mountApp('ready')
-    expect(setTaskbarProgress).toHaveBeenLastCalledWith(null)
+    expect(setTaskbarProgress).toHaveBeenLastCalledWith(null, null)
     app?.runWithContext(() => {
       useQueueStore().jobs = [
         { id: 'a', state: 'running', progress: { percent: 40 } } as QueueJob,
@@ -159,7 +160,14 @@ describe('the app shell', () => {
       ]
     })
     await flushPromises()
-    expect(setTaskbarProgress).toHaveBeenLastCalledWith(0.5)
+    expect(setTaskbarProgress).toHaveBeenLastCalledWith(0.5, '50%')
+    const i18n = Reflect.get(app!, '__VUE_I18N__') as ReturnType<typeof createAppI18n>
+    i18n.global.locale.value = 'de' as never
+    app?.runWithContext(() => {
+      useQueueStore().jobs = [{ id: 'a', state: 'running', progress: { percent: 40 } } as QueueJob]
+    })
+    await flushPromises()
+    expect(setTaskbarProgress).toHaveBeenLastCalledWith(0.4, '40\u00a0%')
   })
 
   it('reads an open source again when its in-place edit ends, whatever view is shown', async () => {
