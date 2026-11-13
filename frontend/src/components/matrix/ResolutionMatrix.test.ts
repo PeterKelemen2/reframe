@@ -171,6 +171,9 @@ describe('the matrix', () => {
     expect(cell(11, 'audio:1').dataset.status).toBe('missing')
     expect(text(cell(11, 'subtitle:0'))).toBe('≈ #2 matched without title')
     expect(cell(11, 'subtitle:0').getAttribute('aria-label')).toContain('Matched after relaxing')
+    // The label holds the visible words in order (WCAG 2.5.3): the streams and the message apart.
+    expect(cell(11, 'subtitle:0').textContent).toContain('#2 matched without title')
+    expect(cellName(11, 'subtitle:0')).toContain('#2, matched without title')
   })
 
   it('gives the whole message of a cell, which may be cut, as its title and in its picker', async () => {
