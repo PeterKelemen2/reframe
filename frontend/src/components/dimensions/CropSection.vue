@@ -32,16 +32,17 @@ const detectionLine = computed(() => {
   if (found === null) return null
   switch (crop.mode) {
     case 'auto':
-      return t('dimensions.detection.auto', {
-        ...found.auto,
-        frames: found.auto_frames,
-        total: found.samples.length,
-      })
+      return t(
+        'dimensions.detection.auto',
+        { ...found.auto, frames: found.auto_frames, total: found.samples.length },
+        found.samples.length,
+      )
     case 'conservative':
-      return t('dimensions.detection.conservative', {
-        ...found.conservative,
-        total: found.samples.length,
-      })
+      return t(
+        'dimensions.detection.conservative',
+        { ...found.conservative, total: found.samples.length },
+        found.samples.length,
+      )
     default:
       return null
   }

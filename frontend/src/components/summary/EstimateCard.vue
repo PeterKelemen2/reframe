@@ -12,7 +12,7 @@ import { type Estimate, estimateSize } from './estimate'
 import { formatBytes } from './format'
 import { useJobSource } from './useJobSource'
 
-const { t } = useI18n()
+const { t, n } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
 const { source } = useJobSource()
@@ -39,13 +39,13 @@ const estimate = computed<Estimate | null>(() => {
     <template v-if="estimate">
       <template v-if="estimate.kind === 'size'">
         <p class="summary-estimate__size" data-field="size">
-          {{ t('summary.estimate.about', { size: formatBytes(estimate.bytes, t) }) }}
+          {{ t('summary.estimate.about', { size: formatBytes(estimate.bytes, t, n) }) }}
         </p>
         <p class="summary-card__note" data-field="basis">
           {{
             t('summary.estimate.basis', {
-              video: Math.round(estimate.videoKbps),
-              audio: Math.round(estimate.audioKbps),
+              video: n(Math.round(estimate.videoKbps)),
+              audio: n(Math.round(estimate.audioKbps)),
               duration: formatDuration(estimate.seconds),
             })
           }}

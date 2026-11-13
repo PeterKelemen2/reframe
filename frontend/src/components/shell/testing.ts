@@ -48,3 +48,19 @@ export async function mountShell<C extends Component>(
   await flushPromises()
   return { wrapper, router, pinia }
 }
+
+type Mounted = { vm: { $: { appContext: { app: object } } } }
+type AppI18n = ReturnType<typeof createAppI18n>
+
+/** The i18n of a mounted component's app. */
+export function appI18n(wrapper: Mounted): AppI18n {
+  return Reflect.get(wrapper.vm.$.appContext.app, '__VUE_I18N__') as AppI18n
+}
+
+/**
+ * Switches a mounted app's locale: English is the only one with messages, but numbers and lists
+ * follow the locale set.
+ */
+export function setAppLocale(wrapper: Mounted, locale: string): void {
+  appI18n(wrapper).global.locale.value = locale as never
+}

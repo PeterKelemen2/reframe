@@ -9,6 +9,7 @@ import type { ValidationIssue } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import KeyValue from '@/components/base/KeyValue.vue'
 import StatusDot from '@/components/base/StatusDot.vue'
+import { formatList } from '@/components/shell/format'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 
@@ -24,7 +25,7 @@ const props = defineProps<{
   locked: boolean
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const settings = useSettingsStore()
 const system = useSystemStore()
 
@@ -62,6 +63,9 @@ const alsoReset = computed(() =>
         (name) => name !== props.tool.name && resetOps([name], settings.settings?.tools).length > 0,
       )
     : [],
+)
+const alsoResetNote = computed(() =>
+  t('settings.tools.useBundledAlso', { tools: formatList(alsoReset.value, locale.value, 'and') }),
 )
 const fieldIssues = computed(() => [...override.issues.value, ...bundledIssues.value])
 
@@ -260,7 +264,7 @@ async function remove(): Promise<void> {
       </template>
     </Field>
     <p v-if="alsoReset.length > 0" class="tool-row__note" data-field="bundled-note">
-      {{ t('settings.tools.useBundledAlso', { tools: alsoReset.join(', ') }) }}
+      {{ alsoResetNote }}
     </p>
     <p v-if="note" class="tool-row__note" data-field="note">{{ note }}</p>
 

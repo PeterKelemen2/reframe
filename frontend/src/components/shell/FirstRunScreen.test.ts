@@ -182,6 +182,19 @@ describe('the first-run screen', () => {
     expect(wrapper.find('[data-field="note"]').text()).toContain('set REFRAME_FFMPEG on the server')
   })
 
+  it('names every variable to set as one list', async () => {
+    const { wrapper } = await mountFirstRun(
+      info(
+        { status: 'missing', env_var: 'REFRAME_FFMPEG', reason: 'gone' },
+        { status: 'missing', env_var: 'REFRAME_FFPROBE', reason: 'gone' },
+        'web',
+      ),
+    )
+    expect(wrapper.find('[data-field="note"]').text()).toContain(
+      'set REFRAME_FFMPEG and REFRAME_FFPROBE on the server',
+    )
+  })
+
   it('says when Check again found nothing new, and nothing when it did', async () => {
     const before = info({ status: 'missing', reason: 'gone' }, {})
     const { wrapper, system } = await mountFirstRun(before)

@@ -366,6 +366,42 @@ describe('the sources panel', () => {
     expect(stop).toHaveBeenCalledOnce()
   })
 
+  it('moves to the item whose name starts with the typed keys', async () => {
+    const { select } = await mountPanel(withShow)
+    item('movie.mkv').focus()
+    await key('s')
+    expect(document.activeElement).toBe(groupItem())
+    await key('e')
+    expect(document.activeElement).toBe(groupItem())
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    await key('e')
+    expect(document.activeElement).toBe(item('Show.S01E01.mkv'))
+    await key('e')
+    expect(document.activeElement).toBe(item('Show.S01E02.mkv'))
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    await key('M')
+    expect(document.activeElement).toBe(item('movie.mkv'))
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it('reads a changed source again from its context menu, for the keyboard', async () => {
+    const { sources } = await mountPanel((store) => {
+      store.entries = [{ id: 'gone.mkv', path: '/m/gone.mkv', source: null }, movie]
+    })
+    const open = vi.spyOn(sources, 'open').mockResolvedValue([])
+    item('movie.mkv').focus()
+    await key('ContextMenu')
+    expect(menuItems().some((found) => found.getAttribute('aria-label') === 'Read it again')).toBe(
+      false,
+    )
+    await menuKey('Escape', 'Escape')
+    item('gone.mkv').focus()
+    await key('ContextMenu')
+    await menuKey('ArrowDown', 'ArrowDown')
+    await menuKey('Enter', 'Enter')
+    expect(open).toHaveBeenCalledExactlyOnceWith(['/m/gone.mkv'], { select: false })
+  })
+
   it('offers to read a source again whose file changed or is gone', async () => {
     const { sources } = await mountPanel((store) => {
       store.entries = [{ id: 'gone.mkv', path: '/m/gone.mkv', source: null }]

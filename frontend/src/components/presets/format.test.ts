@@ -14,6 +14,10 @@ const words: Words = {
   empty: 'empty',
   on: 'on',
   off: 'off',
+  number: (value) => new Intl.NumberFormat('en').format(value),
+  list: (items) => items.join(', '),
+  member: (field, value) => `${field}: ${value}`,
+  item: (field, number) => `${field} ${number}`,
 }
 
 describe('the words of a change', () => {
@@ -21,6 +25,22 @@ describe('the words of a change', () => {
     expect(pathWords('audio_defaults.codec_rules[0].max_bitrate', words)).toBe(
       'Audio defaults › Codec rule 1 › Maximum bitrate',
     )
+  })
+
+  it('words numbers, lists, members and items as the given words say', () => {
+    const german: Words = {
+      ...words,
+      number: (value) => new Intl.NumberFormat('de').format(value),
+      list: (items) => new Intl.ListFormat('de', { type: 'unit', style: 'short' }).format(items),
+      member: (field, value) => `${value} (${field})`,
+      item: (field, number) => `${field} Nr. ${number}`,
+    }
+    expect(pathWords('audio_defaults.codec_rules[0].max_bitrate', german)).toBe(
+      'Audio defaults › Codec rule Nr. 1 › Maximum bitrate',
+    )
+    expect(valueWords(22.5, german)).toBe('22,5')
+    expect(valueWords(['ac3', 'eac3', 'dts'], german)).toBe('ac3, eac3 und dts')
+    expect(valueWords({ max_bitrate: 1536 }, german)).toBe('1.536 (Maximum bitrate)')
   })
 
   it('shows a key without a message with spaces and a capital', () => {

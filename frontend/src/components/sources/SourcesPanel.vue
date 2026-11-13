@@ -21,6 +21,7 @@ import {
 } from '@/components/batch/clipboard'
 import { focusLost } from '@/components/shell/focus'
 import { fileName } from '@/components/shell/format'
+import { createTypeahead } from '@/components/shell/typeahead'
 import { useQueueGroup } from '@/composables/useQueueGroup'
 import { platform } from '@/platform'
 import { useEditorStore } from '@/stores/editor'
@@ -71,6 +72,8 @@ interface Node {
   /** For a member: its group's key. */
   parent: string | null
   groupId: string | null
+  /** What the type-ahead matches: the file name, a member's episode label, a group's name. */
+  name: string
 }
 
 function sourceKey(entryId: string): string {
@@ -96,6 +99,7 @@ const nodes = computed<Node[]>(() =>
           ids: [item.entry.id],
           parent: null,
           groupId: null,
+          name: fileName(item.entry.path),
         },
       ]
     }
@@ -106,6 +110,7 @@ const nodes = computed<Node[]>(() =>
       ids: item.rows.map((row) => row.entry.id),
       parent: null,
       groupId: item.group.id,
+      name: item.group.name,
     }
     const found = [head]
     if (isCollapsed(item)) return found
@@ -116,6 +121,7 @@ const nodes = computed<Node[]>(() =>
         ids: [row.entry.id],
         parent: key,
         groupId: item.group.id,
+        name: row.label,
       })
     }
     return found
@@ -259,6 +265,8 @@ function nodeOf(event: Event): Node | undefined {
   return nodes.value.find((node) => node.key === key)
 }
 
+const typeahead = createTypeahead()
+
 function onKeydown(event: KeyboardEvent): void {
   if (event.altKey || event.ctrlKey || event.metaKey) return
   const node = nodeOf(event)
@@ -305,8 +313,15 @@ function onKeydown(event: KeyboardEvent): void {
     case 'Backspace':
       askRemove(node.key)
       break
-    default:
-      return
+    default: {
+      const found = typeahead(
+        event,
+        shown.map((other) => other.name),
+        index,
+      )
+      if (found === null) return
+      focusNode(shown[found]?.key)
+    }
   }
   event.preventDefault()
 }
@@ -392,6 +407,13 @@ function sourceMenu(node: Node, entryId: string): MenuItem[] {
       command: () =>
         paste(copied, () => pasteIntoFile(entryId, copied), fileName(entry?.path ?? entryId)),
     })
+  }
+  // Its row's button is out of the Tab order: the keyboard reads a changed file again here.
+  if (entry?.source === null) {
+    found.unshift(
+      { label: t('sources.panel.reprobe'), command: () => reprobe(entry) },
+      { separator: true },
+    )
   }
   const groupId = node.groupId
   if (open !== null && groupId !== null) {

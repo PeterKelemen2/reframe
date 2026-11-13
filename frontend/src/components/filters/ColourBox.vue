@@ -5,19 +5,24 @@ import { useI18n } from 'vue-i18n'
 
 import type { Fix, FilterDef } from '@/api/types'
 import KeyValue from '@/components/base/KeyValue.vue'
-import { colourName, hdrNames } from '@/components/summary/format'
+import { colourName } from '@/components/summary/format'
 import { useJobSource } from '@/components/summary/useJobSource'
 import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 import { useValidationStore } from '@/stores/validation'
 
-import { colourOutcome, sourceColour } from './colour'
+import { colourOutcome, hdrList, sourceColour } from './colour'
 import { implementationOf, presetOf } from './filters'
 
 /** The shown file's colours, what Colorspace and Tone mapping make of them, and the fix. */
 const props = defineProps<{ filter: FilterDef; disabled: boolean }>()
 
-const { t } = useI18n()
+const { t, n, locale } = useI18n()
+
+/** Chromaticity coordinates and luminances have up to four decimals. */
+function measure(value: number): string {
+  return n(value, { maximumFractionDigits: 4 })
+}
 const editor = useEditorStore()
 const system = useSystemStore()
 const validation = useValidationStore()
@@ -62,7 +67,7 @@ const rows = computed(() => {
     },
     {
       key: 'hdr',
-      value: hdrNames(video.hdr).join(', ') || t('filters.colour.sdr'),
+      value: hdrList(video, locale.value) ?? t('filters.colour.sdr'),
     },
   ]
   const mastering = video.hdr?.mastering_display
@@ -71,21 +76,21 @@ const rows = computed(() => {
       {
         key: 'mastering',
         value: t('filters.colour.primariesValue', {
-          rx: mastering.red_x,
-          ry: mastering.red_y,
-          gx: mastering.green_x,
-          gy: mastering.green_y,
-          bx: mastering.blue_x,
-          by: mastering.blue_y,
-          wx: mastering.white_x,
-          wy: mastering.white_y,
+          rx: measure(mastering.red_x),
+          ry: measure(mastering.red_y),
+          gx: measure(mastering.green_x),
+          gy: measure(mastering.green_y),
+          bx: measure(mastering.blue_x),
+          by: measure(mastering.blue_y),
+          wx: measure(mastering.white_x),
+          wy: measure(mastering.white_y),
         }),
       },
       {
         key: 'luminance',
         value: t('filters.colour.luminanceValue', {
-          min: mastering.min_luminance,
-          max: mastering.max_luminance,
+          min: measure(mastering.min_luminance),
+          max: measure(mastering.max_luminance),
         }),
       },
     )
@@ -94,7 +99,10 @@ const rows = computed(() => {
   if (light) {
     shown.push({
       key: 'contentLight',
-      value: t('filters.colour.contentLightValue', { cll: light.max_cll, fall: light.max_fall }),
+      value: t('filters.colour.contentLightValue', {
+        cll: n(light.max_cll),
+        fall: n(light.max_fall),
+      }),
     })
   }
   return shown
@@ -107,12 +115,12 @@ const sentence = computed(() => {
   const config = filters.colorspace ?? null
   const implementation = implementationOf(props.filter, config, system.capabilities)
   const preset = config === null ? null : presetOf(implementation, config)
-  const from = sourceColour(video) ?? t('filters.colour.untagged')
+  const from = sourceColour(video, t, locale.value) ?? t('filters.colour.untagged')
   const to = preset?.label ?? config?.preset ?? ''
   const outcome = colourOutcome(video, filters, preset?.custom === true)
   switch (outcome.kind) {
     case 'keep':
-      return sourceColour(video) === null
+      return sourceColour(video, t, locale.value) === null
         ? t('filters.colour.keepUntagged')
         : t('filters.colour.keep', { from })
     case 'tonemapOnly':

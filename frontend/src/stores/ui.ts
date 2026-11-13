@@ -29,7 +29,11 @@ export interface RevealRequest {
 
 /** The advanced encoder options panel shows the fields at these paths. */
 function inAdvancedPanel(path: string): boolean {
-  return path.startsWith('video.advanced.') || path === 'video.custom_params'
+  return (
+    path === 'video.advanced' ||
+    path.startsWith('video.advanced.') ||
+    path === 'video.custom_params'
+  )
 }
 
 /**

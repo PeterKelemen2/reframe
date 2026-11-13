@@ -8,11 +8,11 @@ import { useValidationStore } from '@/stores/validation'
 
 import { headerOf } from './header'
 
-const { t } = useI18n()
+const { t, n } = useI18n()
 const crop = useCropStore()
 const validation = useValidationStore()
 
-const line = computed(() => (crop.geometry === null ? null : headerOf(crop.geometry, t)))
+const line = computed(() => (crop.geometry === null ? null : headerOf(crop.geometry, t, n)))
 const pipeline = computed(() => (crop.geometry === null ? null : pipelineOf(crop.geometry)))
 const invalid = computed(
   () =>

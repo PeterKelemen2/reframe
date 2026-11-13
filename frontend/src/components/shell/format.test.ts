@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { fileName, formatDuration } from './format'
+import { fileName, formatDuration, formatList } from './format'
 
 describe('formatDuration', () => {
   it.each([
@@ -24,5 +24,14 @@ describe('fileName', () => {
     ['/media/Show/', 'Show'],
   ])('%s → %s', (path, expected) => {
     expect(fileName(path)).toBe(expected)
+  })
+})
+
+describe('formatList', () => {
+  it('lists names as the locale does, with or without a conjunction', () => {
+    expect(formatList(['mkv', 'mp4', 'webm'], 'en')).toBe('mkv, mp4, webm')
+    expect(formatList(['ffprobe', 'mkvpropedit'], 'en', 'and')).toBe('ffprobe and mkvpropedit')
+    expect(formatList(['ffprobe', 'mkvpropedit'], 'de', 'and')).toBe('ffprobe und mkvpropedit')
+    expect(formatList(['mkv'], 'en')).toBe('mkv')
   })
 })

@@ -7,9 +7,14 @@ import ToggleSwitch from 'primevue/toggleswitch'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { settle } from '@/api/testing/fakes'
-import type { JobGeometry, JobSettings, JobTemplate } from '@/api/types'
+import type { CropDetection, JobGeometry, JobSettings, JobTemplate } from '@/api/types'
 import CropMagnifier from '@/components/crop/CropMagnifier.vue'
-import { geometryOf, LETTERBOX, setUpCrop } from '@/components/dimensions/testing'
+import {
+  geometryOf,
+  LETTERBOX,
+  letterboxDetection,
+  setUpCrop,
+} from '@/components/dimensions/testing'
 import { mountShell } from '@/components/shell/testing'
 import { issue, sampleJob } from '@/editor/testing/samples'
 import { useCropStore } from '@/stores/crop'
@@ -46,8 +51,11 @@ function jobWith(dimensions: Partial<NonNullable<JobSettings['dimensions']>>): J
   return job
 }
 
-async function mountTab(options: { job?: JobSettings; geometry?: JobGeometry } = {}) {
+async function mountTab(
+  options: { job?: JobSettings; geometry?: JobGeometry; detection?: CropDetection } = {},
+) {
   const setup = setUpCrop(options)
+  if (options.detection) setup.outcome.task.result = options.detection as never
   const editor = useEditorStore()
   // The workspace starts the crop store before any file is opened.
   useCropStore()
@@ -108,6 +116,18 @@ describe('the Dimensions tab', () => {
     await flushPromises()
     expect(editor.get('/dimensions/crop/mode')).toBe('conservative')
     expect(line()).toBe('Black on every frame: 0 / 0 / 0 / 0 (10 frames)')
+  })
+
+  it('says one sample frame in the singular', async () => {
+    const one = { ...letterboxDetection(), auto_frames: 1 }
+    one.samples = one.samples.slice(0, 1)
+    const { wrapper } = await mountTab({ detection: one })
+    const line = () => wrapper.find('[data-line="detection"]').text()
+    expect(line()).toBe('Detected 22 / 24 / 0 / 0 on the one sample frame')
+    control(wrapper, 'dimensions.crop', SelectButton).emit('conservative')
+    await settle()
+    await flushPromises()
+    expect(line()).toBe('Black on the one sample frame: 0 / 0 / 0 / 0')
   })
 
   it('snaps a typed crop value with a note, and the input shows the stored value', async () => {
@@ -253,6 +273,13 @@ describe('the Dimensions tab', () => {
     control(wrapper, 'dimensions.allow_upscaling', ToggleSwitch).emit(true)
     await flushPromises()
     expect(editor.get('/dimensions/allow_upscaling')).toBe(true)
+  })
+
+  it('takes the focus when the picture as a whole is asked for', async () => {
+    const { wrapper } = await mountTab()
+    useUiStore().reveal('dimensions')
+    await flushPromises()
+    expect(wrapper.element.contains(document.activeElement)).toBe(true)
   })
 
   it('opens the advanced part when one of its fields is asked for', async () => {

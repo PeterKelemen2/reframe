@@ -1,4 +1,5 @@
 import type { AudioStream, Schemas, SubtitleStream } from '@/api/types'
+import { decimals, type FormatNumber, type Translate } from '@/components/summary/format'
 
 export type Disposition = Schemas['Disposition']
 export type DispositionFlag = keyof Disposition
@@ -68,9 +69,10 @@ export function channelsText(stream: AudioStream): string | null {
   return stream.channel_layout ?? null
 }
 
-/** `48`, `44.1` (kHz). */
-export function kiloHertz(hertz: number): string {
-  return String(Number((hertz / 1000).toFixed(3)))
+/** `48`, `44.1` (kHz). Without `n` the number is written as `String` writes it. */
+export function kiloHertz(hertz: number, n?: FormatNumber): string {
+  const value = Number((hertz / 1000).toFixed(3))
+  return n === undefined ? String(value) : n(value, { maximumFractionDigits: 3 })
 }
 
 export function kbps(bitsPerSecond: number): number {
@@ -108,18 +110,19 @@ export function streamLabel(stream: SourceStream): string {
 }
 
 /** `+200 ms`, `−1500 ms`, `+12 s`; `0 ms` when the track starts with the video. */
-export function delayText(seconds: number): string {
+export function delayText(seconds: number, t: Translate, n: FormatNumber): string {
   const ms = Math.round(seconds * 1000)
-  if (ms === 0) return '0 ms'
-  const sign = ms > 0 ? '+' : '−'
+  const sign = ms > 0 ? '+' : ms < 0 ? '−' : ''
   const size = Math.abs(ms)
-  return size < 10_000 ? `${sign}${size} ms` : `${sign}${Number((size / 1000).toFixed(3))} s`
+  return size < 10_000
+    ? t('media.delay.ms', { sign, value: n(size, { useGrouping: false }) })
+    : t('media.delay.seconds', { sign, value: n(size / 1000, { maximumFractionDigits: 3 }) })
 }
 
 /** `−22.5`, `2.2`: one decimal, with a real minus sign. */
-export function oneDecimal(value: number): string {
-  const fixed = value.toFixed(1)
-  return fixed.startsWith('-') ? `−${fixed.slice(1)}` : fixed
+export function oneDecimal(value: number, n: FormatNumber): string {
+  const shown = decimals(Math.abs(value), 1, n)
+  return value < 0 && shown !== decimals(0, 1, n) ? `−${shown}` : shown
 }
 
 /** The subtitle formats whose events carry a forced flag, which a scan counts. */

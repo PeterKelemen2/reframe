@@ -1,6 +1,6 @@
 import type { JobProgress, JobState, QueueJob } from '@/api/types'
 import type { StatusTone } from '@/components/base/types'
-import { fileName, formatDuration } from '@/components/shell/format'
+import { fileName, type FormatNumber, formatDuration } from '@/components/shell/format'
 import { formatBytes, type Translate } from '@/components/summary/format'
 
 export const STATE_TONE: Record<JobState, StatusTone> = {
@@ -57,12 +57,13 @@ export function stepText(progress: JobProgress, t: Translate): string | null {
     return progress.step_kind === 'encode' ? null : kind
   }
   const step = t('queue.step.of', { n: progress.step + 1, count: progress.step_count })
-  return kind === null ? step : `${kind} · ${step}`
+  return kind === null ? step : t('queue.step.withKind', { kind, step })
 }
 
 /** The live columns of a running or paused job; `null` where the job has no value. */
 export interface LiveColumns {
   percent: number | null
+  percentText: string | null
   step: string | null
   fps: string | null
   speed: string | null
@@ -72,6 +73,7 @@ export interface LiveColumns {
 
 const NONE: LiveColumns = {
   percent: null,
+  percentText: null,
   step: null,
   fps: null,
   speed: null,
@@ -83,16 +85,23 @@ function known(value: number | null | undefined): value is number {
   return value !== null && value !== undefined && Number.isFinite(value)
 }
 
-export function liveColumns(job: QueueJob, t: Translate): LiveColumns {
-  if (job.state === 'done') return { ...NONE, percent: 100 }
+function digits(count: number): Intl.NumberFormatOptions {
+  return { minimumFractionDigits: count, maximumFractionDigits: count }
+}
+
+export function liveColumns(job: QueueJob, t: Translate, n: FormatNumber): LiveColumns {
+  const percentText = (value: number) => t('queue.units.percent', { value: n(value, digits(1)) })
+  if (job.state === 'done') return { ...NONE, percent: 100, percentText: percentText(100) }
   const progress = job.progress
   if ((job.state !== 'running' && job.state !== 'paused') || !progress) return NONE
+  const percent = Math.max(0, Math.min(100, progress.percent))
   return {
-    percent: Math.max(0, Math.min(100, progress.percent)),
+    percent,
+    percentText: percentText(percent),
     step: stepText(progress, t),
-    fps: known(progress.fps) ? t('queue.units.fps', { value: progress.fps.toFixed(1) }) : null,
+    fps: known(progress.fps) ? t('queue.units.fps', { value: n(progress.fps, digits(1)) }) : null,
     speed: known(progress.speed)
-      ? t('queue.units.speed', { value: progress.speed.toFixed(2) })
+      ? t('queue.units.speed', { value: n(progress.speed, digits(2)) })
       : null,
     eta: job.state === 'running' ? formatDuration(progress.eta) : null,
     size: known(progress.output_size) ? formatBytes(progress.output_size, t) : null,

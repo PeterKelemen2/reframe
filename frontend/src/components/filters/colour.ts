@@ -1,5 +1,5 @@
 import type { FilterSettings, Schemas } from '@/api/types'
-import { colourName, hdrNames } from '@/components/summary/format'
+import { colourName, hdrNames, type Translate } from '@/components/summary/format'
 
 type VideoStream = Schemas['VideoStream']
 
@@ -10,12 +10,19 @@ function isHdr(stream: VideoStream): boolean {
   return (stream.hdr?.formats ?? []).length > 0 || HDR_TRANSFERS.has(stream.color?.transfer ?? '')
 }
 
+/** `HDR10, Dolby Vision` in the list style of `locale`; `null` for none. */
+export function hdrList(stream: VideoStream, locale: string): string | null {
+  const names = hdrNames(stream.hdr)
+  if (names.length === 0) return null
+  return new Intl.ListFormat(locale, { style: 'short', type: 'unit' }).format(names)
+}
+
 /** `BT.2020 PQ (HDR10)`, `BT.709`; `null` when the stream has no colour tags. */
-export function sourceColour(stream: VideoStream): string | null {
+export function sourceColour(stream: VideoStream, t: Translate, locale: string): string | null {
   const name = colourName(stream.color)
-  const hdr = hdrNames(stream.hdr)
-  if (name === null) return hdr.length > 0 ? hdr.join(', ') : null
-  return hdr.length > 0 ? `${name} (${hdr.join(', ')})` : name
+  const hdr = hdrList(stream, locale)
+  if (name === null || hdr === null) return name ?? hdr
+  return t('filters.colour.withHdr', { name, hdr })
 }
 
 /** What the Colorspace and Tone mapping filters do with the source's colours. */

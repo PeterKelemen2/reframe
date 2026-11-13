@@ -1,3 +1,4 @@
+import { text } from '@/api/text'
 import { browse } from '@/components/sources/fileBrowser'
 
 import type { Platform } from './types'
@@ -52,12 +53,12 @@ export function createWebPlatform(): Platform {
       notification.addEventListener('click', () => window.focus())
     },
 
-    setTaskbarProgress(value) {
+    setTaskbarProgress(value, label) {
       baseTitle ??= document.title
       document.title =
-        value === null
+        value === null || label === null
           ? baseTitle
-          : `${Math.round(Math.min(Math.max(value, 0), 1) * 100)}% · ${baseTitle}`
+          : text('app.progressTitle', { progress: label, title: baseTitle })
     },
 
     desktop: null,

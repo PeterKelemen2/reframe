@@ -179,7 +179,15 @@ describe('the Summary tab', () => {
     })
     await flushPromises()
     expect(text(wrapper, '[data-card="estimate"] [data-field="size"]')).toBe('About 3.1 MiB')
-    expect(text(wrapper, '[data-field="quality"]')).toBe('Average bitrate 6000 kb/s · 2-pass')
+    expect(text(wrapper, '[data-field="quality"]')).toBe('Average bitrate 6,000 kb/s · 2-pass')
+    expect(text(wrapper, '[data-field="basis"]')).toMatch(/^Video 6,000 kb\/s and audio/)
+    editor.set('/video/rate_control/turbo_first_pass', true)
+    await flushPromises()
+    expect(text(wrapper, '[data-field="quality"]')).toBe(
+      'Average bitrate 6,000 kb/s · 2-pass, turbo first pass',
+    )
+    editor.undo()
+    await flushPromises()
     editor.undo()
     await flushPromises()
     expect(text(wrapper, '[data-card="estimate"] [data-field="size"]')).toBe('Depends on content')

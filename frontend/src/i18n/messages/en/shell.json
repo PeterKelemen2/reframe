@@ -41,7 +41,8 @@
     "submit": "Sign in",
     "wrongToken": "The server does not accept this token.",
     "wrongPassword": "The password is wrong.",
-    "required": "Enter a value first."
+    "required": "Enter a value first.",
+    "refused": "{title}: {detail}"
   },
   "firstRun": {
     "title": "FFmpeg cannot be used",

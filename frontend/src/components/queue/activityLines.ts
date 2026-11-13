@@ -223,7 +223,12 @@ export function describeEntry(
         tone: event.encoders.some((encoder) => encoder.state === 'error') ? 'warn' : 'off',
         text: t('queue.activity.encoders', { n: event.encoders.length }),
         detail: event.encoders
-          .map((encoder) => `${encoder.id}: ${encoderState(encoder.state, t)}`)
+          .map((encoder) =>
+            t('queue.activity.encoderLine', {
+              encoder: encoder.id,
+              state: encoderState(encoder.state, t),
+            }),
+          )
           .join(' · '),
       }
     case 'app.warning':

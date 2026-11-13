@@ -140,6 +140,23 @@ describe('the status bar', () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(list()))
   })
 
+  it('keeps the focus on an empty list of issues as Tab goes round, and Escape gives it back', async () => {
+    const wrapper = await mountBar()
+    const summary = wrapper.find<HTMLButtonElement>('.validation-summary').element
+    summary.focus()
+    summary.click()
+    await vi.waitFor(() => expect(document.activeElement).toBe(list()))
+    // Tab from the list reaches the popover's focus guard after it, which sends it round.
+    const guards = document.querySelectorAll<HTMLElement>('.p-popover .p-hidden-focusable')
+    guards[guards.length - 1]?.focus()
+    expect(document.activeElement).toBe(list())
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+    )
+    await vi.waitFor(() => expect(list()).toBeNull())
+    expect(document.activeElement).toBe(summary)
+  })
+
   it('shows the wait of an add on the button that started it', async () => {
     actions.canAdd.value = true
     actions.canAddAll.value = true

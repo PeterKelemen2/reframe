@@ -311,8 +311,8 @@ describe('the source colour box', () => {
     expect(value('mastering')).toBe(
       'R 0.68, 0.32 · G 0.265, 0.69 · B 0.15, 0.06 · WP 0.3127, 0.329',
     )
-    expect(value('luminance')).toBe('0.0001–1000 cd/m²')
-    expect(value('contentLight')).toBe('1000 / 400 cd/m²')
+    expect(value('luminance')).toBe('0.0001–1,000 cd/m²')
+    expect(value('contentLight')).toBe('1,000 / 400 cd/m²')
     expect(text(wrapper, '[data-colour-sentence]')).toBe(
       "Off: the output keeps the source's colours (BT.2020 PQ (HDR10)).",
     )

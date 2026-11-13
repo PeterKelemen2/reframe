@@ -270,4 +270,19 @@ describe('the activity lines', () => {
       detail: 'libx265: available · hevc_nvenc: unavailable',
     })
   })
+
+  it('words an encoder and its state with one message, which a translation may reorder', () => {
+    const i18n = createAppI18n()
+    i18n.global.mergeLocaleMessage('en', {
+      queue: { activity: { encoderLine: '{state} ({encoder})' } },
+    })
+    const event = {
+      type: 'capabilities.changed',
+      encoders: [{ id: 'libx265', state: 'available', hardware: false }],
+    } as ReframeEvent
+    const reordered = i18n.global.t as (key: string, named?: Record<string, unknown>) => string
+    expect(describeEntry({ id: 1, at: new Date(), event }, reordered, jobName)?.detail).toBe(
+      'available (libx265)',
+    )
+  })
 })
