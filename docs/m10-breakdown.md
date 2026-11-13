@@ -272,3 +272,96 @@ fix round".
   [0074](decisions/0074-range-selector-in-m10.md); before F-16), F-16, F-17 in WebKit (five
   flows), Q-4, Q-5 (the release workflow: package builds,
   signing, `latest.json`, source archives), the release checklist.
+
+## F-19: the Range selector (2026-11-13)
+
+The spec is [0074](decisions/0074-range-selector-in-m10.md) (items 1–12 bind every task), with
+[03 §Range](plan/03-features.md#range) and [06 §F-19](plan/06-web-app.md#f-19-range-selector) and
+flow 5 of §F-17. No model, server or schema change is planned (0074): a task that finds one is
+needed stops and tells the lead, who writes 0075 first. Same rules as above ("Rules for every
+agent", "Machines and commands"); every agent `model: "opus"`, `effort: "high"`, a fresh agent,
+`isolation: "worktree"` on `m10-hardening` (`git merge --ff-only m10-hardening` first). Commits
+start with `F-19: `.
+
+### Tasks and waves
+
+| Wave | Task | What | Ports |
+|------|------|------|-------|
+| 1 | A | the selector: the pure range helpers, the button and popover in the source header, the editor-store glue (job and group target), the Summary's Source and Estimate cards, the en strings, unit tests, a server test against `chapters.mkv` through `jobs/validate` and `jobs/plan` | 871x |
+| 1 → 2 | B | Playwright flow 5. Phase 1 (with A): the spec against the contract below, with what it needs from the e2e set-up. Phase 2 (resumed after A merges): run it, fix the flow, all flows twice | 872x |
+| 3 | R1, R2 | two independent reviews: R1 correctness against 0074 and the group target; R2 the tests (each must fail on a defect a user would see), keyboard and i18n | 878x, 879x |
+| 4 | fixes | one agent per area of the findings, each fix with a test that fails before it | 870x, 873x |
+| lead | | merges (`--no-ff`, checks, one mutation per task, worktree and branch removed), the demo, the docs | 876x |
+
+`npm run e2e` uses the ports 8750 and 8751: only one agent at a time runs it (A at its end, then
+B in phase 2; the reviewers one after the other, R1 first).
+
+### Who owns which files
+
+| Task | Owns |
+|------|------|
+| A | `frontend/src/components/range/**` (new: the component(s), `range.ts` helpers, their tests, `range.server.test.ts`), `frontend/src/i18n/messages/en/range.json` (new), `frontend/src/views/WorkspaceView.vue` (the header slot only), `frontend/src/stores/editor.ts` (the range glue only) and its tests, `frontend/src/components/summary/{SourceCard,EstimateCard}.vue`, `summary/estimate.ts` and `estimate.test.ts`, the `summary.*` keys it adds to `en/summary.json`, the unit tests of those files |
+| B | `frontend/e2e/flow5-range.spec.ts` (new); `frontend/e2e/support/**` only for a helper flow 5 needs (one that other flows may use too; say so in the report) |
+| lead | `docs/status.md`, `docs/m10-breakdown.md`, 0074 "Built" and any 0075, the plan files, `frontend/e2e/support/servers.ts` fixtures list, `frontend/e2e/settings.json` |
+
+### Contracts
+
+**The editor store (A builds it; B, the reviewers and the fix agents use it).**
+
+- `editor.setRange(range: Range): void` — the one way the selector changes the range. For a job:
+  one `replace` patch on `/range`, one undo step (no coalescing with the next change). In a
+  group, whatever the scope: the shown file's override (as `setNameField` does), one undo step;
+  the template never gets a range (0040), and no "per file" refusal toast.
+- `editor.rangeOverridden: boolean` — the edited group's shown file has a `/job/range` op in its
+  override (either scope); `false` for a job.
+- `editor.resetRangeToGroup(): void` — removes that op (the file encodes the whole source
+  again), one undo step.
+- `Range` is `Schemas['JobSettings']['range']` (`@/api/types`); no new type in the store.
+
+**The range helpers (`frontend/src/components/range/range.ts`, A).**
+
+- `parseTime(text: string): number | null` — `H:MM:SS.mmm`, `MM:SS`, plain seconds (with a
+  fraction); `null` when it does not parse.
+- `formatTime(seconds: number): string` — `H:MM:SS.mmm` (`0:01:30.000`).
+- `convertRange(range, kind, source): Range` — item 6 of 0074 (frames from seconds: the average
+  frame rate, start rounded down, end rounded up; seconds/frames to chapters: the chapters that
+  hold the start and the end; else the mode's default).
+- `rangeSeconds(job, source): number | null` — the seconds the range covers, the same
+  arithmetic as `reframe.validation.range.range_duration` (clamped to the source as there).
+  `summary/estimate.ts`'s `jobDuration` uses it, so the header, the Summary and the estimate
+  give one length.
+
+**The DOM (A builds it; flow 5 and the reviewers read it).**
+
+| What | Selector |
+|------|----------|
+| the header button | `[data-field="range"]` in `.workspace__header`: a `button` whose accessible name has the range and its length; the label text in `[data-field="range-label"]`, the length in `[data-field="range-length"]`; `data-kind="full|chapters|time|frames"`; `data-state="overridden"` while `editor.rangeOverridden` |
+| the popover | `.range-popover` (`role="dialog"`, labelled); open while the button's `aria-expanded="true"` |
+| the modes | a radio group: `[data-range-mode="full|chapters|time|frames"]`, the inputs with the visible labels *Whole source*, *Chapters*, *Seconds*, *Frames*; a disabled mode `aria-disabled` / `disabled` with its reason in `[data-range-reason="chapters|frames"]` |
+| the fields | `Field` with `path` `range.start` / `range.end` (so `data-path="range.start"` / `"range.end"`) for each mode: chapters *From* / *To* (PrimeVue `Select`, options labelled `2 · Part One · 0:00:01`), seconds *Start* / *End* (`InputText`), frames *From frame* / *To frame (not included)* (`InputText` or `InputNumber`); the `range` issues (path `range`) on the popover and on the button |
+| *Reset to group* | `[data-action="range-reset"]` in the popover, only while overridden |
+| the Summary | Source card `[data-card="source"] [data-field="range"]` (the range label and its length); Estimate card `[data-card="estimate"] [data-field="range"]` |
+
+The texts are en strings from `en/range.json`: *Whole source*, *Chapters 2–3* (an en dash),
+*0:01:30 – 0:45:00*, *Frames 0 – 1440*, as 0074 item 1.
+
+### Done when (word for word in each brief)
+
+03 §Range: "Done when: picking chapters 2–3 of a source updates the header, the Summary, the
+output name and the command at once, and the encoded file lasts as long as those chapters."
+06 §F-19: the four bullets. 06 §F-17 flow 5. 0074 items 1–12.
+
+### The demo (the lead, headless)
+
+`chapters.mkv` (5.021 s; chapters 1 *Opening* 0–1 s, 2 *Part One* 1–2.5 s, 3 *Part Two*
+2.5–4 s, 4 *Credits* 4–5 s; H.264 25 fps; checked with ffprobe on 2026-11-13). *Chapters* 2–3 is
+1.0–4.0 s = 3.0 s = 75 frames. Through the UI (headless Chromium against `dev-server.py` with the
+real pinned FFmpeg, no fake): the header, the Summary, the output name with `{chapters}` and the
+command drawer; a real encode; ffprobe of the output's duration and chapters; the same with
+*Seconds* and *Frames*; undo step by step. The measured numbers go under "F-19 results" below.
+
+### F-19 progress
+
+| Date | What |
+|------|------|
+| 2026-11-13 | This section committed; wave 1 (A, B phase 1) next. |
