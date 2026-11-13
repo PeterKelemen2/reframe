@@ -64,17 +64,11 @@ export const known: Known[] = [
     rule: 'color-contrast',
     target: '#settings-tools input.p-inputtext.p-inputtext-fluid[data-field="override"]',
   },
-  // A source's name and the Range button's name do not start with their visible text.
+  // A source's name does not start with its visible text.
   {
     screen: 'toast',
     check: 'axe',
     rule: 'label-content-name-mismatch',
     target: 'aside.sources-panel li.sources-panel__node.sources-panel__source',
-  },
-  {
-    screen: 'toast',
-    check: 'axe',
-    rule: 'label-content-name-mismatch',
-    target: 'header.workspace__header button.range-selector__trigger[data-field="range"]',
   },
 ]

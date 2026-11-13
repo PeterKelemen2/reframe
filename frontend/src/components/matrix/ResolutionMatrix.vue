@@ -374,9 +374,14 @@ onMounted(async () => {
                 MATCH_MARK[(data.cells[index] as TrackMatch).status]
               }}</span>
               <span>{{ streamsText(data.cells[index].streams) || t('matrix.cell.none') }}</span>
-              <Hand v-if="picked(data, column)" :size="14" aria-hidden="true" data-role="picked" />
-            </span>
-            <span class="matrix__message" :title="data.cells[index].message">
+              <Hand
+                v-if="picked(data, column)"
+                :size="14"
+                aria-hidden="true"
+                data-role="picked"
+              /> </span
+            >{{ ' '
+            }}<span class="matrix__message" :title="data.cells[index].message">
               {{ data.cells[index].message }}
             </span>
           </button>
@@ -441,14 +446,6 @@ onMounted(async () => {
   flex: 1 1 auto;
   min-height: 0;
 }
-
-/* The rows scroll with the keyboard once the scroller has the focus; PrimeVue hides its outline.
-   Inside the edge: the dialog's content would clip it outside. */
-.matrix__table :deep(.p-virtualscroller:focus-visible) {
-  outline: var(--p-focus-ring-width) var(--p-focus-ring-style) var(--p-focus-ring-color);
-  outline-offset: calc(-1 * var(--p-focus-ring-width));
-}
-
 .matrix__table :deep(tbody tr) {
   height: 60px;
 }

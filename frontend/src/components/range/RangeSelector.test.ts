@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { configureClient } from '@/api/client'
 import type { MediaSource } from '@/api/types'
+import { installKeyboardFixes } from '@/components/base/keyboard'
 import { mountShell } from '@/components/shell/testing'
 import { issue } from '@/editor/testing/samples'
 import { useEditorStore } from '@/stores/editor'
@@ -15,11 +16,16 @@ import { bareSource, chaptersSource, rangeGroup, rangeServer } from './testing'
 
 const mounted: VueWrapper[] = []
 
+// The app installs them in main.ts: a closed Select's Escape reaches the popover.
+let removeKeyboardFixes = () => {}
+
 beforeEach(() => {
   configureClient({ baseUrl: 'http://server', token: 't', fetch: rangeServer().fetch })
+  removeKeyboardFixes = installKeyboardFixes()
 })
 
 afterEach(() => {
+  removeKeyboardFixes()
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.replaceChildren()
 })
@@ -105,7 +111,12 @@ async function pick(path: string, label: string): Promise<void> {
 
 function escape(target: Element | null): void {
   target?.dispatchEvent(
-    new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+    new KeyboardEvent('keydown', {
+      key: 'Escape',
+      code: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    }),
   )
 }
 
@@ -122,6 +133,8 @@ describe('the range button', () => {
     expect(textOf('[data-field="range-length"]')).toBe('0:05')
     expect(button().dataset.kind).toBe('full')
     expect(button().getAttribute('aria-label')).toBe('Range: Whole source, 0:05')
+    // The name holds the visible words (WCAG 2.5.3): the label and the length apart.
+    expect(button().textContent?.trim()).toBe('Whole source 0:05')
 
     editor.setRange({ kind: 'chapters', start: 2, end: 3 })
     await flushPromises()

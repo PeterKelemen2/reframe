@@ -2,6 +2,7 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { configureClient } from '@/api/client'
+import { installKeyboardFixes } from '@/components/base/keyboard'
 import { FakeServer, json } from '@/api/testing/fakes'
 import type { Preset } from '@/api/types'
 import { languages } from '@/components/language/testing'
@@ -23,7 +24,11 @@ const MINE = 'mine'
 const mounted: VueWrapper[] = []
 let server: FakeServer
 
+// The app installs them in main.ts.
+let removeKeyboardFixes = () => {}
+
 beforeEach(() => {
+  removeKeyboardFixes = installKeyboardFixes()
   server = new FakeServer()
     .on(
       'GET /api/presets',
@@ -42,6 +47,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  removeKeyboardFixes()
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.replaceChildren()
 })
@@ -85,7 +91,12 @@ const puts = () => server.requests.filter((request) => request.method === 'PUT')
 
 function escape(target: Element): void {
   target.dispatchEvent(
-    new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+    new KeyboardEvent('keydown', {
+      key: 'Escape',
+      code: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    }),
   )
 }
 
