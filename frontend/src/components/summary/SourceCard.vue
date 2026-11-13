@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 
 import Card from '@/components/base/Card.vue'
 import KeyValue from '@/components/base/KeyValue.vue'
+import { useRange } from '@/components/range/useRange'
 import { fileName, formatDuration } from '@/components/shell/format'
 import { useEditorStore } from '@/stores/editor'
 
@@ -15,6 +16,7 @@ import { useThumbnail } from './useThumbnail'
 const { t } = useI18n()
 const editor = useEditorStore()
 const { sourceId, entry, source } = useJobSource()
+const { label: rangeLabel, length: rangeLength } = useRange()
 
 const video = computed(() => source.value?.video?.[0] ?? null)
 const thumbnail = useThumbnail(sourceId, () => video.value !== null)
@@ -38,6 +40,11 @@ const tracks = computed(() => {
     t('summary.source.subtitleTracks', media.subtitles?.length ?? 0),
   ].join(' · ')
 })
+const range = computed(() =>
+  rangeLength.value === null
+    ? rangeLabel.value
+    : t('summary.source.rangeValue', { range: rangeLabel.value, length: rangeLength.value }),
+)
 const chapters = computed(() => {
   const count = source.value?.chapters?.length
   return count === undefined ? null : count === 0 ? t('summary.source.noChapters') : String(count)
@@ -82,6 +89,9 @@ const chapters = computed(() => {
           </KeyValue>
           <KeyValue :label="t('summary.source.chapters')">
             <span data-field="chapters">{{ chapters }}</span>
+          </KeyValue>
+          <KeyValue :label="t('summary.source.range')">
+            <span data-field="range">{{ range }}</span>
           </KeyValue>
         </template>
       </dl>

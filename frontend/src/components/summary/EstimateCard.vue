@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import Card from '@/components/base/Card.vue'
+import { useRange } from '@/components/range/useRange'
 import { formatDuration } from '@/components/shell/format'
 import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
@@ -15,6 +16,7 @@ const { t } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
 const { source } = useJobSource()
+const range = useRange()
 
 const estimate = computed<Estimate | null>(() => {
   const job = editor.job
@@ -23,7 +25,8 @@ const estimate = computed<Estimate | null>(() => {
     return { kind: 'quality' }
   }
   if (source.value === null) return { kind: 'unknown', reason: 'duration' }
-  return estimateSize(job, source.value, system.definitions)
+  // In a group the file's range is its override, which the shown job may leave out.
+  return estimateSize({ ...job, range: range.range.value }, source.value, system.definitions)
 })
 </script>
 
@@ -62,6 +65,16 @@ const estimate = computed<Estimate | null>(() => {
           estimate.reason === 'video'
             ? t('summary.estimate.noVideoBitrate')
             : t('summary.estimate.noDuration')
+        }}
+      </p>
+      <p class="summary-card__note" data-field="range">
+        {{
+          range.length.value === null
+            ? t('summary.estimate.rangeNoLength', { range: range.label.value })
+            : t('summary.estimate.range', {
+                range: range.label.value,
+                length: range.length.value,
+              })
         }}
       </p>
     </template>

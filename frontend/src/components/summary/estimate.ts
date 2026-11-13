@@ -5,6 +5,7 @@ import type {
   JobSettings,
   MediaSource,
 } from '@/api/types'
+import { rangeSeconds } from '@/components/range/range'
 
 export type Estimate =
   /** Constant quality: the size depends on the picture. */
@@ -23,31 +24,7 @@ export type Estimate =
 
 /** Seconds of the source that the job's range covers; `null` when the source does not say. */
 export function jobDuration(job: JobSettings, source: MediaSource): number | null {
-  const total = source.container?.duration ?? source.video?.[0]?.duration ?? null
-  const range = job.range ?? { kind: 'full' }
-  switch (range.kind) {
-    case 'full':
-      return total
-    case 'time': {
-      const end = range.end ?? total
-      return end === null ? null : Math.max(0, end - range.start)
-    }
-    case 'chapters': {
-      const chapters = source.chapters ?? []
-      const first = chapters[range.start - 1]
-      const last = chapters[range.end - 1]
-      return first && last ? Math.max(0, last.end - first.start) : null
-    }
-    case 'frames': {
-      const video = source.video?.[0]
-      const rate = video?.avg_frame_rate ?? video?.frame_rate
-      if (!rate || rate.num <= 0 || rate.den <= 0) return null
-      const fps = rate.num / rate.den
-      const end = range.end ?? video?.frame_count ?? (total === null ? null : total * fps)
-      return end === null ? null : Math.max(0, (end - range.start) / fps)
-    }
-  }
-  return null
+  return rangeSeconds(job, source)
 }
 
 const MIXDOWN_OF_CHANNELS: Record<number, string> = { 1: 'mono', 2: 'stereo', 6: '5.1', 8: '7.1' }

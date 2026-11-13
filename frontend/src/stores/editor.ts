@@ -16,6 +16,7 @@ import type {
   Resolution,
   TemplateSection,
 } from '@/api/types'
+import { FULL, type Range } from '@/components/range/range'
 import { panelItems } from '@/components/sources/panel'
 import {
   changesTrackList,
@@ -156,6 +157,9 @@ export const EDIT_DEBOUNCE = 250
 
 const TOAST_LIFE = 10_000
 
+/** A group file's range, in its override. */
+const FILE_RANGE = '/job/range'
+
 /** `jobs/draft`, frozen. */
 async function drafted(sourceId: string, preset: string | null): Promise<JobDraft> {
   const answer = unwrap(
@@ -217,6 +221,13 @@ function overriddenWith(
     ...document,
     overrides: ops.length > 0 ? { ...document.overrides, [sourceId]: ops } : others,
   }
+}
+
+/** The shown file's override operations on its range. */
+function rangeOps(current: GroupTarget): JsonPatchOp[] {
+  return (current.overrides[current.sourceId] ?? []).filter(
+    (op) => op.op !== 'test' && within(op.path, FILE_RANGE),
+  )
 }
 
 function representativeOf(found: BatchGroup, sources: SourcesStore): string {
@@ -338,8 +349,8 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   /**
-   * Drafts the open source again with another preset; in a group, the template becomes the
-   * preset's and the overrides stay. One undo step. Rejects as `open`.
+   * Drafts the open source again with another preset, keeping the job's range; in a group, the
+   * template becomes the preset's and the overrides stay. One undo step. Rejects as `open`.
    */
   async function applyPreset(preset: string): Promise<void> {
     const opened = target.value
@@ -367,14 +378,19 @@ export const useEditorStore = defineStore('editor', () => {
       (answer) => {
         const current = target.value
         if (current?.kind !== 'job') return
+        // A preset has no range: the job keeps its own.
+        const kept = current.job.range ?? FULL
+        const next = sameJson(answer.job.range ?? FULL, kept)
+          ? answer.job
+          : deepFreeze({ ...answer.job, range: kept })
         const last = history.value.done.at(-1)
-        history.value = record(history.value, current.job, answer.job)
+        history.value = record(history.value, current.job, next)
         const step = history.value.done.at(-1)
         if (step !== undefined && step !== last) {
           stepDrafts.set(step, { before: draft.value, after: answer })
         }
         diffAtOnce = true
-        place({ ...current, job: answer.job }, answer, false)
+        place({ ...current, job: next }, answer, false)
       },
     )
   }
@@ -1278,6 +1294,62 @@ export const useEditorStore = defineStore('editor', () => {
     })
   }
 
+  /**
+   * The range the shown file encodes: the job's. In a group it is the whole source with the
+   * shown file's override (a template has no range), known before the shown job is resolved
+   * again, and also in scope `group`, whose shown job leaves the override out.
+   */
+  const range = computed<Range>(() => {
+    const current = target.value
+    if (current === null) return FULL
+    if (current.kind === 'job') return current.job.range ?? FULL
+    try {
+      return applyOps({ job: { range: FULL } }, rangeOps(current)).job.range
+    } catch (error) {
+      if (!(error instanceof PatchError)) throw error
+      return current.job.range ?? FULL
+    }
+  })
+
+  /** The edited group's shown file has a range of its own. */
+  const rangeOverridden = computed(() => {
+    const current = target.value
+    return current?.kind === 'group' && rangeOps(current).length > 0
+  })
+
+  /** The shown file's range override becomes `next` (none for the whole source); one undo step. */
+  function overrideRange(current: GroupTarget, value: Range): void {
+    const state = requireGroup('setRange')
+    const next = deepFreeze(cloneJson(value))
+    changeOverride(current.sourceId, (ops) => {
+      const kept = withoutOps(ops, (op) => within(op.path, FILE_RANGE))
+      return next.kind === 'full'
+        ? kept
+        : ordered([...kept, { op: 'replace', path: FILE_RANGE, value: next }])
+    })
+    if (state.scope === 'file') {
+      target.value = groupTarget(state, deepFreeze({ ...current.job, range: next }))
+    }
+  }
+
+  /**
+   * The range, one undo step. In a group, whatever the scope, it is the shown file's override:
+   * a template has no range.
+   */
+  function setRange(next: Range): void {
+    const current = target.value
+    if (current === null) throw new Error('editor.setRange: no job is open')
+    if (sameJson(next, range.value)) return
+    if (current.kind === 'job') set('/range', next)
+    else overrideRange(current, next)
+  }
+
+  /** The shown file encodes the whole source again, as the group does. One undo step. */
+  function resetRangeToGroup(): void {
+    const current = target.value
+    if (current?.kind === 'group' && rangeOverridden.value) overrideRange(current, FULL)
+  }
+
   /** A fix of one matrix row's issue: `template`, the group; `job`, that file; `settings`. */
   async function applyRowFix(sourceId: string, fix: Fix): Promise<void> {
     if (fix.target !== 'job') {
@@ -1525,6 +1597,10 @@ export const useEditorStore = defineStore('editor', () => {
     pickTrack,
     resetTrack,
     setNameField,
+    range,
+    rangeOverridden,
+    setRange,
+    resetRangeToGroup,
     applyRowFix,
     overriddenAt,
     resetToGroup,

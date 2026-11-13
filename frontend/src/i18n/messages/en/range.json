@@ -1,0 +1,50 @@
+{
+  "title": "Range",
+  "button": "Range: {range}, {length}",
+  "buttonNoLength": "Range: {range}",
+  "length": "Length: {length}",
+  "lengthUnknown": "The length is not known.",
+  "label": {
+    "full": "Whole source",
+    "chapter": "Chapter {number}",
+    "chapters": "Chapters {start}–{end}",
+    "time": "{start} – {end}",
+    "timeToEnd": "{start} – end",
+    "frames": "Frames {start} – {end}",
+    "framesToEnd": "Frames {start} – end"
+  },
+  "mode": "Encode",
+  "modes": {
+    "full": "Whole source",
+    "chapters": "Chapters",
+    "time": "Seconds",
+    "frames": "Frames"
+  },
+  "reason": {
+    "chapters": "The source has no chapters.",
+    "frames": "The video does not say its frame rate.",
+    "noVideo": "The source has no video."
+  },
+  "chapters": {
+    "from": "From",
+    "to": "To",
+    "option": "{number} · {name} · {start}",
+    "optionUnnamed": "{number} · {start}"
+  },
+  "time": {
+    "start": "Start",
+    "end": "End",
+    "toEnd": "To the end",
+    "help": "Type H:MM:SS.mmm, MM:SS or seconds. An empty End encodes to the end of the source.",
+    "invalid": "This is not a time: type H:MM:SS.mmm, MM:SS or seconds."
+  },
+  "frames": {
+    "start": "From frame",
+    "end": "To frame (not included)",
+    "toEnd": "To the end",
+    "help": "The first frame is 0. The To frame is not encoded: 0 to 25 is the first 25 frames. An empty To encodes to the end of the source.",
+    "invalid": "This is not a frame number: type a whole number from 0."
+  },
+  "fileOnly": "A group has no range: this range is for the shown file only.",
+  "reset": "Reset to group"
+}

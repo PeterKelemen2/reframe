@@ -113,4 +113,24 @@ describe("the duration of a job's range", () => {
     job.range = { kind: 'chapters', start: 2, end: 3 }
     expect(jobDuration(job, source)).toBeCloseTo(SECONDS - 1.5)
   })
+
+  it('stops at the end of the source, so the size is not estimated for frames never encoded', () => {
+    const job = bitrateJob()
+    const source = multitrackSource()
+    source.chapters = [
+      { index: 0, start: 0, end: 2 },
+      { index: 1, start: 2, end: SECONDS },
+    ]
+    job.range = { kind: 'time', start: 1, end: 600 }
+    expect(jobDuration(job, source)).toBeCloseTo(SECONDS - 1)
+    job.range = { kind: 'chapters', start: 2, end: 9 }
+    expect(jobDuration(job, source)).toBeCloseTo(SECONDS - 2)
+    // 4.021 s at 25 fps: 101 frames.
+    job.range = { kind: 'frames', start: 25, end: 100_000 }
+    expect(jobDuration(job, source)).toBeCloseTo(76 / 25)
+    expect(estimateSize(job, multitrackSource(), DEFINITIONS)).toMatchObject({
+      kind: 'size',
+      seconds: 76 / 25,
+    })
+  })
 })
