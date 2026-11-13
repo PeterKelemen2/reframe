@@ -384,7 +384,63 @@ the pinned FFmpeg, so the frames and clips were real. After that came the gate (
 
 ## Task K3: the tracks and the batch
 
-(Filled in after the task.)
+Built on 2026-11-13 on Linux (this host), headless Chromium and Firefox. Phase 1 used the
+area's own Playwright scripts against `scripts/dev-server.py`: a Tab walk on every screen of
+the area, with the focus judged by its computed outline and shadow and by a pixel diff of the
+stop focused and blurred. Phase 2 used the gate on ports 8740/8741.
+
+### What was found and fixed
+
+| Screen | Defect | Fix |
+|--------|--------|-----|
+| `range` | Arrowing through the modes checks each one (native radios, as APG asks), and each mode converted from the previous mode's conversion: ↓ from *Whole source* ended at *Frames 0–125*, cutting the last 21 ms of `chapters.mkv` | A mode converts from the last range the user set: while the arrows pass, that is the range the popover opened with. A range picked or typed in a mode becomes the base of the next. One undo step per mode stays |
+| `range` | Both the checked and the first radio were tab stops; the popover's focus trap wrapped onto the unchecked *Whole source* | Roving tabindex: only the checked mode takes Tab (all take it when the checked mode is disabled) |
+| `range`, Summary | Frame and chapter numbers written raw (`Frames 0 – 1440`) | `rangeLabel` takes `n` |
+| `language-picker` | Reopened after a search, the first option (*As the source*) was active, so Enter changed the language | The query watcher runs at once (`flush: 'sync'`) and no longer undoes the chosen option `show` marked |
+| `language-picker` | The scrolling listbox was its own tab stop (browsers make a scroller focusable) | `tabindex="-1"`: the search drives it (APG combobox) |
+| `language-picker` (and its uses) | The trigger copied a field's focus ring, which has no width: a faint border change only | The app's focus ring |
+| `matrix` | A row's popover with notes and no fix kept the focus on the cell; the popover lives outside the dialog, so its notes were out of reach | The summary takes the focus, and `tabindex="0"`: PrimeVue's focus trap counts a summary only by its tabindex |
+| `matrix` | The rows' virtual scroller is a tab stop without an outline | The shared layer's ring (`main.css`) |
+| `matrix` | `label-content-name-mismatch` on a track cell: the streams and the message had no space between them (`#3 #42 tracks`) | A space; the cell's state list goes through `formatList` |
+| `naming-editor`, `summary` | `label-content-name-mismatch` on the variable chips: the name put the value in parentheses, which axe leaves out, and the code and the value ran together | `Insert {name}: {value}`, and a space between code and value |
+| `toast`, `crop-manual` (the header) | `label-content-name-mismatch` on the Range button: label and length ran together | A space |
+| `defaults` | Escape on a closed drop-down did not close the dialog | See below |
+| strings | `toFixed`/`String()` numbers: DRC, sample rates, gain, bitrates, subtitle events, parse scores, frame numbers; hand-joined lists: skipped folders, a matrix cell's state; the output folder and its origin read as one word | `n()` (`kiloHertz(rate, n)`), `formatList`, a space. InputNumbers take `:locale` |
+
+Each fix has a unit test that failed before it, or, for what only a browser shows, a test in
+`e2e/a11y/keyboard-tracks.spec.ts` (the Range pass-through and its tab stop, the language
+picker reopening and its Tab order, the matrix notes' focus). Every test was checked by a
+mutation of the code it covers.
+
+**Escape in the defaults dialog.** `keyboard.ts` lets a closed Select's Escape go on, but the
+Select has also called `preventDefault`, and the dialog's own handler takes a prevented Escape
+as handled by something inside (it closes only on an Escape nothing else used). So the dialog
+keeps its capture handler for a closed combobox; the unit test sends cancelable events, as a
+browser does, with `keyboard.ts` installed. The Range popover's handler is gone: PrimeVue's
+Popover closes on any Escape that reaches the document.
+
+### Known list
+
+`known/tracks.ts` keeps one entry, the picture area's: the `subtitles` screen shows its
+ScanControl (`label-content-name-mismatch` on `button.scan-control__start`), which task K2
+fixes and removes. This task also removed its Range button from `known/shell.ts` (`toast`) and
+`known/picture.ts` (`crop-manual`), and its chips from `known/picture.ts` (`summary`).
+
+### Not changed
+
+- The frame and time fields of the Range popover show raw numbers: they are typed and parsed.
+- Lines of facts joined with ` · ` (stream labels, a track's summary, a language's codes) are
+  kept: separators of data, not a sentence.
+- Tab in the naming template's open `{` list takes the suggestion and keeps the focus in the
+  field (shell completion); a second Tab moves on.
+- The matrix keeps a table of buttons (one tab stop per cell), not an APG grid.
+
+### Found in other areas (sent to their owners)
+
+- The sources panel (K1): Enter or Space on *Edit group* inside a group's tree item was taken
+  by the tree (it folded the group).
+- The shared layer (G, all done there): Select's Escape, the menu's first item, the form-field
+  ring, the menu item's ring, the virtual scroller's ring.
 
 ## Review and fix round
 

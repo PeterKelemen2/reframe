@@ -8,7 +8,7 @@ import { useI18n } from 'vue-i18n'
 
 import type { AudioOutputTrack, AudioStream } from '@/api/types'
 import Field from '@/components/base/Field.vue'
-import { groupedKbps, streamLabel } from '@/components/media/streams'
+import { groupedKbps, kiloHertz, streamLabel } from '@/components/media/streams'
 import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 
@@ -129,7 +129,7 @@ const samplerateOptions = computed(() => [
   { value: KEEP, label: t('tracks.output.sameAsSource') },
   ...(encoder.value?.samplerates ?? []).map((rate) => ({
     value: String(rate),
-    label: t('tracks.units.khz', { value: n(rate / 1000, { maximumFractionDigits: 3 }) }),
+    label: t('tracks.units.khz', { value: kiloHertz(rate, n) }),
   })),
 ])
 
