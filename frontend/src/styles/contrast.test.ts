@@ -197,6 +197,9 @@ const TEXT_PAIRS: Pair[] = [
 const GRAPHIC_PAIRS: Pair[] = [
   ['form-field-border-color', 'form-field-background'],
   ['form-field-invalid-border-color', 'form-field-background'],
+  // A focused field's ring lies on the field and on the surface around it.
+  ['form-field-focus-ring-color', 'form-field-background'],
+  ...SURFACES.map((bg): Pair => ['form-field-focus-ring-color', bg]),
   ...SURFACES.flatMap((bg) => TONES.map((tone): Pair => [`status-${tone}-border-color`, bg])),
   // An outlined button's border is its only edge; a button's focus ring lies on the surface.
   ...SURFACES.flatMap((bg) =>
@@ -258,6 +261,11 @@ describe.each(['light', 'dark'] as const)('the %s colours', (scheme) => {
       ]),
     ]
     expect(below(pairs, 3, scheme)).toEqual([])
+  })
+
+  it('draw a ring round a focused form field, not only a border colour', () => {
+    expect(resolve('--p-form-field-focus-ring-style', scheme)).toBe('solid')
+    expect(Number.parseFloat(resolve('--p-form-field-focus-ring-width', scheme))).toBeGreaterThanOrEqual(2)
   })
 
   it('give toasts a background the page does not show through', () => {

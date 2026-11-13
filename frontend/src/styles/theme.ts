@@ -75,6 +75,10 @@ export const ReframePreset = definePreset(Aura, {
       950: '{indigo.950}',
     },
     focusRing: { width: '2px' },
+    // Aura shows a focused field by its border colour alone, 1.3:1 against the grey it replaces.
+    formField: {
+      focusRing: { width: '2px', style: 'solid', color: '{primary.color}', offset: '-1px', shadow: 'none' },
+    },
     colorScheme: {
       light: {
         // Aura's 500 shades are below 4.5:1 for white text.
