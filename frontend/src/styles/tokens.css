@@ -72,12 +72,16 @@
     --rf-duration: 0s;
   }
 
+  /* 0, not a tiny duration: a transition of any length still runs and paints its first frame,
+     so a style read at once gives the old value. Vue's and PrimeVue's transitions end at once. */
   *,
   ::before,
   ::after {
-    animation-duration: 0.01ms !important;
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
     scroll-behavior: auto !important;
   }
 }

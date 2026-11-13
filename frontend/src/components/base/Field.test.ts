@@ -211,6 +211,24 @@ describe('Field', () => {
     expect(document.activeElement).toBe(wrapper.get('input.control').element)
   })
 
+  it('gives the focus to the pressed button of a button group, when revealed', async () => {
+    Element.prototype.scrollIntoView = vi.fn<() => void>()
+    const wrapper = mountBase(Field, {
+      props: { label: 'Bit depth', path: 'video.bit_depth' },
+      slots: {
+        default: () =>
+          h('div', { role: 'group' }, [
+            h('button', { 'aria-pressed': 'false', class: 'eight' }, '8'),
+            h('button', { 'aria-pressed': 'true', class: 'ten' }, '10'),
+          ]),
+      },
+    })
+    useUiStore().reveal('video.bit_depth')
+    await flushPromises()
+    await nextTick()
+    expect(document.activeElement).toBe(wrapper.get('button.ten').element)
+  })
+
   it('gives the focus to its control, not to the help button, when revealed', async () => {
     Element.prototype.scrollIntoView = vi.fn<() => void>()
     const wrapper = mountField({ path: 'video.encoder', help: 'Lower is better.' })

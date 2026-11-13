@@ -15,18 +15,35 @@ const DEV_SERVER = fileURLToPath(new URL('../../../scripts/dev-server.py', impor
 const SCENARIO = `${E2E}fake-ffmpeg.json`
 // Hardware test encodes on: without them a hardware encoder is only "not tested".
 const SETTINGS = `${E2E}settings.json`
-const FIRST_PORT = 8750
+const DEFAULT_FIRST_PORT = 8750
 // Longer than dev-server.py's own stop (10 s), so the home is removed before Playwright's
 // SIGKILL. Shorter than Playwright's 30 s exit.
 const STOP_TIMEOUT = 20_000
 
 /**
- * The base URL of each browser project's own server, so that one project's queue never shows in
- * the other's.
+ * The first server's port: `REFRAME_E2E_PORT`, so that several runs can share a machine. Throws
+ * on a value that is not a port, which would otherwise start the servers on a wrong one.
  */
-export function projectServers<P extends string>(projects: readonly P[]): Record<P, string> {
+export function firstPort(env: Record<string, string | undefined> = process.env): number {
+  const raw = env.REFRAME_E2E_PORT?.trim()
+  if (raw === undefined || raw === '') return DEFAULT_FIRST_PORT
+  const port = Number(raw)
+  if (!/^\d+$/.test(raw) || port < 1 || port > 65_534) {
+    throw new Error(`REFRAME_E2E_PORT is not a port: ${raw}`)
+  }
+  return port
+}
+
+/**
+ * The base URL of each browser project's own server, on consecutive ports from `first`, so
+ * that one project's queue never shows in the other's.
+ */
+export function projectServers<P extends string>(
+  projects: readonly P[],
+  first: number = firstPort(),
+): Record<P, string> {
   return Object.fromEntries(
-    projects.map((project, index) => [project, `http://127.0.0.1:${FIRST_PORT + index}`]),
+    projects.map((project, index) => [project, `http://127.0.0.1:${first + index}`]),
   ) as Record<P, string>
 }
 
@@ -55,8 +72,8 @@ export function webServers(
       `--port ${new URL(baseURL).port}`,
       `--token ${TOKEN}`,
       // Flow 2's season folder: twelve episodes, E05 with an extra track, E11 without the dub.
-      // Flow 4's letterbox: black bars to crop.
-      '--fixtures multitrack,Anime.Show.S01.BluRay.x264-GRP,letterbox',
+      // Flow 4's letterbox: black bars to crop. The accessibility gate's external subtitle.
+      '--fixtures multitrack,Anime.Show.S01.BluRay.x264-GRP,letterbox,text-subs.en.srt',
       // Makes the output root a media root too, so a flow can probe its job's output.
       '--output-fixtures chapters',
       `--fake-ffmpeg ${quote(SCENARIO)}`,
