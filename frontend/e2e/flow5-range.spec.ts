@@ -39,12 +39,15 @@ test('a chapter range: the header, the output name and the command follow it int
   await expect(popover).toBeVisible()
   await popover.getByRole('radio', { name: 'Chapters', exact: true }).check()
 
-  const pick = async (path: string, option: RegExp) => {
+  const pick = async (path: string, option: string) => {
     await popover.locator(`[data-path="${path}"]`).getByRole('combobox').click()
-    await page.getByRole('option', { name: option }).click()
+    await page.getByRole('option', { name: option, exact: true }).click()
+    // The list leaves with a transition; until it is gone the next list's options match twice.
+    await expect(page.getByRole('option')).toHaveCount(0)
   }
-  await pick('range.start', /^2 · Part One · /)
-  await pick('range.end', /^3 · Part Two · /)
+  // From before To: a From after To would move To along.
+  await pick('range.start', '2 · Part One · 0:00:01')
+  await pick('range.end', '3 · Part Two · 0:00:02.500')
 
   await page.keyboard.press('Escape')
   await expect(popover).toBeHidden()
@@ -54,8 +57,11 @@ test('a chapter range: the header, the output name and the command follow it int
   await expect(range.locator('[data-field="range-label"]')).toHaveText(PICKED.label)
   await expect(range.locator('[data-field="range-length"]')).toHaveText(PICKED.length)
   await expect(range).toHaveAccessibleName(new RegExp(`${PICKED.label}.*${PICKED.length}`))
-  await expect(page.locator('[data-card="source"] [data-field="range"]')).toContainText(
-    PICKED.label,
+  await expect(page.locator('[data-card="source"] [data-field="range"]')).toHaveText(
+    `${PICKED.label} (${PICKED.length})`,
+  )
+  await expect(page.locator('[data-card="estimate"] [data-field="range"]')).toHaveText(
+    `Range: ${PICKED.label} (${PICKED.length})`,
   )
 
   await expect(name).toHaveText('chapters 2-3.mkv')
