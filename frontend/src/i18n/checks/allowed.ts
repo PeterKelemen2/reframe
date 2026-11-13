@@ -6,12 +6,6 @@ import type { ScriptText } from './scriptText'
  * entry that no longer happens, so the list only shrinks.
  */
 export const ALLOWED_SCRIPT_TEXT: Omit<ScriptText, 'line'>[] = [
-  // Shell and pages.
-  { file: '/src/components/settings/PreviewSection.vue', where: 'InputNumber', text: 'no :locale' },
-  { file: '/src/components/settings/PreviewSection.vue', where: 'InputNumber', text: 'no :locale' },
-  { file: '/src/components/settings/QueueSection.vue', where: 'InputNumber', text: 'no :locale' },
-  { file: '/src/views/SandboxView.vue', where: 'InputNumber', text: 'no :locale' },
-  { file: '/src/views/SandboxView.vue', where: 'InputNumber', text: 'no :locale' },
   // Picture and video.
   { file: '/src/components/dimensions/SizeSection.vue', where: 'InputNumber', text: 'no :locale' },
   { file: '/src/components/dimensions/SizeSection.vue', where: 'InputNumber', text: 'no :locale' },

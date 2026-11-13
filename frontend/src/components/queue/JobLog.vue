@@ -208,12 +208,6 @@ function onVisible(value: boolean): void {
   background: var(--rf-color-bg);
 }
 
-/* PrimeVue's scroller removes the outline that the app's focus ring is. */
-.job-log__scroller:focus-visible {
-  outline: var(--p-focus-ring-width) var(--p-focus-ring-style) var(--p-focus-ring-color);
-  outline-offset: var(--p-focus-ring-offset);
-}
-
 .job-log__line {
   padding-inline: var(--rf-space-2);
   font-family: var(--rf-font-mono);

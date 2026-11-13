@@ -342,9 +342,9 @@ async function remove(): Promise<void> {
   flex: 1 1 18rem;
 }
 
+/* Read-only, not disabled: its text keeps the contrast of text (muted on this fill is 4:1 in dark). */
 .tool-row__input--readonly {
   background: var(--p-inputtext-disabled-background);
-  color: var(--rf-color-text-muted);
 }
 
 .tool-row__outcome {

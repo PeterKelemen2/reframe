@@ -16,7 +16,7 @@ const props = defineProps<{
   member?: Schemas['GroupMember']
   /** The member's episode label (`E05`). */
   label?: string
-  /** `${idBase}-title` and `${idBase}-details` name and describe the tree item without its buttons. */
+  /** `${idBase}-title` and `${idBase}-details` name the tree item, without its remove button. */
   idBase: string
 }>()
 
@@ -62,6 +62,8 @@ const near = computed(() => props.member?.match === 'near')
         <template #icon><X :size="14" aria-hidden="true" /></template>
       </Button>
     </div>
+    <!-- Keeps the title and the details apart as words in the row's visible text. -->
+    {{ ' ' }}
     <div :id="`${idBase}-details`" class="source-item__details">
       <p v-if="!member && summary" class="source-item__summary" data-field="summary">
         {{ summary }}
@@ -84,8 +86,9 @@ const near = computed(() => props.member?.match === 'near')
       <ul v-if="warnings.length" class="source-item__warnings">
         <li v-for="(warning, index) in warnings" :key="index" data-field="warning">
           <TriangleAlert :size="14" aria-hidden="true" />
-          <span class="rf-sr-only">{{ t('sources.panel.warning') }}: </span>
           <span>{{ warning }}</span>
+          <!-- After the text: the row's name must hold its visible text unbroken. -->
+          <span class="rf-sr-only">&nbsp;{{ t('sources.panel.warning') }}</span>
         </li>
       </ul>
     </div>

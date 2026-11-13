@@ -14,7 +14,7 @@ import { useSystemStore } from '@/stores/system'
 
 import { refusalIssues, useSetting, useSettingsLocked } from './useSetting'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const system = useSystemStore()
 const queue = useQueueStore()
 const locked = useSettingsLocked()
@@ -73,6 +73,7 @@ function saveParallel(value: number | null): void {
         <template #default="{ id, invalid }">
           <InputNumber
             :input-id="id"
+            :locale="locale"
             :model-value="parallelJobs.value.value ?? null"
             :min="1"
             :use-grouping="false"

@@ -139,6 +139,7 @@
   "tree": {
     "label": "Presets by category",
     "current": "used by the open job",
+    "count": "{n} preset | {n} presets",
     "keys": "Arrow keys move, Enter uses the preset for the open job, Delete deletes a user preset."
   },
   "view": {

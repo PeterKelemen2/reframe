@@ -110,6 +110,27 @@ function listHidden(): void {
   }
 }
 
+/**
+ * The filter and the list are the two Tab stops, both ways. PrimeVue takes the filter out of the
+ * Tab order while the list has the focus, reaches the list through hidden guards (stops that show
+ * nothing, where Firefox stays), and browsers make its scroll container a stop of its own.
+ */
+const LIST_PT = {
+  pcFilter: { root: { tabindex: 0 } },
+  list: { tabindex: 0 },
+  listContainer: { tabindex: -1 },
+  hiddenFirstFocusableEl: { tabindex: -1 },
+  hiddenLastFocusableEl: { tabindex: -1 },
+}
+
+// PrimeVue puts its guards back in the Tab order each time the focus leaves the list.
+function keepGuardsOut(event: FocusEvent): void {
+  const list = event.currentTarget as HTMLElement
+  for (const guard of list.querySelectorAll<HTMLElement>('.p-listbox .p-hidden-focusable')) {
+    guard.tabIndex = -1
+  }
+}
+
 async function choose(chosen: string | null): Promise<void> {
   listPopover.value?.hide()
   // The listbox gives `null` for a click on the job's own preset.
@@ -287,7 +308,7 @@ function toggleMenu(event: Event): void {
     </Button>
     <Menu ref="actionsMenu" :model="menuItems" popup class="preset-picker__menu" />
     <Popover ref="listPopover" class="preset-picker__popover" @show="listShown" @hide="listHidden">
-      <div :id="listId">
+      <div :id="listId" @focusout="keepGuardsOut">
         <Listbox
           class="preset-picker__list"
           :model-value="presetId"
@@ -300,6 +321,7 @@ function toggleMenu(event: Event): void {
           :filter-placeholder="t('presets.picker.filter')"
           :ariaLabelledby="labelId"
           scroll-height="24rem"
+          :pt="LIST_PT"
           @update:model-value="choose"
         >
           <template #optiongroup="{ option }">
@@ -410,6 +432,12 @@ function toggleMenu(event: Event): void {
 .preset-picker__list {
   width: min(22rem, 85vw);
   border: none;
+}
+
+/* The list shows that it has the focus, as its focused option does: PrimeVue removes its outline. */
+.preset-picker__list :deep(.p-listbox-list:focus-visible) {
+  outline: var(--p-focus-ring-width) var(--p-focus-ring-style) var(--p-focus-ring-color);
+  outline-offset: calc(-1 * var(--p-focus-ring-width));
 }
 
 .preset-picker__option {

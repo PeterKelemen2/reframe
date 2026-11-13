@@ -19,6 +19,9 @@ async function mountToasts(setup?: () => void) {
   return result
 }
 
+const host = () => document.querySelector<HTMLElement>('.shell-toasts')!
+const at = (x: number, y: number) => () => new DOMRect(x, y, 100, 40)
+
 function shown(): string[] {
   return [...document.querySelectorAll('.p-toast-message')].map((message) =>
     [...message.querySelectorAll('.p-toast-summary, .p-toast-detail')]
@@ -45,9 +48,57 @@ describe('the toasts', () => {
     await mountToasts()
     useToastStore().push({ severity: 'success', summary: 'Added' })
     await flushPromises()
-    const host = document.querySelector<HTMLElement>('.shell-toasts')
-    expect(host?.classList.contains('p-toast-bottom-right')).toBe(true)
-    expect(host?.style.bottom).toContain('var(--shell-status-bar-height, 0px)')
+    expect(host().classList.contains('p-toast-bottom-right')).toBe(true)
+    expect(host().style.bottom).toContain('var(--shell-status-bar-height, 0px)')
+  })
+
+  it('moves to the other end of the window while the focus is on something it covers', async () => {
+    await mountToasts()
+    useToastStore().push({ severity: 'success', summary: 'Added' })
+    await flushPromises()
+    // jsdom lays nothing out: the message lies where its end of the window puts it.
+    document.querySelector<HTMLElement>('.p-toast-message')!.getBoundingClientRect = () =>
+      host().classList.contains('p-toast-top-right') ? at(900, 10)() : at(900, 600)()
+    const [clear, coveredBelow, coveredAbove] = [at(100, 100), at(950, 620), at(950, 20)].map(
+      (box) => {
+        const button = document.createElement('button')
+        button.getBoundingClientRect = box
+        document.body.append(button)
+        return button
+      },
+    ) as [HTMLButtonElement, HTMLButtonElement, HTMLButtonElement]
+
+    clear.focus()
+    await flushPromises()
+    expect(host().classList.contains('p-toast-bottom-right')).toBe(true)
+    coveredBelow.focus()
+    await flushPromises()
+    expect(host().classList.contains('p-toast-top-right')).toBe(true)
+    expect([host().style.top, host().style.bottom]).toEqual(['var(--rf-space-3)', 'auto'])
+    expect(host().classList.contains('shell-toasts--aside')).toBe(false)
+    coveredAbove.focus()
+    await flushPromises()
+    expect(host().classList.contains('p-toast-bottom-right')).toBe(true)
+    expect(host().classList.contains('shell-toasts--aside')).toBe(false)
+  })
+
+  it('goes out of sight while the focus is on something it covers at both ends', async () => {
+    await mountToasts()
+    useToastStore().push({ severity: 'success', summary: 'Added' })
+    await flushPromises()
+    document.querySelector<HTMLElement>('.p-toast-message')!.getBoundingClientRect = () =>
+      new DOMRect(900, 0, 100, 720)
+    const covered = document.createElement('button')
+    covered.getBoundingClientRect = () => new DOMRect(950, 300, 20, 20)
+    const clear = document.createElement('button')
+    clear.getBoundingClientRect = () => new DOMRect(100, 300, 20, 20)
+    document.body.append(covered, clear)
+    covered.focus()
+    await flushPromises()
+    expect(host().classList.contains('shell-toasts--aside')).toBe(true)
+    clear.focus()
+    await flushPromises()
+    expect(host().classList.contains('shell-toasts--aside')).toBe(false)
   })
 
   it('keeps a toast in the store while it is on screen, and removes it when it is closed', async () => {

@@ -81,6 +81,13 @@ watch(active, () => {
  * A sticky drawer stops at the scroller's padding, and what scrolls under it shows in the gap.
  * The bottom padding belongs to the panels, except the one that ends in the drawer.
  */
+/* Firefox gives the scroller a Tab stop of its own; PrimeVue's panels have no outline. Inside, as
+   the column around it clips. */
+.editor-tabs__panels:focus-visible {
+  outline: var(--p-focus-ring-width) var(--p-focus-ring-style) var(--p-focus-ring-color);
+  outline-offset: calc(-1 * var(--p-focus-ring-width));
+}
+
 .editor-tabs__panels :deep([role='tabpanel']) {
   padding-bottom: 1.125rem;
 }

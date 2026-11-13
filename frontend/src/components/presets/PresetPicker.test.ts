@@ -1,10 +1,11 @@
 import { flushPromises } from '@vue/test-utils'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { reactive } from 'vue'
 
 import { configureClient } from '@/api/client'
 import { deferred, FakeServer } from '@/api/testing/fakes'
 import type { FieldChange, JobSettings, JobTemplate, JsonPatchOp, Preset } from '@/api/types'
+import { installKeyboardFixes } from '@/components/base/keyboard'
 import { sampleJob } from '@/editor/testing/samples'
 import { stubDom } from '@/components/naming/testing/samples'
 import { mountShell, setAppLocale } from '@/components/shell/testing'
@@ -124,6 +125,31 @@ describe('the preset picker', () => {
     expect(server.count('GET /api/presets')).toBe(2)
     await click('[data-preset="fast-1080p30"]')
     expect(editor.applyPreset).toHaveBeenCalledExactlyOnceWith('fast-1080p30')
+  })
+
+  it('has the filter and the list as its Tab stops, whichever has the focus or had it', async () => {
+    openJob(H265)
+    const { wrapper } = await mountPicker()
+    await wrapper.find('.preset-picker__trigger').trigger('click')
+    await flushPromises()
+    const listbox = body().querySelector<HTMLElement>('.preset-picker__list')!
+    // A scroll container is a stop of its own in browsers unless its tabindex says otherwise.
+    const stops = () =>
+      [...listbox.querySelectorAll<HTMLElement>('input, ul, span, .p-listbox-list-container')]
+        .filter((element) =>
+          element.classList.contains('p-listbox-list-container')
+            ? element.getAttribute('tabindex') !== '-1'
+            : element.tabIndex >= 0,
+        )
+        .map((element) => element.getAttribute('role') ?? element.tagName)
+    expect(stops()).toEqual(['searchbox', 'listbox'])
+    body().querySelector<HTMLElement>('.preset-picker__list [role="listbox"]')!.focus()
+    await flushPromises()
+    // Shift+Tab goes back to the filter from the list.
+    expect(stops()).toEqual(['searchbox', 'listbox'])
+    ;(wrapper.find('.preset-picker__trigger').element as HTMLElement).focus()
+    await flushPromises()
+    expect(stops()).toEqual(['searchbox', 'listbox'])
   })
 
   it('closes the list without drafting again when the job’s own preset is clicked', async () => {
@@ -401,6 +427,9 @@ describe('the preset picker', () => {
   })
 
   it('closes Save as new with Escape also from the category, once its list is closed', async () => {
+    // The app's own keyboard fixes, as main.ts installs them.
+    const removeFixes = installKeyboardFixes()
+    onTestFinished(removeFixes)
     openJob(H265, [ENCODER_CHANGE])
     const { wrapper } = await mountPicker()
     await wrapper.find('.preset-picker__modified').trigger('click')
