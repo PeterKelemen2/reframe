@@ -23,7 +23,9 @@ export const known: Known[] = [
     rule: 'label-content-name-mismatch',
     target: 'article.rf-card.summary-card[data-card="output"] button.naming-chip[data-variable]',
   },
-  // In dark, on a changed option's tinted row, the focus of its buttons is 1.23:1.
+  // Not a fault of the page: the probe reads a translucent colour (the changed row's 10 % tint)
+  // as if getImageData were premultiplied, so the ring's backdrop comes out near the ring's own
+  // colour. Painted, the ring is 5.2:1 on the row. Goes when probe.ts takes the data as it is.
   {
     screen: 'video-advanced',
     check: 'focus',

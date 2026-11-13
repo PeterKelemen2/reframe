@@ -27,6 +27,7 @@
     "tracks": "Tracks",
     "audioTracks": "no audio | {n} audio track | {n} audio tracks",
     "subtitleTracks": "no subtitles | {n} subtitle track | {n} subtitle tracks",
+    "trackCounts": "{audio} · {subtitles}",
     "chapters": "Chapters",
     "noChapters": "None",
     "range": "Range",

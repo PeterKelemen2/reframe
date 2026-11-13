@@ -307,7 +307,80 @@ list names the screen's area; some elements belong to another area, as the comme
 
 ## Task K2: the picture and the video
 
-(Filled in after the task.)
+Done on 2026-11-13 on Linux (this host). Each screen of the area was walked with the keyboard,
+headless Chromium and Firefox of Playwright: `summary`, `dimensions`, `crop-manual` (the
+magnifier, the crop check dialog), `filters`, `video`, `video-advanced`, `command-drawer`,
+`preview-frames`, `split-compare`, `preview-clip`. The browser scripts drove a real server with
+the pinned FFmpeg, so the frames and clips were real. After that came the gate (phase 2).
+
+**Keyboard and focus.**
+
+- The Summary's picture-pipeline link (`dimensions`) and its count of changed advanced
+  options (`video.advanced`) left the focus on `<body>`: no field answered the reveal. Now the
+  Dimensions tab answers the first one, and the advanced panel's toggle answers the second;
+  that reveal also opens the panel (`stores/ui.ts`).
+- The crop handles are APG sliders. Home and End go to 0 and to the largest crop that leaves
+  a picture, and Page Up and Page Down move eight chroma steps. `aria-valuemax` is that largest
+  crop, not the picture's size. The arrows move a handle the way they point, so Up lowers the
+  top crop. The APG allows that ("reversing the direction of the value change … could create a
+  more intuitive experience", checked against the APG page). Page Up and Page Down do the same
+  on the top and bottom handles.
+- The split-compare ring lay over the picture in the primary colour: 1.36:1 against the test
+  pattern's blue bar. Now it is white beside black, so one of the two stands out on any
+  picture. The gate looks at it on the frame's `::after`: with the ring taken out, the walk
+  reports `no-indicator` at `input.split-compare__range` in both themes and both browsers
+  (checked by mutation).
+- The preview clip's player is named. It never starts by itself: `autoplay` is off, checked in
+  both browsers and in a unit test.
+- Scan buttons (`ScanControl`, also on the tracks area's screens): an accessible name now
+  starts with the button's visible text, for speech input ("Count events of every subtitle
+  track", "Measure loudness of track 2", "Measure again: loudness of track 2"). This was the
+  `subtitles` screen's `label-content-name-mismatch`.
+- Already right, no change: the RF and speed sliders (keys, `aria-valuetext`), the encoder
+  picker, the advanced panel (search, *Show only changed*, reset), the command drawer
+  (a disclosure with a named, focusable code region), the frame strip (`aria-current`, a
+  focusable stage that scrolls with the arrows at 100 % and 200 %), and the crop check dialog
+  (focus inside, Escape gives it back to its opener). Motion: the area starts no smooth scroll
+  and no animation loop. Each `requestAnimationFrame` of the magnifier and the loupe draws one
+  frame.
+
+**Strings and numbers.**
+
+- `summary/format.ts`, `media/streams.ts`, `advanced/options.ts` and the dimensions header
+  take vue-i18n's `n` as they take `t`. Sizes, bitrates, aspect ratios, frame rates (the
+  frame-rate list's labels were hard-coded), quality values, kHz, delays, loudness, event and
+  frame counts and the HDR mastering values use the app's locale. Unit tests check this in a
+  `de` locale. `formatBytes` needs `n` from every caller (K1's three included); `kiloHertz`
+  takes it optionally until the tracks area's two callers pass it.
+- InputNumber: `:locale="locale"` on each one (seek, bitrate, RF, advanced options, size,
+  PAR). Without it, in a German browser, a typed 2.5 s seek went to 25 s and the bitrate
+  showed `6.000 kb/s`.
+- Text joined from pieces is one message: rotation with flip, bitrate with 2-pass, delay units
+  (`ms`/`s` were written in code), colour with HDR formats, `{ratio}:1`, and the Summary's
+  track counts. Lists use `Intl.ListFormat` (HDR formats, dispositions). Plurals are added for
+  one sample frame and one counted event. Those messages name the track `{track}`: vue-i18n
+  takes a numeric `n` as the plural count when `count` is not a number.
+- Kept as they are: ` · ` and ` → ` between independent facts that come from different
+  messages (the Summary's video line, the picture pipeline) are separators, not grammar.
+  Timecodes (`formatTime`, `preciseDuration`) are times, not numbers. Small integers and
+  pixel sizes without grouping (`320×180`, degrees) read the same in any locale with Latin
+  digits. The magnifier's strips follow the pointer along the edge. That is a view, not an
+  action, so there is no keyboard way to move them.
+
+**Known entries left in `known/picture.ts`.**
+
+- `crop-manual` (a whole-page screen): the shell's source row (K1's) and the header's Range
+  button (K3's). They go when those areas' fixes merge.
+- `summary`: the naming editor's variable chips (K3's).
+- `video-advanced`, dark: `indicator-contrast` 1.23:1 on the reset and help buttons of a
+  changed option. This is a fault of the gate, not of the page. `probe.ts` reads a colour by
+  painting it on a canvas and treats `getImageData` as premultiplied (`r * 255 / a`). The data
+  is not premultiplied: `color(srgb 0.506 0.549 0.973 / 0.1)` reads as `128,137,245,26` in both
+  browsers (checked). So the translucent tint of a changed row becomes a backdrop near the
+  ring's own colour. As painted, the ring is 5.2:1 on that row. With the line changed to
+  `[r, g, b, a / 255]` (tried locally, not committed), these two entries go, and so does the
+  shell's dark preset-row entry (1.1:1); no other finding of the gate changed. The fix
+  belongs to the gate.
 
 ## Task K3: the tracks and the batch
 

@@ -46,6 +46,17 @@ function detail(wrapper: VueWrapper, label: string): string | undefined {
   return pair && words(pair.find('dd').element)
 }
 
+/** Speech input users say what they see: a scan button's name starts with its visible text. */
+function expectNamesStartWithText(wrapper: VueWrapper): void {
+  const buttons = wrapper.findAll('[data-action="start-scan"]')
+  expect(buttons.length).toBeGreaterThan(0)
+  for (const found of buttons) {
+    const name = (found.attributes('aria-label') ?? '').toLowerCase()
+    const text = found.text().toLowerCase()
+    expect(name.slice(0, text.length)).toBe(text)
+  }
+}
+
 describe('the audio source table', () => {
   it('shows the columns of each track, with the bitrate and where it comes from', () => {
     const wrapper = mountTable('audio', probedSource('multitrack').audio!)
@@ -214,8 +225,9 @@ describe('the scans in the source tables', () => {
     expect(button(wrapper, 'Count the events of track 1')).toBeUndefined()
     await button(wrapper, 'Count the events of track 2')!.trigger('click')
     expect(scanSubtitles).toHaveBeenLastCalledWith('src', [2])
-    await button(wrapper, 'Count the events of every subtitle track')!.trigger('click')
+    await button(wrapper, 'Count events of every subtitle track')!.trigger('click')
     expect(scanSubtitles).toHaveBeenLastCalledWith('src', undefined)
+    expectNamesStartWithText(wrapper)
   })
 
   it('turns a track’s own count off while every track is counted', async () => {
@@ -255,7 +267,8 @@ describe('the scans in the source tables', () => {
     )
     await wrapper.find('.track-table__toggle').trigger('click')
     expect(detail(wrapper, 'Loudness')).toBe('Measure loudness')
-    await button(wrapper, 'Measure the loudness of track 1')!.trigger('click')
+    expectNamesStartWithText(wrapper)
+    await button(wrapper, 'Measure loudness of track 1')!.trigger('click')
     expect(measureLoudness).toHaveBeenCalledExactlyOnceWith('src', 1)
 
     scans.loudness = {
@@ -266,7 +279,8 @@ describe('the scans in the source tables', () => {
     expect(detail(wrapper, 'Integrated loudness')).toBe('−22.5 LUFS')
     expect(detail(wrapper, 'True peak')).toBe('−20.0 dBTP')
     expect(detail(wrapper, 'Loudness range')).toBe('2.2 LU')
-    expect(button(wrapper, 'Measure the loudness of track 1')!.text()).toBe('Measure again')
+    expect(button(wrapper, 'Measure again: loudness of track 1')!.text()).toBe('Measure again')
+    expectNamesStartWithText(wrapper)
   })
 
   it('keeps the focus on the scan’s buttons as they replace each other', async () => {

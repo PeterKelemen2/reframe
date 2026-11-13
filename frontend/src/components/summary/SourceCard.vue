@@ -37,10 +37,10 @@ const line = computed(() =>
 const tracks = computed(() => {
   const media = source.value
   if (media === null) return null
-  return [
-    t('summary.source.audioTracks', media.audio?.length ?? 0),
-    t('summary.source.subtitleTracks', media.subtitles?.length ?? 0),
-  ].join(' · ')
+  return t('summary.source.trackCounts', {
+    audio: t('summary.source.audioTracks', media.audio?.length ?? 0),
+    subtitles: t('summary.source.subtitleTracks', media.subtitles?.length ?? 0),
+  })
 })
 const range = computed(() =>
   rangeLength.value === null
