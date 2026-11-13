@@ -11,7 +11,7 @@ import { formatBytes } from '@/components/summary/format'
 
 import { type SettingControl, useSetting, useSettingsLocked } from './useSetting'
 
-const { t, n } = useI18n()
+const { t, n, locale } = useI18n()
 const locked = useSettingsLocked()
 
 const sampleFrames = useSetting<number>('/preview/sample_frames')
@@ -71,6 +71,7 @@ const saveCacheLimit = numberSaver(cacheLimit)
         <template #default="{ id, invalid }">
           <InputNumber
             :input-id="id"
+            :locale="locale"
             :model-value="sampleFrames.value.value ?? null"
             :min="1"
             :max="60"
@@ -92,6 +93,7 @@ const saveCacheLimit = numberSaver(cacheLimit)
         <template #default="{ id, invalid }">
           <InputNumber
             :input-id="id"
+            :locale="locale"
             :model-value="cacheLimit.value.value ?? null"
             :min="0"
             :use-grouping="false"

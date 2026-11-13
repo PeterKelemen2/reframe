@@ -269,6 +269,8 @@ const typeahead = createTypeahead()
 
 function onKeydown(event: KeyboardEvent): void {
   if (event.altKey || event.ctrlKey || event.metaKey) return
+  // A row's own buttons keep their keys: Enter and Space press them.
+  if ((event.target as Element | null)?.closest('button') !== null) return
   const node = nodeOf(event)
   if (node === undefined) return
   const shown = nodes.value
@@ -460,6 +462,16 @@ function openMenuAt(node: Node): void {
 }
 
 // The menu leaves with the focus in it, or the focus went with a removed item.
+// PrimeVue focuses the menu after this with no item in focus; a menu opens on its first item.
+function menuShown(): void {
+  void nextTick(() => {
+    const list = document.querySelector<HTMLElement>('[data-menu="sources"] [role="menubar"]')
+    if (list === null || list.getAttribute('aria-activedescendant')) return
+    list.focus()
+    list.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', code: 'Home', bubbles: true }))
+  })
+}
+
 function menuHidden(): void {
   const node = menuNode.value
   setTimeout(() => {
@@ -591,8 +603,7 @@ onBeforeUnmount(() => stopDrops?.())
           :aria-level="1"
           :tabindex="tabKey === sourceKey(item.entry.id) ? 0 : -1"
           :data-key="sourceKey(item.entry.id)"
-          :aria-labelledby="`${itemId(item.entry.id)}-title`"
-          :aria-describedby="`${itemId(item.entry.id)}-details`"
+          :aria-labelledby="`${itemId(item.entry.id)}-title ${itemId(item.entry.id)}-details`"
           @click="choose(item.entry.id, null)"
         >
           <SourceItem
@@ -702,8 +713,7 @@ onBeforeUnmount(() => stopDrops?.())
               :tabindex="tabKey === sourceKey(row.entry.id) ? 0 : -1"
               :data-key="sourceKey(row.entry.id)"
               :data-match="row.member.match"
-              :aria-labelledby="`${itemId(row.entry.id)}-title`"
-              :aria-describedby="`${itemId(row.entry.id)}-details`"
+              :aria-labelledby="`${itemId(row.entry.id)}-title ${itemId(row.entry.id)}-details`"
               @click.stop="choose(row.entry.id, item.group.id)"
             >
               <SourceItem
@@ -734,6 +744,7 @@ onBeforeUnmount(() => stopDrops?.())
       :model="menuItems"
       :ariaLabel="t('sources.panel.menu')"
       data-menu="sources"
+      @show="menuShown"
       @hide="menuHidden"
     />
     <ApplyToGroupDialog

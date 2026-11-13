@@ -303,7 +303,101 @@ list names the screen's area; some elements belong to another area, as the comme
 
 ## Task K1: the shell and the pages
 
-(Filled in after the task.)
+Built on 2026-11-13 on Linux (this host), headless Chromium and Firefox of Playwright 1.64.1.
+
+### What was checked, and how
+
+Phase 1, by hand, before the gate: own `scripts/dev-server.py` servers (the e2e fixtures, the
+pinned FFmpeg for real encodes, a password server for `login`) and own Playwright scripts that
+walk each screen with Tab and Shift+Tab, print each stop's role, name, outline, box shadow and
+`:focus-visible`, and try the keys of each widget. Screens: `workspace-empty`, a workspace with
+a file, `file-browser`, `preset-picker` (list, filter, actions menu), `status-issues` (with
+issues and empty), `toast`, `queue` (done, failed and waiting jobs), `job-log`, the when-done
+select, `activity`, `presets` (tree, duplicate, delete dialog), `preset-name-dialog`, every web
+section of Settings, `login`, the theme popover; the shortcuts Ctrl+O, Ctrl+Enter, Ctrl+1…8;
+`document.getAnimations()` under reduced motion. Every script and template of the area was read
+for text outside vue-i18n, numbers, lists and joined pieces. The desktop-only screens
+(QuitDialog, FirstRunScreen, ReconnectOverlay, BackendErrorScreen, BootScreen,
+PrivateQueueBanner) were read and their component tests checked; none had a finding.
+
+Phase 2: the gate on the area's screens (and `crop-manual`, which checks the shell's columns),
+on ports 8720/8721, and `e2e/a11y/keyboard-shell.spec.ts` for the paths only a browser shows.
+
+### Found and fixed
+
+Keyboard and focus:
+
+- The file browser opened with Ctrl+O (no control focused) left the focus on the page when it
+  closed: it now goes to the workspace (the editor's tab, else *Open files…*).
+- The status bar's empty issue list: Tab rested on PrimeVue's invisible focus guard, and Escape
+  there lost the focus. A popover panel without controls is in the Tab order now.
+- Escape in Save as new / Rename with the focus on Category left the dialog open (PrimeVue's
+  Select stops every Escape). Phase 1 fixed it in the dialog; G's `keyboard.ts` fixes it for
+  every dialog, so the local handler went.
+- A changed source could not be read again from the keyboard (its button is out of the Tab
+  order): *Read it again* is in its context menu.
+- The sources panel's context menu opened from the keyboard (Shift+F10, the menu key) took the
+  focus only after its transition and with no item in focus, so the keys went to the tree: it
+  now opens on its first item.
+- Enter and Space on a button inside a group's row (*Edit group*, …) were taken by the tree.
+- Type-ahead (WAI-ARIA APG listbox and tree) in the file browser's list, the preset tree and the
+  sources tree.
+- The preset picker's list: browsers made its scroll container a Tab stop that shows nothing,
+  PrimeVue reached the list through hidden guards (Firefox stayed on them), took the filter out
+  of the Tab order while the list had the focus (Shift+Tab never went back), and the list showed
+  its focus only on the option. The filter and the list are the two stops both ways now, and
+  the list has a ring of its own.
+- The preset tree was nested, so a category's name was the text of all its presets: it is a
+  flat tree with levels and places (APG allows it), a category named by its visible text.
+- The sources panel's rows were named by the file name alone, but show their line and warnings
+  too (2.5.3): the name is the visible text in order, the warning's "(probe warning)" after it.
+- The toasts covered the queue's row actions when the focus reached them (2.4.11): on a focused
+  element they cover, they go to the other end of the window, and where they would cover it
+  there too they go out of sight until the focus moves on.
+- Firefox gives the editor's tab panels (a scroller) a Tab stop: it shows a ring now.
+- The job log's scroller showed no ring (PrimeVue's `outline: 0`); G's `main.css` now does it
+  for every VirtualScroller, so the local rule went.
+- Settings → Tools painted its read-only path in the disabled colours (4.07:1 in dark): the
+  text keeps the text colour.
+
+Strings and numbers:
+
+- Through `n()` / `Intl` with the app's locale: the queue's fps, speed and percent, preset
+  bitrates and quality values, the preset tree's counts, the numbers of the preset changes, the
+  browser title's progress, and the InputNumbers of Settings → Preview and Queue (and the
+  sandbox's) get `:locale`.
+- Lists through `Intl.ListFormat` (`formatList` in `components/shell/format.ts`: `plain` lists
+  names, `and` reads as part of a sentence): the file browser's filter, the first-run
+  variables, the *Use bundled* note, the preset details and changes.
+- One message instead of joined pieces: a step's kind and number, an encoder and its state, the
+  login refusal, a preset change's members and numbered items, a value on its scale, the web
+  title with the progress.
+
+### Choices
+
+- `·` between the facts of one line (a source's line, the status bar's queue summary, an
+  activity's details, a codec rule) is a separator, not a list; it stays.
+- Pixel sizes (`1920×1080`), clock times (`1:02:05`), episode codes (`S01E05`) and
+  `aria-keyshortcuts` values are written as they are, without `n()`.
+- After a keyboard sign-in the login screen goes and the focus is on the page, as after a page
+  load: the first Tab reaches the navigation rail.
+
+### Known-list entries left
+
+- `presets`, dark, `indicator-contrast` on the selected preset: not a fault of the page. The
+  selected row's fill is see-through (16 % of the primary colour), and the probe read canvas
+  colours as if `getImageData` gave them premultiplied, so it took the fill for a light colour.
+  Against the real fill the ring is 5.4:1. K2 fixes the probe and removes the entry.
+- The header's Range button (`toast`) was the tracks area's; K3 fixed it and removed the entry.
+- The queue's `obscured` entries (the row actions under the toasts, "Retry" in Chromium only,
+  which came and went with the toasts' timing) are gone with their cause.
+
+### Tests
+
+Unit tests (jsdom) for each fix where the behaviour is in the component; the browser-only paths
+in `keyboard-shell.spec.ts` (Ctrl+O and Enter to the workspace, a group edited from its context
+menu, Tab both ways in the preset picker). Each test was checked by a mutation of the code it
+covers: the test failed, and passed again after the restore.
 
 ## Task K2: the picture and the video
 

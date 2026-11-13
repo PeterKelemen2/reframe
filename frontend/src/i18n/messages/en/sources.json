@@ -11,7 +11,7 @@
     "confirmRemoveMany": "Remove these {count} sources?",
     "confirmRemove": "Remove",
     "keep": "Keep",
-    "warning": "Probe warning",
+    "warning": "(probe warning)",
     "stale": "The file changed or is gone since it was read.",
     "reprobe": "Read it again",
     "menu": "Source actions"

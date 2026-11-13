@@ -76,6 +76,28 @@ describe('the preset tree', () => {
     expect(wrapper.emitted('select')).toEqual([['very-fast'], ['u1'], ['u1']])
   })
 
+  it('names a category by its visible text alone, its presets as items of the next level', async () => {
+    const wrapper = await mountTree()
+    const general = wrapper.find('[data-category="General"]').element
+    // Named by its content: a nested group would put its presets' text in that name.
+    expect(general.getAttribute('aria-labelledby')).toBeNull()
+    expect(general.querySelector('[role="treeitem"]')).toBeNull()
+    expect(general.textContent?.replace(/\s+/g, ' ').trim()).toBe('General 2 2 presets')
+    expect(
+      wrapper
+        .findAll('[role="treeitem"]')
+        .map((item) =>
+          ['aria-level', 'aria-posinset', 'aria-setsize'].map((name) => item.attributes(name)),
+        ),
+    ).toEqual([
+      ['1', '1', '2'],
+      ['2', '1', '2'],
+      ['2', '2', '2'],
+      ['1', '2', '2'],
+      ['2', '1', '1'],
+    ])
+  })
+
   it('moves to the item whose name starts with the typed keys', async () => {
     const wrapper = await mountTree()
     ;(wrapper.find('[data-preset="fast"]').element as HTMLElement).focus()
