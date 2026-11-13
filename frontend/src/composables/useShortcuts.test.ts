@@ -301,6 +301,26 @@ describe('undo and redo', () => {
     expect(editor.undo).toHaveBeenCalledTimes(2)
   })
 
+  it('undoes and redoes in the range popover, where each change is one step', async () => {
+    await mountAt()
+    const radio = element(
+      '<div role="dialog" aria-modal="true" class="p-popover range-popover">' +
+        '<input data-target type="radio"><span role="combobox" tabindex="0"></span>' +
+        '<input type="text"></div>',
+    )
+    const combobox = radio.parentElement!.querySelector('[role="combobox"]')!
+    const field = radio.parentElement!.querySelector('input[type="text"]')!
+    expect(press('z', { target: radio }).defaultPrevented).toBe(true)
+    press('y', { target: combobox })
+    expect(editor.undo).toHaveBeenCalledTimes(1)
+    expect(editor.redo).toHaveBeenCalledTimes(1)
+    // The typing in a text field is the browser's to undo, as everywhere else.
+    expect(press('z', { target: field }).defaultPrevented).toBe(false)
+    press('o', { target: radio })
+    expect(editor.undo).toHaveBeenCalledTimes(1)
+    expect(sources.pick).not.toHaveBeenCalled()
+  })
+
   it('leaves the keys to a dialog opened over the matrix', async () => {
     await mountAt()
     element('<div role="dialog" aria-modal="true" class="matrix-dialog"></div>')

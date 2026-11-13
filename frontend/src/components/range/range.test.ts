@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import type { MediaSource } from '@/api/types'
 import { createAppI18n } from '@/i18n'
 
 import {
@@ -7,6 +8,7 @@ import {
   convertRange,
   formatClock,
   formatTime,
+  frameRate,
   hasChapters,
   parseFrame,
   parseTime,
@@ -34,11 +36,13 @@ describe('parsing a typed time', () => {
     ['.5', 0.5],
     ['  12  ', 12],
     ['0:00:01.0004', 1],
+    ['1.0004', 1],
+    ['1:30.0004', 90],
   ])('reads %s as %d seconds', (text, value) => {
     expect(parseTime(text)).toBe(value)
   })
 
-  it.each(['', 'abc', '1:60', '1:2:60', '-5', '1,5', '1:', ':30', '1:30:00:00', '1e3'])(
+  it.each(['', 'abc', '1:60', '1:2:60', '1:60:00', '-5', '1,5', '1:', ':30', '1:30:00:00', '1e3'])(
     'refuses %j',
     (text) => {
       expect(parseTime(text)).toBeNull()
@@ -118,6 +122,87 @@ describe('the seconds a range covers', () => {
   })
 })
 
+/**
+ * A Blu-ray-like source at 24000/1001 fps, its chapter edges on frames, in ffprobe's whole µs:
+ * frame 7490 rounds up (312.395417), frame 14 386 down (600.016083).
+ */
+function bluray(): MediaSource {
+  const source = chaptersSource()
+  source.container = { ...source.container, duration: 1800 }
+  source.video = [{ ...source.video![0]!, avg_frame_rate: { num: 24000, den: 1001 } }]
+  const fps = 24000 / 1001
+  const edges = [0, 7490, 14_386, 30_000, 43_157].map((frame) => Number((frame / fps).toFixed(6)))
+  source.chapters = edges.slice(0, -1).map((start, index) => ({
+    index,
+    start,
+    end: edges[index + 1]!,
+    title: `Chapter ${index + 1}`,
+  }))
+  return source
+}
+
+/** A phone video as `testdata/probes/vfr.json` gives it: no average frame rate, 120/1 r. */
+function phone(): MediaSource {
+  const source = chaptersSource()
+  source.container = { ...source.container, duration: 3.021 }
+  source.video = [
+    {
+      ...source.video![0]!,
+      avg_frame_rate: null,
+      frame_rate: { num: 120, den: 1 },
+      frame_count: 114,
+      duration: 2.983,
+    },
+  ]
+  return source
+}
+
+describe('the frame rate', () => {
+  it('is the average one, not the stream’s', () => {
+    const source = chaptersSource()
+    source.video![0]!.frame_rate = { num: 50, den: 1 }
+    expect(frameRate(source)).toBe(25)
+  })
+
+  it('is frames ÷ duration without an average, as the command builder counts it', () => {
+    // 114 / 2.983 s, not the 120/1 of the stream: the builder's 6000/157.
+    expect(frameRate(phone())).toBe(6000 / 157)
+    expect(seconds({ kind: 'frames', start: 0, end: 57 }, phone())).toBe(57 / (6000 / 157))
+    expect(convertRange({ kind: 'time', start: 1, end: 2 }, 'frames', phone())).toEqual({
+      kind: 'frames',
+      start: 38,
+      end: 77,
+    })
+  })
+
+  it('snaps a counted rate to a standard one within 0.2 %', () => {
+    const source = phone()
+    // 1439 / 60.06 s is 23.9594 fps: 0.07 % from 24000/1001.
+    source.video![0]!.frame_count = 1439
+    source.video![0]!.duration = 60.06
+    expect(frameRate(source)).toBe(24000 / 1001)
+  })
+
+  it('is the stream’s rate when nothing else says it', () => {
+    const source = phone()
+    source.video![0]!.frame_count = null
+    expect(frameRate(source)).toBe(120)
+    source.video![0]!.frame_rate = null
+    expect(frameRate(source)).toBeNull()
+  })
+})
+
+describe('the frames of a source without a frame count', () => {
+  it('round duration × rate half to even, as the server does', () => {
+    const source = chaptersSource()
+    // 4.5 s × 25 = 112.5 frames: 112, so frames 0 – end last 112 / 25 s.
+    source.container = { ...source.container, duration: 4.5 }
+    expect(seconds({ kind: 'frames', start: 0, end: null }, source)).toBe(112 / 25)
+    source.container = { ...source.container, duration: 4.54 }
+    expect(seconds({ kind: 'frames', start: 0, end: null }, source)).toBe(114 / 25)
+  })
+})
+
 describe('what the source can use', () => {
   it('needs chapters for chapters, and a frame rate (or a frame count and a duration) for frames', () => {
     expect(hasChapters(chaptersSource())).toBe(true)
@@ -173,6 +258,38 @@ describe('changing the mode', () => {
       start: 1.48,
       end: null,
     })
+  })
+
+  it('does not let float noise move a frame: 1.04 s × 25 is frame 26', () => {
+    expect(convertRange({ kind: 'time', start: 0, end: 1.04 }, 'frames', source)).toEqual({
+      kind: 'frames',
+      start: 0,
+      end: 26,
+    })
+  })
+
+  it('keeps the span of real chapter times and NTSC frames, there and back', () => {
+    const disc = bluray()
+    const chapters: Range = { kind: 'chapters', start: 2, end: 3 }
+    expect(convertRange(convertRange(chapters, 'time', disc), 'chapters', disc)).toEqual(chapters)
+    const frames = convertRange(chapters, 'frames', disc)
+    expect(frames).toEqual({ kind: 'frames', start: 7490, end: 30_000 })
+    expect(convertRange(frames, 'chapters', disc)).toEqual(chapters)
+    const later: Range = { kind: 'chapters', start: 3, end: 4 }
+    expect(convertRange(later, 'frames', disc)).toEqual({
+      kind: 'frames',
+      start: 14_386,
+      end: 43_157,
+    })
+    expect(convertRange(convertRange(later, 'time', disc), 'chapters', disc)).toEqual(later)
+    for (const [start, end] of [
+      [2, 1441],
+      [7490, 30_000],
+      [5, 13],
+    ] as const) {
+      const range: Range = { kind: 'frames', start, end }
+      expect(convertRange(convertRange(range, 'time', disc), 'frames', disc)).toEqual(range)
+    }
   })
 
   it('picks the chapters that hold the start and the end', () => {

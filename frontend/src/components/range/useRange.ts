@@ -18,28 +18,15 @@ export function useRange() {
   const editor = useEditorStore()
   const validation = useValidationStore()
   const { t } = useI18n()
-  const { entry, source } = useJobSource()
+  const { source } = useJobSource()
 
   const range = computed(() => editor.range)
   const seconds = computed(() => rangeSeconds({ range: range.value }, source.value))
   const label = computed(() => rangeLabel(range.value, t))
   const length = computed(() => formatDuration(seconds.value))
 
-  // In scope `group` the shown job leaves out the file's override, so the validation never sees
-  // the file's range: the matrix row of the file has its issues.
-  const fromRow = computed<ValidationIssue[] | null>(() => {
-    const current = editor.target
-    if (current?.kind !== 'group' || current.scope === 'file' || !editor.rangeOverridden) {
-      return null
-    }
-    const row = editor.resolution?.rows?.find((found) => found.path === entry.value?.path)
-    return row?.issues ?? []
-  })
-
   function issuesAt(path: RangePath): ValidationIssue[] {
-    const issues = fromRow.value
-    if (issues === null) return validation.issuesFor(path)
-    return issues.filter((issue) => issue.path === path)
+    return validation.issuesFor(path)
   }
 
   const issues = computed(() => RANGE_PATHS.flatMap((path) => issuesAt(path)))

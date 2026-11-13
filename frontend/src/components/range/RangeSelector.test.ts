@@ -232,6 +232,17 @@ describe('the chapter selects', () => {
     ])
   })
 
+  it('leave the name out of a chapter without one', async () => {
+    const source = chaptersSource()
+    source.chapters![1]!.title = null
+    await mountSelector(source)
+    await openPopover()
+    await mode('chapters')
+    el('[data-path="range.start"] .p-select').click()
+    await flushPromises()
+    expect(document.querySelectorAll('.p-select-option')[1]?.textContent).toBe('2 · 0:00:01')
+  })
+
   it('move To with a From after it, and From with a To before it', async () => {
     const { editor } = await mountSelector()
     editor.setRange({ kind: 'chapters', start: 2, end: 3 })
@@ -281,6 +292,39 @@ describe('the seconds fields', () => {
     expect(editor.job?.range).toEqual({ kind: 'time', start: 1, end: 3 })
     expect(issuesIn('range.end')).toEqual([])
   })
+
+  it('keep text that does not parse while the other field changes the range', async () => {
+    const { editor } = await mountSelector()
+    editor.setRange({ kind: 'time', start: 1, end: 4 })
+    await openPopover()
+    await type('range.start', 'abc', 'enter')
+    await type('range.end', '3', 'enter')
+    expect(editor.job?.range).toEqual({ kind: 'time', start: 1, end: 3 })
+    expect(el<HTMLInputElement>('[data-path="range.start"] input').value).toBe('abc')
+    expect(issuesIn('range.start')).toEqual([
+      'Error: This is not a time: type H:MM:SS.mmm, MM:SS or seconds.',
+    ])
+  })
+
+  it('start at 0 with an empty Start', async () => {
+    const { editor } = await mountSelector()
+    editor.setRange({ kind: 'time', start: 2, end: 4 })
+    await openPopover()
+    await type('range.start', '')
+    expect(editor.job?.range).toEqual({ kind: 'time', start: 0, end: 4 })
+    expect(el<HTMLInputElement>('[data-path="range.start"] input').value).toBe('0:00:00.000')
+  })
+
+  it('keep a converted time that the field shows rounded when it is committed unchanged', async () => {
+    const { editor } = await mountSelector()
+    editor.setRange({ kind: 'time', start: 1.0004, end: 4 })
+    await openPopover()
+    await type('range.start', '0:00:01.000', 'enter')
+    expect(editor.job?.range).toEqual({ kind: 'time', start: 1.0004, end: 4 })
+    expect(editor.canUndo).toBe(true)
+    editor.undo()
+    expect(editor.canUndo).toBe(false)
+  })
 })
 
 describe('the frame fields', () => {
@@ -325,6 +369,39 @@ describe('the range issues', () => {
     expect(issuesIn('range')).toEqual(['Error: range.outside at range'])
     expect(issuesIn('range.end')).toEqual(['Warning: range.end_beyond at range.end'])
     expect(issuesIn('range.start')).toEqual([])
+    const group = el('[role="radiogroup"]')
+    const issueList = el('[data-path="range"] .rf-field__issues')
+    expect(group.getAttribute('aria-describedby')?.split(' ')).toContain(issueList.id)
+  })
+
+  it('show on the chapter From', async () => {
+    const { editor } = await mountSelector()
+    editor.setRange({ kind: 'chapters', start: 5, end: 5 })
+    useValidationStore().issues = [issue('range.outside', 'range.start')]
+    await openPopover()
+    expect(issuesIn('range.start')).toEqual(['Error: range.outside at range.start'])
+  })
+})
+
+describe('the length', () => {
+  it('shows in the popover, and says when it is not known', async () => {
+    const { editor } = await mountSelector()
+    editor.setRange({ kind: 'chapters', start: 2, end: 3 })
+    await openPopover()
+    expect(textOf('.range-popover__length')).toBe('Length: 0:03')
+    editor.setRange({ kind: 'frames', start: 0, end: null })
+    await flushPromises()
+    expect(textOf('.range-popover__length')).toBe('Length: 0:05')
+  })
+
+  it('is left out of the button and said to be unknown without a duration', async () => {
+    const source = chaptersSource()
+    source.container = { ...source.container, duration: null }
+    await mountSelector(source)
+    expect(button().getAttribute('aria-label')).toBe('Range: Whole source')
+    expect(document.querySelector('[data-field="range-length"]')).toBeNull()
+    await openPopover()
+    expect(textOf('.range-popover__length')).toBe('The length is not known.')
   })
 })
 
@@ -344,24 +421,23 @@ describe('the range in a group', () => {
     expect(document.querySelector('[data-action="override-menu"]')).toBeNull()
     expect(textOf('.range-popover')).not.toContain('Apply to whole group')
 
-    el('[data-action="range-reset"]').click()
+    const reset = el('[data-action="range-reset"]')
+    reset.focus()
+    reset.click()
     await flushPromises()
     expect(editor.range).toEqual({ kind: 'full' })
     expect(button().dataset.state).toBeUndefined()
     expect(document.querySelector('[data-action="range-reset"]')).toBeNull()
+    // The button went away with the focus on it: the focus stays in the popover.
+    expect(document.activeElement).toBe(el('[data-range-mode="full"]'))
   })
 
-  it('shows the file’s issues from its matrix row in scope group', async () => {
+  it('shows the file’s issues in scope group, where the shown job carries its range', async () => {
     const { editor } = await mountInGroup()
     editor.setRange({ kind: 'chapters', start: 2, end: 9 })
-    // The matrix the change asked for comes first; the fake server gives rows without issues.
     await vi.waitFor(() => expect(editor.resolving).toBe(false))
-    const shown = editor.resolution?.rows?.find((found) => found.path === '/media/e1.mkv')
-    expect(shown).toBeDefined()
-    editor.resolution = {
-      ...editor.resolution!,
-      rows: [{ ...shown!, issues: [issue('range.end_beyond', 'range.end', 'warning')] }],
-    }
+    expect(editor.job?.range).toEqual({ kind: 'chapters', start: 2, end: 9 })
+    useValidationStore().issues = [issue('range.end_beyond', 'range.end', 'warning')]
     await flushPromises()
     expect(button().classList).toContain('range-selector__trigger--warning')
     await openPopover()
@@ -370,12 +446,55 @@ describe('the range in a group', () => {
 })
 
 describe('the keyboard', () => {
-  it('a range issue’s “show me” lands on the button while the popover is closed', async () => {
-    await mountSelector()
+  it('a “show me” of a range field opens the popover on that field', async () => {
+    const { editor } = await mountSelector()
+    editor.setRange({ kind: 'time', start: 1, end: 60 })
+    await flushPromises()
     Element.prototype.scrollIntoView = () => {}
     useUiStore().reveal('range.end')
+    await vi.waitFor(() => expect(document.activeElement).toBe(el('[data-path="range.end"] input')))
+    expect(button().getAttribute('aria-expanded')).toBe('true')
+
+    // Open already, in another field.
+    el<HTMLInputElement>('[data-path="range.end"] input').blur()
+    useUiStore().reveal('range.start')
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(el('[data-path="range.start"] input')),
+    )
+  })
+
+  it('a “show me” of a chapter field focuses its select', async () => {
+    const { editor } = await mountSelector()
+    editor.setRange({ kind: 'chapters', start: 5, end: 5 })
+    await flushPromises()
+    Element.prototype.scrollIntoView = () => {}
+    useUiStore().reveal('range.start')
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(el('[data-path="range.start"] [role="combobox"]')),
+    )
+  })
+
+  it('a “show me” of the whole range lands on the button, and of another field opens nothing', async () => {
+    await mountSelector()
+    Element.prototype.scrollIntoView = () => {}
+    useUiStore().reveal('range')
     await flushPromises()
     expect(document.activeElement).toBe(button())
+    useUiStore().reveal('video.encoder')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(button().getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('keeps the focus in the popover when an undo takes its field away', async () => {
+    const { editor } = await mountSelector()
+    await openPopover()
+    await mode('chapters')
+    const select = el('[data-path="range.start"] [role="combobox"]')
+    select.focus()
+    editor.undo()
+    await flushPromises()
+    expect(editor.job?.range).toEqual({ kind: 'full' })
+    expect(document.activeElement).toBe(el('[data-range-mode="full"]'))
   })
 
   it('Escape closes the popover and gives the focus back to the button', async () => {
