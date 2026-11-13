@@ -37,11 +37,6 @@ describe('sizes and bitrates', () => {
     expect(formatBytes(1500 * 1024 ** 3, t, n)).toBe('1,500.00 GiB')
   })
 
-  it('writes the number as toFixed does for a caller without the app locale', () => {
-    expect(formatBytes(1023, t)).toBe('1023 B')
-    expect(formatBytes(3.5 * 1024 ** 3, t)).toBe('3.50 GiB')
-  })
-
   it('shows bitrates in kb/s below 1 Mb/s and in Mb/s above', () => {
     expect(formatBitrate(753_617, t, n)).toBe('754 kb/s')
     expect(formatBitrate(12_340_000, t, n)).toBe('12.3 Mb/s')

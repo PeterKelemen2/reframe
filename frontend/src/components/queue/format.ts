@@ -104,7 +104,7 @@ export function liveColumns(job: QueueJob, t: Translate, n: FormatNumber): LiveC
       ? t('queue.units.speed', { value: n(progress.speed, digits(2)) })
       : null,
     eta: job.state === 'running' ? formatDuration(progress.eta) : null,
-    size: known(progress.output_size) ? formatBytes(progress.output_size, t) : null,
+    size: known(progress.output_size) ? formatBytes(progress.output_size, t, n) : null,
   }
 }
 

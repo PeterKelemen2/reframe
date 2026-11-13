@@ -21,7 +21,7 @@ import { crumbsOf, extensionOf, folderOf, joinPath } from './paths'
 
 type Entry = FsListing['entries'][number]
 
-const { t, locale } = useI18n()
+const { t, n, locale } = useI18n()
 /** Vue's types have no `autofocus` on a `div`; PrimeVue's dialog focuses the element that has it. */
 const autofocus: Record<string, string> = { autofocus: '' }
 const id = useId() ?? 'file-browser'
@@ -91,7 +91,7 @@ function optionId(index: number): string {
 }
 
 function formatSize(bytes: number | null | undefined): string {
-  return bytes === null || bytes === undefined ? '' : formatBytes(bytes, t)
+  return bytes === null || bytes === undefined ? '' : formatBytes(bytes, t, n)
 }
 
 async function read<T>(call: () => Promise<{ data?: T; error?: unknown; response: Response }>) {

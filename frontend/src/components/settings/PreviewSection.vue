@@ -11,7 +11,7 @@ import { formatBytes } from '@/components/summary/format'
 
 import { type SettingControl, useSetting, useSettingsLocked } from './useSetting'
 
-const { t } = useI18n()
+const { t, n } = useI18n()
 const locked = useSettingsLocked()
 
 const sampleFrames = useSetting<number>('/preview/sample_frames')
@@ -109,7 +109,7 @@ const saveCacheLimit = numberSaver(cacheLimit)
           {{
             cacheSize === null
               ? t('settings.preview.sizeUnknown')
-              : t('settings.preview.size', { size: formatBytes(cacheSize, t) })
+              : t('settings.preview.size', { size: formatBytes(cacheSize, t, n) })
           }}
         </p>
         <Button
@@ -127,7 +127,7 @@ const saveCacheLimit = numberSaver(cacheLimit)
           data-field="freed"
           aria-live="polite"
         >
-          {{ t('settings.preview.freed', { size: formatBytes(freed, t) }) }}
+          {{ t('settings.preview.freed', { size: formatBytes(freed, t, n) }) }}
         </p>
       </div>
     </div>
