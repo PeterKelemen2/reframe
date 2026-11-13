@@ -305,11 +305,32 @@ function codeOf(source: string, file: string): Code[] {
 }
 
 /**
+ * The lines of PrimeVue `InputNumber`s without a `locale`: they write numbers the browser's way,
+ * not the app's (`:locale="locale"` from `useI18n()`).
+ */
+function numberInputsWithoutLocale(nodes: readonly TemplateChildNode[], found: number[]): void {
+  for (const node of nodes) {
+    if (node.type !== NodeTypes.ELEMENT) continue
+    const isNumber = node.tag === 'InputNumber' || node.tag === 'input-number'
+    const hasLocale = node.props.some((prop) =>
+      prop.type === NodeTypes.ATTRIBUTE
+        ? prop.name === 'locale'
+        : prop.name === 'bind' &&
+          prop.arg?.type === NodeTypes.SIMPLE_EXPRESSION &&
+          prop.arg.content === 'locale',
+    )
+    if (isNumber && !hasLocale) found.push(node.loc.start.line)
+    numberInputsWithoutLocale(node.children, found)
+  }
+}
+
+/**
  * Text in the code of `file` (a `.ts` file, or a single-file component's scripts and bound
  * template expressions) that a user would read or hear untranslated: a string literal with a
  * letter as the value of a visible key (`summary: 'Saved'`, `:pt="{ root: { 'aria-label': … } }"`),
  * of a visible attribute set in code, in `alert()`; text joined from translated pieces; and
- * a number written with `toFixed` where it becomes text (`n()` or `Intl` follow the locale).
+ * a number written with `toFixed` where it becomes text (`n()` or `Intl` follow the locale), and
+ * an `InputNumber` without the app's locale.
  */
 export function findScriptText(source: string, file: string): ScriptText[] {
   const found: ScriptText[] = []
@@ -318,6 +339,12 @@ export function findScriptText(source: string, file: string): ScriptText[] {
     walk(parsed, interpolation, (node, where, text) => {
       found.push({ file, line: firstLine + lineOf(parsed, node) - 1, where, text })
     })
+  }
+  if (file.endsWith('.vue')) {
+    const ast = parse(source, { filename: file }).descriptor.template?.ast
+    const lines: number[] = []
+    if (ast) numberInputsWithoutLocale(ast.children, lines)
+    for (const line of lines) found.push({ file, line, where: 'InputNumber', text: 'no :locale' })
   }
   return found
 }

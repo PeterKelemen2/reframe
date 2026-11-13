@@ -254,6 +254,7 @@ export function installProbe(): void {
       moved.push({ rule: 'animate', target: describe(this), detail: `${duration} ms` })
     return animate.call(this, keyframes, options)
   }
+  const SCROLL_LOOK_MS = 300
   // A scroll is smooth when the call returns before the position moves and it moves later.
   // Judged by its effect: the browsers scroll smoothly on request even with reduced motion.
   type Scroller = Element | Window
@@ -274,17 +275,18 @@ export function installProbe(): void {
     const before = offsets(list)
     scroll()
     if (offsets(list) !== before) return
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        if (offsets(list) === before) return
-        const element = target instanceof Element ? target : null
-        moved.push({
-          rule: 'smooth-scroll',
-          target: element === null ? 'window' : describe(element),
-          detail: what,
-        })
-      }),
-    )
+    // Chromium starts a smooth scroll a few frames late: look again a moment later.
+    setTimeout(() => {
+      // A list that left the page reads 0 for its scroll positions: that is not a scroll.
+      if (target instanceof Element && !target.isConnected) return
+      if (offsets(list) === before) return
+      const element = target instanceof Element ? target : null
+      moved.push({
+        rule: 'smooth-scroll',
+        target: element === null ? 'window' : describe(element),
+        detail: what,
+      })
+    }, SCROLL_LOOK_MS)
   }
   const scrollIntoView = Element.prototype.scrollIntoView
   Element.prototype.scrollIntoView = function (
@@ -574,6 +576,7 @@ export function installProbe(): void {
   let settling: { stuck: boolean } | null = null
   let outside = 0
   let stops = 0
+  let pageFocused = true
   // Each stop unfocused, taken before the walk: some widgets (PrimeVue's Select) keep their
   // focused look for a while after a blur, so a look taken once the focus has moved is not it.
   let baseline = new Map<Element, Record<Theme, Snapshot>>()
@@ -599,6 +602,7 @@ export function installProbe(): void {
     settling = null
     outside = 0
     stops = 0
+    pageFocused = document.hasFocus()
     const scope = within === null ? document : (document.querySelector(within) ?? document)
     const candidates = [...scope.querySelectorAll(TABBABLE)].filter(
       (element) => element !== document.activeElement,
@@ -621,14 +625,18 @@ export function installProbe(): void {
     let done = false
     if (previous !== null) {
       unfocused = baseline.get(previous.element)
+      // Tab left the focus where it was, or took it out of the page (Firefox keeps the last
+      // element as the active one then): the walk is over.
+      const stuck =
+        settling?.stuck ??
+        (document.activeElement === previous.element || (pageFocused && !document.hasFocus()))
       if (unfocused === undefined && settling === null) {
-        // Tab left the focus where it was: only a blur shows the element unfocused.
-        const stuck = document.activeElement === previous.element
+        // Only a blur shows the element unfocused.
         if (stuck && previous.element instanceof HTMLElement) previous.element.blur()
         settling = { stuck }
         return { done: false, settle: true, stops, findings }
       }
-      done = settling?.stuck ?? false
+      done = stuck
       settling = null
       judged = previous
       previous = null
@@ -675,9 +683,11 @@ export function installProbe(): void {
     return { done, settle: false, stops, findings }
   }
 
-  function frames(): Promise<void> {
+  function settled(): Promise<void> {
     return new Promise((resolve) =>
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => setTimeout(resolve, SCROLL_LOOK_MS + 50)),
+      ),
     )
   }
 
@@ -702,7 +712,7 @@ export function installProbe(): void {
   const api: ProbeApi = {
     describeAll,
     motion,
-    frames,
+    settled,
     enterRegion,
     leaveRegion,
     walkStart,

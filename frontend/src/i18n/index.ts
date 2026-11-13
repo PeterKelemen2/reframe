@@ -58,6 +58,9 @@ function formatCounts(composer: { t: unknown; n: unknown }): void {
         named.n ??= format(second)
         named.count ??= format(second)
       }
+      // Without one, vue-i18n takes the plural form from a numeric `n` or `count`.
+      const counted = [given.count, given.n].find((value) => typeof value === 'number')
+      if (args.length === 1 && counted !== undefined) return translate(key, named, counted)
       return translate(key, named, ...args.slice(1))
     }
     return translate(key, ...args)

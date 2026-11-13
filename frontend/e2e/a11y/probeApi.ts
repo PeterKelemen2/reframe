@@ -28,8 +28,8 @@ export interface ProbeApi {
   describeAll(selectors: string[]): string[]
   /** What moved since the last call, and what can move now. */
   motion(): ProbeFinding[]
-  /** Resolves after two frames: a transition started before has begun by then. */
-  frames(): Promise<void>
+  /** Resolves once what started moves has begun, and a smooth scroll has been seen. */
+  settled(): Promise<void>
   /** Focuses the region itself, so that the next Tab goes to its first stop; false if absent. */
   enterRegion(selector: string): boolean
   /** Undoes what `enterRegion` changed on the region. */

@@ -49,7 +49,7 @@ async function useTheme(page: Page, theme: Theme): Promise<void> {
   const dark = new RegExp(`\\b${DARK_MODE_CLASS}\\b`)
   if (theme === 'dark') await expect(html).toHaveClass(dark)
   else await expect(html).not.toHaveClass(dark)
-  await call(page, 'frames')
+  await call(page, 'settled')
 }
 
 function tag(

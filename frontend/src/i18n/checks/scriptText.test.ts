@@ -86,6 +86,17 @@ describe('findScriptText', () => {
     ).toEqual(['1 number (b / 1024).toFixed(1)', '2 number size.toFixed(3)'])
   })
 
+  it('reports an InputNumber without the app locale', () => {
+    const sfc = [
+      '<template>',
+      '  <InputNumber v-model="a" :locale="locale" />',
+      '  <InputNumber v-model="b" locale="en" />',
+      '  <InputNumber v-model="c" />',
+      '</template>',
+    ].join('\n')
+    expect(found(sfc, 'A.vue')).toEqual(['4 InputNumber no :locale'])
+  })
+
   it("reads a component's scripts and bound template expressions, at their lines in the file", () => {
     const sfc = [
       '<script setup lang="ts">',

@@ -53,13 +53,17 @@ test('the motion check reports a transition, a script animation and a smooth scr
   expect(await motionFindings(page, screen, 'light')).toEqual([])
 
   // More specific than the reduced-motion rule of tokens.css, which a component could be.
-  await page.addStyleTag({ content: 'html body .nav-rail { transition: color 2s !important }' })
+  await page.addStyleTag({
+    content:
+      'html body .nav-rail { transition: color 2s !important } html body * { scroll-behavior: smooth !important }',
+  })
   await page.evaluate(() => {
     // This file is type-checked without the DOM library.
     type Box = { animate(frames: object[], ms: number): void; scrollIntoView(o: object): void }
     const doc = Reflect.get(globalThis, 'document') as { querySelector(s: string): Box | null }
     doc.querySelector('.nav-rail')?.animate([{ opacity: 0.5 }, { opacity: 1 }], 5000)
-    doc.querySelector('[data-section="appearance"]')?.scrollIntoView({ behavior: 'smooth' })
+    // The app turns a smooth scroll that code asks for into a jump; a stylesheet's is left.
+    doc.querySelector('[data-section="appearance"]')?.scrollIntoView({})
   })
   // A call reports what moved since the last one: the rules add up over the calls.
   const seen = new Set<string>()
@@ -90,13 +94,22 @@ function finding(theme: 'light' | 'dark', target = 'a'): Finding {
 plain.describe('compare', () => {
   plain('an entry without a theme stands for both themes', () => {
     const known = [{ screen: 's', check: 'axe' as const, target: 'a' }]
-    expect(compare([finding('light'), finding('dark')], known, 'chromium')).toEqual({ unlisted: [], gone: [] })
-    expect(compare([finding('light')], known, 'chromium').gone).toEqual([{ ...known[0], theme: 'dark' }])
+    expect(compare([finding('light'), finding('dark')], known, 'chromium')).toEqual({
+      unlisted: [],
+      gone: [],
+    })
+    expect(compare([finding('light')], known, 'chromium').gone).toEqual([
+      { ...known[0], theme: 'dark' },
+    ])
   })
 
   plain('fails on a finding that is not listed and on a listed one that is gone', () => {
     const known = [{ screen: 's', check: 'axe' as const, theme: 'light' as const, target: 'b' }]
-    const { unlisted, gone } = compare([finding('light', 'a'), finding('light', 'a')], known, 'chromium')
+    const { unlisted, gone } = compare(
+      [finding('light', 'a'), finding('light', 'a')],
+      known,
+      'chromium',
+    )
     expect(unlisted).toEqual([finding('light', 'a')])
     expect(gone).toEqual(known)
   })

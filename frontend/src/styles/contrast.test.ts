@@ -265,7 +265,9 @@ describe.each(['light', 'dark'] as const)('the %s colours', (scheme) => {
 
   it('draw a ring round a focused form field, not only a border colour', () => {
     expect(resolve('--p-form-field-focus-ring-style', scheme)).toBe('solid')
-    expect(Number.parseFloat(resolve('--p-form-field-focus-ring-width', scheme))).toBeGreaterThanOrEqual(2)
+    expect(
+      Number.parseFloat(resolve('--p-form-field-focus-ring-width', scheme)),
+    ).toBeGreaterThanOrEqual(2)
   })
 
   it('give toasts a background the page does not show through', () => {

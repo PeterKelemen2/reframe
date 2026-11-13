@@ -34,7 +34,9 @@ afterEach(() => {
 })
 
 function escape(target: Element): void {
-  target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
+  target.dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+  )
 }
 
 const DialogWithSelect = defineComponent({
@@ -81,7 +83,9 @@ describe('installKeyboardFixes', () => {
     mountWithTransitions(DialogWithSelect)
     await settle()
     const label = document.querySelector('.p-select-label') as HTMLElement
-    label.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }))
+    label.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }),
+    )
     await flushPromises()
     expect(label.getAttribute('aria-expanded')).toBe('true')
     escape(label)
