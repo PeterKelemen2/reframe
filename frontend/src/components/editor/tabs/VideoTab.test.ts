@@ -2,11 +2,10 @@ import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import ToggleSwitch from 'primevue/toggleswitch'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import type { JobSettings } from '@/api/types'
 import { mountShell } from '@/components/shell/testing'
-import { browserLocale } from '@/components/summary/testing'
 import EncoderPicker from '@/components/video/EncoderPicker.vue'
 import QualitySlider from '@/components/video/QualitySlider.vue'
 import SpeedPresetSlider from '@/components/video/SpeedPresetSlider.vue'
@@ -23,7 +22,6 @@ const mounted: { unmount(): void }[] = []
 Element.prototype.scrollIntoView ??= () => undefined
 
 afterEach(() => {
-  vi.restoreAllMocks()
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.replaceChildren()
   localStorage.clear()
@@ -160,14 +158,6 @@ describe('the Video tab', () => {
       two_pass: true,
       turbo_first_pass: true,
     })
-  })
-
-  it("shows the bitrate in the app's locale, whatever the browser's is", async () => {
-    browserLocale('de')
-    const rc = { mode: 'bitrate', kbps: 6000, two_pass: false, turbo_first_pass: false } as const
-    const { wrapper } = await mountTab({ job: jobWith({ rate_control: rc }) })
-    const input = field(wrapper, 'video.rate_control.kbps').find('input')
-    expect((input.element as HTMLInputElement).value).toBe('6,000 kb/s')
   })
 
   it('opens the advanced options and focuses them when the panel as a whole is asked for', async () => {

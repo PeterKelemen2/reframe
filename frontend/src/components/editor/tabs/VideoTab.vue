@@ -34,7 +34,7 @@ import { useSystemStore } from '@/stores/system'
 import { useToastStore } from '@/stores/toasts'
 import { useUiStore } from '@/stores/ui'
 
-const { t, n, locale } = useI18n()
+const { t, n } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
 const toasts = useToastStore()
@@ -307,7 +307,6 @@ function defaultLabel(field: 'tune' | 'profile' | 'level'): string {
             <template #default="{ id, invalid }">
               <InputNumber
                 :input-id="id"
-                :locale="locale"
                 :model-value="rc.kbps"
                 :min="bitrate?.min_kbps"
                 :max="bitrate?.max_kbps"

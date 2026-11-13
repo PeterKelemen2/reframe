@@ -1,11 +1,10 @@
 import { flushPromises } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { problem } from '@/api/testing/fakes'
 import type { MediaSource } from '@/api/types'
 import { frameLink, previewServer } from '@/components/preview/testing'
 import { mountShell } from '@/components/shell/testing'
-import { browserLocale } from '@/components/summary/testing'
 import { useEditorStore } from '@/stores/editor'
 import { usePreviewStore } from '@/stores/preview'
 import { useSourcesStore } from '@/stores/sources'
@@ -15,7 +14,6 @@ import FrameViewer from './FrameViewer.vue'
 const mounted: { unmount(): void }[] = []
 
 afterEach(() => {
-  vi.restoreAllMocks()
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.replaceChildren()
 })
@@ -170,17 +168,6 @@ describe('the frame viewer', () => {
     preview.viewMode = 'output'
     await flushPromises()
     expect(wrapper.find('[data-state="rendering"]').attributes('role')).toBe('status')
-  })
-
-  it("reads a typed time in the app's locale, whatever the browser's is", async () => {
-    browserLocale('de')
-    const { wrapper, server } = await viewer()
-    const input = wrapper.find('[data-field="seek"] input')
-    await input.setValue('2.5')
-    await input.trigger('blur')
-    await wrapper.find('[data-field="seek"]').trigger('submit')
-    await flushPromises()
-    expect(server.requests.at(-1)?.body).toEqual({ source_id: 'movie', timestamps: [2.5] })
   })
 
   it('announces the frame position and the note of a seek without a picture', async () => {

@@ -70,13 +70,9 @@ export function videoLine(video: VideoStream, t: Translate, n: FormatNumber): st
 
 const KIB = 1024
 
-/**
- * Binary units, as the file managers of Linux and Windows count them. Without `n` the number
- * is written as `toFixed` writes it.
- */
-export function formatBytes(bytes: number, t: Translate, n?: FormatNumber): string {
-  const fixed = (value: number, digits: number) =>
-    n === undefined ? value.toFixed(digits) : decimals(value, digits, n)
+/** Binary units, as the file managers of Linux and Windows count them. */
+export function formatBytes(bytes: number, t: Translate, n: FormatNumber): string {
+  const fixed = (value: number, digits: number) => decimals(value, digits, n)
   if (bytes < KIB) return t('summary.units.bytes', { value: fixed(bytes, 0) })
   if (bytes < KIB ** 2) return t('summary.units.kib', { value: fixed(bytes / KIB, 0) })
   if (bytes < KIB ** 3) return t('summary.units.mib', { value: fixed(bytes / KIB ** 2, 1) })

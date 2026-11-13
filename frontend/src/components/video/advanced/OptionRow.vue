@@ -31,7 +31,7 @@ const props = defineProps<{
   category?: string
 }>()
 
-const { t, n, locale } = useI18n()
+const { t, n } = useI18n()
 const editor = useEditorStore()
 const root = useTemplateRef<HTMLElement>('root')
 const defaultId = useId()
@@ -141,7 +141,6 @@ async function reset(): Promise<void> {
           >
             <InputNumber
               :input-id="id"
-              :locale="locale"
               :model-value="typeof stored === 'number' ? stored : null"
               :min="option.min ?? undefined"
               :max="option.max ?? undefined"

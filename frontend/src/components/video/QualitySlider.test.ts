@@ -119,6 +119,5 @@ describe('QualitySlider', () => {
     expect(wrapper.find('[data-band-note]').text()).toBe(
       'Recommended for 1080 lines: RF 20,0 to 24,0',
     )
-    expect((wrapper.find('input').element as HTMLInputElement).value).toBe('RF 22,0')
   })
 })
