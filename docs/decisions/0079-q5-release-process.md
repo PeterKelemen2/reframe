@@ -104,7 +104,94 @@ the certificate secrets are set; an arm64 FFmpeg pin; no PyPI for v1.
 
 ## Task V: the version and the changelog
 
-(Filled by V.)
+Built (2026-11-14, on Linux):
+
+- **`scripts/stamp-version.py`** (stdlib only: `uv run --no-project python scripts/stamp-version.py`).
+  It reads `__version__` from `packages/reframe/src/reframe/__init__.py` and stamps its SemVer
+  spelling into `frontend/package.json`, `desktop/package.json`, the root `version` and
+  `packages[""].version` of both `package-lock.json` files (as `npm version` does),
+  `desktop/src-tauri/tauri.conf.json`, the `[package]` of `Cargo.toml` and the
+  `reframe-desktop` entry of `Cargo.lock`. Each edit changes only the value in place (CRLF
+  checkouts keep their line ends); `--check` prints the version or names each field that
+  differs (exit 1); a version it cannot spell exits 2 and writes nothing. Contract as given,
+  plus a hidden `--root` for the tests.
+- **The spelling.** Accepted: `X.Y.Z`, `X.Y.ZaN` → `X.Y.Z-alpha.N`, `X.Y.ZbN` → `-beta.N`,
+  `X.Y.ZrcN` → `-rc.N`, `X.Y.Z.devN` → `-dev.N`. Refused: post, local, epoch, combined
+  (`rc1.dev2`) and leading zeros, because SemVer cannot keep PEP 440's order for them. The dot
+  before the number keeps `rc.2` before `rc.10`. `.devN` sorts after the betas in SemVer
+  (PEP 440 puts it first): a dev version is never tagged.
+- **`reframe-server`** has no version of its own: `[tool.hatch.version] path` is the core's
+  `__init__.py`, and `reframe_server.__version__` is imported from `reframe`.
+  `uv build --package reframe-server` (sdist, then the wheel from it) gives
+  `reframe_server-0.1.0.dev0`. The Docker image copies the core's `src` before its
+  non-editable `uv sync`, so it builds too.
+- **The version now:** `0.1.0.dev0` kept (SemVer `0.1.0-dev.0` in every field; the frontend
+  was `0.0.0`, the desktop `0.1.0`). The first release sets its own with `--set`.
+- **The frontend** gets `__REFRAME_VERSION__` from `frontend/package.json` through Vite's
+  `define`; the Diagnostics copy's client part has a `version:` line (seen in a real
+  `build:web` bundle).
+- **CI:** `stamp-version.py --check` in the `python` job (Linux and Windows), before `uv sync`.
+- **git-cliff 2.14.2** (2026-09-18), run as `uv tool run git-cliff==2.14.2`: the PyPI package
+  has wheels for Linux x64/arm64, macOS and Windows, so it runs on every runner with
+  `setup-uv` and needs no action. (npm `git-cliff@2.14.2` also exists.) `cliff.toml`'s first
+  comment names the pin, and the test runs that pin.
+- **`CHANGELOG.md`** is the frame: the header, `## [Unreleased]`, and a comment on the first
+  release's section, written by hand from `docs/status.md`. `scripts/release-notes.py VERSION`
+  (a leading `v` is ignored) prints a section without its heading; exit 1 for none or an
+  empty one.
+
+Checked against the real tools:
+
+| Tool | `1.1.0rc1`, `0.1.0.dev0` (PEP 440) | `1.1.0-rc.1`, `0.1.0-dev.0` |
+|---|---|---|
+| Tauri CLI 2.12.4 (`tauri inspect wix-upgrade-code` parses the config) | refused: "`tauri.conf.json > version` must be a semver string" | taken |
+| cargo 1.99.1 (`cargo metadata`) | refused: "unexpected character 'r' after patch version number" | taken |
+| npm's `semver` (frontend `node_modules`) | `valid()` is null | valid; `alpha.1 < alpha.2 < beta.1 < rc.2 < rc.10 < release` |
+
+- `cargo metadata --locked` with `Cargo.toml` stamped and `Cargo.lock` not: "cannot update the
+  lock file … because --locked was passed". This is why the lock is stamped.
+- **Pre-releases and the installers** (the bundler source at tag `tauri-cli-v2.12.4`):
+  - **MSI** (`crates/tauri-bundler/src/bundle/windows/msi/mod.rs`, `convert_version`): a
+    pre-release must be numeric (`1.1.0-4` → `1.1.0.4`). `1.1.0-rc.1` fails the build:
+    "optional pre-release identifier in app version must be numeric-only and cannot be
+    greater than 65535 for msi target". Only `bundle.windows.wix.version` overrides it. WiX
+    limits: major ≤ 255, minor ≤ 255, patch ≤ 65535.
+  - **NSIS** (`nsis/mod.rs`): takes any SemVer. `VIProductVersion` is `X.Y.Z.0`.
+  - **deb** (`linux/debian.rs`): `Version:` is the SemVer string, unchanged. dpkg 1.21.1
+    (`ubuntu:22.04`): `1.1.0-rc.1` is **greater** than `1.1.0`, so apt does not upgrade an rc
+    to its release. (`1.1.0~rc.1` sorts before it.)
+  - **rpm** (`linux/rpm.rs`): the RPM `Version` is the SemVer string, unchanged. rpm does not
+    allow `-` in a version. This was not checked with a real rpm here (no rpm on this host).
+  - So with this release process, a pre-release tag cannot build the MSI, and its deb and rpm
+    would be ordered wrongly. A question for the lead or the owner: should v1 tag only final
+    versions (`X.Y.Z`)? If pre-releases come later, they could build only NSIS and the
+    AppImage.
+- **git-cliff** (2.14.2, run on a throwaway repository: the old-style commits, then a `v0.9.0`
+  tag, then `feat`/`fix`/`perf` with scopes, `docs`/`test`/`ci`/`chore`/`build`/`refactor`/
+  `revert`, `feat(S-2)!:`, a `BREAKING CHANGE:` footer, one non-conventional commit, and a
+  `--no-ff` merge of a branch with a `fix`):
+  - The groups are Breaking, Added, Fixed and Performance, in that order. Each line is
+    `- <scope>: <subject>`. A breaking commit with a footer shows the footer's text. The
+    other types, the merge commit and the non-conventional commit are left out. The `fix`
+    from the merged branch is kept.
+  - `--prepend CHANGELOG.md` removes the configured `header` from the start of the file, then
+    writes the header and the new section above the rest. Because the header ends with
+    `## [Unreleased]`, that heading stays at the top, with nothing under it. If the file does
+    not start with exactly that header, the frame is written twice (a test checks this).
+  - With `--tag`, the section's date is the date of the run.
+  - `tag_pattern = "^v[0-9]"`: the `sources-…` tags of 0073 are not releases.
+  - Since the last `v*` tag: the section of a final release that follows an rc lists only
+    the commits made after that rc.
+- **The procedure** (for `docs/release.md`, task W):
+  1. `uv run --no-project python scripts/stamp-version.py --set X.Y.Z`.
+  2. The changelog. For the first release, replace the comment in `CHANGELOG.md` with the
+     section `## [X.Y.Z] - YYYY-MM-DD` and write it by hand. For later releases, run
+     `uv tool run git-cliff==2.14.2 --unreleased --tag vX.Y.Z --prepend CHANGELOG.md`, then
+     read the result.
+  3. Commit (`chore(release): vX.Y.Z`), then tag `vX.Y.Z`.
+  4. The workflow checks the tag with
+     `test "$GITHUB_REF_NAME" = "v$(uv run --no-project python scripts/stamp-version.py --check)"`,
+     and gets the notes with `scripts/release-notes.py "$GITHUB_REF_NAME"`.
 
 ## Task S: the source manifest and the sources release
 

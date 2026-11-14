@@ -72,6 +72,9 @@ jobs:
       - name: Check that uv.lock matches pyproject.toml
         run: uv lock --check
 
+      - name: Check that every package's version is the core's (scripts/stamp-version.py)
+        run: uv run --no-project python scripts/stamp-version.py --check
+
       - run: uv sync --frozen
 
       - name: Show the tools that discovery picks (FFmpeg must be the bundled build)

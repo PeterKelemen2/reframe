@@ -1,5 +1,5 @@
 """Reframe web server: a thin FastAPI transport over the ``reframe`` core."""
 
-__version__ = "0.1.0.dev0"
+from reframe import __version__
 
 __all__ = ["__version__"]

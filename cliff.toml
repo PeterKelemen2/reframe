@@ -1,0 +1,52 @@
+# git-cliff configuration: CHANGELOG.md from conventional commits. Run the pinned version from
+# the repository root (docs/release.md):
+#   uv tool run git-cliff==2.14.2 --unreleased --tag vVERSION --prepend CHANGELOG.md
+
+[changelog]
+# CHANGELOG.md starts with exactly this text: --prepend removes it, then writes it again above
+# the new release's section.
+header = """
+# Changelog
+
+All notable changes to Reframe. A version is the core's `__version__`, and its tag is `v` and
+that version. From the second release on, each section is made by git-cliff from conventional
+commits ([docs/release.md](docs/release.md)).
+
+## [Unreleased]\n
+"""
+body = """
+{% if version -%}
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else -%}
+## [Unreleased]
+{% endif %}
+{%- for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim }}
+{% for commit in commits %}
+- {% if commit.scope %}{{ commit.scope }}: {% endif %}\
+{% if commit.breaking and commit.breaking_description %}{{ commit.breaking_description }}\
+{% else %}{{ commit.message }}{% endif %}
+{%- endfor %}
+{% endfor %}\n
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+require_conventional = false
+split_commits = false
+# The HTML comments order the groups; the template strips them.
+commit_parsers = [
+    { field = "breaking", pattern = "true", group = "<!-- 0 -->Breaking" },
+    { message = "^feat", group = "<!-- 1 -->Added" },
+    { message = "^fix", group = "<!-- 2 -->Fixed" },
+    { message = "^perf", group = "<!-- 3 -->Performance" },
+]
+protect_breaking_commits = true
+# Drops what no parser matched: docs, test, ci, chore, build, refactor, revert and merges.
+filter_commits = true
+tag_pattern = "^v[0-9]"
+topo_order = false
+sort_commits = "oldest"
