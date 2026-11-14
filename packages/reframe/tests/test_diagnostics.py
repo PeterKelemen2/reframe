@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 import pytest
 from pydantic import BaseModel
 
 from reframe import __version__
-from reframe.diagnostics import build_report, home_relative
+from reframe.applog import SERVER_LOG, logs_dir
+from reframe.diagnostics import _windows_os, build_report, home_relative
 from reframe.models import (
     AppSettings,
     CapabilitySnapshot,
@@ -19,6 +23,7 @@ from reframe.models import (
     ToolSet,
     ToolStatus,
 )
+from reframe.remote.owner import server_log
 
 HOME = "/home/ann"
 
@@ -152,7 +157,11 @@ def test_the_logs_part_lists_the_files_that_exist(tmp_path: Path) -> None:
     logs.mkdir()
     (logs / "reframe.log").write_bytes(b"x" * 2048)
     (logs / "reframe.log.1").write_bytes(b"x" * 10)
+    (logs / "reframe.log.2").write_bytes(b"x" * 20)
+    (logs / "reframe.log.3").write_bytes(b"x" * 30)
     (logs / "sidecar.log").write_bytes(b"")
+    (logs / "sidecar.log.1").write_bytes(b"x" * 3 * 1024 * 1024)
+    (logs / "server.log").write_bytes(b"x")
     (logs / "0b6c5f1a.log").write_bytes(b"job")
     (logs / "9f3e2d1c.log").write_bytes(b"job")
     lines = section(report(tmp_path, home=str(tmp_path)), "Logs")
@@ -160,9 +169,17 @@ def test_the_logs_part_lists_the_files_that_exist(tmp_path: Path) -> None:
         "  folder: ~/logs",
         "  reframe.log: 2.0 KiB",
         "  reframe.log.1: 10 B",
+        "  reframe.log.2: 20 B",
+        "  reframe.log.3: 30 B",
         "  sidecar.log: 0 B",
+        "  sidecar.log.1: 3.0 MiB",
+        "  server.log: 1 B",
         "  job logs: 2",
     ]
+
+
+def test_the_server_log_is_where_a_cli_client_writes_it(tmp_path: Path) -> None:
+    assert server_log(tmp_path) == logs_dir(tmp_path) / SERVER_LOG
 
 
 def test_a_logs_folder_that_does_not_exist_is_said(tmp_path: Path) -> None:
@@ -180,10 +197,58 @@ def test_a_logs_folder_that_does_not_exist_is_said(tmp_path: Path) -> None:
         ("/home/anna/x", "/home/anna/x"),
         ("/srv/home/ann/x", "/srv/home/ann/x"),
         ("/HOME/ANN/x", "/HOME/ANN/x"),
+        ("it is in /home/ann.", "it is in ~."),
+        ("/home/ann.\n/home/ann", "~.\n~"),
+        ("/home/ann.bak/x", "/home/ann.bak/x"),
+        ("user ann, group ann", "user ann, group ann"),
     ],
 )
 def test_paths_under_the_home_folder_start_with_a_tilde(text: str, expected: str) -> None:
     assert home_relative(text, home=HOME, windows=False) == expected
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a symlink needs a privilege on Windows")
+def test_the_folder_that_the_home_links_to_starts_with_a_tilde_too(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Fedora Atomic: ``/home`` is a link to ``/var/home``, and a resolved path names the
+    second."""
+    (tmp_path / "var" / "home" / "ann").mkdir(parents=True)
+    (tmp_path / "home").symlink_to(tmp_path / "var" / "home")
+    monkeypatch.setenv("HOME", str(tmp_path / "home" / "ann"))
+    resolved = (tmp_path / "home" / "ann" / "Videos").resolve()
+    text = f"output: {resolved}\nbuild: {tmp_path}/home/ann/ffmpeg"
+    assert home_relative(text) == "output: ~/Videos\nbuild: ~/ffmpeg"
+
+
+class _Version(NamedTuple):
+    platform_version: tuple[int, int, int]
+
+
+def _no_registry() -> str | None:
+    raise OSError("the registry cannot be read")
+
+
+@pytest.mark.parametrize(
+    ("edition", "architecture", "expected"),
+    [
+        (lambda: "Professional", "AMD64", "Windows 10.0.22631 (Professional) AMD64"),
+        (lambda: None, "ARM64", "Windows 10.0.22631 ARM64"),
+        (_no_registry, "AMD64", "Windows 10.0.22631 AMD64"),
+        (lambda: "Core", None, "Windows 10.0.22631 (Core)"),
+    ],
+)
+def test_the_windows_os_line_has_the_version_edition_and_processor(
+    monkeypatch: pytest.MonkeyPatch,
+    edition: Callable[[], str | None],
+    architecture: str | None,
+    expected: str,
+) -> None:
+    if architecture is None:
+        monkeypatch.delenv("PROCESSOR_ARCHITECTURE", raising=False)
+    else:
+        monkeypatch.setenv("PROCESSOR_ARCHITECTURE", architecture)
+    assert _windows_os(lambda: _Version((10, 0, 22631)), edition) == expected
 
 
 @pytest.mark.parametrize(

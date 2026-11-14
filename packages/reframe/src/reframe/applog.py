@@ -29,6 +29,7 @@ __all__ = [
     "BACKUP_COUNT",
     "LOG_FILE",
     "MAX_BYTES",
+    "SERVER_LOG",
     "AppLog",
     "JsonLinesFormatter",
     "install",
@@ -36,6 +37,8 @@ __all__ = [
 ]
 
 LOG_FILE = "reframe.log"
+SERVER_LOG = "server.log"
+"""The stderr of a server that a CLI client started, in :func:`logs_dir`."""
 MAX_BYTES = 5 * 1024 * 1024
 """Size above which ``reframe.log`` is moved to ``reframe.log.1``."""
 BACKUP_COUNT = 3

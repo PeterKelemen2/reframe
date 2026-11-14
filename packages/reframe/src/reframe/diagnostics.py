@@ -11,14 +11,15 @@ import os
 import platform
 import re
 import sys
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
+from typing import Protocol
 
 from pydantic import BaseModel
 from pydantic_core import to_jsonable_python
 
 from reframe import __version__
-from reframe.applog import BACKUP_COUNT, LOG_FILE
+from reframe.applog import BACKUP_COUNT, LOG_FILE, SERVER_LOG
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.settings import AppSettings
 from reframe.models.text import json_text
@@ -29,18 +30,30 @@ __all__ = ["build_report", "home_relative"]
 
 SIDECAR_LOGS = ("sidecar.log", "sidecar.log.1")
 """The desktop shell's copy of the server's stderr."""
-SERVER_LOG = "server.log"
-"""The stderr of a server that a CLI client started."""
 
 _SEPARATORS = r"[/\\]+"
 _NAME_CHAR = re.compile(r"[\w.~-]")
+# A path ends at a separator, a quote, a space, a closing bracket, punctuation, or a full stop
+# that ends a sentence ("/home/ann.bak" is another folder).
+_PATH_END = r"""(?=[/\\\s"',;:)\]}]|\.(?:\s|$)|$)"""
 
 
-def _home() -> str | None:
+def _homes() -> list[str]:
+    """This user's home folder, and the folder it is a link to (Fedora Atomic: ``/home`` is
+    ``/var/home``), which resolved paths name."""
     try:
-        return str(Path.home())
+        home = str(Path.home())
+        return [home, os.path.realpath(home)]
     except (RuntimeError, KeyError, OSError):
+        return []
+
+
+def _home_pattern(home: str, windows: bool) -> str | None:
+    parts = [part for part in re.split(_SEPARATORS, home) if part]
+    if not parts or (windows and len(parts) == 1):  # "/" or "C:\": every path would match
         return None
+    lead = _SEPARATORS if home[0] in "/\\" else ""
+    return lead + _SEPARATORS.join(re.escape(part) for part in parts)
 
 
 def home_relative(
@@ -48,19 +61,16 @@ def home_relative(
 ) -> str:
     """``text`` with every path under the home folder starting with ``~``.
 
-    ``home``: the home folder (default: this user's, ``%USERPROFILE%`` on Windows). On Windows
-    the match ignores case and takes either separator. A path that only ends with the home
-    folder's path (``/srv/home/ann``) is left alone.
+    ``home``: the home folder (default: this user's, ``%USERPROFILE%`` on Windows, and the
+    folder it links to). On Windows the match ignores case and takes either separator. A path
+    that only ends with the home folder's path (``/srv/home/ann``) is left alone.
     """
-    home = _home() if home is None else home
-    if not home:
+    homes = _homes() if home is None else [home]
+    patterns = {found for path in homes if path and (found := _home_pattern(path, windows))}
+    if not patterns:
         return text
-    parts = [part for part in re.split(_SEPARATORS, home) if part]
-    if not parts or (windows and len(parts) == 1):  # "/" or "C:\": every path would match
-        return text
-    lead = _SEPARATORS if home[0] in "/\\" else ""
     pattern = re.compile(
-        lead + _SEPARATORS.join(re.escape(part) for part in parts) + r"""(?=[/\\\s"',;:)\]}]|$)""",
+        "(?:" + "|".join(sorted(patterns, key=len, reverse=True)) + ")" + _PATH_END,
         re.IGNORECASE if windows else 0,
     )
 
@@ -75,18 +85,29 @@ def home_relative(
     return pattern.sub(replace, text)
 
 
+class _WindowsVersion(Protocol):
+    @property
+    def platform_version(self) -> tuple[int, int, int]: ...
+
+
+def _windows_os(
+    getwindowsversion: Callable[[], _WindowsVersion], win32_edition: Callable[[], str | None]
+) -> str:
+    version = getwindowsversion().platform_version
+    try:
+        edition = win32_edition()
+    except OSError:
+        edition = None
+    text = "Windows " + ".".join(str(part) for part in version)
+    if edition:
+        text += f" ({edition})"
+    return f"{text} {os.environ.get('PROCESSOR_ARCHITECTURE', '')}".rstrip()
+
+
 if sys.platform == "win32":
 
     def _os() -> str:
-        version = sys.getwindowsversion().platform_version
-        try:
-            edition = platform.win32_edition()
-        except OSError:
-            edition = None
-        text = "Windows " + ".".join(str(part) for part in version)
-        if edition:
-            text += f" ({edition})"
-        return f"{text} {os.environ.get('PROCESSOR_ARCHITECTURE', '')}".rstrip()
+        return _windows_os(sys.getwindowsversion, platform.win32_edition)
 
 else:
 
