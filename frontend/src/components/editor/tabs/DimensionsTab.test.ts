@@ -149,6 +149,23 @@ describe('the Dimensions tab', () => {
     expect((top.element as HTMLInputElement).value).toBe('140')
   })
 
+  it('keeps a crop value being typed when the job changes under it, and commits it', async () => {
+    const { wrapper, editor } = await mountTab({
+      job: jobWith({ crop: { mode: 'manual', rect: { top: 0, bottom: 0, left: 0, right: 0 } } }),
+    })
+    const left = wrapper.find('input[data-edge="left"]')
+    // Typed, not committed yet; then the previous edit's answer comes in (another edge).
+    ;(left.element as HTMLInputElement).value = '17'
+    await left.trigger('input')
+    editor.set('/dimensions/crop/rect/top', 22)
+    await flushPromises()
+    expect((left.element as HTMLInputElement).value).toBe('17')
+    expect((wrapper.find('input[data-edge="top"]').element as HTMLInputElement).value).toBe('22')
+    await left.trigger('change')
+    await flushPromises()
+    expect(editor.get('/dimensions/crop/rect')).toEqual({ top: 22, bottom: 0, left: 16, right: 0 })
+  })
+
   it('makes a crop value typed after leaving the field an undo step of its own', async () => {
     const { wrapper, editor } = await mountTab({
       job: jobWith({ crop: { mode: 'manual', rect: { top: 0, bottom: 0, left: 0, right: 0 } } }),
