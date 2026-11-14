@@ -585,3 +585,13 @@ confirmation; keyboard, i18n and the gate as F-16 requires; the whole e2e suite 
 |------|------|
 | 2026-11-14 | 0078, this section and wave 0 committed; wave 1 (P, U) launched. |
 | 2026-11-14 | P merged (5330b9c: `reframe/applog.py`, `reframe/diagnostics.py`, the level through `Reframe.create(on_log_level=…)`, the route's report), U phase 1 against the stub, then phase 2 against P's report, merged (2de580d: Settings → Diagnostics; `diagnostics.server.test.ts`). The lead broke each task once (the access log let into the file; the client part left out of the copy); its tests caught it. A real server's `reframe.log` and report checked by hand (JSON lines, no token). Review R1 launched. |
+| 2026-11-14 | Review R1: 1 blocker (at `debug` the auth token and the session cookie reached `reframe.log` through uvicorn's websockets logging; reproduced by the lead), 4 minors, 5 nits. Fix FP merged (539ab09; the lead's re-run of the leak: `False`; the lead's mutation, `uvicorn.error` back among Reframe's loggers, fails the real-server regression test) and the lead's `server.log` name change (03ccb62). Final: pytest 7899 passed, 2 skipped (five chunks, run alone); e2e 315 passed twice (12.5 and 13.0 min, three browsers); unit 2171; server 107; ruff, format, both mypy runs, the API check, lint, format, types and the web build clean. |
+
+#### Where Q-4 ended (2026-11-14)
+
+Done on Linux, on `m10-hardening`, not merged into `main`, not pushed. Every worktree and
+branch of the run (P, U, FP) is removed; R1 worked from a scratch copy. Each task was broken
+once by the lead after its merge, and its tests caught it. Owner questions (0078 Consequences):
+a `reframe diagnostics` CLI command and a button that opens the logs folder are not built.
+Recorded, not changed: the rotation limit counts characters (0078 review item 8). Rest of M10:
+Q-5 and the release checklist; S-6's NVIDIA/Intel checks wait for such a host.

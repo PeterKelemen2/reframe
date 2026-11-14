@@ -201,8 +201,12 @@ Phase 1 (against the stub, mocked reports in the tests):
   `ClipboardItem` of a promise: Firefox and WebKit accept all of them without a permission;
   Chromium refuses every write ("Write permission denied") unless the context has
   `clipboard-write`, and then accepts all of them (read back with `readText`). So Playwright's
-  engines do not show a user-gesture rule for a write after the fetch. Not checked: the desktop
-  app's WebKitGTK webview; if it refuses the write, the user gets the report to select.
+  engines do not show a user-gesture rule for a write after the fetch. The desktop app's
+  WebKitGTK webview was checked by review R1 (WebKitGTK 2.54.2, Tauri's default with
+  `javascript-can-access-clipboard` off, headless KWin, a synthetic click): a write with no
+  gesture is refused (`NotAllowedError`); after a click it works at once, after an awaited fetch
+  (Reframe's pattern) and after a 3 s fetch, and the clipboard really held the text. If it ever
+  refuses the write, the user gets the report to select.
 - **The gate.** `settings-diagnostics` (the section) and `settings-diagnostics-report` (the
   report shown after the clipboard is removed from `navigator`) in `e2e/a11y/screens/shell.ts`;
   `known/shell.ts` stays empty.
@@ -228,7 +232,23 @@ Phase 2 (after P merged, against the real report, 2026-11-14):
 
 ## Review and fix round
 
-(Filled by the lead.)
+One fresh reviewer (R1, `xhigh`) checked the log, the report and the section (mutations in a
+scratch copy). Findings:
+
+| # | Severity | Finding | Outcome |
+|---|---|---|---|
+| 1 | blocker | At `debug` the app log lowered `uvicorn.error`, which uvicorn hands to the websockets library: every upgrade header (the session cookie) and every short frame (the `auth` message with the whole token) went into `reframe.log`. Reproduced by the lead (`whole token in reframe.log: True`). | Fixed (FP): no logger but Reframe's below INFO; a real-server regression test; the lead's re-run: `False` |
+| 2 | minor | One record that could not be formatted turned the whole log off; NaN written as bare `NaN`. | Fixed (FP): a total formatter; only a file error turns the log off |
+| 3 | minor | "One writer" not guaranteed (two servers on one data folder); on Windows a failed rename at rotation turned the log off. | Fixed (FP): installed only by the owner of the queue store, after `owner.start`; a failed rename reopens the file |
+| 4 | minor | The "levels put back" tests depended on test order; overlapping installs leaked levels. | Fixed (FP) |
+| 5 | minor | The report's Logs part half tested. | Fixed (FP) |
+| 6 | nit | `~` missed a linked home and a home path before a full stop. | Fixed (FP) |
+| 7 | nit | The Windows OS line not unit-tested. | Fixed (FP) |
+| 8 | nit | Rotation counts characters, not bytes. | Not changed: the limit is approximate |
+| 9 | nit | The close order untested. | Fixed (FP) |
+| 10 | nit | `server.log` named by hand in two places. | Fixed (FP and the lead, 03ccb62) |
+
+The review also checked the desktop clipboard (Task U above).
 
 ### Fix round — FP
 

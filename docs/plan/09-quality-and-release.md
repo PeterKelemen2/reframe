@@ -91,10 +91,10 @@ Benchmarks run in CI as a non-blocking job. A regression of more than 20 % comme
 
 ## Q-4 Logging and diagnostics
 
-- [ ] Structured logs (JSON lines) in `<data>/logs/reframe.log`, with rotation. Log level is set
+- [x] Structured logs (JSON lines) in `<data>/logs/reframe.log`, with rotation. Log level is set
       in Settings.
-- [ ] Per-job logs (`C-11`), sidecar log (`D-3`).
-- [ ] **Copy diagnostics** in Settings: app version, OS, tool versions and build flags, encoder
+- [x] Per-job logs (`C-11`), sidecar log (`D-3`).
+- [x] **Copy diagnostics** in Settings: app version, OS, tool versions and build flags, encoder
       statuses with reasons, settings with secrets removed. Used in bug reports.
 
 (How: [decision 0078](../decisions/0078-q4-logging-and-diagnostics.md): only the server writes
