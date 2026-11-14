@@ -147,8 +147,19 @@ function isChosen(option: Option): boolean {
   return option.language ? option.language.tag === current.value?.tag : model.value === null
 }
 
+// WebKit sends a mousemove at the same place when the list changes under a still pointer
+// (typing, scrolling): only a pointer that has moved takes the active option from the keys.
+let pointerAt: string | null = null
+
+function onOptionMove(event: MouseEvent, index: number): void {
+  const at = `${event.clientX},${event.clientY}`
+  if (pointerAt !== null && at !== pointerAt) active.value = index
+  pointerAt = at
+}
+
 function show(initial = ''): void {
   if (props.disabled) return
+  pointerAt = null
   query.value = initial
   open.value = true
   const chosen = initial === '' ? options.value.findIndex(isChosen) : -1
@@ -340,7 +351,7 @@ function onDialogKey(event: KeyboardEvent): void {
               :aria-selected="isChosen(option)"
               :data-tag="option.language?.tag ?? ''"
               @mousedown.prevent
-              @mousemove="active = index"
+              @mousemove="onOptionMove($event, index)"
               @click="choose(option)"
             >
               <Check
