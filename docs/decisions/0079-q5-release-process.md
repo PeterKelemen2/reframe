@@ -319,8 +319,8 @@ Read in a depth-1 clone of `github.com/BtbN/FFmpeg-Builds` at `build_scripts_com
 
 ### The notices (`scripts/third-party-notices.py`)
 
-- `--sources-url` and `--sources-sums` (both or neither) put the sources release and every
-  archive's SHA-256 (the whole release, not only the platform's part) after the introduction.
+- `--sources-url` and `--sources-sums` put the sources release and the archives' SHA-256 after
+  the introduction (with `--sources-manifest`, only the platform's part: "Fix — N" below).
 - `docker-linux-x64` and `docker-linux-arm64`: FFmpeg with the pin of `linux-x64` or
   `linux-arm64` (its licence from the `--tools` folder, e.g. `fetch-tools.py`'s; no libva: the
   image uses Debian's), CPython (the script refuses an interpreter other than the image's
