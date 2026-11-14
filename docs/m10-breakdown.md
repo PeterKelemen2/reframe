@@ -171,7 +171,9 @@ The commands (CLAUDE.md): Python `uv run ruff check`, `uv run ruff format --chec
 fmt:check, typecheck, `npm test`, build:web, build:desktop; Rust (from `desktop/src-tauri/`)
 `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`;
 `scripts/gen-api.sh --check`. The app: `cd desktop && npm ci && npx tauri build` (with bundles) or
-`--no-bundle`; the frozen sidecar first: `uv run python desktop/sidecar/build.py`.
+`--no-bundle`; the frozen sidecar first: `uv run python desktop/sidecar/build.py`. Since Q-5 a dev
+tree carries a SemVer pre-release (`0.1.0-dev.0`), which the MSI cannot take: on Windows build with
+`--bundles nsis`, or stamp a final version locally for an MSI (`docs/release.md`).
 
 ## Rules for every agent (word for word in each brief)
 
