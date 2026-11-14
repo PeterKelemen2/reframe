@@ -69,7 +69,7 @@ __all__ = [
 #: The pinned builds, shipped with the package (a copy of ``tools/ffmpeg.toml``).
 DEFAULT_MANIFEST = Path(__file__).with_name("ffmpeg.toml")
 SCHEMA_VERSION = 1
-PLATFORMS = ("linux-x64", "windows-x64")
+PLATFORMS = ("linux-x64", "linux-arm64", "windows-x64")
 FORMATS = ("tar.xz", "zip")
 _TAR_MODES: dict[str, Literal["r:xz", "r:bz2"]] = {"tar.xz": "r:xz", "tar.bz2": "r:bz2"}
 #: The marker that ``scripts/fetch-tools.py`` writes too (same name and format).
@@ -288,6 +288,8 @@ def host_platform(sys_platform: str | None = None, machine: str | None = None) -
             return "linux-x64"
         if sys_platform == "win32":
             return "windows-x64"
+    if machine in ("aarch64", "arm64") and sys_platform.startswith("linux"):
+        return "linux-arm64"
     return None
 
 

@@ -436,6 +436,16 @@ def test_main_reports_an_error_with_exit_code_1(
     assert "notes.txt" in capsys.readouterr().err
 
 
+def test_main_refuses_the_arm64_ffmpeg_pin_that_no_desktop_package_ships(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # It has no libva pin: a layout would lack the VAAPI library the x64 layouts have.
+    with pytest.raises(SystemExit) as exit_info:
+        bt.main(["--platform", "linux-arm64"])
+    assert exit_info.value.code == 2
+    assert "invalid choice: 'linux-arm64'" in capsys.readouterr().err
+
+
 @pytest.fixture
 def fake_libva_build(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
     """Replaces the meson build of libva: writes two libraries named as libva's are; the
