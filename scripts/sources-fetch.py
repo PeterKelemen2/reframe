@@ -402,11 +402,9 @@ def fetch_all(entries: Sequence[Mapping[str, Any]], out: Path) -> None:
         helpers = None
         if stages:
             scripts = Path(folder) / "ffmpeg-builds"
-            git_checkout(
-                str(stages[0]["build_scripts_repository"]),
-                str(stages[0]["build_scripts_commit"]),
-                scripts,
-            )
+            repository = str(stages[0]["build_scripts_repository"])
+            commit = str(stages[0]["build_scripts_commit"])
+            _with_retries(lambda: git_checkout(repository, commit, scripts), scripts)
             helpers = stage_helpers(scripts, Path(folder) / "bin")
         for number, entry in enumerate(todo, 1):
             _log(f"[{number}/{len(todo)}] {entry['archive']}")
