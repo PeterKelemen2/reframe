@@ -139,12 +139,6 @@ const tabKey = computed(() => {
   return shown[0]?.key ?? null
 })
 
-/** The group's name and lines: the treeitem's name would otherwise take its buttons and members. */
-function groupLabel(item: Extract<PanelItem, { kind: 'group' }>, index: number): string {
-  const parts = ['head', 'meta', ...(nearCount(item) > 0 ? ['near'] : [])]
-  return parts.map((part) => `${id}-group-${index}-${part}`).join(' ')
-}
-
 function nearCount(item: Extract<PanelItem, { kind: 'group' }>): number {
   return item.rows.filter((row) => row.member.match === 'near').length
 }
@@ -601,6 +595,8 @@ onBeforeUnmount(() => stopDrops?.())
           :class="{ 'sources-panel__source--active': item.entry.id === sources.activeId }"
           :aria-selected="item.entry.id === sources.activeId"
           :aria-level="1"
+          :aria-setsize="items.length"
+          :aria-posinset="index + 1"
           :tabindex="tabKey === sourceKey(item.entry.id) ? 0 : -1"
           :data-key="sourceKey(item.entry.id)"
           :aria-labelledby="`${itemId(item.entry.id)}-title ${itemId(item.entry.id)}-details`"
@@ -621,17 +617,14 @@ onBeforeUnmount(() => stopDrops?.())
           :aria-current="editedGroup(item.group.id) ? 'true' : undefined"
           :aria-expanded="!isCollapsed(item)"
           :aria-level="1"
+          :aria-setsize="items.length"
+          :aria-posinset="index + 1"
           :tabindex="tabKey === groupKey(item.group.id) ? 0 : -1"
           :data-key="groupKey(item.group.id)"
           :data-group="item.group.name"
-          :aria-labelledby="groupLabel(item, index)"
           @click.self="toggle(item.group.id)"
         >
-          <div
-            :id="`${id}-group-${index}-head`"
-            class="sources-panel__group-head"
-            @click="toggle(item.group.id)"
-          >
+          <div class="sources-panel__group-head" @click="toggle(item.group.id)">
             <ChevronRight v-if="isCollapsed(item)" :size="16" aria-hidden="true" />
             <ChevronDown v-else :size="16" aria-hidden="true" />
             <span class="sources-panel__group-name" :title="item.group.name">{{
@@ -644,11 +637,7 @@ onBeforeUnmount(() => stopDrops?.())
               >{{ t('sources.group.editing') }}</span
             >
           </div>
-          <div
-            :id="`${id}-group-${index}-meta`"
-            class="sources-panel__group-meta"
-            @click="toggle(item.group.id)"
-          >
+          <div class="sources-panel__group-meta" @click="toggle(item.group.id)">
             <span data-field="count">{{ t('sources.group.files', item.rows.length) }}</span>
             <span>
               <template v-if="item.group.level === 'strict'">{{
@@ -662,7 +651,6 @@ onBeforeUnmount(() => stopDrops?.())
           </div>
           <div
             v-if="nearCount(item) > 0"
-            :id="`${id}-group-${index}-near`"
             class="sources-panel__group-meta"
             @click="toggle(item.group.id)"
           >
@@ -701,32 +689,37 @@ onBeforeUnmount(() => stopDrops?.())
               @click="queueGroup(item.group.id)"
             />
           </div>
-          <ul v-if="!isCollapsed(item)" role="group" class="sources-panel__members">
-            <li
-              v-for="row in item.rows"
-              :key="row.entry.id"
-              role="treeitem"
-              class="sources-panel__node sources-panel__source sources-panel__member"
-              :class="{ 'sources-panel__source--active': row.entry.id === sources.activeId }"
-              :aria-selected="row.entry.id === sources.activeId"
-              :aria-level="2"
-              :tabindex="tabKey === sourceKey(row.entry.id) ? 0 : -1"
-              :data-key="sourceKey(row.entry.id)"
-              :data-match="row.member.match"
-              :aria-labelledby="`${itemId(row.entry.id)}-title ${itemId(row.entry.id)}-details`"
-              @click.stop="choose(row.entry.id, item.group.id)"
-            >
-              <SourceItem
-                :entry="row.entry"
-                :id-base="itemId(row.entry.id)"
-                :member="row.member"
-                :label="row.label"
-                @remove="askRemove(sourceKey(row.entry.id))"
-                @reprobe="reprobe(row.entry)"
-              />
-            </li>
-          </ul>
         </li>
+        <template v-if="item.kind === 'group' && !isCollapsed(item)">
+          <li
+            v-for="(row, position) in item.rows"
+            :key="row.entry.id"
+            role="treeitem"
+            class="sources-panel__node sources-panel__source sources-panel__member"
+            :class="{
+              'sources-panel__source--active': row.entry.id === sources.activeId,
+              'sources-panel__member--edited': editedGroup(item.group.id),
+            }"
+            :aria-selected="row.entry.id === sources.activeId"
+            :aria-level="2"
+            :aria-setsize="item.rows.length"
+            :aria-posinset="position + 1"
+            :tabindex="tabKey === sourceKey(row.entry.id) ? 0 : -1"
+            :data-key="sourceKey(row.entry.id)"
+            :data-match="row.member.match"
+            :aria-labelledby="`${itemId(row.entry.id)}-title ${itemId(row.entry.id)}-details`"
+            @click="choose(row.entry.id, item.group.id)"
+          >
+            <SourceItem
+              :entry="row.entry"
+              :id-base="itemId(row.entry.id)"
+              :member="row.member"
+              :label="row.label"
+              @remove="askRemove(sourceKey(row.entry.id))"
+              @reprobe="reprobe(row.entry)"
+            />
+          </li>
+        </template>
       </template>
     </ul>
 
@@ -895,15 +888,20 @@ onBeforeUnmount(() => stopDrops?.())
   margin-inline-end: var(--rf-space-2);
 }
 
-.sources-panel__members {
-  display: grid;
-  gap: 1px;
-  margin-top: var(--rf-space-1) !important;
-  padding-inline-start: var(--rf-space-4) !important;
+.sources-panel__member {
+  position: relative;
+  margin-inline-start: var(--rf-space-4);
+  padding-block: 0.125rem;
 }
 
-.sources-panel__member {
-  padding-block: 0.125rem;
+/* The edited group's bar runs on down its members, which sit beside it in the tree. */
+.sources-panel__member--edited::before {
+  position: absolute;
+  inset-block: -1px 0;
+  inset-inline-start: calc(-1 * var(--rf-space-4) - 3px);
+  width: 3px;
+  background: var(--rf-color-primary);
+  content: '';
 }
 
 .sources-panel__confirm {

@@ -83,6 +83,7 @@
     "par": "pixel aspect {par}",
     "upscaled": "The picture is enlarged: it gains no detail.",
     "filters": "Filters",
+    "filter": "{label}: {value}",
     "off": "off"
   },
   "video": {

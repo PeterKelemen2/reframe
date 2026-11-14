@@ -540,3 +540,57 @@ fixes and removes. This task also removed its Range button from `known/shell.ts`
 ## Review and fix round
 
 (Filled in after the reviews.)
+
+### Review fixes (FP)
+
+Phase 1, on 2026-11-14 on Linux (this host): headless Chromium and Firefox of Playwright 1.64.1
+against `scripts/dev-server.py` (the e2e fixtures, the pinned FFmpeg), own scripts that print
+the focused element after each key, before and after each fix. Each fix has a unit test that
+failed before it (or a test of the i18n check where English shows no defect), and each test was
+checked by a mutation of the code it covers.
+
+The menu's Tab follows the WAI-ARIA APG menu pattern (read on w3.org on 2026-11-14): "When
+focus is on a `menuitem` in a `menu` or `menubar`, move focus out of the `menu` or `menubar`,
+and close all menus and submenus." A popup menu sits, for the tab order, where its button is.
+Both browsers continue a Tab from an element that a capturing `keydown` listener focused
+(checked with a plain page), so the fix leaves the next and the previous element to the browser.
+
+| Finding | Fix | Test |
+|---------|-----|------|
+| Tab or Shift+Tab in an open popup `Menu` left the focus on the page (Chromium: the window lost it), then the nav rail or the status bar | `keyboard.ts`: on Tab in a popup Menu the focus goes back to its menu button (the element named by `aria-controls`, else the one the list took the focus from), and the browser's own Tab moves on from there, both ways. PrimeVue still closes the menu | `keyboard.test.ts`; in both browsers Tab and Shift+Tab from *Preset actions* and *Add track* now land where they land from the closed button |
+| A link from the workspace to another view (the status bar's *Queue* link, *Open presets*) left the focus on the page | `focus.ts` `refocusAfterNavigation`, installed by `App.vue`: after a move to another view, a focus that went away with the old view goes to the new view's heading (`tabindex="-1"`), or for the workspace to `focusWorkspace()`. The first view of a page load takes none | `focus.test.ts`, `App.test.ts`; both browsers land on the heading |
+| A Tab pressed during a Dialog's enter transition was taken back | `dialogFocus.ts`, installed by `main.ts`: PrimeVue's `onAfterEnter` focus is skipped when the focus is in the dialog already | `dialogFocus.test.ts`; in both browsers with motion on, Ctrl+O then Tab at once stays on *Cancel* (before: back on the list 800 ms later) |
+| `label-content-name-mismatch` on the sources tree's group row and its members | The tree is flat, as the preset tree: members are tree items of level 2 after their group, with `aria-setsize`/`aria-posinset`; the group row has no `aria-labelledby` (its name is its content); a member's status, episode and file name are separate words. The edited group's bar runs on down its members (`::before`) | `SourcesPanel.test.ts` (the order and places; names computed as axe joins inline text); axe on the panel with a season group and with the `chapters` + `letterbox` group: no violation in either browser or theme. Home, type-ahead, the arrows, Shift+F10 unchanged |
+| Settings → Tools: four fields and buttons with the same names | *Path override for {tool}*, *Test {tool}*, *Use bundled {tool}*, *Remove override for {tool}* (`aria-label`, the visible text first) | `ToolsSection.test.ts` |
+| Tests that did not catch a defect | `index.test.ts`: a `{n}` message as `t(key, {other}, count)`; `motion.test.ts`: smooth `scroll` and `scrollBy` | mutations `named.n ??= second`, and the method list without `scroll` or `scrollBy`, now fail |
+| Joined pieces | One message each: the Summary's filter chip (`{label}: {value}`), the rule table's row header (`Rule {n}` for screen readers, the number shown with `n()` and hidden from them), the Range button's issue description (`{severity}: {message}`) | the script-text check (below) failed on the chip before the fix |
+
+**The script-text check** (`scriptText.ts`) now also reports `toPrecision` and a
+`toLocaleString()` without a locale where a number becomes text, and values a template puts side
+by side in a fixed order: `{{ a }}: {{ b }}` (any punctuation between them but ` · ` and `×`,
+the data separators kept by K1 and K3), and a translation next to a value that is not one
+(`{{ t('x.rule') }} {{ n }}`). On the whole code base it found the chip and nothing else.
+Not taught, with the reason:
+
+- A template literal that joins values with punctuation and no words (`` `${a}: ${b}` ``):
+  in this code base nearly all of them are ids, keys, paths and ratios (about 60 findings), so
+  the Range button's description was fixed by reading, not by the check.
+- `String(x)` and `` `${x}` `` in a translation's values, `new Intl.NumberFormat()` without a
+  locale, `Math.round` with words: the check has no types, so it cannot tell a number from a
+  string.
+- Text that reaches the screen through a variable, a function's return value, an array or an
+  object built first, `push` and `map` before a `join`, a hand-made plural (`n === 1 ? … : …`),
+  a `computed` bound to a `header`, and a raw `{{ count }}` in a template.
+- A join across elements (`<span>{{ t('x') }} </span>{{ y }}`, the form the rule table had).
+
+**Not changed:**
+
+- The ` → ` arrow in the picture pipeline would point the wrong way in a right-to-left locale;
+  English is the only locale.
+- The severity prefix written before a visible message in nine components
+  (`<span class="rf-sr-only">{{ severityLabel(…) }}: </span>`): the same pattern as the Range
+  button's, with its colon outside a message, but split across elements; it needs one
+  `{severity}:` message when a second locale comes.
+- Task G's note that a Tab during a Dialog's enter transition goes to the page behind: in both
+  browsers the modal dialog's focus trap focuses `[autofocus]` as the dialog mounts, so the Tab
+  went inside the dialog and the late focus took it back. That is what `dialogFocus.ts` fixes.

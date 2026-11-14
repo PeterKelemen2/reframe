@@ -95,32 +95,55 @@ describe('installKeyboardFixes', () => {
   })
 
   it('puts the first item of a popup menu in focus when the menu opens', async () => {
-    const Host = defineComponent({
-      setup(_, { expose }) {
-        const menu = ref<InstanceType<typeof Menu> | null>(null)
-        expose({ open: (event: Event) => menu.value?.show(event) })
-        return () =>
-          h(Menu, {
-            ref: menu,
-            popup: true,
-            model: [{ label: 'One' }, { label: 'Two' }],
-          })
-      },
-    })
-    const wrapper = mountWithTransitions(Host)
-    const button = document.createElement('button')
-    document.body.append(button)
-    button.addEventListener('click', (event) =>
-      (wrapper.vm as unknown as { open(event: Event): void }).open(event),
-    )
-    button.click()
-    await settle()
-    const list = document.querySelector<HTMLElement>('.p-menu-list') as HTMLElement
-    // What the menu does as it opens in a browser.
-    list.focus()
-    await flushPromises()
+    const { list } = await openMenu()
     const active = list.getAttribute('aria-activedescendant')
     expect(active).toBeTruthy()
     expect(document.getElementById(active as string)?.textContent).toContain('One')
   })
+
+  it.each([
+    ['its menu button, which names the menu in aria-controls', 'actions'],
+    ['the element it took the focus from', undefined],
+  ])('gives the focus back to %s on Tab, for the browser to move on from', async (_, id) => {
+    const { button, list } = await openMenu(id)
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', code: 'Tab', bubbles: true })
+    list.dispatchEvent(tab)
+    expect(document.activeElement).toBe(button)
+    expect(tab.defaultPrevented).toBe(false)
+    await vi.waitFor(() => expect(document.querySelector('.p-menu-list')).toBeNull())
+  })
 })
+
+/** Opens a popup menu from a focused button, as a click on it does in a browser. */
+async function openMenu(id?: string): Promise<{ button: HTMLButtonElement; list: HTMLElement }> {
+  const Host = defineComponent({
+    setup(_, { expose }) {
+      const menu = ref<InstanceType<typeof Menu> | null>(null)
+      expose({ open: (event: Event) => menu.value?.show(event) })
+      return () =>
+        h(Menu, {
+          ref: menu,
+          popup: true,
+          model: [{ label: 'One' }, { label: 'Two' }],
+          pt: id === undefined ? {} : { root: { id } },
+        })
+    },
+  })
+  const wrapper = mountWithTransitions(Host)
+  const before = document.createElement('button')
+  const button = document.createElement('button')
+  if (id !== undefined) button.setAttribute('aria-controls', id)
+  document.body.append(before, button)
+  button.addEventListener('click', (event) =>
+    (wrapper.vm as unknown as { open(event: Event): void }).open(event),
+  )
+  // The menu button is found by its aria-controls; without it, by where the focus came from.
+  ;(id === undefined ? button : before).focus()
+  button.click()
+  await settle()
+  const list = document.querySelector<HTMLElement>('.p-menu-list') as HTMLElement
+  // What the menu does as it opens in a browser.
+  list.focus()
+  await flushPromises()
+  return { button, list }
+}

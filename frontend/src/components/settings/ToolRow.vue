@@ -227,6 +227,7 @@ async function remove(): Promise<void> {
             :invalid="invalid"
             :class="{ 'tool-row__input--readonly': !editable }"
             :placeholder="t('settings.tools.automatic')"
+            :aria-label="t('settings.tools.overrideOf', { tool: tool.name })"
             fluid
             spellcheck="false"
             autocomplete="off"
@@ -236,6 +237,7 @@ async function remove(): Promise<void> {
           />
           <Button
             :label="t('settings.tools.test')"
+            :aria-label="t('settings.tools.testTool', { tool: tool.name })"
             severity="secondary"
             outlined
             :loading="testing"
@@ -245,6 +247,7 @@ async function remove(): Promise<void> {
           <Button
             v-if="canUseBundled"
             :label="t('settings.tools.useBundledTool')"
+            :aria-label="t('settings.tools.useBundledToolOf', { tool: tool.name })"
             severity="secondary"
             text
             :disabled="locked || testing || bundled.fetching.value"
@@ -254,6 +257,7 @@ async function remove(): Promise<void> {
           <Button
             v-else-if="saved !== null && !byEnvironment"
             :label="t('settings.tools.removeOverride')"
+            :aria-label="t('settings.tools.removeOverrideOf', { tool: tool.name })"
             severity="secondary"
             text
             :disabled="locked || testing"

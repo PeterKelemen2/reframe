@@ -86,6 +86,35 @@ describe('findScriptText', () => {
     ).toEqual(['1 number (b / 1024).toFixed(1)', '2 number size.toFixed(3)'])
   })
 
+  it("reports a number written with toPrecision or the browser's locale", () => {
+    expect(
+      found(
+        [
+          "a = t('u.x', { value: ratio.toPrecision(3) })",
+          "b = t('u.x', { value: bytes.toLocaleString() })",
+          "c = t('u.x', { value: bytes.toLocaleString(locale.value) })",
+        ].join('\n'),
+      ),
+    ).toEqual(['1 number ratio.toPrecision(3)', '2 number bytes.toLocaleString()'])
+  })
+
+  it('reports values a template joins in a fixed order, but not data separators', () => {
+    const sfc = [
+      '<template>',
+      '  <p><span>{{ chip.label }}: {{ chip.value }}</span></p>',
+      "  <span>{{ t('x.rule') }} {{ row.number }}</span>",
+      '  <span>{{ a }} · {{ b }}</span>',
+      '  <span>{{ width }}×{{ height }}</span>',
+      "  <span>{{ t('x.failed') }} {{ ok ? t('x.one') : t('x.two') }}</span>",
+      '  <span>{{ first }} {{ second }}</span>',
+      '</template>',
+    ].join('\n')
+    expect(found(sfc, 'A.vue')).toEqual([
+      '2 joined {{ chip.label }}: {{ chip.value }}',
+      "3 joined {{ t('x.rule') }} {{ row.number }}",
+    ])
+  })
+
   it('reports an InputNumber without the app locale', () => {
     const sfc = [
       '<template>',

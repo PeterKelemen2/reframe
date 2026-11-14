@@ -268,7 +268,8 @@ function dropSide(index: number): 'before' | 'after' | null {
               </span>
             </td>
             <th :id="rowId(row.key)" scope="row" class="rule-table__number">
-              <span class="rf-sr-only">{{ t('defaults.rules.rule') }} </span>{{ row.number }}
+              <span class="rf-sr-only">{{ t('defaults.rules.rule', { n: row.number }) }}</span>
+              <span aria-hidden="true">{{ n(row.number) }}</span>
             </th>
             <td data-field="language">
               <span v-if="row.catchAll" class="rule-table__any">
