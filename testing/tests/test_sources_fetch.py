@@ -394,3 +394,118 @@ def test_main_reports_a_failure_and_exits_1(
     assert code == 1
     assert "cannot read the manifest" in capsys.readouterr().err
     assert os.listdir(tmp_path) == []
+
+
+def test_a_static_builds_tree_is_fetched_by_commit_like_a_git_source(tmp_path: Path) -> None:
+    origin = tmp_path / "mxe"
+    entry = _git_entry(origin, _repo(origin, {"src/gmp.mk": "PKG := gmp\n"}))
+    entry |= {
+        "kind": "repository",
+        "name": "mxe-02b82ecfdc5a",
+        "archive": "mxe-02b82ecfdc5a.tar.xz",
+    }
+    out = tmp_path / "out"
+
+    sf.fetch_all([entry], out)
+
+    assert _members(out / entry["archive"]) == ["mxe-02b82ecfdc5a/src/gmp.mk"]
+
+
+# Answers `svn info --show-item url|revision PATH` from PATH/.svn/info (url, then revision).
+FAKE_SVN = """#!/bin/sh
+case "$3" in url) sed -n 1p "$4/.svn/info" ;; revision) sed -n 2p "$4/.svn/info" ;; esac
+"""
+LAME = "https://svn.code.sf.net/p/lame/svn/trunk/lame"
+
+
+@pytest.fixture
+def fake_svn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    bin_dir = tmp_path / "svn-bin"
+    bin_dir.mkdir()
+    (bin_dir / "svn").write_text(FAKE_SVN)
+    (bin_dir / "svn").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+
+def _svn_entry(tmp_path: Path, checked_out: str) -> dict[str, Any]:
+    commands = (
+        f"mkdir -p lame/.svn && printf '%s\\n%s\\n' '{LAME}' '{checked_out}' > lame/.svn/info"
+    )
+    return {
+        "kind": "btbn-stage",
+        "name": "btbn-50-lame-abcdef",
+        "archive": "btbn-50-lame-abcdef.tar.xz",
+        "build_scripts_repository": _build_scripts(tmp_path),
+        "build_scripts_commit": "",
+        "commands": commands,
+        "download_hash": hashlib.sha256((commands + "\n").encode()).hexdigest(),
+        "variables": {"SCRIPT_REPO": LAME, "SCRIPT_REV": "6835"},
+    }
+
+
+@pytest.mark.usefixtures("helper_checkout", "fake_svn")
+def test_an_svn_checkout_must_be_at_its_pinned_revision(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(sf.SourcesError, match="is at 6834, the pin is 6835"):
+        sf.fetch_all([_svn_entry(tmp_path / "a", "6834")], tmp_path / "out-a")
+
+    sf.fetch_all([_svn_entry(tmp_path / "b", "6835")], tmp_path / "out-b")
+    assert f"checked {LAME}@6835" in capsys.readouterr().err
+    assert _members(tmp_path / "out-b" / "btbn-50-lame-abcdef.tar.xz") == []
+
+
+@pytest.mark.usefixtures("helper_checkout")
+def test_a_checkout_from_the_stages_mirror_must_be_at_the_pinned_commit(tmp_path: Path) -> None:
+    mirror = tmp_path / "libiconv"
+    first = _repo(mirror, {"iconv.c": "1\n"})
+    (mirror / "iconv.c").write_text("2\n")
+    _git("commit", "-q", "-am", "newer", cwd=mirror)
+    commands = f"git clone -q '{mirror.as_uri()}' iconv && git -C iconv checkout -q HEAD"
+    entry = _stage_entry(tmp_path, mirror, first)
+    entry |= {
+        "commands": commands,
+        "download_hash": hashlib.sha256((commands + "\n").encode()).hexdigest(),
+        "variables": {
+            "SCRIPT_REPO": "https://example.invalid/libiconv.git",
+            "SCRIPT_MIRROR": mirror.as_uri(),
+            "SCRIPT_COMMIT": first,
+        },
+    }
+
+    with pytest.raises(sf.SourcesError, match=f"{mirror.as_uri()} is at .*, the pin is {first}"):
+        sf.fetch_all([entry], tmp_path / "out")
+
+
+def test_the_same_tree_packs_to_the_same_bytes_at_any_time(tmp_path: Path) -> None:
+    tree = tmp_path / "x264"
+    (tree / "common").mkdir(parents=True)
+    (tree / "common" / "x.c").write_text("int x;\n")
+    sf.pack(tree, tmp_path / "first.tar.xz")
+    for path in (tree, tree / "common", tree / "common" / "x.c"):
+        os.utime(path, (1_700_000_000, 1_700_000_000))
+
+    sf.pack(tree, tmp_path / "second.tar.xz")
+
+    assert (tmp_path / "first.tar.xz").read_bytes() == (tmp_path / "second.tar.xz").read_bytes()
+
+
+def test_an_ubuntu_archive_keeps_no_owner_or_time_of_the_fetching_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = _launchpad(tmp_path, monkeypatch)
+
+    sf.fetch_all([entry], tmp_path / "out")
+
+    with tarfile.open(tmp_path / "out" / entry["archive"]) as tar:
+        members = tar.getmembers()
+    assert members
+    assert {(m.uid, m.gid, m.uname, m.gname, m.mtime) for m in members} == {(0, 0, "", "", 0)}
+
+
+@pytest.mark.parametrize("name", ["../../etc/cron.d/x", "sub/x.tar.xz", ".hidden"])
+def test_a_dsc_that_names_a_file_outside_its_folder_is_refused(name: str) -> None:
+    fields = {"Checksums-Sha256": f"\n{'a' * 64} 10 x.orig.tar.xz\n{'b' * 64} 5 {name}"}
+
+    with pytest.raises(sf.SourcesError, match="outside its folder"):
+        sf.dsc_files(fields)

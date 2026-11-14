@@ -7,6 +7,7 @@ import importlib.util
 import json
 import os
 import stat
+import struct
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -246,3 +247,130 @@ def test_the_committed_list_is_one_package_name_per_line() -> None:
 
     assert all(name.replace(".", "").replace("+", "").replace("-", "").isalnum() for name in names)
     assert {"libwebkit2gtk-4.1-0", "libgtk-3-0", "libayatana-appindicator3-1"} <= set(names)
+    # The frozen sidecar's system libraries, in the .deb and .rpm too.
+    assert {"libgcc-s1", "libstdc++6", "zlib1g"} <= set(names)
+
+
+SIDECAR_INDEX = {
+    "zlib1g": ["/lib/x86_64-linux-gnu/libz.so.1", "/lib/x86_64-linux-gnu/libz.so.1.2.11"],
+    "libstdc++6": [
+        "/usr/lib/x86_64-linux-gnu/libstdc++.so.6",
+        "/usr/share/gdb/auto-load/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.30-gdb.py",
+    ],
+    "python3-docs": ["/usr/share/doc/python3/base_library.zip"],
+    "libmediainfo0v5": ["/usr/lib/x86_64-linux-gnu/libmediainfo.so.0"],
+    "libva2": ["/usr/lib/x86_64-linux-gnu/libva.so.2"],
+}
+
+
+def test_the_sidecars_system_libraries_map_to_their_packages(tmp_path: Path) -> None:
+    index = al.file_index(_dpkg_info(tmp_path / "info", SIDECAR_INDEX))
+    internal = "usr/lib/Reframe/sidecar/_internal"
+    appdir = _appdir(
+        tmp_path / "Reframe.AppDir",
+        [
+            f"{internal}/libz.so.1",
+            f"{internal}/libstdc++.so.6",
+            f"{internal}/libpython3.14.so.1.0",
+            f"{internal}/base_library.zip",
+            # A wheel's own copy and the bundled tools' libraries are not the image's.
+            f"{internal}/pymediainfo/libmediainfo.so.0",
+            "usr/lib/Reframe/tools/ffmpeg/lib/libva.so.2",
+        ],
+    )
+
+    assert al.appdir_packages(appdir, index) == ["libstdc++6", "zlib1g"]
+
+
+def test_a_file_that_two_packages_own_is_an_error(tmp_path: Path) -> None:
+    owned = {"libfoo1": ["/usr/lib/x86_64-linux-gnu/libfoo.so.1"]}
+    owned["libfoo1-compat"] = owned["libfoo1"]
+    index = al.file_index(_dpkg_info(tmp_path / "info", owned))
+    appdir = _appdir(
+        tmp_path / "Reframe.AppDir",
+        ["usr/lib/libfoo.so.1", "usr/lib/Reframe/sidecar/_internal/libfoo.so.1"],
+    )
+
+    with pytest.raises(al.AppImageLibsError) as error:
+        al.appdir_packages(appdir, index)
+
+    for path in ("usr/lib/libfoo.so.1", "usr/lib/Reframe/sidecar/_internal/libfoo.so.1"):
+        assert f"{path} (libfoo1, libfoo1-compat)" in str(error.value)
+
+
+def test_a_list_resolved_on_another_distribution_does_not_match() -> None:
+    packages = [_row("liba", "1")]
+    expected = al.document(packages, {"id": "ubuntu", "version_id": "24.04"})
+    actual = al.document(packages, {"id": "ubuntu", "version_id": "22.04"})
+
+    [problem] = al.compare(expected, actual)
+
+    assert problem.startswith("distribution: ")
+
+
+RUNTIME_SECTIONS = (".text", ".digest_md5", ".upd_info", ".sha256_sig", ".sig_key")
+
+
+def _elf(sections: dict[str, bytes]) -> bytes:
+    """A 64-bit little-endian ELF file with ``sections``, their header table at its end."""
+    names = b"\0" + b"".join(name.encode() + b"\0" for name in [*sections, ".shstrtab"])
+    body, headers, offset = b"", [bytes(64)], 64
+    for name, data in [*sections.items(), (".shstrtab", names)]:
+        headers.append(
+            struct.pack(
+                "<IIQQQQIIQQ", names.index(name.encode()), 1, 0, 0, offset, len(data), 0, 0, 1, 0
+            )
+        )
+        body, offset = body + data, offset + len(data)
+    header = b"\x7fELF\x02\x01\x01" + bytes(9)
+    header += struct.pack(
+        "<HHIQQQIHHHHHH", 2, 62, 1, 0, 0, offset, 0, 64, 0, 0, 64, len(headers), len(headers) - 1
+    )
+    return header + body + b"".join(headers)
+
+
+def _runtime(text: bytes = b"runtime code") -> bytes:
+    return _elf({name: text if name == ".text" else bytes(16) for name in RUNTIME_SECTIONS})
+
+
+def _written(runtime: bytes, section: str, data: bytes) -> bytes:
+    """``runtime`` with ``data`` at the start of ``section``."""
+    offset = al._elf_sections(runtime)[section][0]
+    return runtime[:offset] + data + runtime[offset + len(data) :]
+
+
+def test_an_appimage_starts_with_its_runtime_apart_from_what_appimagetool_writes() -> None:
+    runtime = _runtime()
+    appimage = _written(runtime, ".digest_md5", b"\x01" * 16)
+    appimage = _written(appimage, ".upd_info", b"zsync|owner/repo") + b"hsqs squashfs"
+
+    assert al.runtime_matches(appimage, runtime)
+    assert not al.runtime_matches(_written(runtime, ".text", b"other  code!"), runtime)
+    assert not al.runtime_matches(_runtime(b"runtime-code"), runtime)
+    assert not al.runtime_matches(runtime[:-1], runtime)
+
+
+def test_a_file_that_is_not_a_type_2_runtime_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(al.AppImageLibsError, match="data sections are missing"):
+        al.runtime_matches(b"", _elf({".text": b"code"}))
+    with pytest.raises(al.AppImageLibsError, match="not a 64-bit"):
+        al.runtime_matches(b"", b"\x89PNG\r\n")
+
+
+def test_check_runtime_exits_1_for_another_runtime(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "runtime").write_bytes(_runtime())
+    (tmp_path / "Reframe.AppImage").write_bytes(_runtime(b"other  code!") + b"hsqs")
+
+    code = al.main(
+        [
+            "check-runtime",
+            str(tmp_path / "Reframe.AppImage"),
+            "--runtime",
+            str(tmp_path / "runtime"),
+        ]
+    )
+
+    assert code == 1
+    assert "does not start with the runtime" in capsys.readouterr().err

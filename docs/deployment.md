@@ -44,11 +44,19 @@ the Debian archive on the day of the build.
 ### Build
 
 From the repository root, first write the notices for the platform of the image
-(`docker-linux-x64`, or `docker-linux-arm64` on an arm64 host), then build:
+(`docker-linux-x64`, or `docker-linux-arm64` with `--platform linux-arm64` for
+`fetch-tools.py` on an arm64 host), then build. The notices take FFmpeg's licence and pin from
+the FFmpeg folder that `fetch-tools.py` makes (`--tools` names the folder that holds it; without
+it the script stops), the frontend's licences from `frontend/node_modules`, and the CPython
+licence from the interpreter that runs the script, which must be the image's (`--python`):
 
 ```sh
-uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py \
-    --platform docker-linux-x64 --out docker/notices/THIRD_PARTY_NOTICES
+uv run --no-project python scripts/fetch-tools.py --platform linux-x64 \
+    --install-dir /tmp/reframe-image-tools/ffmpeg
+(cd frontend && npm ci)
+uv run --python 3.14.8 --with pip-licenses==5.5.5 python scripts/third-party-notices.py \
+    --platform docker-linux-x64 --tools /tmp/reframe-image-tools \
+    --out docker/notices/THIRD_PARTY_NOTICES
 docker build -f docker/Dockerfile -t reframe:local .
 ```
 

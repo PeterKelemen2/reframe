@@ -4,8 +4,9 @@ tag of its sources release: ``sources-`` and the first 12 hex digits of the mani
 The manifest names, for every pinned FFmpeg platform, the FFmpeg commit, the BtbN build scripts'
 commit and each dependency download those scripts make for that platform (found by running the
 scripts' own ``generate.sh``), the MKVToolNix and MediaInfo source tarballs, the libva source,
-and the Ubuntu source package of each distro package the AppImage carries. The same pins give
-the same bytes, so the tag changes only when a source changes. ``bash`` and ``git`` must be on
+the tree and the linked libraries of each static build in ``tools/static-builds.toml``, and the
+Ubuntu source package of each distro package the Linux packages carry. The same pins give the
+same bytes, so the tag changes only when a source changes. ``bash`` and ``git`` must be on
 ``PATH``::
 
     uv run python scripts/sources-manifest.py --out sources/manifest.json \\
@@ -94,7 +95,13 @@ def _str(table: Mapping[str, Any], key: str, where: str) -> str:
     return value
 
 
-def _run(argv: Sequence[str], *, cwd: Path | None = None, timeout: float) -> str:
+def _run(
+    argv: Sequence[str],
+    *,
+    cwd: Path | None = None,
+    timeout: float,
+    env: Mapping[str, str] | None = None,
+) -> str:
     executable = shutil.which(argv[0])
     if executable is None:
         raise ManifestError(f"{argv[0]} is not on PATH")
@@ -102,6 +109,7 @@ def _run(argv: Sequence[str], *, cwd: Path | None = None, timeout: float) -> str
         result = subprocess.run(
             [executable, *argv[1:]],
             cwd=cwd,
+            env=env,
             capture_output=True,
             encoding="utf-8",
             errors="replace",
@@ -113,6 +121,12 @@ def _run(argv: Sequence[str], *, cwd: Path | None = None, timeout: float) -> str
     if result.returncode != 0:
         raise ManifestError(f"{' '.join(argv[:3])} failed: {result.stderr.strip()[-2000:]}")
     return result.stdout
+
+
+def _scripts_env() -> dict[str, str]:
+    """The environment for the build scripts: the caller's ``SCRIPT_*`` and ``GITHUB_*``
+    variables would end up in the manifest."""
+    return {"PATH": os.environ.get("PATH", os.defpath), "LC_ALL": "C"}
 
 
 def git_checkout(repository: str, commit: str, dest: Path) -> None:
@@ -184,6 +198,7 @@ def _evaluate(tree: Path, script: str, target: str, variant: str, addin: str) ->
         ["bash", "-c", _EVALUATE, "evaluate", target, variant, addin, script],
         cwd=tree,
         timeout=GENERATE_TIMEOUT,
+        env=_scripts_env(),
     )
     fields = output.split("\0")
     if len(fields) < 2 or len(fields) % 2 != 0:
@@ -201,7 +216,12 @@ def btbn_stages(tree: Path, target: str, variant: str, addin: str) -> list[Stage
     with tempfile.TemporaryDirectory(prefix="sources-btbn-") as folder:
         work = Path(folder) / "tree"
         shutil.copytree(tree, work, ignore=shutil.ignore_patterns(".git"), symlinks=True)
-        _run(["bash", "generate.sh", target, variant, addin], cwd=work, timeout=GENERATE_TIMEOUT)
+        _run(
+            ["bash", "generate.sh", target, variant, addin],
+            cwd=work,
+            timeout=GENERATE_TIMEOUT,
+            env=_scripts_env(),
+        )
         dockerfile = (work / "Dockerfile").read_text(encoding="utf-8")
         stages = []
         for line in dockerfile.splitlines():
@@ -282,10 +302,12 @@ def ffmpeg_entries(pin: FfmpegPin, tree: Path) -> list[dict[str, Any]]:
     return entries
 
 
-def _url_entry(name: str, component: str, license: str, url: str, sha256: str) -> dict[str, Any]:
+def _url_entry(
+    name: str, component: str, license: str, url: str, sha256: str, archive: str = ""
+) -> dict[str, Any]:
     if not _HEX64.match(sha256):
         raise ManifestError(f"{name}: the SHA-256 of {url} is not pinned")
-    archive = posixpath.basename(urllib.parse.urlsplit(url).path)
+    archive = archive or posixpath.basename(urllib.parse.urlsplit(url).path)
     return {
         "kind": "url",
         "name": asset_name(archive),
@@ -329,6 +351,49 @@ def tool_entries(tools: Path) -> list[dict[str, Any]]:
     return list(entries.values())
 
 
+def static_entries(tools: Path) -> list[dict[str, Any]]:
+    """For each binary of ``tools/static-builds.toml``: the tree it was built from and the source
+    of each library it links, for the package platforms that ship it."""
+    path = tools / "static-builds.toml"
+    entries = []
+    for name, pin in sorted(_load_toml(path).get("binaries", {}).items()):
+        where = f"{path.name}: binaries.{name}"
+        platforms = pin.get("platforms")
+        if not isinstance(platforms, list) or not platforms:
+            raise ManifestError(f"{where}.platforms: missing")
+        repository = _str(pin, "source_repository", where)
+        commit = _str(pin, "source_commit", where)
+        if not _HEX40.match(commit):
+            raise ManifestError(f"{where}.source_commit: expected a full commit hash")
+        entries.append(
+            {
+                "kind": "repository",
+                "name": asset_name(f"{posixpath.basename(repository)}-{commit[:12]}"),
+                "component": _str(pin, "description", where),
+                "license": _str(pin, "license", where),
+                "repository": repository,
+                "commit": commit,
+                "platforms": sorted(platforms),
+            }
+        )
+        parts = pin.get("parts")
+        if not isinstance(parts, list) or not parts:
+            raise ManifestError(f"{where}.parts: none")
+        for number, part in enumerate(parts):
+            at = f"{where}.parts[{number}]"
+            label = f"{_str(part, 'name', at)} {_str(part, 'version', at)}"
+            entry = _url_entry(
+                label,
+                f"{label}, linked into {name}",
+                _str(part, "license", at),
+                _str(part, "url", at),
+                str(part.get("sha256", "")),
+                str(part.get("archive", "")),
+            )
+            entries.append(entry | {"platforms": sorted(platforms)})
+    return entries
+
+
 def appimage_entries(libs: Mapping[str, Any]) -> list[dict[str, Any]]:
     """One Ubuntu source package per source and version in the ``appimage-libs.py`` list."""
     distribution = libs.get("distribution", {})
@@ -362,17 +427,28 @@ def _archive_name(entry: Mapping[str, Any]) -> str:
     return f"{entry['name']}.tar.xz"
 
 
-def manifest(entries: Iterable[dict[str, Any]]) -> dict[str, Any]:
-    """The manifest document: the entries by name, each with the file name of its archive.
+def _same_source(a: Mapping[str, Any], b: Mapping[str, Any]) -> bool:
+    keys = (set(a) | set(b)) - {"platforms", "component"}
+    return a["kind"] in ("url", "repository") and all(a.get(k) == b.get(k) for k in keys)
 
-    :raises ManifestError: two entries would have the same archive name.
+
+def manifest(entries: Iterable[dict[str, Any]]) -> dict[str, Any]:
+    """The manifest document: the entries by name, each with the file name of its archive. A
+    tarball or tree that two pins name is one entry with the platforms of both.
+
+    :raises ManifestError: two different sources would have the same archive name.
     """
     named: dict[str, dict[str, Any]] = {}
     for entry in entries:
         archive = _archive_name(entry)
-        if archive in named:
+        entry = entry | {"archive": archive}
+        other = named.get(archive)
+        if other is None:
+            named[archive] = entry
+        elif _same_source(other, entry):
+            other["platforms"] = sorted({*other["platforms"], *entry["platforms"]})
+        else:
             raise ManifestError(f"two sources would both be the archive {archive}")
-        named[archive] = entry | {"archive": archive}
     return {"schema_version": SCHEMA_VERSION, "entries": [named[k] for k in sorted(named)]}
 
 
@@ -386,7 +462,7 @@ def tag(data: bytes) -> str:
 
 def build(tools: Path, build_scripts: Path | None, appimage_libs: Path | None) -> dict[str, Any]:
     pin = ffmpeg_pin(tools)
-    entries = tool_entries(tools)
+    entries = tool_entries(tools) + static_entries(tools)
     if appimage_libs is not None:
         try:
             libs = json.loads(appimage_libs.read_text(encoding="utf-8"))

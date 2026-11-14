@@ -2,11 +2,11 @@
 check each against its pin, and write the folder's ``SHA256SUMS``.
 
 An archive appears under its final name only after its check passed, so a rerun skips it. Git
-sources are fetched by commit; a BtbN dependency runs the build scripts' own download commands
-(with their ``git-mini-clone`` and ``retry-tool``) after checking that they are the ones the
-build used; tarballs must have their pinned SHA-256; an Ubuntu source package is its ``.dsc``
-from Launchpad and every file the ``.dsc`` lists, with the checksums it gives. Git and SVN
-metadata stay out of the archives. Linux only: ``git``, GNU ``tar``, ``xz``, ``bash`` and the
+sources and trees are fetched by commit; a BtbN dependency runs the build scripts' own download
+commands (with their ``git-mini-clone`` and ``retry-tool``) after checking that they are the
+ones the build used; tarballs must have their pinned SHA-256; an Ubuntu source package is its
+``.dsc`` from Launchpad and every file the ``.dsc`` lists, with the checksums it gives. Git and
+SVN metadata stay out of the archives. Linux only: ``git``, GNU ``tar``, ``xz``, ``bash`` and the
 tools the download commands call (:data:`STAGE_TOOLS`) must be on ``PATH``::
 
     uv run python scripts/sources-fetch.py --manifest sources/manifest.json --out sources/files
@@ -321,7 +321,7 @@ def fetch_entry(entry: Mapping[str, Any], out: Path, helpers: Path | None) -> No
             fetch_url(entry, partial)
         elif kind == "ubuntu-source":
             _tar_files(fetch_ubuntu(entry, work), partial)
-        elif kind == "git":
+        elif kind in ("git", "repository"):
             fetch_git(entry, work)
             pack(work / entry["name"], partial)
         elif kind == "btbn-stage":

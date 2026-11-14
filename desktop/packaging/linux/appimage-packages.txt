@@ -1,4 +1,5 @@
-# The Ubuntu packages whose files linuxdeploy (and its GTK plugin) copies into the AppImage.
+# The Ubuntu packages whose files linuxdeploy (and its GTK plugin) copies into the AppImage, and
+# those of the system libraries that the frozen sidecar carries in every Linux package.
 # scripts/appimage-libs.py resolves them to source packages before the build (the source
 # manifest needs them) and checks the built AppDir against them; when that check lists a
 # change, replace this list with the one it prints.
@@ -50,6 +51,7 @@ libenchant-2-2
 libepoxy0
 libevdev2
 libffi8
+libgcc-s1
 libgcrypt20
 libgdk-pixbuf-2.0-0
 libgdk-pixbuf-2.0-dev
@@ -104,6 +106,7 @@ libsecret-1-0
 libselinux1
 libsoup-3.0-0
 libsqlite3-0
+libstdc++6
 libsystemd0
 libtasn1-6
 libthai0
@@ -137,3 +140,4 @@ libxrandr2
 libxrender1
 libxslt1.1
 libzstd1
+zlib1g

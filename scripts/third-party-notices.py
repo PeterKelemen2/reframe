@@ -10,8 +10,9 @@ pip-licenses next to it; ``npx`` and ``cargo about`` must be on ``PATH``::
     uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py --platform linux-x64 \\
         --sources-url URL --sources-sums SHA256SUMS --sources-manifest manifest.json
 
-For the Docker image, ``--tools`` holds only the FFmpeg folder that ``fetch-tools.py`` makes,
-and the interpreter must be the one the image installs (``uv run --python``).
+For the Docker image, ``--tools`` is required and holds only the FFmpeg folder that
+``fetch-tools.py`` makes, and the interpreter must be the one the image installs
+(``uv run --python``).
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ import sys
 import tempfile
 import textwrap
 import tomllib
+import urllib.parse
 import urllib.request
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -319,7 +321,7 @@ def bundles(entry: Mapping[str, Any], platform: str) -> bool:
     if kind in ("git", "btbn-stage"):
         ffmpeg = DOCKER_PLATFORMS[platform][0] if platform in DOCKER_PLATFORMS else platform
         return ffmpeg in entry["platforms"]
-    if kind in ("url", "ubuntu-source"):
+    if kind in ("url", "repository", "ubuntu-source"):
         return platform in entry["platforms"]
     raise NoticesError(f"{entry['archive']}: unknown source kind {kind!r}")
 
@@ -598,6 +600,35 @@ def tool_entries(
     return entries
 
 
+def static_entries(manifests: Path, platform: str) -> list[Entry]:
+    """One entry per static build pinned for ``platform`` in ``static-builds.toml``, with every
+    library it links and that library's licence and source archive."""
+    data = tomllib.loads((manifests / "static-builds.toml").read_text(encoding="utf-8"))
+    entries = []
+    for pin in data.get("binaries", {}).values():
+        if platform not in pin.get("platforms", ()):
+            continue
+        lines = [
+            f"Built from {pin['source_repository']} at commit {pin['source_commit']}.",
+            "It contains these libraries, linked statically (licence; source archive):",
+            "",
+        ]
+        for part in pin["parts"]:
+            archive = part.get("archive") or Path(urllib.parse.urlsplit(part["url"]).path).name
+            lines.append(f"  {part['name']} {part['version']} ({part['license']}); {archive}")
+        lines += ["", "Each source archive in the sources release holds its part's licence text."]
+        entries.append(
+            Entry(
+                name=str(pin["description"]),
+                version="",
+                license=str(pin["license"]),
+                url=str(pin.get("release_url", "")),
+                text="\n".join(lines),
+            )
+        )
+    return entries
+
+
 def render(
     sections: Sequence[tuple[str, Sequence[Entry]]],
     *,
@@ -632,6 +663,7 @@ def desktop_sections(platform: str, tools: Path) -> list[tuple[str, list[Entry]]
     distributions = shipped_distributions(names, importlib.metadata.packages_distributions())
     return [
         ("Bundled tools", tool_entries(tools, TOOL_MANIFESTS, platform)),
+        ("Statically linked libraries", static_entries(TOOL_MANIFESTS, platform)),
         ("Python (the sidecar's interpreter)", [python_interpreter_entry()]),
         (
             "Python packages (the sidecar)",
@@ -646,6 +678,11 @@ def docker_sections(platform: str, tools: Path) -> list[tuple[str, list[Entry]]]
     """The image's FFmpeg, Python and its packages, and the frontend's packages. The Python
     entry describes this interpreter, so it must be the image's version."""
     ffmpeg_platform, machine = DOCKER_PLATFORMS[platform]
+    if not (tools / "ffmpeg").is_dir():
+        raise NoticesError(
+            f"{tools} has no ffmpeg folder: scripts/fetch-tools.py --platform {ffmpeg_platform} "
+            f"--install-dir {tools / 'ffmpeg'} makes it"
+        )
     wanted = docker_python_version()
     if host_platform.python_version() != wanted:
         raise NoticesError(
@@ -668,7 +705,12 @@ def main(argv: list[str] | None = None) -> int:
         "--platform", required=True, choices=sorted([*RUST_TARGETS, *DOCKER_PLATFORMS])
     )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    parser.add_argument("--tools", type=Path, default=DEFAULT_TOOLS)
+    parser.add_argument(
+        "--tools",
+        type=Path,
+        help="the bundled tools folder (default: the desktop layout); for docker-*, the folder "
+        "that holds fetch-tools.py's ffmpeg folder",
+    )
     parser.add_argument("--sources-url", help="the sources release that the notices name")
     parser.add_argument("--sources-sums", type=Path, help="that release's SHA256SUMS")
     parser.add_argument("--sources-manifest", type=Path, help="that release's manifest.json")
@@ -676,6 +718,8 @@ def main(argv: list[str] | None = None) -> int:
     given = [args.sources_url, args.sources_sums, args.sources_manifest]
     if None in given and any(value is not None for value in given):
         parser.error("--sources-url, --sources-sums and --sources-manifest go together")
+    if args.platform in DOCKER_PLATFORMS and args.tools is None:
+        parser.error(f"--tools is required for {args.platform}: the image's FFmpeg folder")
     # The packages carry the desktop app's version, not the core's.
     config = json.loads((TAURI_DIR / "tauri.conf.json").read_text(encoding="utf-8"))
 
@@ -695,7 +739,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             sections = docker_sections(args.platform, args.tools)
         else:
-            sections = desktop_sections(args.platform, args.tools)
+            sections = desktop_sections(args.platform, args.tools or DEFAULT_TOOLS)
     except NoticesError as e:
         sys.stderr.write(f"third-party-notices: {e}\n")
         return 1
