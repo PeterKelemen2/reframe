@@ -22,8 +22,9 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CORE_INIT = Path("packages/reframe/src/reframe/__init__.py")
 
-# The forms the SemVer spelling can keep in order: X.Y.Z, X.Y.Z{a,b,rc}N, X.Y.Z.devN.
-_PEP440_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:(a|b|rc)(\d+)|\.dev(\d+))?$")
+# The forms the SemVer spelling can keep in order: X.Y.Z, X.Y.Z{a,b,rc}N, X.Y.Z.devN. [0-9]
+# and fullmatch: `\d` takes any script's digits, and `$` a trailing newline.
+_PEP440_RE = re.compile(r"([0-9]+)\.([0-9]+)\.([0-9]+)(?:(a|b|rc)([0-9]+)|\.dev([0-9]+))?")
 _PRE_RELEASE = {"a": "alpha", "b": "beta", "rc": "rc"}
 _CORE_VERSION_RE = re.compile(r'^__version__ = "([^"]*)"', re.MULTILINE)
 
@@ -34,7 +35,7 @@ class StampError(Exception):
 
 def to_semver(version: str) -> str:
     """The SemVer spelling of a PEP 440 version, for npm, Tauri and Cargo."""
-    match = _PEP440_RE.match(version)
+    match = _PEP440_RE.fullmatch(version)
     if match is None:
         raise StampError(
             f"{version!r} is not a version this script can stamp: use X.Y.Z, X.Y.ZaN, X.Y.ZbN, "

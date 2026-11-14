@@ -176,6 +176,9 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "feat: a change without a scope",
     ]:
         _commit(repo, message)
+        if message.startswith("docs(status)"):
+            # A sources release's tag: not a version, so no section may end at it.
+            subprocess.run(["git", "tag", "sources-0123456789ab"], cwd=repo, check=True)
     subprocess.run(["git", "checkout", "-q", "-b", "side"], cwd=repo, check=True)
     _commit(repo, "fix(F-2): made on a branch")
     subprocess.run(["git", "checkout", "-q", "main"], cwd=repo, check=True)
