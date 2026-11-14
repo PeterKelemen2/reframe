@@ -69,6 +69,14 @@ async function type(text: string): Promise<void> {
   await flushPromises()
 }
 
+/** A mousemove over an option at `x`: the same `x` twice is a pointer that did not move. */
+async function moveOver(tag: string, x: number): Promise<void> {
+  $(`[role="option"][data-tag="${tag}"]`)?.dispatchEvent(
+    new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: 40 }),
+  )
+  await flushPromises()
+}
+
 async function open(): Promise<void> {
   trigger().focus()
   trigger().click()
@@ -159,6 +167,25 @@ describe('the language picker', () => {
     expect(activeTag()).toBe('fr')
     await key(search(), 'Enter')
     expect(changes).toEqual(['fr'])
+  })
+
+  it('keeps the active option of the keys under a pointer that does not move, follows one that does', async () => {
+    const { changes } = await mountPicker({ modelValue: 'hu' })
+    // WebKit's mousemove when the list appears or changes under a still pointer.
+    await open()
+    await moveOver('de', 20)
+    expect(activeTag()).toBe('hu')
+    await type('portug')
+    await moveOver('pt-BR', 20)
+    expect(activeTag()).toBe('pt')
+    await key(search(), 'Escape')
+    await open()
+    await moveOver('de', 30)
+    expect(activeTag()).toBe('hu')
+    await moveOver('de', 34)
+    expect(activeTag()).toBe('de')
+    await key(search(), 'Enter')
+    expect(changes).toEqual(['de'])
   })
 
   it('keeps the list out of the tab order: the search moves through it', async () => {

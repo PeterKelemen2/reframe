@@ -168,7 +168,7 @@ async function pictures(page: Page, shot: number): Promise<Pictures> {
     await call(page, 'setTheme', theme)
     const place = await call(page, 'shotPlace', shot)
     if (place === null) continue
-    const png = await page.screenshot({ clip: place.clip, scale: 'css', caret: 'hide' })
+    const png = await page.screenshot({ clip: place.clip, scale: 'device', caret: 'hide' })
     taken[theme] = { png: png.toString('base64'), place }
   }
   await call(page, 'setTheme', null)
@@ -196,6 +196,19 @@ async function pixelFindings(
     }
   }
   return found
+}
+
+/** Resolves once the page has run a rendering update (layout, scroll, paint). */
+async function renderingUpdate(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const frame = Reflect.get(globalThis, 'requestAnimationFrame') as (
+          callback: () => void,
+        ) => number
+        frame(() => frame(() => resolve()))
+      }),
+  )
 }
 
 /** Moves the focus inside the stop's widget with an arrow key and back; judges the item met. */
@@ -233,6 +246,8 @@ export async function focusFindings(page: Page, screen: Screen): Promise<Finding
   for (;;) {
     await page.keyboard.press('Tab')
     await call(page, 'leaveRegion', start)
+    // WebKit scrolls the new stop into view at its next rendering update, not on the Tab.
+    await renderingUpdate(page)
     let step = await call(page, 'walkStep')
     if (step.settle) {
       await page.waitForTimeout(SETTLE_MS)

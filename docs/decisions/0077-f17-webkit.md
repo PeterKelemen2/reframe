@@ -114,7 +114,51 @@ project. That stops testing at the ratio that Safari users have, so it is not re
 
 ## Task W2: focus and the tracks area (B, C)
 
-(Filled by W2.)
+**B — the gate measured too early (gate fixed, not the app).** WebKit scrolls a newly focused
+element into view at its next rendering update, not during the Tab. Measured in headless WebKit
+on the Tags tab (a `focusin` listener reading the field's top and `.editor-tabs__panels`'
+`scrollTop`): in the event, a microtask, a `setTimeout(0)` and the first frame callback the
+field is still at 770 px in a 720 px window (scrollTop 249); in the second frame callback it is
+at 639 px (scrollTop 380), with no frames between (a jump, not a smooth scroll). Chromium and
+Firefox scroll inside the Tab. The walk called `walkStep` (and `obscured`) right after the key
+press, so a field below the fold was still outside the window; `obscured` returns true for a
+stop outside it. Once scrolled, nothing covers the field (`elementsFromPoint` at its centre: the
+input first); the user sees it in view from the frame after the Tab. Fix: `gate.ts` waits for one
+rendering update (two frame callbacks) after each Tab before it judges the stop. The same wait
+cleared the naming overrides on `summary` and `group`. A test for the gate (a stop that comes
+into view one frame after its focus is not hidden; one that comes 500 ms later is) needs
+`gate-checks.spec.ts`, which W2 does not own: the diff went to the lead.
+
+**C — the pointer took the language picker's active option (app fixed).** WebKit sends a
+`mousemove` (and `pointermove`) at the pointer's unchanged place when the content under it
+changes: when the picker's list appears, when the search filters it, when it scrolls. Logged in
+headless WebKit: after typing `fren`, a trusted `mousemove` at the same client point
+(662, 387), movement 0, over `fr-CA`; after the reopen, one over `fil`. The test's pointer was
+left over the dialog by its earlier click, and the option's `@mousemove` made the option under
+it active, so Enter chose it (`fj` in the first run, `fil`/`fr-CA` in later ones). A WebKit user
+whose mouse rests over the list gets the same. `LanguagePicker.vue` now takes the active option
+from a `mousemove` only when the pointer's client point differs from the previous one seen since
+the picker opened (the first one only records it); a click still chooses at once. Unit test:
+"keeps the active option of the keys under a pointer that does not move, follows one that does".
+
+**A — the gate's pictures in CSS pixels (gate fixed, found by W1).** `Desktop Safari` has
+`deviceScaleFactor` 2 (Chromium and Firefox 1). With `scale: 'css'` WebKit gives a picture in
+which the thumbnail's rounded 2 px ring, on a fractional CSS pixel (top 463.31), is blended into
+the rows next to it: one full row and two `166,162,242` half rows, 195 of 218 px at 3:1. In the
+device-scale picture it is a solid 4-device-px band. The ring is complete on screen. Checked on
+a page made for it: a rounded 1 px black ring on a half CSS pixel at device scale factor 2 is two
+crisp device rows; WebKit's CSS-scale picture paints it as two `59` rows (68 of 197 px at 3:1);
+Chromium's CSS-scale picture and Firefox's draw it crisp, unless the ring is square-cornered
+(then WebKit draws it crisp too). Fix: `gate.ts` takes the pictures with `scale: 'device'`;
+`comparePixels` walks the device pixels (its scale is the picture's width over the clip's) and
+needs `2 × (width + height) × scale²` of them: a 1 CSS px line round the visible part. At scale 1
+the walk and the count are the ones before. Only `comparePixels` reads pictures; `obscured`, the
+motion check and the computed-colour checks use CSS coordinates from the DOM, not pictures, so
+the device scale does not reach them (W1 also saw `toast` fail on `obscured` at scale factor 1:
+cause B, above, is not the ratio). Test for the gate (with the one for B, in
+`gate-checks.spec.ts`, a file W2 does not own: the diff went to the lead).
+
+No known-list entry.
 
 ## Task W3: the Range popover (E)
 
