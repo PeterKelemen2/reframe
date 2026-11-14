@@ -5,8 +5,9 @@ reported, never replaced: discovery never falls back to the bundled build or to 
 behind the user's back. A bundled FFmpeg folder without ffprobe leaves ffprobe missing.
 
 The bundled build is per tool family: FFmpeg (ffmpeg and ffprobe), mkvpropedit and MediaInfo.
-On Linux, FFmpeg is bundled but mkvpropedit comes from the distro, so a bundled FFmpeg does not
-stop the ``PATH`` search for mkvpropedit.
+The packages bundle no mkvpropedit, so a bundled FFmpeg does not stop the ``PATH`` search for
+it; on Windows, where MKVToolNix's installer does not add itself to ``PATH``, its install
+folder is searched after ``PATH``.
 
 On Windows only ``.exe`` programs run: a ``.cmd`` or ``.bat`` file goes through ``cmd.exe``,
 which interprets ``& | % ^ < >`` in the arguments.
@@ -80,6 +81,18 @@ _FAMILY: Mapping[ToolName, ToolName] = {
     "mkvpropedit": "mkvpropedit",
     "mediainfo": "mediainfo",
 }
+#: How to get an optional tool, on Windows and elsewhere.
+_GET_OPTIONAL: Mapping[tuple[ToolName, bool], str] = {
+    ("mkvpropedit", True): "It is part of MKVToolNix: install MKVToolNix from "
+    "https://mkvtoolnix.download/",
+    ("mkvpropedit", False): "It is part of MKVToolNix: install your distribution's mkvtoolnix "
+    "package",
+    ("mediainfo", True): "Install the MediaInfo command-line program from "
+    "https://mediaarea.net/en/MediaInfo",
+    ("mediainfo", False): "Install your distribution's mediainfo package",
+}
+#: MKVToolNix's Windows installer records its folder under this App Paths key (HKLM).
+_MKVTOOLNIX_APP_PATH = r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\mkvtoolnix-gui.exe"
 
 #: Tool paths by tool name. A model with the same fields (``AppSettings.tools``) is accepted too.
 ToolPathSettings = Mapping[str, str | os.PathLike[str] | None]
@@ -238,6 +251,40 @@ def _search_path(ctx: _Context, tool: str) -> Path | None:
     return None
 
 
+def _registered_app_paths(key: str) -> list[str]:
+    """The default value of ``key`` under ``HKEY_LOCAL_MACHINE``, in the 64-bit registry view
+    and then the 32-bit one; empty off Windows and where it is not set."""
+    found: list[str] = []
+    if sys.platform == "win32":
+        import winreg
+
+        for view in (winreg.KEY_WOW64_64KEY, winreg.KEY_WOW64_32KEY):
+            try:
+                with winreg.OpenKey(
+                    winreg.HKEY_LOCAL_MACHINE, key, 0, winreg.KEY_READ | view
+                ) as handle:
+                    value, kind = winreg.QueryValueEx(handle, "")
+            except OSError:
+                continue
+            if kind in (winreg.REG_SZ, winreg.REG_EXPAND_SZ) and isinstance(value, str):
+                found.append(os.path.expandvars(value) if kind == winreg.REG_EXPAND_SZ else value)
+    return found
+
+
+def _mkvtoolnix_folders(ctx: _Context) -> list[Path]:
+    """Where MKVToolNix's installer puts it: the folder it records, then its default folder."""
+    folders = [
+        Path(value.strip().strip('"')).parent
+        for value in _registered_app_paths(_MKVTOOLNIX_APP_PATH)
+        if value.strip().strip('"')
+    ]
+    for variable in ("ProgramW6432", "ProgramFiles"):
+        base = ctx.environ.get(variable, "").strip()
+        if base:
+            folders.append(Path(base) / "MKVToolNix")
+    return folders
+
+
 def _locate(
     ctx: _Context, tool: ToolName, located: Mapping[ToolName, ToolLocation]
 ) -> ToolLocation:
@@ -296,9 +343,16 @@ def _locate_in(
     found = _search_path(ctx, tool)
     if found is not None:
         return ToolLocation(tool, found, ToolOrigin.PATH, None, env_var)
+    if tool == "mkvpropedit" and ctx.windows:
+        found = _find_in_dirs(ctx, tool, _mkvtoolnix_folders(ctx))
+        if found is not None:
+            return ToolLocation(tool, found, ToolOrigin.INSTALLED, None, env_var)
     if tool in ("mkvpropedit", "mediainfo"):
         # A web client cannot set a tool path in Settings: name what works in every mode.
-        problem = f"{tool} was not found (optional: install it, or set {env_var} to its path)."
+        problem = (
+            f"{tool} was not found. {_GET_OPTIONAL[tool, ctx.windows]}, or set {env_var} to "
+            "its path."
+        )
     else:
         problem = (
             f"{tool} was not found: no bundled build, nothing on PATH. Set its path in "

@@ -33,6 +33,9 @@ class ToolOrigin(StrEnum):
     """The pinned build that ships with Reframe (or that ``reframe tools fetch`` installed)."""
     PATH = "path"
     """Found on ``PATH`` (only used when there is no bundled build of the tool)."""
+    INSTALLED = "installed"
+    """Found where the tool's own Windows installer puts it, which is not on ``PATH``
+    (mkvpropedit: MKVToolNix's folder). Searched after ``PATH``."""
 
 
 class ToolStatus(StrEnum):

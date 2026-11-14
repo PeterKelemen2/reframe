@@ -13,7 +13,7 @@ import { formatList } from '@/components/shell/format'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 
-import { familyOf, resetOps, setByEnvironment, type ToolInfo, toolTone } from './tools'
+import { familyOf, installHint, resetOps, setByEnvironment, type ToolInfo, toolTone } from './tools'
 import { useBundledTools } from './useBundledTools'
 import { readPointer, useSetting } from './useSetting'
 
@@ -102,11 +102,16 @@ function originText(tool: ToolInfo): string {
       return t('settings.tools.origin.bundled')
     case 'path':
       return t('settings.tools.origin.path')
+    case 'installed':
+      return t('settings.tools.origin.installed')
     default:
       return t('settings.tools.origin.none')
   }
 }
 const originLabel = computed(() => originText(props.tool))
+const reason = computed(
+  () => installHint(props.tool, system.info?.platform, t) ?? props.tool.reason ?? null,
+)
 
 const note = computed(() => {
   const variable = props.tool.env_var ?? ''
@@ -215,7 +220,7 @@ async function remove(): Promise<void> {
         <span v-else class="tool-row__muted">{{ t('settings.tools.noBinary') }}</span>
       </KeyValue>
     </dl>
-    <p v-if="tool.reason" class="tool-row__reason" data-field="reason">{{ tool.reason }}</p>
+    <p v-if="reason" class="tool-row__reason" data-field="reason">{{ reason }}</p>
 
     <Field :label="t('settings.tools.override')" :issues="fieldIssues" stacked>
       <template #default="{ id, invalid }">

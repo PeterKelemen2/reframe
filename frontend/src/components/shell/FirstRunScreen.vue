@@ -13,6 +13,7 @@ import StatusDot from '@/components/base/StatusDot.vue'
 import RefusalList from '@/components/settings/RefusalList.vue'
 import {
   FFMPEG_FAMILY,
+  installHint,
   resetOps,
   setByEnvironment,
   TOOL_NAMES,
@@ -102,9 +103,16 @@ function originLabel(tool: ToolInfo): string {
       return t('shell.firstRun.origin.bundled')
     case 'path':
       return t('shell.firstRun.origin.path')
+    case 'installed':
+      return t('shell.firstRun.origin.installed')
     default:
       return t('shell.firstRun.origin.none')
   }
+}
+
+function reasonText(tool: ToolInfo): string | null {
+  const reason = installHint(tool, system.info?.platform, t) ?? tool.reason ?? null
+  return reason === system.ffmpegProblem ? null : reason
 }
 
 async function useBundled(): Promise<void> {
@@ -176,11 +184,9 @@ async function continueToWorkspace(): Promise<void> {
           <span v-else class="first-run__path first-run__path--none">
             {{ t('shell.firstRun.notFound') }}
           </span>
-          <span
-            v-if="tool.reason && tool.reason !== system.ffmpegProblem"
-            class="first-run__tool-reason"
-            >{{ tool.reason }}</span
-          >
+          <span v-if="reasonText(tool)" class="first-run__tool-reason" data-field="reason">{{
+            reasonText(tool)
+          }}</span>
           <span v-if="tool.version" class="first-run__version">
             {{ t('shell.firstRun.version', { version: tool.version }) }}
           </span>

@@ -61,7 +61,7 @@ the certificate secrets are set; an arm64 FFmpeg pin; no PyPI for v1.
    notes are that version's section.
 4. **The sources release (0073)** is built by two scripts: one writes the source manifest (the
    FFmpeg commit and each dependency the BtbN scripts pin, for every FFmpeg platform that ships;
-   MKVToolNix and MediaInfo for Windows; libva; the Debian/Ubuntu source package and version of
+   MediaInfo for Windows (MKVToolNix too until item 11); libva; the Debian/Ubuntu source package and version of
    each library linuxdeploy copies into the AppImage, read with `dpkg` in the build image), the
    other fetches one archive per entry, checks each against the pin, and writes `SHA256SUMS`.
    What the BtbN scripts pin and how to fetch exactly that source is checked against the real
@@ -99,7 +99,7 @@ the certificate secrets are set; an arm64 FFmpeg pin; no PyPI for v1.
      MP (and Boost and others); review R1 found it, the lead confirmed it with `strings`. Its
      corresponding source is the MXE commit it was built with and the source of every MXE
      package linked into it: they go into the source manifest for `windows-x64`, with their
-     licences in the Windows notices (0073's table missed them).
+     licences in the Windows notices (0073's table missed them). (2026-11-14, item 11: no installer bundles MKVToolNix any more; "Fix round — FL".)
    - **The AppImage runtime** (type2-runtime, static: libfuse LGPL-2.1, squashfuse, musl, zstd,
      zlib) is pinned and its sources go into the manifest for `linux-x64` (0079 "Task S" called
      it MIT only).
@@ -279,7 +279,8 @@ Read in a depth-1 clone of `github.com/BtbN/FFmpeg-Builds` at `build_scripts_com
   `SCRIPT_*` variables and the patches it mounts), `url` (the MKVToolNix and MediaInfo
   `source_url` with a `source_sha256`, libva's pinned tarball, and each library a static build
   links: "Fix round — FS"), `repository` (the tree a static build was built from),
-  `ubuntu-source` (one per source package and version of the AppImage list). JSON with sorted keys, entries sorted by archive
+  `ubuntu-source` (one per source package and version of the AppImage list). (Since "Fix round — FL" no
+  MKVToolNix entry, and `repository` is the AppImage runtime's only.) JSON with sorted keys, entries sorted by archive
   name; archive names keep only `[A-Za-z0-9._-]` (what GitHub keeps in an asset name;
   `gtk+3.0` becomes `gtk_3.0`). The tag is `sources-` and 12 hex digits of the file's SHA-256.
 - Run here at the current pins (with the `source_sha256` values below): 219 entries (2 `git`,
@@ -381,7 +382,7 @@ variables together or none, and each file must exist, before any `docker` call),
 `linux-x64` lists 215 archives (2 git, 115 stages, libva, 97 Ubuntu sources), `windows-x64` 100
 (2 git, 96 stages, MKVToolNix, MediaInfo), `docker-linux-x64` 117 (2 git, 115 stages),
 `docker-linux-arm64` 114 (2 git, 112 stages; no davs2, xavs2, onevpl); every archive is in at
-least one. The workflow passes the manifest it fetched with (task W).
+least one. (2026-11-14, "Fix round — FL": Windows lists MediaInfo, not MKVToolNix.) The workflow passes the manifest it fetched with (task W).
 
 ## Task A: the arm64 pin and the Docker image
 
@@ -733,7 +734,7 @@ step's environment (the documented coercion).
 Done 2026-11-14 on the AMD desktop, for review R1's findings B1, B2, m2, m3, m4, m5, the FS
 test holes of m8 and the FS nits. Each finding was reproduced first.
 
-**B1: the sources of mkvpropedit.exe's MXE build.**
+**B1: the sources of mkvpropedit.exe's MXE build.** (2026-11-14, item 11: no installer bundles MKVToolNix any more; "Fix round — FL".)
 
 - Reproduced in the review's copy of `mkvpropedit.exe` (from the pinned zip): the strings name
   `Qt 6.12.0 (… static release build; by GCC 16.2.0)`, `GNU MP`, the prefix
@@ -851,7 +852,8 @@ image. When the timestamp moves, the AppImage list is resolved again (a new sour
 
 **The manifest at these pins** (the real BtbN scripts, the snapshot image's list): 240 entries
 (2 `git`, 117 `btbn-stage`, 2 `repository`, 21 `url`, 98 `ubuntu-source`), tag
-`sources-a2cf246f4653`. `linux-x64` lists 223 archives, `windows-x64` 113, the images 117 and
+`sources-a2cf246f4653` (before "Fix round — FL", which took MKVToolNix, the MXE tree and its 12
+parts out). `linux-x64` lists 223 archives, `windows-x64` 113, the images 117 and
 114 as before; every archive is in at least one. A sources release grows by about 345 MB for
 Windows and 11 MB for Linux.
 
@@ -890,3 +892,87 @@ archives.boost.io, downloads.sourceforge.net, musl.libc.org and zlib.net. A Linu
 dev tree (version `0.1.0-dev.0`) fails at the rpm: Tauri's rpm bundler refuses `-` in the
 version ("invalid version \"0.1.0-dev.0\": contains invalid character"), the rpm counterpart of
 review finding m10; the full build here ran with the version stamped to `0.1.0` in its copy.
+
+### Fix round — FL
+
+Done 2026-11-14 on the AMD desktop, for the owner's answers in item 11. Two parts, each
+committed on its own.
+
+**Part 1: the Windows installers bundle no `mkvpropedit.exe`.**
+
+- **The pins.** `[tools.mkvtoolnix]` left `tools/bundled-tools.toml`; `[binaries.mkvpropedit]`
+  with the MXE tree and its 12 parts left `tools/static-builds.toml` (the AppImage runtime
+  stays, so the `repository` kind stays: it is now the runtime's tree only). The manifest and the
+  notices read the pins, so `sources-manifest.py` and `third-party-notices.py` needed no code
+  change. The real manifest at these pins without the AppImage list: 128 entries (2 `git`, 117
+  `btbn-stage`, 1 `repository`, 8 `url`); `windows-x64` 99 (2 `git`, 96 stages, MediaInfo),
+  `linux-x64` 125 before its 98 Ubuntu sources.
+- **`bundle-tools.py`.** `mkvtoolnix` is no tool folder any more. The bundler ships every folder
+  of `resources/tools/`, so a `mkvtoolnix/` that an earlier Windows layout left would put
+  `mkvpropedit.exe` back into the installers: a folder with the layout's marker that the
+  platform does not want is removed; one without a marker is refused as before.
+- **Checked, nothing to change:** `desktop/packaging/windows/**` (only the test certificate),
+  `desktop/src-tauri` (the resource map is the whole `resources/tools/`), the smoke tests (they
+  check FFmpeg), `scripts/windows-setup.ps1` (it installs MKVToolNix on the test machine's `PATH`
+  as a development tool and says nothing of a bundled one). The release workflow's step name, the
+  READMEs, 07 §Tool bundling and §D-7, 02 §Bundled FFmpeg, 09 §Licensing and the earlier
+  sentences of 0002, 0072, 0073 and this record (dated notes) said it was bundled.
+
+**A Windows user without MKVToolNix, checked in the code and the tests that simulate a missing
+tool:**
+
+- Discovery's reason was "mkvpropedit was not found (optional: install it, or set
+  REFRAME_MKVPROPEDIT to its path)" on every platform: it did not say that mkvpropedit is part
+  of MKVToolNix. Settings → Tools showed that reason and, with no bundled build, no *Use bundled*
+  (*Remove override* for a Settings path); the first-run screen the same reason. The in-place
+  edit's error (`tool.mkvpropedit_missing`) ended with the reason; the BCP 47 warning
+  (`metadata.language_tag_lost`) and the post-mux flag warning said only "mkvpropedit was not
+  found". Nothing is dropped silently: the post-mux step is planned only when mkvpropedit is
+  found, and each loss is a warning (the in-place job an error).
+- **MKVToolNix's installer does not put itself on `PATH`.** Read in
+  `packaging/windows/installer/mkvtoolnix.nsi` at `release-103.0` (Codeberg): it installs into
+  `$PROGRAMFILES64\MKVToolNix` (`RequestExecutionLevel admin`), writes
+  `HKLM\Software\Microsoft\Windows\CurrentVersion\App Paths\mkvtoolnix-gui.exe` (default value
+  `$INSTDIR\mkvtoolnix-gui.exe`, also its `InstallDirRegKey`) and the uninstall key, and has no
+  `PATH` code. So a user who installed it as told would still have seen mkvpropedit missing.
+- **Fixed:**
+  - The reason names MKVToolNix and where to get it: on Windows "mkvpropedit was not found. It is
+    part of MKVToolNix: install MKVToolNix from https://mkvtoolnix.download/, or set
+    REFRAME_MKVPROPEDIT to its path."; elsewhere "… install your distribution's mkvtoolnix
+    package …"; MediaInfo likewise (the MediaInfo site, or the `mediainfo` package).
+  - On Windows discovery finds mkvpropedit after `PATH` in MKVToolNix's folder: the App Paths
+    value (64-bit registry view, then 32-bit: the installer is an `amd64-unicode` NSIS build
+    without `SetRegView`, and which view it writes was not checked on Windows), then
+    `%ProgramW6432%` / `%ProgramFiles%\MKVToolNix`. Its origin is the new `ToolOrigin.installed`
+    ("Where its installer put it"; not persisted, so no schema version; the OpenAPI types
+    regenerated). 02 §Path override has the row, 05's discovery bullet the origin. The registry
+    read is mocked in the tests and type-checked by `mypy --platform win32`; it did not run on
+    Windows (no VM work in Q-5).
+  - The three issues end with discovery's reason, so each names the missing tool and how to get
+    it.
+  - Settings → Tools and the first-run screen show, for mkvpropedit or MediaInfo found nowhere,
+    a translated instruction in place of the server's English reason: "mkvpropedit is part of
+    MKVToolNix, which Reframe needs to edit MKV files in place and to write BCP 47 languages.
+    Install MKVToolNix from mkvtoolnix.download, then choose Check again." (Linux: the
+    distribution's package). A tool that is found but fails keeps the server's reason.
+- **Tests** (each fails on the defect; mutation in brackets, all caught):
+  `test_bundle_tools.py` an earlier layout's `mkvtoolnix/` is removed [the marker not
+  accepted], an unmarked one refused [any folder accepted], the real pins keep MediaInfo only
+  [the pin put back]; `test_sources_manifest.py` the repository's static builds have nothing for
+  Windows [the MXE build put back], the Windows tool sources are MediaInfo's only [the pin put
+  back]; `test_third_party_notices.py` a laid-out `mkvtoolnix/` stops the notices, the Windows
+  notices name no static build; `packages/reframe/tests/tools/test_discovery.py` the reason per
+  platform [the old text; the Linux text on Windows], MKVToolNix's folder from the registry
+  [no lookup; a quoted value], its default folder [`ProgramFiles` not read], `PATH` first, not
+  on Linux; `packages/reframe/tests/validation/test_missing_mkvpropedit.py` the in-place, BCP 47
+  and flag issues say what to install [each message without the reason; the shared helper
+  empty]; `ToolsSection.test.ts` the Windows and Linux instruction, no *Use bundled*, the
+  server's reason for a broken tool, the `installed` origin [no hint; the hint for a broken
+  tool; the Linux hint on Windows; no label]; `FirstRunScreen.test.ts` the instruction on the
+  welcome screen [the server's reason shown]. 18 mutations.
+- For the lead (`docs/status.md` is yours): the D-7 row ("`tools/bundled-tools.toml` pins
+  MKVToolNix 103.0 (`mkvpropedit.exe`) and MediaInfo CLI 26.10 for Windows", "bundled mkvpropedit
+  and MediaInfo are not verified (Windows)"), the D-8 row (Windows install: "all four tools
+  `bundled`"), the M10 row ("D-7 done (bundled FFmpeg, MKVToolNix, MediaInfo …)") and the "Tool
+  paths and bundled FFmpeg" row ("ship FFmpeg, MKVToolNix and MediaInfo") now say too much;
+  `docs/m10-breakdown.md` (T's task, contracts and file list) is history.

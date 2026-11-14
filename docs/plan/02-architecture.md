@@ -112,8 +112,9 @@ build behaves the same.
   (.deb/.rpm: the package's resource folder next to the sidecar, so it does not conflict with
   the distro's `ffmpeg` package),
   `/opt/reframe/tools/ffmpeg/` (Docker), `<data dir>/tools/ffmpeg/` (`reframe tools fetch`, and
-  CI). Bundled MKVToolNix and MediaInfo go to `tools/mkvtoolnix/` and `tools/mediainfo/` next to
-  it. Each folder holds the binaries in `bin/` or directly. `REFRAME_CONFIG_DIR`,
+  CI). The bundled MediaInfo (Windows) goes to `tools/mediainfo/` next to it; no package bundles
+  MKVToolNix ([decision 0079](../decisions/0079-q5-release-process.md) item 11), though discovery
+  still searches `tools/mkvtoolnix/`. Each folder holds the binaries in `bin/` or directly. `REFRAME_CONFIG_DIR`,
   `REFRAME_DATA_DIR` and `REFRAME_CACHE_DIR` override the platform folders
   ([decision 0005](../decisions/0005-tool-discovery-details.md)).
 
@@ -125,6 +126,7 @@ build behaves the same.
 | 2 | Path in **Settings → Tools** | Desktop users with their own FFmpeg build |
 | 3 | Bundled build | Default |
 | 4 | `PATH` | Only when no bundled build exists (for example when running from source) |
+| 5 | Windows, mkvpropedit only: MKVToolNix's install folder (its installer's `App Paths` entry, else `%ProgramFiles%\MKVToolNix`) | MKVToolNix installed with its installer, which does not add itself to `PATH` ([decision 0079](../decisions/0079-q5-release-process.md) "Fix round — FL") |
 
 - If only `ffmpeg` is overridden, Reframe looks for `ffprobe` next to it first, so pointing
   to a custom build folder is enough.

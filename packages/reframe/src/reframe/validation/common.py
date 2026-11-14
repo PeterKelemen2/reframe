@@ -22,6 +22,7 @@ from reframe.models.issues import (
     ValidationIssue,
 )
 from reframe.models.job import Container
+from reframe.models.tools import ToolInfo
 
 __all__ = [
     "DEFAULT_AUDIO_ENCODER",
@@ -36,6 +37,7 @@ __all__ = [
     "replace",
     "support",
     "switch_container_fixes",
+    "tool_problem",
     "usable_encoder",
     "warning",
 ]
@@ -66,6 +68,12 @@ def info(code: str, path: str, message: str, *fixes: Fix) -> ValidationIssue:
 
 def fix(label: str, *ops: JsonPatchOp, target: FixTarget = "job") -> Fix:
     return Fix(label=label, patch=list(ops), target=target)
+
+
+def tool_problem(tool: ToolInfo) -> str:
+    """`` <reason>``: why the tool cannot be used and how to get it, to end an issue's message;
+    empty without a reason."""
+    return f" {tool.reason}" if tool.reason else ""
 
 
 def replace(path: str, value: JsonValue) -> ReplaceOp:

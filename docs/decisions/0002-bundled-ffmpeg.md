@@ -13,7 +13,7 @@ oldest supported distro (Ubuntu 22.04, [0072](0072-m10-bundling-packaging-smoke-
 Decision 2). The first candidate is BtbN's release-branch `gpl-shared` build; D-7 confirms the
 choice and tests it on the hosts that are available. 07 §Tool bundling also bundles
 MKVToolNix (`mkvpropedit.exe`) and MediaInfo CLI on Windows, in the layout of
-[0005](0005-tool-discovery-details.md) item 2.
+[0005](0005-tool-discovery-details.md) item 2. (2026-11-14, [0079](0079-q5-release-process.md) item 11: no installer bundles MKVToolNix any more; "Fix round — FL".)
 
 The Windows build of the pin, BtbN n9.0.2 win64, crashes now and then with `0xC0000005` when
 `fieldmatch` (Detelecine) runs before other filters ([0070](0070-windows-testing-phase.md)
@@ -31,7 +31,7 @@ build and switch the `windows-x64` pin only if it is clean and meets 02's requir
    redirect there (both checked 2026-11-12). The next re-pin should use the new URLs.
 2. **MKVToolNix 103.0 and MediaInfo CLI 26.10 are pinned in `tools/bundled-tools.toml`**
    (Windows only; Linux packages use the distro's, `Recommends: mkvtoolnix, mediainfo`):
-   - MKVToolNix: the portable `mkvtoolnix-64-bit-103.0.zip` (the site also offers a `.7z`;
+   - MKVToolNix (2026-11-14, [0079](0079-q5-release-process.md) item 11: no installer bundles MKVToolNix any more; "Fix round — FL".) The portable `mkvtoolnix-64-bit-103.0.zip` (the site also offers a `.7z`;
      the `.zip` needs no extractor beyond Python's, so the Windows layout builds on Linux and
      Windows alike). SHA-256 `c860a10c…0417`, equal to the site's `<archive>.sha256`. Only
      `mkvpropedit.exe` (static, 22.5 MB; runs alone, checked on the VM), `doc/COPYING.txt`
@@ -46,7 +46,7 @@ build and switch the `windows-x64` pin only if it is clean and meets 02's requir
    - Both sites still list every release since their first, so the pins stay downloadable.
 3. **`scripts/bundle-tools.py` is the CI step**: `uv run python scripts/bundle-tools.py
    --platform linux-x64|windows-x64 [--dest DIR]` lays out `ffmpeg/` (and on Windows
-   `mkvtoolnix/`, `mediainfo/`) in `desktop/src-tauri/resources/tools/`, which the app ships
+   `mkvtoolnix/` (until [0079](0079-q5-release-process.md) item 11), `mediainfo/`) in `desktop/src-tauri/resources/tools/`, which the app ships
    as `<resources>/tools/`. One layout is for one build platform: the plan's
    `resources/tools/<os>/` is wrong (one build makes one platform's package), so there is no
    sub-folder per OS. Size and SHA-256 are checked before anything is extracted; a rerun keeps

@@ -1,42 +1,17 @@
-# Pinned MKVToolNix and MediaInfo builds that the Windows desktop package bundles, and the
-# libva source that the Linux layout builds.
+# The pinned MediaInfo build that the Windows desktop package bundles, and the libva source that
+# the Linux layout builds.
 #
 # `scripts/bundle-tools.py` downloads each archive, verifies its size and SHA-256 before it
 # extracts anything, and keeps only the files listed in `files` (the binary, what it needs to
-# run, and its licence). Linux packages bundle neither: mkvpropedit and mediainfo come from the
-# distro there (`Recommends: mkvtoolnix, mediainfo`). See tools/README.md for how to update a pin.
+# run, and its licence). Linux packages bundle no MediaInfo: it comes from the distro there
+# (`Recommends: mkvtoolnix, mediainfo`). No package bundles MKVToolNix: its Windows build links
+# OpenSSL (Apache-2.0) into GPL-2.0-only code, so users install it (decision 0079, item 11).
+# See tools/README.md for how to update a pin.
 #
-# Retention (checked 2026-11-12): mkvtoolnix.download/windows/releases/ and
-# mediaarea.net/download/binary/mediainfo/ still list every release since 0.4.2 and 0.6.1.1.
+# Retention (checked 2026-11-12): mediaarea.net/download/binary/mediainfo/ still lists every
+# release since 0.6.1.1.
 
 schema_version = 1
-
-[tools.mkvtoolnix]
-description = "MKVToolNix 103.0, the portable 64-bit build (mkvpropedit only)"
-# What `mkvpropedit --version` prints after "mkvpropedit v".
-version = "103.0"
-release_url = "https://mkvtoolnix.download/windows/releases/103.0/"
-# The site publishes the checksum next to the archive (`<archive>.sha256`); it matched.
-checksum_url = "https://mkvtoolnix.download/windows/releases/103.0/mkvtoolnix-64-bit-103.0.zip.sha256"
-license = "GPL-2.0-only"
-license_file = "doc/COPYING.txt"
-# Corresponding source (GPL obligations): the release tarball and the tagged repository.
-source_url = "https://mkvtoolnix.download/sources/mkvtoolnix-103.0.tar.xz"
-# Equal to the site's mkvtoolnix-103.0.tar.xz.sha256.
-source_sha256 = "d609bc395c409eade05d0a3a5aedd26e09739e232ed03b0f937cf8bd9448c590"
-source_repository = "https://codeberg.org/mbunkus/mkvtoolnix"
-source_tag = "release-103.0"
-
-[tools.mkvtoolnix.platforms.windows-x64]
-url = "https://mkvtoolnix.download/windows/releases/103.0/mkvtoolnix-64-bit-103.0.zip"
-sha256 = "c860a10c707cb1ee587d1464f6171842f2ada3bb6f031dfff55fec75542f0417"
-size = 103859301
-format = "zip"
-root = "mkvtoolnix"
-binary = "mkvpropedit.exe"
-# mkvpropedit.exe is linked statically. README.txt lists the licences of the bundled
-# third-party components.
-files = ["mkvpropedit.exe", "doc/COPYING.txt", "doc/README.txt"]
 
 [tools.mediainfo]
 description = "MediaInfo CLI 26.10, 64-bit"

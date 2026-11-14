@@ -97,7 +97,7 @@ def _btbn_tree(root: Path) -> Path:
 
 
 RUNTIME_COMMIT = "dd6cebedcbddde9c82f89b011e8e1d40b6e43868"
-MXE_COMMIT = "02b82ecfdc5a63decc4e64e06ca2dc8f0b7158f1"
+TREE_COMMIT = "02b82ecfdc5a63decc4e64e06ca2dc8f0b7158f1"
 STATIC_BUILDS = f"""
 [binaries.appimage-runtime]
 description = "AppImage runtime"
@@ -121,14 +121,14 @@ url = "https://github.com/vasi/squashfuse/archive/0.5.2.tar.gz"
 sha256 = "{"d" * 64}"
 archive = "squashfuse-0.5.2.tar.gz"
 
-[binaries.mkvpropedit]
-description = "mkvpropedit.exe, an MXE static build"
+[binaries.example]
+description = "example.exe, a static build"
 platforms = ["windows-x64"]
 license = "GPL-2.0-only"
-source_repository = "https://codeberg.org/mbunkus/mxe"
-source_commit = "{MXE_COMMIT}"
+source_repository = "https://example.invalid/static-tree"
+source_commit = "{TREE_COMMIT}"
 
-[[binaries.mkvpropedit.parts]]
+[[binaries.example.parts]]
 name = "GNU MP"
 version = "6.3.0"
 license = "LGPL-3.0-or-later OR GPL-2.0-or-later"
@@ -397,14 +397,14 @@ def test_each_static_build_brings_its_tree_and_every_linked_library(tmp_path: Pa
     entries = _entries(_build(tmp_path))
 
     runtime = entries[f"type2-runtime-{RUNTIME_COMMIT[:12]}.tar.xz"]
-    mxe = entries[f"mxe-{MXE_COMMIT[:12]}.tar.xz"]
+    tree = entries[f"static-tree-{TREE_COMMIT[:12]}.tar.xz"]
     assert (runtime["kind"], runtime["commit"], runtime["platforms"]) == (
         "repository",
         RUNTIME_COMMIT,
         ["linux-x64"],
     )
-    assert (mxe["repository"], mxe["platforms"]) == (
-        "https://codeberg.org/mbunkus/mxe",
+    assert (tree["repository"], tree["platforms"]) == (
+        "https://example.invalid/static-tree",
         ["windows-x64"],
     )
     fuse = entries["fuse-3.15.0.tar.xz"]
@@ -426,7 +426,7 @@ def test_a_static_build_part_without_a_pinned_checksum_is_an_error(tmp_path: Pat
 
 
 def test_a_tarball_that_two_static_builds_link_is_one_entry_for_both(tmp_path: Path) -> None:
-    gmp = STATIC_BUILDS.split("[[binaries.mkvpropedit.parts]]")[1]
+    gmp = STATIC_BUILDS.split("[[binaries.example.parts]]")[1]
     static = STATIC_BUILDS + "\n[[binaries.appimage-runtime.parts]]" + gmp
 
     entries = _entries(_build(tmp_path, static_builds=static))
@@ -435,7 +435,7 @@ def test_a_tarball_that_two_static_builds_link_is_one_entry_for_both(tmp_path: P
 
 
 def test_two_different_tarballs_with_one_archive_name_are_an_error(tmp_path: Path) -> None:
-    gmp = STATIC_BUILDS.split("[[binaries.mkvpropedit.parts]]")[1].replace("e" * 64, "f" * 64)
+    gmp = STATIC_BUILDS.split("[[binaries.example.parts]]")[1].replace("e" * 64, "f" * 64)
     static = STATIC_BUILDS + "\n[[binaries.appimage-runtime.parts]]" + gmp
 
     with pytest.raises(sm.ManifestError, match=r"both be the archive gmp-6\.3\.0\.tar\.xz"):
@@ -451,11 +451,18 @@ def test_the_repositorys_static_builds_name_the_gpl_and_lgpl_parts() -> None:
     }
     for part in ("libfuse 3.15.0", "squashfuse 0.5.2", "musl 1.2.5", "zstd 1.5.6", "zlib 1.3.1"):
         assert part in names["linux-x64"]
-    for part in ("Qt Base (Qt Core) 6.12.0", "GNU MP 6.3.0", "libdvdread 6.1.3"):
-        assert part in names["windows-x64"]
+    # The installers bundle no static build: MKVToolNix's mkvpropedit.exe is not bundled.
+    assert names["windows-x64"] == set()
     trees = [e for e in entries if e["kind"] == "repository"]
     assert {(e["name"], tuple(e["platforms"])) for e in trees} == {
         (f"type2-runtime-{RUNTIME_COMMIT[:12]}", ("linux-x64",)),
-        (f"mxe-{MXE_COMMIT[:12]}", ("windows-x64",)),
     }
     assert len(sm.manifest(entries)["entries"]) == len(entries)
+
+
+def test_the_repositorys_windows_tool_sources_are_mediainfos_only() -> None:
+    """MKVToolNix's Windows build is not bundled, so its source is not in the release."""
+    entries = sm.tool_entries(REPO_ROOT / "tools")
+
+    windows = [e["name"] for e in entries if "windows-x64" in e["platforms"]]
+    assert windows == ["MediaInfo_CLI_26.10_GNU_FromSource.tar.xz"]

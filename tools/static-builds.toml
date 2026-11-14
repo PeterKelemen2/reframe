@@ -1,9 +1,9 @@
 # Bundled binaries that are static builds: the source tree each was built from and the source of
 # every library it links. `scripts/sources-manifest.py` puts each tree and part into the sources
 # release for the binary's `platforms`; `scripts/third-party-notices.py` lists them in those
-# packages' notices. A part's URL and SHA-256 are the ones the binary's build scripts pin
-# (MXE's `src/*.mk`, type2-runtime's build scripts); `archive` names the file in the sources
-# release when the URL's file name does not say what it is.
+# packages' notices. A part's URL and SHA-256 are the ones the binary's build scripts pin;
+# `archive` names the file in the sources release when the URL's file name does not say what it
+# is.
 
 schema_version = 1
 
@@ -69,102 +69,3 @@ version = "2.1.7"
 license = "MIT"
 url = "https://github.com/microsoft/mimalloc/archive/v2.1.7/mimalloc-2.1.7.tar.gz"
 sha256 = "0eed39319f139afde8515010ff59baf24de9e47ea316a315398e8027d198202d"
-
-# mkvpropedit.exe of tools.mkvtoolnix (bundled-tools.toml) is an MXE static build: its strings
-# name the prefix /opt/mxe/usr-master-20261004-a9135e507-qt-12-0, which MKVToolNix's MXE fork
-# builds from its branch of that name (build.sh). The parts are the MXE packages whose code the
-# executable contains; the GCC runtime (GCC Runtime Library Exception) is not one of them.
-[binaries.mkvpropedit]
-description = "mkvpropedit.exe of MKVToolNix 103.0, an MXE static build"
-platforms = ["windows-x64"]
-version = "103.0"
-license = "GPL-2.0-only"
-release_url = "https://mkvtoolnix.download/windows/releases/103.0/"
-source_repository = "https://codeberg.org/mbunkus/mxe"
-# The head of branch master-20261004-a9135e507-qt-12-0: MXE a9135e507 and MKVToolNix's changes.
-source_commit = "02b82ecfdc5a63decc4e64e06ca2dc8f0b7158f1"
-
-[[binaries.mkvpropedit.parts]]
-name = "Boost"
-version = "1.92.0"
-license = "BSL-1.0"
-url = "https://archives.boost.io/release/1.92.0/source/boost_1_92_0.tar.bz2"
-sha256 = "5c1d40cb8e19adbf740a4ec2da35b3e58f3f5804b1dce44deb53df72193cbc6c"
-
-[[binaries.mkvpropedit.parts]]
-name = "gettext (libintl)"
-version = "1.0"
-license = "LGPL-2.1-or-later"
-url = "https://ftp.gnu.org/gnu/gettext/gettext-1.0.tar.lz"
-sha256 = "d6342cbe1411a2fe7d139bfed80c2d63b1babc92acfedc72501cc105184f61ee"
-
-[[binaries.mkvpropedit.parts]]
-name = "GNU MP"
-version = "6.3.0"
-license = "LGPL-3.0-or-later OR GPL-2.0-or-later"
-url = "https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz"
-sha256 = "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898"
-
-[[binaries.mkvpropedit.parts]]
-name = "libdvdcss"
-version = "1.4.3"
-license = "GPL-2.0-or-later"
-url = "https://download.videolan.org/pub/libdvdcss/1.4.3/libdvdcss-1.4.3.tar.bz2"
-sha256 = "233cc92f5dc01c5d3a96f5b3582be7d5cee5a35a52d3a08158745d3d86070079"
-
-[[binaries.mkvpropedit.parts]]
-name = "libdvdread"
-version = "6.1.3"
-license = "GPL-2.0-or-later"
-url = "https://download.videolan.org/pub/videolan/libdvdread/6.1.3/libdvdread-6.1.3.tar.bz2"
-sha256 = "ce35454997a208cbe50e91232f0e73fb1ac3471965813a13b8730a8f18a15369"
-
-[[binaries.mkvpropedit.parts]]
-name = "libiconv"
-version = "1.19"
-license = "LGPL-2.1-or-later"
-url = "https://ftp.gnu.org/gnu/libiconv/libiconv-1.19.tar.gz"
-sha256 = "88dd96a8c0464eca144fc791ae60cd31cd8ee78321e67397e25fc095c4a19aa6"
-
-[[binaries.mkvpropedit.parts]]
-name = "mingw-w64 (the C runtime and winpthreads)"
-version = "14.0.0"
-license = "ZPL-2.1 AND ISC AND MIT, and others in its COPYING.MinGW-w64-runtime.txt"
-url = "https://downloads.sourceforge.net/project/mingw-w64/mingw-w64/mingw-w64-release/mingw-w64-v14.0.0.tar.bz2"
-sha256 = "6eaf921d9eb987d3820b364ea9775bc19b965ec81490b6fdd716526c28e1995c"
-
-[[binaries.mkvpropedit.parts]]
-name = "OpenSSL (libcrypto)"
-version = "4.0.3"
-license = "Apache-2.0"
-url = "https://github.com/openssl/openssl/releases/download/openssl-4.0.3/openssl-4.0.3.tar.gz"
-sha256 = "325b5c806167c13b40b1ffeadfe0248197c00eccc4cf123ec1e28d2d2fd216d9"
-
-[[binaries.mkvpropedit.parts]]
-name = "PCRE2"
-version = "10.49"
-license = "BSD-3-Clause WITH PCRE2-exception"
-url = "https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.49/pcre2-10.49.tar.bz2"
-sha256 = "53c156e1ba416a20da8e65395daa132da0d80e76910424caca3fcdae7831d384"
-
-[[binaries.mkvpropedit.parts]]
-name = "Qt Base (Qt Core)"
-version = "6.12.0"
-license = "LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only"
-url = "https://download.qt.io/archive/qt/6.12/6.12.0/submodules/qtbase-everywhere-src-6.12.0.tar.xz"
-sha256 = "a951bd163c7b80fc6b8c88d7668fb56abf91c152373e13c10666763238131307"
-
-[[binaries.mkvpropedit.parts]]
-name = "zlib"
-version = "1.3.2"
-license = "Zlib"
-url = "https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.xz"
-sha256 = "d7a0654783a4da529d1bb793b7ad9c3318020af77667bcae35f95d0e42a792f3"
-
-[[binaries.mkvpropedit.parts]]
-name = "zstd"
-version = "1.5.7"
-license = "BSD-3-Clause OR GPL-2.0-only"
-url = "https://github.com/facebook/zstd/archive/v1.5.7.tar.gz"
-sha256 = "37d7284556b20954e56e1ca85b80226768902e2edabd3b649e9e72c0c9012ee3"
-archive = "zstd-1.5.7.tar.gz"

@@ -94,7 +94,7 @@ other tasks need.
 
 **Built.** `tools/bundled-tools.toml` (MKVToolNix 103.0 portable zip, only `mkvpropedit.exe`
 and its licence files; MediaInfo CLI 26.10 zip, `MediaInfo.exe` and its licence files; both
-`windows-x64` only). `scripts/bundle-tools.py` (reuses `reframe.tools.fetch`: download with
+`windows-x64` only; 2026-11-14, [0079](0079-q5-release-process.md) item 11: no installer bundles MKVToolNix any more, "Fix round — FL"). `scripts/bundle-tools.py` (reuses `reframe.tools.fetch`: download with
 the size limit, `verify_file`, `safe_extract`, the tree digest of the marker); `fetch.py`
 extracts a zip without a top folder. Tests: `testing/tests/test_bundle_tools.py`, three tests
 in `packages/reframe/tests/tools/test_fetch.py`. The FFmpeg pin does not change.
@@ -124,7 +124,7 @@ root store lacks mediaarea.net's root the MediaInfo download fails with
 **For L (packages)**: the `.deb` / `.rpm` get the tools in `/usr/lib/Reframe/tools/` (Tauri's
 resource folder; the core finds it next to the sidecar), not 02's `/usr/lib/reframe/tools/`
 (plan corrected). The licence files are `tools/ffmpeg/LICENSE.txt`,
-`tools/mkvtoolnix/doc/COPYING.txt` (+ `README.txt`), `tools/mediainfo/LICENSE`
+`tools/mkvtoolnix/doc/COPYING.txt` (+ `README.txt`; gone since 0079 item 11), `tools/mediainfo/LICENSE`
 (+ `License.html`), `tools/ffmpeg/LICENSE-libva.txt` (MIT, Linux); the source links are in the two manifests (`source_commit`,
 `build_scripts_commit`; `source_url`, `source_repository`, `source_tag`; libva:
 `[libraries.libva]` `url`, `source_repository`, `source_tag`). The FFmpeg folder is
@@ -231,7 +231,7 @@ dark screenshots):
 `mediainfo/` from task T's layout: each row should show "Bundled with Reframe"; a Settings path
 on mkvpropedit or mediainfo should give that row alone *Use bundled* (the other rows unchanged),
 and the click should send only the settings patch and the rescan; the first start's welcome
-screen listing all four as bundled; the flag surviving a restart in WebView2.
+screen listing all four as bundled; the flag surviving a restart in WebView2. (2026-11-14, [0079](0079-q5-release-process.md) item 11: no installer bundles MKVToolNix any more; "Fix round — FL".)
 
 **Seen, not changed** (M4 behaviour): an ffprobe found next to an ffmpeg set by
 `REFRAME_FFMPEG` shows "Environment variable REFRAME_FFPROBE (next to ffmpeg)", naming a variable
@@ -435,7 +435,7 @@ installed by hand). With a certificate in the config it signs `Reframe.exe`, the
 both installers and **every unsigned `.exe` and `.dll` under `bundle.resources`**: the frozen
 sidecar's executables and DLLs and the bundled FFmpeg (it writes the signatures into
 `resources/` in place; MKVToolNix's and MediaInfo's executables are already signed by their
-publishers and are left alone). So the sidecar needs no signing step of its own.
+publishers and are left alone). So the sidecar needs no signing step of its own. (2026-11-14, [0079](0079-q5-release-process.md) item 11: no installer bundles MKVToolNix any more; "Fix round — FL".)
 
 ### The installers
 
@@ -496,7 +496,8 @@ target `…\Programs\Reframe\Reframe.exe`): the sidecar is
 `…\Programs\Reframe\sidecar\reframe-server.exe`, the app's child; the first-run screen lists
 **ffmpeg and ffprobe (n9.0.2-17), mkvpropedit (103.0) and mediainfo (26.10), each "Bundled with
 Reframe"** at `…\Programs\Reframe\tools\…`; *Continue* stored `reframe.firstRun.seen`, and every
-later start (also after the update) went straight to the workspace, so WebView2 keeps the flag
+later start (also after the update) went straight to the workspace (2026-11-14: mkvpropedit is no
+longer bundled, [0079](0079-q5-release-process.md) item 11), so WebView2 keeps the flag
 (task U's open item). A real encode: `reframe encode vfr.mkv -o …` from a console opened through
 Explorer handed its job to the app's sidecar ("Queue: Reframe 0.1.0.dev0 (pid 1316)"), done in
 1 s with the bundled FFmpeg.
@@ -1036,7 +1037,8 @@ build time") has to join; not changed here.
 ## Consequences
 
 - Every desktop package carries the pinned FFmpeg (Linux also libva 2.24.1), and the Windows
-  one also MKVToolNix and MediaInfo, laid out by one script from checksummed pins; the pins
+  one also MediaInfo (and MKVToolNix until [0079](0079-q5-release-process.md) item 11), laid out
+  by one script from checksummed pins; the pins
   must follow upstream (BtbN keeps month-end builds about two years; libva must not be older
   than the VA-API of the users' drivers).
 - The Windows `fieldmatch` crash of the FFmpeg build stays a known limit (every candidate

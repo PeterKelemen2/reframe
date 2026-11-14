@@ -11,7 +11,7 @@ from reframe.definitions import ContainerDef
 from reframe.models.issues import ValidationIssue
 from reframe.models.job import TrackMetadata
 from reframe.models.tools import ToolStatus
-from reframe.validation.common import error, fix, replace, warning
+from reframe.validation.common import error, fix, replace, tool_problem, warning
 from reframe.validation.context import JobContext
 from reframe.validation.registry import job_rule
 
@@ -69,7 +69,8 @@ def language_tags(ctx: JobContext) -> Iterator[ValidationIssue]:
             "metadata.language_tag_lost",
             f"{prefix}.language",
             f"The language {language} needs mkvpropedit after muxing (Matroska LanguageIETF), "
-            f"and mkvpropedit was not found: only {legacy!r} is written.",
+            f"which is not available: only {legacy!r} is written."
+            f"{tool_problem(ctx.tools.mkvpropedit)}",
             fix(f"Write it as {legacy}", replace(f"{prefix}.language", legacy), target=ctx.target),
         )
 

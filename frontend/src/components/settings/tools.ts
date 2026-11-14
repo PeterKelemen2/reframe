@@ -1,3 +1,5 @@
+import type { useI18n } from 'vue-i18n'
+
 import type { JsonPatchOp, Schemas } from '@/api/types'
 import type { StatusTone } from '@/components/base/types'
 
@@ -43,4 +45,32 @@ export function toolTone(tool: ToolInfo): StatusTone {
   if (tool.status === 'found') return 'ok'
   // MKVToolNix and MediaInfo are optional: without them some features are off.
   return FFMPEG_FAMILY.includes(tool.name) ? 'error' : 'warn'
+}
+
+type Translate = ReturnType<typeof useI18n>['t']
+
+/**
+ * What to install, for an optional tool that is found nowhere: no package bundles mkvpropedit,
+ * and the Linux packages bundle no MediaInfo. `null` for any other state. `platform` is the
+ * server's `sys.platform`.
+ */
+export function installHint(
+  tool: ToolInfo,
+  platform: string | undefined,
+  t: Translate,
+): string | null {
+  if (tool.status !== 'missing' || (tool.origin ?? null) !== null) return null
+  const windows = platform === 'win32'
+  switch (tool.name) {
+    case 'mkvpropedit':
+      return windows
+        ? t('settings.tools.install.mkvpropeditWindows')
+        : t('settings.tools.install.mkvpropedit')
+    case 'mediainfo':
+      return windows
+        ? t('settings.tools.install.mediainfoWindows')
+        : t('settings.tools.install.mediainfo')
+    default:
+      return null
+  }
 }

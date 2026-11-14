@@ -255,6 +255,64 @@ describe('the Tools section', () => {
     expect(new Set(names).size).toBe(names.length)
   })
 
+  describe('a tool that no package bundles', () => {
+    const notFound = {
+      status: 'missing' as const,
+      origin: null,
+      path: null,
+      version: null,
+      bundled: false,
+      reason: 'mkvpropedit was not found.',
+    }
+
+    it('tells a Windows user to install MKVToolNix, and offers no Use bundled', async () => {
+      const { row } = await mountTools(
+        systemInfo(
+          { mode: 'desktop', platform: 'win32' },
+          {
+            mkvpropedit: notFound,
+            mediainfo: { bundled: true, origin: 'settings', path: 'C:\\mi\\MediaInfo.exe' },
+          },
+        ),
+        { mkvpropedit: 'C:\\gone\\mkvpropedit.exe', mediainfo: 'C:\\mi\\MediaInfo.exe' },
+      )
+      const reason = row('mkvpropedit').find('[data-field="reason"]').text()
+      expect(reason).toContain('mkvpropedit is part of MKVToolNix')
+      expect(reason).toContain('Install MKVToolNix from mkvtoolnix.download')
+      expect(row('mkvpropedit').find('[data-action="use-bundled"]').exists()).toBe(false)
+      expect(row('mkvpropedit').find('[data-action="remove"]').exists()).toBe(true)
+      expect(row('mediainfo').find('[data-action="use-bundled"]').exists()).toBe(true)
+    })
+
+    it("tells a Linux user to install the distribution's package", async () => {
+      const { row } = await mountTools(
+        systemInfo({ mode: 'desktop', platform: 'linux' }, { mkvpropedit: notFound }),
+      )
+      expect(row('mkvpropedit').find('[data-field="reason"]').text()).toContain(
+        "Install your distribution's mkvtoolnix package",
+      )
+    })
+
+    it("shows the server's reason for a tool that was found but does not work", async () => {
+      const { row } = await mountTools(
+        systemInfo(
+          { mode: 'desktop', platform: 'win32' },
+          { mkvpropedit: { status: 'broken', origin: 'path', reason: 'it crashed' } },
+        ),
+      )
+      expect(row('mkvpropedit').find('[data-field="reason"]').text()).toBe('it crashed')
+    })
+
+    it("names MKVToolNix's own folder as where the tool came from", async () => {
+      const { row } = await mountTools(
+        systemInfo({ platform: 'win32' }, { mkvpropedit: { origin: 'installed' } }),
+      )
+      expect(row('mkvpropedit').find('[data-field="origin"]').text()).toBe(
+        'Where its installer put it',
+      )
+    })
+  })
+
   describe('Use bundled, with a bundled build', () => {
     const bundledFfmpeg = { bundled: true, origin: 'bundled' as const }
 

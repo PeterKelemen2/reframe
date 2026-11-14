@@ -499,6 +499,8 @@ def origin_text(info: ToolInfo) -> str:
         where = "bundled build"
     elif info.origin is ToolOrigin.PATH:
         where = "found on PATH"
+    elif info.origin is ToolOrigin.INSTALLED:
+        where = "found where its installer put it"
     else:
         where = "not found anywhere"
     if info.next_to_ffmpeg:

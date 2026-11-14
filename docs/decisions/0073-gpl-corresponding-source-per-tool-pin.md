@@ -19,7 +19,7 @@ What the artefacts bundle, from the pins and the package builds of 0072:
 | Part | Licence | Where | Pin |
 |------|---------|-------|-----|
 | FFmpeg, BtbN `gpl-shared` (`--enable-gpl --enable-version3`), and the libraries the build links | GPL-3.0-or-later | every artefact | `tools/ffmpeg.toml`: `source_commit`, `build_scripts_commit` (the BtbN scripts pin each dependency's source) |
-| MKVToolNix 103.0 (`mkvpropedit.exe`) | GPL-2.0-only | Windows installers | `tools/bundled-tools.toml`: `source_url` |
+| MKVToolNix 103.0 (`mkvpropedit.exe`) | GPL-2.0-only | Windows installers (until 2026-11-14: not bundled since [0079](0079-q5-release-process.md) item 11) | `tools/bundled-tools.toml`: `source_url` |
 | MediaInfo CLI 26.10 | BSD-2-Clause | Windows installers | `tools/bundled-tools.toml`: `source_url` |
 | libva 2.24.1 | MIT | Linux packages | `tools/bundled-tools.toml` |
 | WebKitGTK, GTK and the other libraries linuxdeploy copies from Ubuntu 22.04 | mostly LGPL-2.1+ | AppImage | none: the versions are whatever the build image's apt gives |
@@ -28,7 +28,8 @@ What the artefacts bundle, from the pins and the package builds of 0072:
 build with Qt, GNU MP and others linked in, and the AppImage runtime statically links libfuse,
 squashfuse, musl, zstd and zlib. Both are pinned with their sources in `tools/static-builds.toml`:
 [0079](0079-q5-release-process.md) Decision item 10 and "Fix round — FS". The build image's apt
-is now pinned to an archive snapshot.)
+is now pinned to an archive snapshot. 2026-11-14, 0079 item 11: the installers no longer bundle
+`mkvpropedit.exe`, so MKVToolNix and its MXE sources left the pins and the manifest.)
 
 The owner chose between three ways (2026-11-13):
 
@@ -44,7 +45,8 @@ The owner chose between three ways (2026-11-13):
 
 1. **A source manifest.** The release workflow writes a manifest of every third-party part that
    an artefact bundles under GPL or LGPL: the FFmpeg commit and the BtbN build-scripts commit,
-   each dependency source that those scripts pin, MKVToolNix, and the Debian source package and
+   each dependency source that those scripts pin, MKVToolNix (until [0079](0079-q5-release-process.md)
+   item 11), and the Debian source package and
    version of each distro library that linuxdeploy copies into the AppImage (from `dpkg -S` and
    `dpkg-query` in the build image). The Docker image's bundled FFmpeg comes from the same pin.
    The manifest also lists MediaInfo and libva: no licence requires their source, but their

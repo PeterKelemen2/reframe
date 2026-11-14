@@ -125,7 +125,7 @@ This is not legal advice. Review it before any public or commercial distribution
 |-----------|---------|--------|
 | FFmpeg GPL build (with x264, x265) | GPL-2.0+/GPL-3.0 | **Every artefact bundles it**: the Docker image, AppImage, .deb, .rpm and the Windows installer. Each must include the licence and the corresponding source (or a written offer) **for the exact build that ships** |
 | `libfdk_aac` | Not redistributable with GPL builds | **Never bundled.** It is used only if the user's own FFmpeg has it |
-| MKVToolNix | GPL-2.0 | Same obligations as FFmpeg when bundled |
+| MKVToolNix | GPL-2.0 | **Not bundled**: its Windows build links OpenSSL (Apache-2.0) into GPL-2.0-only code ([decision 0079](../decisions/0079-q5-release-process.md) item 11). Users install it |
 | MediaInfo | BSD-2-Clause | Notice required |
 | guessit, rebulk | LGPL-3.0 | Compatible with a GPL app. Notice required |
 | Tauri, Vue, PrimeVue, FastAPI, Pydantic | MIT / Apache-2.0 | Notices required |
@@ -142,7 +142,7 @@ This is not legal advice. Review it before any public or commercial distribution
       image carries it too, with a list of its Debian packages and their source links; the
       release workflow runs every build (not run on GitHub yet).
 - [ ] **The corresponding source** of the GPL parts (FFmpeg and the libraries the BtbN build
-      links, MKVToolNix on Windows), or a written offer, ships with each release. The notices
+      links), or a written offer, ships with each release. The notices
       give only repository and commit links today. Decided
       ([decision 0073](../decisions/0073-gpl-corresponding-source-per-tool-pin.md)): one
       sources release for each set of pinned source versions, named by the hash of a source
