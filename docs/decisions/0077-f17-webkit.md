@@ -73,7 +73,43 @@ None: the plan already asks for WebKit. Firefox staying is an addition, not a ch
 
 ## Task W3: the Range popover (E)
 
-(Filled by W3.)
+**Cause: a real defect, in Chromium and WebKit, which the fast Playwright click hid.** PrimeVue's
+`Select` chooses an option on `mousedown`, hides its list a task later, and sets
+`pointer-events: none` on the list while it leaves. The release then lands on what is under the
+list (here the popover's own text), and the browser sends the `click` to the nearest element
+under both the press and the release: `<body>`. PrimeVue's `Popover` takes a click on `<body>`
+for a click outside and closes. The end chapter `Select` then moves (the popover's leave
+animation: "element is not stable") and goes ("detached").
+
+Evidence (headless, a probe with capture listeners on `chapters.mkv`):
+
+| | press → release | release on | click on | popover |
+|---|---|---|---|---|
+| WebKit, Playwright click | 62 ms | `P.range-popover__length` | `BODY` | closed |
+| Chromium, Playwright click | 11 ms | the option | the option | open |
+| Firefox, Playwright click | 22 ms | the option `LI` | the option `LI` | open |
+| Chromium, press of 120 ms | 131 ms | `P.range-popover__length` | `BODY` | closed |
+| WebKit, press of 120 ms | 162 ms | `P.range-popover__length` | `BODY` | closed |
+| Firefox, press of 120 ms | 139 ms | the option `LI` | the option `LI` | open |
+
+WebKit's Playwright click is a race (another probe run released after 48 ms, on the option).
+A person's press is longer than the list's hide (one task), so a mouse user lost the popover
+after each chapter pick in Chromium, Safari and the Linux desktop app (WebKitGTK). Only Firefox
+still sends the release to the leaving list. The keyboard was never affected.
+
+**Fix** (`RangeSelector.vue`): a press in a chapter list drops the click of its release (a
+window capture listener for that one click, removed a task after the release). The list needs
+no click: the option is already chosen. PrimeVue's own way (`OverlayEventBus` `overlay-click`,
+which `Popover` takes as a click inside) has no type declarations and is not in PrimeVue's
+`exports`, so it is not used. `appendTo="self"` was not used either: a list longer than the
+popover still ends over the page, and the release there closes the popover the same way.
+
+**Tests.** Unit (`RangeSelector.test.ts`): a pick whose release lands on `<body>` after the list
+has gone leaves the popover open (fails without the fix); a click outside after such a pick
+still closes it (fails when the dropped-click listener outlives its press). Flow 5 presses each
+option for 150 ms, as a person does: without the fix it fails in Chromium as well, as in WebKit.
+Other `Popover`s in the app hold no overlay component (`ThemeSwitch` has `SelectButton`s), so
+the defect is only here.
 
 ## Review and fix round
 

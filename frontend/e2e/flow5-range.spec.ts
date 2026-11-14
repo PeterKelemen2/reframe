@@ -41,7 +41,8 @@ test('a chapter range: the header, the output name and the command follow it int
 
   const pick = async (path: string, option: string) => {
     await popover.locator(`[data-path="${path}"]`).getByRole('combobox').click()
-    await page.getByRole('option', { name: option, exact: true }).click()
+    // A press as long as a person's: the list leaves before the release, and the popover stays.
+    await page.getByRole('option', { name: option, exact: true }).click({ delay: 150 })
     // The list leaves with a transition; until it is gone the next list's options match twice.
     await expect(page.getByRole('option')).toHaveCount(0)
   }
