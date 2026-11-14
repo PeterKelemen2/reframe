@@ -102,10 +102,10 @@ Benchmarks run in CI as a non-blocking job. A regression of more than 20 % comme
 
 ## Q-5 Release process
 
-- [ ] Semantic versioning. One version source (core `__version__`). The server, frontend and
+- [x] Semantic versioning. One version source (core `__version__`). The server, frontend and
       Tauri versions are stamped from it at build time.
-- [ ] Changelog from conventional commits (the step ID as scope: `fix(F-17): …`), made by git-cliff.
-- [ ] A release workflow on tag `v*` builds:
+- [x] Changelog from conventional commits (the step ID as scope: `fix(F-17): …`), made by git-cliff.
+- [x] A release workflow on tag `v*` builds (built and tested locally; not run on GitHub yet):
   - Docker image → GHCR (`linux/amd64`, `linux/arm64` without HW encoders).
   - Windows NSIS (+ MSI) and Linux AppImage/deb/rpm → GitHub Release, signed.
   - Updater manifest `latest.json`.
@@ -130,24 +130,25 @@ This is not legal advice. Review it before any public or commercial distribution
 | guessit, rebulk | LGPL-3.0 | Compatible with a GPL app. Notice required |
 | Tauri, Vue, PrimeVue, FastAPI, Pydantic | MIT / Apache-2.0 | Notices required |
 
-- [ ] Recommended licence for Reframe: **GPL-3.0-or-later** (open question 2 in
+- [x] Recommended licence for Reframe: **GPL-3.0-or-later** (open question 2 in
       [01-scope.md](01-scope.md#open-questions-owner-to-decide)).
-- [ ] CI generates `THIRD_PARTY_NOTICES` (`pip-licenses`, `license-checker`, `cargo about`) and
+- [x] CI generates `THIRD_PARTY_NOTICES` (`pip-licenses`, `license-checker`, `cargo about`) and
       bundles it with every artefact. It also writes source links for the bundled tool builds,
       and the full licence text of every bundled part (the owner's answer,
       [decision 0079](../decisions/0079-q5-release-process.md) item 11, "Fix round — FL"; the
-      parts still without one are listed there).
-      **Built, not in CI yet**: `scripts/third-party-notices.py` is run by the package builds
+      parts still without one are listed there and are open items for v1, item 12).
+      **Built**: `scripts/third-party-notices.py` is run by the package builds
       before `tauri build` (`desktop/packaging/linux/build.sh`, and the Windows build) and ships
       as `notices/THIRD_PARTY_NOTICES` next to `sidecar/` and `tools/`; checked in the Linux
       packages and the Windows installers ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md)
       tasks L and W). Q-5 ([decision 0079](../decisions/0079-q5-release-process.md)): the Docker
       image carries it too, with a list of its Debian packages and their source links; the
       release workflow runs every build (not run on GitHub yet).
-- [ ] **The corresponding source** of the GPL parts (FFmpeg and the libraries the BtbN build
+- [x] **The corresponding source** of the GPL parts (FFmpeg and the libraries the BtbN build
       links), or a written offer, ships with each release. The notices
       give only repository and commit links today. Decided
       ([decision 0073](../decisions/0073-gpl-corresponding-source-per-tool-pin.md)): one
       sources release for each set of pinned source versions, named by the hash of a source
       manifest. Each app release's notices link to it. There is no written offer. Built by Q-5
-      (`scripts/sources-manifest.py`, `scripts/sources-fetch.py`; 0079 "Task S").
+      (`scripts/sources-manifest.py`, `scripts/sources-fetch.py`; 0079 "Task S"); the
+      release workflow makes it (not run on GitHub yet).

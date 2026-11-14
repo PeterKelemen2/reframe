@@ -647,3 +647,17 @@ run locally where they can be.
 |------|------|
 | 2026-11-14 | Owner answers: conventional commits from now on, Windows signing when the secrets are set, an arm64 pin, no PyPI for v1. 0079, the plan, `CLAUDE.md` and this section committed; wave 1 (V, S, A, W) launched. |
 | 2026-11-14 | Merged A (a8fa0f1), V (53694fc), S (643465a); the lead's pins and notices hook (fcda364) and tidy-ups (71f8c3d). Owner answers (0079 item 9): the version stays `0.1.0.dev0`, no pre-releases, `latest.json` Windows-only until the Linux update path is checked, notices per platform, RFC 3161 timestamps. Task N built the notices per platform (8a7007e); W reconciled the workflow with what was delivered and merged (46614c0). The lead broke each task once (arm64 → x64 FFmpeg; the Tauri field not stamped; a shorter sources tag; Ubuntu/url archives in every platform's notices; a signature for another version accepted); its tests caught each. Review R1 launched. |
+| 2026-11-14 | Review R1 (xhigh): 2 blockers (the Windows `mkvpropedit.exe`'s MXE sources, the unpinned AppImage runtime), 1 major (a draft sources release reused), 10 minor, nits; the lead reproduced B1, B2 and M1. Owner answers (0079 item 10): MXE sources, a pinned runtime, the native arm runner and a public repository, GPG-signed `SHA256SUMS`. Fix rounds FW (merged 3b56ec5) and FS (merged c2012c2); the lead broke each once (a leftover draft kept; the pinned runtime not handed to the bundler), both caught. |
+| 2026-11-14 | Owner answers (0079 item 11): no `mkvpropedit.exe` in the Windows installers, Boost's source not needed, the full licence texts in the notices. Fix round FL merged (0e0127c); the lead broke it twice (the "no licence text" refusal removed; the Windows MKVToolNix folder search skipped), both caught. Owner answers (item 12): FL's four uncovered groups stay open items for v1; the Docker image's 3.6 MB of Debian copyright files is accepted. |
+
+#### Where Q-5 ended (2026-11-14)
+
+Done on Linux, on `m10-hardening`, not merged into `main`, not pushed. Every worktree and
+branch of the run (V, S, A, W, N, FW, FS, FL) is removed; R1 worked from a scratch copy. The
+release workflow has never run on GitHub: its jobs' commands ran locally, its decisions are in
+`scripts/release-workflow.py` with a fake GitHub in the tests. Open items for v1 (0079 item 12):
+the full texts of CPython's own libraries, MediaInfoLib's internal code, the AppImage's `AppRun`
+and GTK hook, and the Windows-only parts. Before the first release the owner makes the GPG key
+(its public block into `docs/release.md`), sets the secrets, makes the repository public and
+sets the first version (`docs/release.md`). Final checks, each run alone: ruff, format, both mypy runs, actionlint 1.7.12, pytest 8190 passed (five chunks), unit 2177, server 107, build:web, e2e 315 passed twice (12.5 min, three browsers). Rest of M10: the release checklist; S-6's
+NVIDIA/Intel checks wait for such a host.

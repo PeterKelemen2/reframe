@@ -121,6 +121,15 @@ the certificate secrets are set; an arm64 FFmpeg pin; no PyPI for v1.
      third-party part, not only its name and source link: the BSD/MIT/ISC/zlib-style licences ask
      for the text in a binary distribution.
 
+12. **The owner's answers to fix FL's questions (2026-11-14).**
+   - **The four groups FL left without full texts stay open items for v1** ("Fix round — FL",
+     "Not covered"): CPython's own libraries (python-build-standalone's `full` archives),
+     MediaInfoLib's internal third-party code, the AppImage's `AppRun` and the GTK plugin hook,
+     and the Windows-only parts. Each still has its name and source link in the notices. They
+     are on the release checklist; the Windows group is checked in the Windows testing phase.
+   - **The Docker image keeps every installed Debian package's copyright file** (3.6 MB, most of
+     it Boost's, which Debian's `mkvtoolnix` pulls in); no deduplication.
+
 ## Consequences
 
 - Nothing in this step can run on GitHub before a push: the workflow is checked with
@@ -609,7 +618,36 @@ removed).
 
 ## Review and fix round
 
-(Filled by the lead.)
+Review R1 (xhigh, a fresh agent, 2026-11-14) read every task's code and ran its tests and
+mutations. The lead reproduced each blocker and major before the fix round; the owner answered
+the questions they raised (items 10, 11 and 12). Three fix agents: FW (the workflow), FS
+(sources and licences), then FL (the owner's item 11). The lead broke each merged fix once
+(a mutation) and the tests caught it.
+
+| Finding | What | Outcome |
+|---------|------|---------|
+| B1 (blocker) | The Windows `mkvpropedit.exe` is an MXE static build (Qt, GNU MP, Boost) whose sources were not in the manifest | FS added the MXE tree and parts; then the owner removed `mkvpropedit.exe` from the Windows installers (item 11; FL), and its sources left with it. Windows users install MKVToolNix: discovery also searches its install folder, and every message names it |
+| B2 (blocker) | The AppImage runtime was fetched unpinned at build time and not in the manifest | Fixed (FS): pinned (URL + SHA-256), handed to the bundler (`LDAI_RUNTIME_FILE`), checked in the built AppImage (`appimage-libs.py check-runtime`); type2-runtime and what it links statically are in the manifest |
+| M1 (major) | A draft or partial sources release counted as found; a gh error counted as "not found" | Fixed (FW): `release-workflow.py sources-find` deletes drafts and accepts only a published release whose every asset matches `SHA256SUMS`; any gh error stops the step; the release job does the same for its own draft |
+| m1 | A test pinned the version string | Fixed by the lead (2a8f24c) |
+| m2 | The sidecar's Ubuntu `libstdc++`, `libgcc_s`, `libz` were neither listed nor checked | Fixed (FS): mapped to their Ubuntu packages in every Linux package |
+| m3 | The documented Docker notices command failed, and without `--tools` the notices lacked FFmpeg | Fixed (FS): `--tools` with an `ffmpeg/` folder required for `docker-*`; the doc corrected |
+| m4 | The manifest's hash depended on the caller's `SCRIPT_*` variables | Fixed (FS): evaluated in a clean environment |
+| m5 | The Linux build image's apt was unpinned | Fixed (FS): `snapshot.ubuntu.com` at a pinned time |
+| m6 | `latest` always moved, also for a patch on an older line | Fixed (FW): only for the highest `vX.Y.Z` tag |
+| m7 | Nothing stopped a run on a private repository | Fixed (FW): `preflight` refuses it (the owner makes the repository public, item 10) |
+| m8 | Test holes in both halves | Fixed: FW moved the workflow's logic into `scripts/release-workflow.py` with tests; FS added the named tests |
+| m9 | The Linux packages were not "signed" | Fixed (FW): a GPG-signed `SHA256SUMS` of every file; the key is required like the Tauri key |
+| m10 | A dev version (`0.1.0-dev.0`) breaks the MSI | Documented (FW): dev builds use `--bundles nsis` or stamp a final version locally; the rpm has the same limit (FS; `docs/release.md`) |
+| Nits | Windows signing secrets, `to_semver` edge cases, concurrency note; survived mutations SF3, SF15, SF12, AL3, AL5, TN6 | Fixed, each with a test |
+
+**Owner answers that changed the scope:** no `mkvpropedit.exe` on Windows; Boost's source not
+needed; the full licence texts of every bundled part in the notices (FL: 38 mutations caught),
+with four groups left as open items (item 12).
+
+**Not run** (needs GitHub or Windows): the release workflow itself (every job), the sources
+release upload, the multi-arch image push, Windows signing with a real certificate, the GPG key,
+and the Windows discovery of an installed MKVToolNix (the registry read is mocked).
 
 ### Fix round — FW (the workflow), 2026-11-14
 
