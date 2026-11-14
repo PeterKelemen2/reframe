@@ -142,6 +142,25 @@ function chooseChapter(edge: Edge, value: unknown): void {
   )
 }
 
+const drop = (click: MouseEvent) => click.stopPropagation()
+
+/**
+ * A chapter list chooses on the press and leaves before the release, so the browser sends the
+ * click to an element under both, which the popover would take for a click outside. The list
+ * needs no click: the click of a press in it is dropped.
+ */
+function pressInList(): void {
+  // The click of a press comes in the same task as its release.
+  window.addEventListener(
+    'mouseup',
+    () => {
+      window.addEventListener('click', drop, { capture: true, once: true })
+      setTimeout(() => window.removeEventListener('click', drop, { capture: true }))
+    },
+    { capture: true, once: true },
+  )
+}
+
 /** What a time or frame field shows for the range as it is. */
 function shown(edge: Edge): string {
   const current = range.value
@@ -364,6 +383,7 @@ function reset(): void {
                 :ariaLabelledby="labelId"
                 :invalid="invalid"
                 fluid
+                :pt="{ overlay: { onMousedown: pressInList } }"
                 @update:model-value="chooseChapter('start', $event)"
               />
             </template>
@@ -384,6 +404,7 @@ function reset(): void {
                 :ariaLabelledby="labelId"
                 :invalid="invalid"
                 fluid
+                :pt="{ overlay: { onMousedown: pressInList } }"
                 @update:model-value="chooseChapter('end', $event)"
               />
             </template>

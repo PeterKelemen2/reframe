@@ -21,6 +21,8 @@ interface Pixels {
   width: number
   height: number
   data: number[]
+  /** A canvas's content box in CSS pixels, and the device pixel ratio. */
+  box: { width: number; height: number; ratio: number }
 }
 
 /** A canvas's pixels (`selector`), or the decoded PNG of an image's `src`. */
@@ -34,6 +36,8 @@ function pixels(page: Page, selector: string): Promise<Pixels> {
     interface Element {
       width: number
       height: number
+      clientWidth: number
+      clientHeight: number
       src?: string
       getContext(kind: '2d'): Context
     }
@@ -57,7 +61,12 @@ function pixels(page: Page, selector: string): Promise<Pixels> {
       canvas.getContext('2d').drawImage(bitmap, 0, 0)
     }
     const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)
-    return { width: canvas.width, height: canvas.height, data: Array.from(data) }
+    const box = {
+      width: element.clientWidth,
+      height: element.clientHeight,
+      ratio: Reflect.get(globalThis, 'devicePixelRatio') as number,
+    }
+    return { width: canvas.width, height: canvas.height, data: Array.from(data), box }
   }, selector)
 }
 
@@ -85,9 +94,16 @@ const horizontal = (edge: Edge) => edge === 'top' || edge === 'bottom'
  * What each line of a strip across its crop line shows (canvas rows of the top and bottom
  * strips, columns of the left and right ones), as runs: `tinted×47 line×2 kept×47`. A line is
  * `kept` or `tinted` when every pixel on it is the source frame's (tinted) pixel at `zoom`, from
- * the source row or column `first` on.
+ * the source row or column `first` on. The canvas has `devicePixelRatio` pixels per CSS pixel.
  */
 function strip(shown: Pixels, source: Pixels, edge: Edge, zoom: number, first: number): string {
+  // The page scales a canvas whose pixels are not its box at the device pixel ratio, and that
+  // smooths the zoomed pixels and the line.
+  const { box } = shown
+  if (shown.width !== box.width * box.ratio || shown.height !== box.height * box.ratio) {
+    return `${shown.width}×${shown.height} canvas in a ${box.width}×${box.height} box at ×${box.ratio}`
+  }
+  const scale = zoom * box.ratio
   const across = horizontal(edge) ? shown.height : shown.width
   const along = horizontal(edge) ? shown.width : shown.height
   const extent = horizontal(edge) ? source.width : source.height
@@ -101,8 +117,8 @@ function strip(shown: Pixels, source: Pixels, edge: Edge, zoom: number, first: n
           for (let pixel = 0; pixel < along; pixel += 1) {
             const from = offset(
               source,
-              first + Math.floor(line / zoom),
-              start + Math.floor(pixel / zoom),
+              first + Math.floor(line / scale),
+              start + Math.floor(pixel / scale),
             )
             if (!shows(kind, shown, offset(shown, line, pixel), source, from)) return false
           }
@@ -112,26 +128,32 @@ function strip(shown: Pixels, source: Pixels, edge: Edge, zoom: number, first: n
   // Along its crop line the strip follows the pointer: find where it starts.
   const known = (list: Kind[]) => list.filter((kind) => kind !== 'other').length
   let best: Kind[] = []
-  for (let start = 0; start + along / zoom <= extent; start += 1) {
+  for (let start = 0; start + along / scale <= extent; start += 1) {
     const found = kinds(start)
     if (known(found) > known(best)) best = found
   }
   return runs(best)
 }
 
-/** The strip that shows the crop at `boundary` (the first kept or the first removed line). */
+/**
+ * The strip that shows the crop at `boundary` (the first kept or the first removed line), `depth`
+ * CSS pixels deep at `ratio` canvas pixels per CSS pixel.
+ */
 function expectedStrip(
   edge: Edge,
   zoom: number,
   first: number,
   boundary: number,
   depth: number,
+  ratio: number,
 ): string {
   const removedFirst = edge === 'top' || edge === 'left'
-  const at = (boundary - first) * zoom
-  const kinds = Array.from({ length: depth }, (_, line): Kind => {
-    if (line === at - 1 || line === at) return 'line'
-    const before = first + Math.floor(line / zoom) < boundary
+  const scale = zoom * ratio
+  const at = (boundary - first) * scale
+  const kinds = Array.from({ length: depth * ratio }, (_, line): Kind => {
+    // Two CSS pixels wide, one on each side of the boundary.
+    if (line >= at - ratio && line < at + ratio) return 'line'
+    const before = first + Math.floor(line / scale) < boundary
     return before === removedFirst ? 'tinted' : 'kept'
   })
   return runs(kinds)
@@ -175,16 +197,14 @@ async function expectStrips(page: Page, zoom: number, crop: Record<Edge, number>
       const figure = magnifier.locator(`[data-edge="${edge}"]`)
       const range = await figure.locator('[data-range]').textContent()
       const first = Number(/(\d+)–/.exec(range ?? '')?.[1])
-      // The strip's depth across its crop line, in CSS pixels.
-      const box = await figure.locator('canvas').boundingBox()
-      const depth = Math.round((horizontal(edge) ? box?.height : box?.width) ?? 0)
+      const selector = `[data-crop-magnifier] [data-edge="${edge}"] canvas`
+      const { box } = await pixels(page, selector)
+      const depth = horizontal(edge) ? box.height : box.width
       const shown = () =>
-        pixels(page, `[data-crop-magnifier] [data-edge="${edge}"] canvas`).then((canvas) =>
-          strip(canvas, source, edge, zoom, first),
-        )
+        pixels(page, selector).then((canvas) => strip(canvas, source, edge, zoom, first))
       await expect
         .poll(shown, { message: `${edge} strip at ${zoom}× (${range})` })
-        .toBe(expectedStrip(edge, zoom, first, boundaryOf(edge, crop), depth))
+        .toBe(expectedStrip(edge, zoom, first, boundaryOf(edge, crop), depth, box.ratio))
     }),
   )
 }
