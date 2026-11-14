@@ -1,9 +1,9 @@
 /* oxlint-disable eslint/no-await-in-loop -- the checks, and the Tabs of a walk, take turns on one page */
 import { AxeBuilder } from '@axe-core/playwright'
-import { expect, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 import { DARK_MODE_CLASS } from '../../src/styles/theme'
-import { PROBE_GLOBAL, type ProbeApi, type ProbeFinding } from './probeApi'
+import { PROBE_GLOBAL, type ProbeApi, type ProbeFinding, type ShotPlace } from './probeApi'
 import type { Browser, Check, Finding, Known, Screen, Theme } from './types'
 
 // Loaded at run time and never followed by this program's type check: it needs the DOM library,
@@ -18,6 +18,18 @@ const SETTLE_MS = 200
 
 /** More stops than any screen has: a walk that reaches it is cut and the screen needs a region. */
 const WALK_LIMIT = 250
+
+/** axe's reasons for leaving a text contrast open that the probe cannot measure either. */
+const UNMEASURED = new Set(['bgImage', 'imgNode', 'equalRatio', 'colorParse'])
+/** Text that axe takes for an icon: held to the 3:1 of a graphic. */
+const ICON_TEXT = new Set(['shortTextContent', 'nonBmp'])
+
+const OPPOSITE: Record<string, string> = {
+  ArrowRight: 'ArrowLeft',
+  ArrowLeft: 'ArrowRight',
+  ArrowDown: 'ArrowUp',
+  ArrowUp: 'ArrowDown',
+}
 
 async function call<K extends keyof ProbeApi>(
   page: Page,
@@ -65,17 +77,72 @@ export async function motionFindings(page: Page, screen: Screen, theme: Theme): 
   return tag(screen, 'motion', theme, await call(page, 'motion'))
 }
 
+function selectorOf(target: readonly unknown[]): string {
+  return target.map((part) => (Array.isArray(part) ? part.join(' ') : String(part))).join(' ')
+}
+
+function reasonOf(data: unknown): string {
+  return typeof data === 'object' && data !== null && 'messageKey' in data
+    ? String(data.messageKey)
+    : 'unknown'
+}
+
+/**
+ * axe on the whole page, whatever the screen's region: a region only narrows the focus walk. The
+ * text contrasts axe leaves open (a gradient, a pseudo-element, an element partly covered) are
+ * measured by the probe; what neither can measure is noted on the test.
+ */
 export async function axeFindings(page: Page, screen: Screen, theme: Theme): Promise<Finding[]> {
-  let builder = new AxeBuilder({ page }).withTags(WCAG_TAGS)
-  if (screen.region !== undefined) builder = builder.include(screen.region)
-  const { violations } = await builder.analyze()
+  const { violations, incomplete } = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze()
   const nodes = violations.flatMap((violation) =>
     violation.nodes.map((node) => ({
       rule: violation.id,
-      selector: node.target.map((part) => (Array.isArray(part) ? part.join(' ') : part)).join(' '),
+      selector: selectorOf(node.target),
       detail: node.failureSummary?.split('\n').slice(1).join(' ').trim(),
     })),
   )
+  const unmeasured = new Map<string, number>()
+  const count = (why: string) => unmeasured.set(why, (unmeasured.get(why) ?? 0) + 1)
+  const open = incomplete
+    .filter((result) => result.id === 'color-contrast')
+    .flatMap((result) =>
+      result.nodes.map((node) => ({
+        selector: selectorOf(node.target),
+        reason: reasonOf(node.any[0]?.data),
+      })),
+    )
+    .filter((node) => {
+      if (!UNMEASURED.has(node.reason)) return true
+      count(node.reason)
+      return false
+    })
+  const measured = await call(
+    page,
+    'measureText',
+    open.map((node) => node.selector),
+  )
+  open.forEach((node, index) => {
+    const result = measured[index]
+    if (result === undefined) return
+    if (result.skip !== undefined) {
+      count(result.skip)
+      return
+    }
+    const need = ICON_TEXT.has(node.reason) ? 3 : result.need
+    if (result.ratio < need) {
+      nodes.push({
+        rule: 'color-contrast-measured',
+        selector: node.selector,
+        detail: `${result.ratio.toFixed(2)}:1, ${need}:1 needed (axe: ${node.reason})`,
+      })
+    }
+  })
+  if (unmeasured.size > 0) {
+    test.info().annotations.push({
+      type: 'contrast not measured',
+      description: `${screen.id} ${theme}: ${[...unmeasured].map(([why, n]) => `${why} ${n}`).join(', ')}`,
+    })
+  }
   const targets = await call(
     page,
     'describeAll',
@@ -93,20 +160,79 @@ export async function axeFindings(page: Page, screen: Screen, theme: Theme): Pro
   )
 }
 
+type Pictures = Partial<Record<Theme, { png: string; place: ShotPlace }>>
+
+async function pictures(page: Page, shot: number): Promise<Pictures> {
+  const taken: Pictures = {}
+  for (const theme of ['light', 'dark'] as const) {
+    await call(page, 'setTheme', theme)
+    const place = await call(page, 'shotPlace', shot)
+    if (place === null) continue
+    const png = await page.screenshot({ clip: place.clip, scale: 'css', caret: 'hide' })
+    taken[theme] = { png: png.toString('base64'), place }
+  }
+  await call(page, 'setTheme', null)
+  return taken
+}
+
+/** Judges stops by their pictures, now that they have lost the focus. */
+async function pixelFindings(
+  page: Page,
+  screen: Screen,
+  shots: readonly number[],
+  focused: Map<number, Pictures>,
+): Promise<Finding[]> {
+  const found: Finding[] = []
+  for (const shot of shots) {
+    if (!(await call(page, 'looksPlain', shot))) await page.waitForTimeout(SETTLE_MS)
+    const before = focused.get(shot) ?? {}
+    const after = await pictures(page, shot)
+    for (const theme of ['light', 'dark'] as const) {
+      const one = before[theme]
+      const other = after[theme]
+      if (one === undefined || other === undefined) continue
+      const finding = await call(page, 'comparePixels', shot, one, other)
+      if (finding !== null) found.push(...tag(screen, 'focus', theme, [finding]))
+    }
+  }
+  return found
+}
+
+/** Moves the focus inside the stop's widget with an arrow key and back; judges the item met. */
+async function arrowFindings(page: Page, screen: Screen, arrow: string): Promise<Finding[]> {
+  let used = arrow
+  await page.keyboard.press(used)
+  let moved = await call(page, 'arrowSeen')
+  if (!moved) {
+    used = OPPOSITE[arrow] ?? arrow
+    await page.keyboard.press(used)
+    moved = await call(page, 'arrowSeen')
+  }
+  if (!moved) return []
+  await page.keyboard.press(OPPOSITE[used] ?? used)
+  const back = await call(page, 'arrowBack')
+  return [...tag(screen, 'focus', 'light', back.light), ...tag(screen, 'focus', 'dark', back.dark)]
+}
+
 /**
  * Tabs through the screen and judges each stop in both themes once the focus has left it: its
- * focused paint against its unfocused paint (`probe.ts`).
+ * focused paint against its unfocused paint (`probe.ts`), or its pictures where paint over a
+ * picture or through a filter cannot be computed. A whole-page walk starts at the top of the
+ * page, a region's at the top of the region. The item an arrow key reaches inside a stop's
+ * widget is judged too.
  */
 export async function focusFindings(page: Page, screen: Screen): Promise<Finding[]> {
   const found: Finding[] = []
   const region = screen.region ?? null
-  if (region !== null) {
-    expect(await call(page, 'enterRegion', region), `the region ${region}`).toBe(true)
-  }
+  const start = region ?? 'body'
+  expect(await call(page, 'enterRegion', start), `the region ${start}`).toBe(true)
+  // The set-up's focused element has just lost the focus: its blur settles before its look.
+  await page.waitForTimeout(SETTLE_MS)
   await call(page, 'walkStart', DARK_MODE_CLASS, WALK_LIMIT, region)
+  const focused = new Map<number, Pictures>()
   for (;;) {
     await page.keyboard.press('Tab')
-    if (region !== null) await call(page, 'leaveRegion', region)
+    await call(page, 'leaveRegion', start)
     let step = await call(page, 'walkStep')
     if (step.settle) {
       await page.waitForTimeout(SETTLE_MS)
@@ -114,6 +240,11 @@ export async function focusFindings(page: Page, screen: Screen): Promise<Finding
     }
     found.push(...tag(screen, 'focus', 'light', step.findings.light))
     found.push(...tag(screen, 'focus', 'dark', step.findings.dark))
+    found.push(...(await pixelFindings(page, screen, step.pixels, focused)))
+    if (step.shoot !== null) focused.set(step.shoot, await pictures(page, step.shoot))
+    if (!step.done && step.arrow !== null) {
+      found.push(...(await arrowFindings(page, screen, step.arrow)))
+    }
     if (!step.done) continue
     expect(step.stops, `${screen.id}: the walk is cut at ${WALK_LIMIT} stops`).toBeLessThan(
       WALK_LIMIT,
@@ -123,7 +254,10 @@ export async function focusFindings(page: Page, screen: Screen): Promise<Finding
   }
 }
 
-/** Every check on the screen in both themes; the focus walk last, since it moves the focus. */
+/**
+ * Every check on the screen in both themes; the focus walk last, since it moves the focus, and
+ * the motion check once more after it, for what the walk set moving.
+ */
 export async function checkScreen(page: Page, screen: Screen): Promise<Finding[]> {
   const found: Finding[] = []
   for (const theme of ['light', 'dark'] as const) {
@@ -132,6 +266,8 @@ export async function checkScreen(page: Page, screen: Screen): Promise<Finding[]
     found.push(...(await axeFindings(page, screen, theme)))
   }
   found.push(...(await focusFindings(page, screen)))
+  await call(page, 'settled')
+  found.push(...(await motionFindings(page, screen, 'dark')))
   return found
 }
 
@@ -144,7 +280,7 @@ function matches(known: Known, theme: Theme, finding: Finding): boolean {
     known.screen === finding.screen &&
     known.check === finding.check &&
     theme === finding.theme &&
-    (known.rule === undefined || known.rule === finding.rule) &&
+    known.rule === finding.rule &&
     known.target === finding.target
   )
 }

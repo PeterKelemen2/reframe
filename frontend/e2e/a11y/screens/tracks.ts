@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 
-import { openApp, openFile } from '../../support/app'
+import { openApp, openFile, waitForStore } from '../../support/app'
 import { expect } from '../../support/test'
 import { editSeason, openSeason, openTab, showTab } from '../steps'
 import type { Screen } from '../types'
@@ -126,7 +126,7 @@ export const screens: Screen[] = [
   {
     id: 'group',
     area: 'tracks',
-    region: '.group-banner',
+    // The whole workspace in group mode: the season group of the sources tree, the banner.
     async setup(page) {
       await editSeason(page)
       await page
@@ -143,6 +143,10 @@ export const screens: Screen[] = [
       await seasonWithError(page)
       await page.locator('.group-banner [data-action="check-group"]').click()
       await expect(page.locator('.matrix-dialog tbody tr')).toHaveCount(12)
+      // The matrix renders its cells anew for each answer: one still on its way would replace
+      // the cells under the checks.
+      await waitForStore(page, 'editor', 'resolving', false)
+      await expect(page.locator('.matrix-dialog__resolving')).toHaveText('')
     },
   },
   {

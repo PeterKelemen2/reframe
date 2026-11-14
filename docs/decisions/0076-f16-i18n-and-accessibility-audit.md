@@ -124,18 +124,24 @@ set-up, the checks run in this order:
    probe toggles the app's dark class for the look of the other theme, so one walk serves both.
 
 **`region`.** A screen that is a part of the page (a dialog, a popover, an editor tab, a
-settings section, the preview panel) names it: axe checks only it, and the walk starts in it
-and ends when the focus leaves it. Without a region, the whole page, and the walk starts where
-the set-up left the focus and ends when the focus comes back to its first stop, leaves the
-page or stays put. (Firefox, headless: a Tab past the last element moves the focus out of the
-page but leaves that element as `document.activeElement`; `document.hasFocus()` turning false
-ends the walk.) A walk of 250 stops fails the screen: it needs a region. So the shell's columns are checked on the shell's screens (`workspace-empty`,
-`toast` with a file open), not again on each tab of the picture and tracks areas.
+settings section, the preview panel) names it: the walk starts at the top of the region and
+ends when the focus leaves it or comes back to its first stop (a modal dialog's focus trap).
+axe and the motion check always take the whole page (changed by FG, below). Without a region,
+the walk takes the whole page from its top: the probe focuses `body` (tabindex -1 for the
+moment), so the first Tab goes to the first stop of the page and the element the set-up left
+the focus on is a stop like the others. Neither browser wraps round in headless mode, so a
+whole-page walk ends at the last stop: Chromium leaves the focus on it, Firefox moves it out
+of the page but leaves that element as `document.activeElement` (`document.hasFocus()` turning
+false ends the walk). A walk of 250 stops fails the screen: it needs a region. So the shell's
+columns are walked on the shell's whole-page screens (`workspace-empty`, `toast` and
+`status-error` with a file open, `settings`), not again on each tab of the picture and tracks
+areas.
 
 **axe.** `@axe-core/playwright` 4.14.0 (axe-core 4.14.0), pinned exactly, with the tags
-`wcag2a wcag2aa wcag21a wcag21aa wcag22a wcag22aa`. Only violations count; axe's "incomplete"
-results (contrast over an image, for example) are not findings. axe runs on the app as served
-(`dist/`), with the app's CSP; no bypass is needed.
+`wcag2a wcag2aa wcag21a wcag21aa wcag22a wcag22aa`, on the whole page. Violations count; of
+axe's "incomplete" results, the probe measures the text contrasts it can (below, FG) and the
+others are noted on the test. axe runs on the app as served (`dist/`), with the app's CSP; no
+bypass is needed.
 
 **The focus walk** (0076 item 1 point 3). Before the walk, the probe takes the unfocused look
 of every element that can take the focus (in the region), in both themes: computed outline,
@@ -151,14 +157,17 @@ Tab, the stop is looked at again, and when the focus has moved on, it is judged:
   input is not an indicator).
 - `indicator-contrast`: the best change is below 3:1. A mark that appears (outline, outer or
   inner shadow, underline) is measured against what it lies on: the colour found by hit testing
-  just outside the element on each side (a slider's handle sticks out of its track), the best
-  side counts. A border, fill or text colour that changes is measured against its unfocused
+  just outside the element on each side (a slider's handle sticks out of its track); the
+  contrast reached on at least half of the sides counts (FG: it was the best side). A border, fill or text colour that changes is measured against its unfocused
   colour, since it was there before: a grey border that turns indigo is 1.3:1, too little to
   show the focus, and is reported. This is stricter than 1.4.11 alone and closer to 2.4.13;
   it is the answer to K1's question (its list, item 4). The shared layer now gives form fields
   a ring, so they pass.
-- `obscured` (2.4.11): something else covers the part of the stop inside the window at its
-  centre and at four inner corners.
+- `obscured` (2.4.11): something else that paints (a background, a picture) covers the part of
+  the stop inside the window at its centre and at four inner corners, hit tested with
+  `pointer-events` forced on (FG).
+- `trap`, `region-exit`, `unreached` (FG): Tab stops of the region or page that the walk never
+  reached.
 
 Proof by mutation, kept as tests in `gate-checks.spec.ts`: removing the rail links'
 `:focus-visible` outline makes the walk report `no-indicator` at
@@ -175,8 +184,8 @@ scroller at 0, two frames later Chromium was still at 0 and Firefox at 19 px, an
 2500 px later. So the check waits 300 ms, not two frames, before it reads what moved.) Each check also reports the
 running `document.getAnimations()`, and every element (and its `::before`/`::after`) whose
 computed transition or animation duration is above 0 or whose `scroll-behavior` is smooth.
-The check runs after the set-up and after the switch to dark, so the transitions of a theme
-change are seen.
+The check runs after the set-up, after the switch to dark (so the transitions of a theme
+change are seen) and after the focus walk (FG).
 
 **Targets.** A finding names its element with a CSS selector the probe makes: the element's tag,
 its own classes (BEM classes first, PrimeVue's otherwise, state classes left out) and the
@@ -185,7 +194,8 @@ names an area (`data-card`, `data-panel`, a dialog, …). Ids with digits (gener
 used. Attributes that name a list item (`data-variable`, `data-preset`, …) are written without
 their value, so one fault of a row is one finding.
 
-**Known lists.** `known/<area>.ts` holds `{ screen, check, theme?, browser?, rule?, target }`.
+**Known lists.** `known/<area>.ts` holds `{ screen, check, theme?, browser?, rule, target }`
+(FG made `rule` required; the target matches exactly).
 An entry without `theme` stands for both themes, without `browser` for both browsers. The
 `browser` field is an addition to the breakdown's contract: some findings are of one engine
 only (Firefox paints some focus differently), and an entry that must happen in both would fail
@@ -194,8 +204,9 @@ nothing; its message prints the unlisted findings as entries to paste.
 
 **Runtime.** `npm run e2e` on this host, the whole run with the server start and the build:
 before, 1 min 20 s (24 tests); after, 4 min 23 s and 4 min 25 s in two runs in a row (124
-tests: the flows and layout tests, 42 screens, the list test and the gate's own 7 tests, in both browsers). Under the load of
-four agents at once a run took up to 10 min. The two
+tests: the flows and layout tests, 42 screens, the list test and the gate's own tests, in
+both browsers). Under the load of four agents at once a run took up to 10 min. The new runtime
+after FG is under "Review fixes (FG)". The two
 browsers run side by side, each with one worker on its own server (the queue is shared).
 
 ### `REFRAME_E2E_PORT`
@@ -300,6 +311,142 @@ list names the screen's area; some elements belong to another area, as the comme
   buttons of a changed option's tinted row show their focus at 1.23:1.
 - `tracks.ts`: a matrix cell, the naming chips and the Subtitles tab's scan button (picture
   area's ScanControl) have names that do not start with their visible text.
+
+### Review fixes (FG)
+
+Done on 2026-11-14 on Linux (this host), headless Chromium and Firefox of Playwright 1.64.1,
+on m10-hardening with FP's phase 1 merged (edb476b). Review R1 showed parts of the app that the
+gate never checked; R2 found two flaky tests and an `obscured` with no proof. What changed:
+
+- **Whole pages are walked from the top** (R1-1). The walk used to start where the set-up left
+  the focus and never wrapped, so the workspace with a file open was walked from its middle
+  (`toast` 3 stops, `crop-manual` 51 of about 100, `login` 1 stop and that one never judged).
+  The probe now focuses `body` first (above, "`region`"): `toast` is walked from the rail
+  through the header, the sources, the tabs, the Tags panel, the preview panel and the status
+  bar to the toast.
+- **axe takes the whole page on every screen** (R1-2); a region only narrows the walk. What
+  only regioned screens showed is walked on a whole-page screen too: `group` lost its region
+  (the banner) and walks the workspace in group mode, with the season group of the sources
+  tree; new screens `settings` (the settings page with its navigation) and `status-error` (the
+  status bar and the editor in the error state, a file open). FP's flat tree removed the
+  `label-content-name-mismatch` R1 saw on the group row. With these, every part a screen shows
+  is under axe on that screen and under the walk on at least one screen. The breakdown's ids
+  are kept. R1 counted 41 screens; there were 42 (the gate's run had 86 tests: 42 screens and
+  the list test, in two browsers), now 44.
+- **Each stop's own indicator** (R1-3). A part around the stop (a parent, the next sibling)
+  counts only when it holds no other focus target (a Tab stop or an item an arrow reaches): a
+  toolbar's `:focus-within` change says nothing about which button has the focus. The item an
+  arrow key reaches inside a stop's widget is judged too: tabs (Right/Left), tree items, menu
+  items and options (Down/Up), and the option an `aria-activedescendant` names (in a listbox, a
+  tree, a grid, an open combobox). The gate presses the arrow, judges what it reached, and
+  presses the opposite arrow. An option is judged against its look once it is pointed at no
+  more, not against the look from before the walk (it may have been the pointed one then). A
+  border change counts with its own side's width (the language picker's active option is a
+  left bar only; reading the top border's width, which is 0, missed it).
+- **Paint as it is painted** (R1-4). Colours are faded by the opacity of the element and its
+  ancestors; a `background-image` gradient gives each of its colours and the worst counts; an
+  ancestor that clips its overflow (or `contain: paint`) cuts the ring away where it lies
+  outside it; the contrast that counts is the one reached on at least half of the sides (not
+  the best side); each side is looked at across from the middle of what can be seen of the
+  stop, and the ring is measured while the stop has the focus (the next stop's focus may have
+  scrolled it away by the time it is judged). `obscured` hit tests with `pointer-events`
+  forced on and counts only what paints (a background, a picture), so an overlay with
+  `pointer-events: none` hides a stop.
+- **Pixels where computed colours cannot be right** (R1-4). A stop next to a picture (an
+  `img`, `canvas`, `video` or `url()` background, found by hit testing 3 px outside it), with a
+  picture inside it, or under a filter or a blend mode, is judged by screenshots: its box and
+  8 px round it, focused and unfocused, in both themes. The pixels that changed by 3:1 must add
+  up to a 1 px line round the part of the stop that can be seen (half of 2.4.13's 2 px); the
+  area of the stop that has the focus now is left out. On the app these are mostly the preview
+  panel's thumbnails and the boxes that hold a frame or the crop magnifier.
+- **Traps and regions left early** (R1-5). At the end of a walk, the Tab stops of the region
+  (or the page) that were there from its start and were never reached are findings: `trap`
+  when Tab left the focus where it was with stops after it, `region-exit` when the focus left
+  the region with stops after it, `unreached` for each one otherwise. PrimeVue's focus-trap
+  sentinels (`data-p-hidden-focusable`) hand the focus on at once and are not counted.
+- **Motion during and after the walk** (R1-6). The motion check runs once more after the walk
+  (a `:focus-visible` transition shows only then), `Animation.play` of an animation built by
+  hand is recorded, and a script tween is: frame callbacks that change an element's `style`
+  in 10 frames in a row (`frame-loop`). A smooth-scroll is no longer reported when another
+  scroll call or a focus change came within its 300 ms (the arrows of a tab list scroll it).
+- **axe's open contrasts** (R1-7). The colour-contrast nodes that axe leaves "incomplete" are
+  measured by the probe (text colour faded by opacity, against the backgrounds and gradients
+  behind it and the pseudo-elements' backgrounds), against 4.5:1, 3:1 for large text and for
+  what axe takes for an icon (`shortTextContent`, `nonBmp`): `color-contrast-measured`. Not
+  measured, and noted on the test as `contrast not measured`: `bgImage`, `imgNode`,
+  `equalRatio`, `colorParse`, text behind a modal dialog's mask (inactive while it is open; the
+  same text is checked on the screen without the dialog), disabled controls, and nodes no
+  longer in the page when the probe looks. On the merged product, one run, per browser
+  (Chromium / Firefox, both themes added up): behind a modal 41 / 41 (`apply-to-group`,
+  `bulk-edit`, `defaults`, `job-log`, `matrix`, `queue-group`), gone 17 / 12 (`command-drawer`,
+  `matrix`, `queue`, `range`: their content is rendered anew while the checks run), `imgNode`
+  6 / 4 (`filters`, `split-compare`); no `bgImage`. Every other open node was measured, and
+  none is below its threshold.
+- **Known entries** (R1 nit): `rule` is required and the target matches exactly.
+- **Flaky tests** (R2). `matrix` waits until the editor no longer resolves the matrix (the
+  cells are rendered anew for each answer); `keyboard-tracks` "language picker reopens" waits
+  for the dialog's enter transition to end before its Tab. On the merged product (FP's
+  `dialogFocus.ts`) neither failed in 20 (language picker, Firefox) and 10 (matrix, Chromium)
+  repeats without the waits, nor with them; the waits stay, since they wait for what the
+  tests assume.
+- **Flow 2** follows FP's flat sources tree: the members are the level-2 tree items after the
+  group's row, no longer inside it (the flow failed in both browsers on the merged product).
+
+Proof by mutation, each a test of `gate-checks.spec.ts` that fails with the defect put in the
+gate and passes without it (run in Chromium; the tests pass in both browsers):
+
+| Defect put in the gate | Test that fails |
+|---|---|
+| a part round several stops counts as the indicator | a change of a box round several stops is no indicator for any of them |
+| opacity ignored | a ring is measured faded by the opacity of an ancestor |
+| gradients ignored | a ring is measured against a gradient …; axe text contrast left open over a gradient is measured |
+| clipping ignored | a ring that an ancestor clips away is no ring |
+| the best side wins | a ring seen on one side only does not pass |
+| no pixel judgement | a ring over a picture is judged by its pixels |
+| `obscured` returns false at its top (R2) | an overlay that lets the pointer through still hides a stop |
+| hit tests without `pointer-events` forced | the same |
+| trap, region exit, unreached not reported | a stop that keeps the focus on Tab is a trap; a focus that leaves a region …; a stop that the walk round a region never reaches … |
+| the pointed option not judged; one border width for all sides | the option a list points at shows the focus, the one an arrow key reaches too |
+| no arrow keys | a tab that only an arrow key reaches is judged; the walk judges the file browser entry an arrow key points at |
+| `Animation.play` or frame loops not watched | the motion check sees an animation started by hand and a script tween |
+| rings measured at judge time; the visible part ignored | a ring is measured where the stop can be seen, while it has the focus |
+| open contrasts not measured | axe text contrast left open over a gradient is measured |
+| the walk starts where the set-up left the focus | the walk of a whole page reaches the workspace header, the sources and the editor tabs; the walk judges the element the set-up left the focus on |
+| axe limited to the region | axe looks past the region (three tests: the sources tree under a dialog, the settings links, the status bar in its error state) |
+| the settings page walked by one section | the settings page is walked with its links |
+| no motion check after the walk | the motion check looks again after the walk |
+| a known entry matches any rule, or a target by its start | `compare`: an entry with a rule matches that rule only; an entry matches its whole target only |
+
+R1's mutations of the real screens (no focus style on the header, the sources, the editor tabs,
+the login field, the file browser's cursor, the settings links; the group row, the settings
+links and the error summary in a light colour) are among these tests.
+
+**Runtime.** `REFRAME_E2E_PORT=8700 npm run e2e` on this host (load average about 3 from other
+agents), the whole run with the build and the server start: 7 min 51 s and 7 min 50 s in two
+runs in a row, 198 tests (the flows, layout and keyboard tests, 44 screens and the list test, the gate's
+own 33 tests, in both browsers); before FG, 4 min 23 s for 124 tests. Firefox's gate file
+alone takes 5.9 min. What costs most: axe on the whole page in both themes on every screen
+(about 1 s more per screen), the whole-page walks (`toast`, `crop-manual`, `status-error`,
+`group`, `settings`: 9 to 21 s each), and the pixel judgements of the preview panel (its
+thumbnails touch each other: `preview-frames`, `split-compare` and `preview-clip` went from
+3–6 s to 10–13 s).
+
+**Known entries added** (FP's list; each with its cause in the file):
+
+- `shell.ts`: Firefox makes a box that scrolls a Tab stop; its ring (2 px, 2 px outside) is
+  cut away by the clipping ancestor: the editor's tab list viewport (`.p-tablist` clips) and the
+  preview panel's content (`.preview-panel` clips) on `toast` and `status-error`, the settings
+  body (`main.settings-view` clips) on `settings`.
+- `picture.ts`: the same two Firefox scrollers on `crop-manual`, the preview content on
+  `preview-frames` and `split-compare`; the crop magnifier's "previous frame" button, 2.88:1 in
+  light (slate ring on the magnifier's grey surface); `command-drawer`: the open drawer covers
+  the bottom of the Video tab, so a target partly under it keeps less than 24 px (2.5.8): the
+  frame-rate help button (Chromium), the rate field's input (Firefox, dark) and the slider's
+  handle (Firefox).
+- `tracks.ts`: the same two Firefox scrollers on `group` (now a whole-page screen).
+
+The Firefox scroller entries share one cause: one fix (an inset ring on a box that scrolls, or
+no clipping round it) removes them from every screen.
 
 ## Task K1: the shell and the pages
 
