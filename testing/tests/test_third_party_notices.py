@@ -388,3 +388,132 @@ def test_the_notices_ship_in_every_desktop_package() -> None:
 
     assert config["bundle"]["resources"]["resources/notices/"] == "notices/"
     assert tpn.DEFAULT_OUT.parent == REPO_ROOT / "desktop" / "src-tauri" / "resources" / "notices"
+
+
+SUMS = (
+    f"{'a' * 64}  ffmpeg-2a571b606854.tar.xz\n{'b' * 64} *ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar\n"
+)
+SOURCES_URL = "https://github.com/owner/reframe/releases/tag/sources-0123456789ab"
+
+
+def test_the_notices_name_the_sources_release_and_each_archives_checksum(tmp_path: Path) -> None:
+    sums = tmp_path / "SHA256SUMS"
+    sums.write_text(SUMS)
+
+    preface = tpn.sources_text(SOURCES_URL, tpn.read_sources_sums(sums))
+    text = tpn.render([], version="1.0.0", platform="windows-x64", preface=[preface])
+
+    lines = text.splitlines()
+    assert f"  {SOURCES_URL}" in lines
+    assert f"  {'a' * 64}  ffmpeg-2a571b606854.tar.xz" in lines
+    assert f"  {'b' * 64}  ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar" in lines
+
+
+@pytest.mark.parametrize("content", ["", "abc  file.tar\n", f"{'a' * 64}  ../file.tar\n"])
+def test_a_sums_file_that_is_not_sha256sums_output_is_an_error(
+    tmp_path: Path, content: str
+) -> None:
+    sums = tmp_path / "SHA256SUMS"
+    sums.write_text(content)
+
+    with pytest.raises(tpn.NoticesError):
+        tpn.read_sources_sums(sums)
+
+
+def test_a_sources_url_without_its_sums_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        tpn.main(["--platform", "linux-x64", "--out", str(tmp_path / "N"), "--sources-url", "x"])
+
+    assert exit_info.value.code == 2
+
+
+def test_the_sources_release_comes_before_the_entries_in_the_written_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    entry = tpn.Entry("ffmpeg", "n9.0", "GPL-3.0-or-later")
+    monkeypatch.setattr(tpn, "docker_sections", lambda *args: [("Bundled tools", [entry])])
+    sums = tmp_path / "SHA256SUMS"
+    sums.write_text(SUMS)
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    code = tpn.main(
+        [
+            "--platform",
+            "docker-linux-arm64",
+            "--out",
+            str(out),
+            "--sources-url",
+            SOURCES_URL,
+            "--sources-sums",
+            str(sums),
+        ]
+    )
+
+    assert code == 0
+    text = out.read_text()
+    assert text.splitlines()[0].endswith("(docker-linux-arm64)")
+    assert text.index(SOURCES_URL) < text.index("Debian packages") < text.index("ffmpeg n9.0")
+
+
+EXPORT = """\
+annotated-types==0.8.0
+colorama==0.4.6 ; sys_platform == 'win32'
+fastapi==0.159.1
+reframe-server==0.1.0
+uvloop==0.21.0 ; platform_machine == 'x86_64'
+Typing_Extensions==4.16.0
+"""
+
+
+@pytest.mark.parametrize(("machine", "extra"), [("x86_64", ["uvloop"]), ("aarch64", [])])
+def test_the_images_python_packages_are_those_its_platform_installs(
+    machine: str, extra: list[str]
+) -> None:
+    assert tpn.parse_uv_export(EXPORT, machine) == sorted(
+        ["annotated-types", "fastapi", "typing-extensions", *extra]
+    )
+
+
+def test_the_export_selects_the_packages_the_images_uv_sync_installs() -> None:
+    syncs = [line.split() for line in tpn.DOCKERFILE.read_text().splitlines() if "uv sync" in line]
+
+    assert syncs
+    for words in syncs:
+        selection = [w for w in words if w in {"--frozen", "--no-dev", "--all-packages"}]
+        extras = [arg for i, w in enumerate(words) if w == "--extra" for arg in (w, words[i + 1])]
+        assert not {"--group", "--all-extras", "--only-group", "--dev"} & set(words)
+        assert (*selection, *extras) == tpn.DOCKER_EXPORT
+
+
+def test_the_image_notices_refuse_another_python_than_the_images(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(tpn.host_platform, "python_version", lambda: "3.13.0")
+
+    with pytest.raises(tpn.NoticesError, match=r"uv run --python 3\.\d+\.\d+"):
+        tpn.docker_sections("docker-linux-x64", tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("platform", "other"),
+    [("docker-linux-x64", "linux-arm64"), ("docker-linux-arm64", "linux-x64")],
+)
+def test_the_images_ffmpeg_gets_the_pin_of_its_platform_without_the_desktop_libva(
+    tmp_path: Path, platform: str, other: str
+) -> None:
+    manifests = tmp_path / "manifests"
+    manifests.mkdir()
+    pin = (REPO_ROOT / "tools" / "ffmpeg.toml").read_text()
+    if "platforms.linux-arm64]" not in pin:
+        arm64 = "https://example.invalid/ffmpeg-n9.0.2-linuxarm64-gpl-shared-9.0.tar.xz"
+        pin += f'\n[builds.default.platforms.linux-arm64]\nurl = "{arm64}"\n'
+    (manifests / "ffmpeg.toml").write_text(pin)
+    shutil.copy(REPO_ROOT / "tools" / "bundled-tools.toml", manifests)
+    tools = tmp_path / "tools"
+    _layout(tools, "ffmpeg")
+    ffmpeg_platform = tpn.DOCKER_PLATFORMS[platform][0]
+
+    [entry] = tpn.tool_entries(tools, manifests, ffmpeg_platform, libraries=False)
+
+    assert f"{ffmpeg_platform}.url: " in entry.text
+    assert f"{other}.url" not in entry.text
