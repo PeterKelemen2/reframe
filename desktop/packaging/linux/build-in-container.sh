@@ -35,10 +35,15 @@ if [ -n "${REFRAME_SOURCES_URL:-}" ]; then
 fi
 uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py "$@"
 
+LDAI_RUNTIME_FILE=$(sh desktop/packaging/linux/appimage-runtime.sh "$HOME/.cache/reframe")
+export LDAI_RUNTIME_FILE
+
 rm -rf "$CARGO_TARGET_DIR/release/bundle"
 (cd desktop && npx tauri build --verbose)
 
 bundle="$CARGO_TARGET_DIR/release/bundle"
+uv run --no-project python scripts/appimage-libs.py check-runtime "$bundle"/appimage/*.AppImage \
+    --runtime "$LDAI_RUNTIME_FILE"
 mkdir -p /out
 cp "$bundle"/deb/*.deb "$bundle"/rpm/*.rpm "$bundle"/appimage/*.AppImage \
     desktop/src-tauri/resources/notices/THIRD_PARTY_NOTICES /out/

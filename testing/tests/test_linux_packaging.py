@@ -3,6 +3,7 @@ release that build.sh hands to the build."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -83,27 +84,38 @@ BUILD = TAURI.parent / "packaging" / "linux"
 FAKE_DOCKER = """#!/bin/sh
 for arg in "$@"; do printf '%s\\n' "$arg"; done >> "$DOCKER_LOG"
 echo -- >> "$DOCKER_LOG"
+case "$*" in *"$DOCKER_FAIL_ON"*) [ -n "$DOCKER_FAIL_ON" ] && exit 1 ;; esac
+exit 0
 """
 
 
-def _build(tmp_path: Path, **sources: str) -> tuple[subprocess.CompletedProcess[str], list[str]]:
-    """Run build.sh with a docker that only logs its arguments; the arguments of its run."""
+def _docker_calls(
+    tmp_path: Path, fail_on: str = "", **sources: str
+) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
+    """Run build.sh with a docker that only logs its arguments (and fails a call that contains
+    ``fail_on``); the arguments of each docker call."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "docker").write_text(FAKE_DOCKER)
     (bin_dir / "docker").chmod(0o755)
     log = tmp_path / "docker.log"
     env = {k: v for k, v in os.environ.items() if not k.startswith("REFRAME_")}
-    env |= {"PATH": f"{bin_dir}:{env['PATH']}", "DOCKER_LOG": str(log), **sources}
+    env |= {"PATH": f"{bin_dir}:{env['PATH']}", "DOCKER_LOG": str(log), "DOCKER_FAIL_ON": fail_on}
     result = subprocess.run(
         ["sh", str(BUILD / "build.sh"), str(tmp_path / "out")],
-        env=env,
+        env=env | sources,
         capture_output=True,
         text=True,
         check=False,
     )
     calls = log.read_text().split("--\n") if log.exists() else []
-    runs = [call.splitlines() for call in calls if call.startswith("run\n")]
+    return result, [call.splitlines() for call in calls if call]
+
+
+def _build(tmp_path: Path, **sources: str) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+    """Run build.sh with a docker that only logs its arguments; the arguments of its first run."""
+    result, calls = _docker_calls(tmp_path, **sources)
+    runs = [call for call in calls if call[0] == "run"]
     return result, runs[0] if runs else []
 
 
@@ -185,3 +197,113 @@ def test_the_notices_read_the_sources_files_where_build_sh_mounts_them() -> None
     assert sorted(option for option, _ in passed) == ["manifest", "sums"]
     for _, path in passed:
         assert f':{path}:ro"' in outside
+
+
+@skip_windows
+def test_a_release_build_checks_the_appimage_against_the_manifests_package_list(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "appimage-libs.json").write_text("{}")
+
+    result, calls = _docker_calls(
+        tmp_path, REFRAME_APPIMAGE_LIBS=str(tmp_path / "appimage-libs.json")
+    )
+
+    assert result.returncode == 0, result.stderr
+    [_, check] = [call for call in calls if call[0] == "run"]
+    assert _mounts(check)["/appimage-libs.json"] == str(tmp_path / "appimage-libs.json")
+    # The sh -c script is the last argument; the log has one line per line of it.
+    command = " ".join(" ".join(check[check.index("-c") + 1 :]).replace("\\", " ").split())
+    assert command == (
+        "uv run --no-project python /src/scripts/appimage-libs.py check"
+        " /build/target/release/bundle/appimage/*.AppDir --expected /appimage-libs.json"
+    )
+
+
+@skip_windows
+def test_a_failed_package_check_fails_the_build(tmp_path: Path) -> None:
+    (tmp_path / "appimage-libs.json").write_text("{}")
+
+    result, _ = _docker_calls(
+        tmp_path, "appimage-libs.py", REFRAME_APPIMAGE_LIBS=str(tmp_path / "appimage-libs.json")
+    )
+
+    assert result.returncode != 0
+
+
+@skip_windows
+def test_a_missing_package_list_stops_the_build_before_docker(tmp_path: Path) -> None:
+    result, calls = _docker_calls(tmp_path, REFRAME_APPIMAGE_LIBS=str(tmp_path / "missing.json"))
+
+    assert result.returncode == 1
+    assert f"no file {tmp_path / 'missing.json'}" in result.stderr
+    assert calls == []
+
+
+def test_the_bundler_gets_the_pinned_runtime_and_the_appimage_is_checked_against_it() -> None:
+    lines = (BUILD / "build-in-container.sh").read_text().splitlines()
+
+    fetch = next(i for i, line in enumerate(lines) if "appimage-runtime.sh" in line)
+    export = lines.index("export LDAI_RUNTIME_FILE")
+    build = next(i for i, line in enumerate(lines) if "tauri build" in line)
+    check = next(i for i, line in enumerate(lines) if "check-runtime" in line)
+    assert lines[fetch].startswith("LDAI_RUNTIME_FILE=$(")
+    assert fetch < export < build < check
+    assert '--runtime "$LDAI_RUNTIME_FILE"' in lines[check + 1]
+
+
+def _runtime_tree(tmp_path: Path, content: bytes, sha256: str) -> tuple[Path, Path]:
+    """A copy of appimage-runtime.sh with a static-builds.toml whose runtime is a local file."""
+    script = tmp_path / "repo" / "desktop" / "packaging" / "linux" / "appimage-runtime.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text((BUILD / "appimage-runtime.sh").read_text())
+    upstream = tmp_path / "upstream" / "runtime-x86_64"
+    upstream.parent.mkdir()
+    upstream.write_bytes(content)
+    (tmp_path / "repo" / "tools").mkdir()
+    (tmp_path / "repo" / "tools" / "static-builds.toml").write_text(
+        f'[binaries.appimage-runtime]\nurl = "{upstream.as_uri()}"\nsha256 = "{sha256}"\n'
+    )
+    return script, upstream
+
+
+def _fetch_runtime(script: Path, cache: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["sh", str(script), str(cache)],
+        cwd=script.parent,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=120,
+    )
+
+
+@skip_windows
+def test_the_pinned_runtime_is_downloaded_once_and_checked_each_time(tmp_path: Path) -> None:
+    content = b"\x7fELF runtime"
+    sha256 = hashlib.sha256(content).hexdigest()
+    script, upstream = _runtime_tree(tmp_path, content, sha256)
+    cache = tmp_path / "cache"
+
+    first = _fetch_runtime(script, cache)
+    upstream.unlink()
+    second = _fetch_runtime(script, cache)
+
+    assert first.returncode == 0, first.stderr
+    assert first.stdout == second.stdout == f"{cache / f'appimage-runtime-{sha256}'}\n"
+    assert (cache / f"appimage-runtime-{sha256}").read_bytes() == content
+    (cache / f"appimage-runtime-{sha256}").write_bytes(b"damaged")
+    assert _fetch_runtime(script, cache).returncode != 0
+
+
+@skip_windows
+def test_a_runtime_without_its_pinned_checksum_is_refused(tmp_path: Path) -> None:
+    script, _ = _runtime_tree(tmp_path, b"another runtime", "0" * 64)
+    cache = tmp_path / "cache"
+
+    result = _fetch_runtime(script, cache)
+
+    assert result.returncode == 1
+    assert f"does not have the SHA-256 {'0' * 64}" in result.stderr
+    assert result.stdout == ""
+    assert sorted(p.name for p in cache.iterdir()) == []

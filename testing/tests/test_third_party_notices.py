@@ -407,6 +407,9 @@ MANIFEST = {
     "MediaInfo_CLI_26.10_GNU_FromSource.tar.xz": ("url", ["windows-x64"]),
     "libva-2.24.1.tar.bz2": ("url", ["linux-x64"]),
     "ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar": ("ubuntu-source", ["linux-x64"]),
+    "type2-runtime-dd6cebedcbdd.tar.xz": ("repository", ["linux-x64"]),
+    "mxe-02b82ecfdc5a.tar.xz": ("repository", ["windows-x64"]),
+    "gmp-6.3.0.tar.xz": ("url", ["windows-x64"]),
 }
 EVERY_PLATFORM = ["ffmpeg-2a571b606854.tar.xz", "ffmpeg-builds-6c9aec5d1a2b.tar.xz"]
 EVERY_PLATFORM += ["btbn-x264-0123456789ab.tar.xz"]
@@ -416,12 +419,15 @@ BUNDLED = {
         "btbn-davs2-0123456789ab.tar.xz",
         "libva-2.24.1.tar.bz2",
         "ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar",
+        "type2-runtime-dd6cebedcbdd.tar.xz",
     ],
     "windows-x64": [
         *EVERY_PLATFORM,
         "btbn-mingw-0123456789ab.tar.xz",
         "mkvtoolnix-103.0.tar.xz",
         "MediaInfo_CLI_26.10_GNU_FromSource.tar.xz",
+        "mxe-02b82ecfdc5a.tar.xz",
+        "gmp-6.3.0.tar.xz",
     ],
     "docker-linux-x64": [*EVERY_PLATFORM, "btbn-davs2-0123456789ab.tar.xz"],
     "docker-linux-arm64": [*EVERY_PLATFORM, "btbn-armonly-0123456789ab.tar.xz"],
@@ -436,7 +442,8 @@ def _checksum(archive: str) -> str:
 def _sources(
     folder: Path, manifest: Mapping[str, tuple[str, list[str]]] = MANIFEST, sums: str = ""
 ) -> list[str]:
-    """The ``--sources-*`` options for ``manifest`` and its sums (by default one line each)."""
+    """The ``--sources-*`` options for ``manifest`` and its sums (by default one line each), and
+    ``--tools``."""
     entries = [
         {"archive": name, "kind": kind, "name": name, "platforms": platforms}
         for name, (kind, platforms) in sorted(manifest.items())
@@ -453,6 +460,8 @@ def _sources(
         str(folder / "SHA256SUMS"),
         "--sources-manifest",
         str(path),
+        "--tools",
+        str(folder),
     ]
 
 
@@ -493,6 +502,8 @@ def test_the_notices_list_only_the_archives_that_the_platform_bundles(
         ("btbn-armonly-0123456789ab.tar.xz", {"docker-linux-arm64"}),
         ("btbn-mingw-0123456789ab.tar.xz", {"windows-x64"}),
         ("ffmpeg-2a571b606854.tar.xz", set(BUNDLED)),
+        ("type2-runtime-dd6cebedcbdd.tar.xz", {"linux-x64"}),
+        ("mxe-02b82ecfdc5a.tar.xz", {"windows-x64"}),
     ],
 )
 def test_each_kind_of_source_goes_to_the_packages_that_bundle_it(
@@ -660,6 +671,7 @@ def test_the_image_notices_refuse_another_python_than_the_images(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(tpn.host_platform, "python_version", lambda: "3.13.0")
+    (tmp_path / "ffmpeg").mkdir()
 
     with pytest.raises(tpn.NoticesError, match=r"uv run --python 3\.\d+\.\d+"):
         tpn.docker_sections("docker-linux-x64", tmp_path)
@@ -688,3 +700,82 @@ def test_the_images_ffmpeg_gets_the_pin_of_its_platform_without_the_desktop_libv
 
     assert f"{ffmpeg_platform}.url: " in entry.text
     assert f"{other}.url" not in entry.text
+
+
+@pytest.fixture
+def stub_sections(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every section but the tools and static builds empty, without npx, cargo or pip-licenses."""
+    python = tpn.Entry("CPython", "3.14.8", "PSF-2.0")
+    monkeypatch.setattr(tpn.host_platform, "python_version", tpn.docker_python_version)
+    monkeypatch.setattr(tpn, "python_interpreter_entry", lambda: python)
+    for name in ("python_entries", "javascript_entries", "rust_entries"):
+        monkeypatch.setattr(tpn, name, lambda *args: [])
+    for name in ("docker_mediainfo_entry", "mediainfo_library_entry"):
+        monkeypatch.setattr(tpn, name, lambda *args: [])
+    monkeypatch.setattr(tpn, "docker_distributions", lambda machine: [])
+    monkeypatch.setattr(tpn, "shipped_top_level_names", lambda sidecar: set())
+
+
+@pytest.mark.usefixtures("stub_sections")
+def test_the_image_notices_list_its_ffmpeg_and_no_desktop_part(tmp_path: Path) -> None:
+    # fetch-tools.py's folder: FFmpeg with its licence, no libva (the image uses Debian's).
+    _layout(tmp_path, "ffmpeg", licence="LICENSE.txt")
+
+    sections = dict(tpn.docker_sections("docker-linux-x64", tmp_path))
+
+    assert [entry.name for entry in sections["Bundled tools"]] == ["ffmpeg"]
+    assert "Statically linked libraries" not in sections
+
+
+def test_the_image_notices_need_the_folder_with_the_images_ffmpeg(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    with pytest.raises(SystemExit) as exit_info:
+        tpn.main(["--platform", "docker-linux-x64", "--out", str(out)])
+    assert exit_info.value.code == 2
+    assert "--tools is required" in capsys.readouterr().err
+
+    code = tpn.main(
+        ["--platform", "docker-linux-arm64", "--out", str(out), "--tools", str(tmp_path)]
+    )
+    assert code == 1
+    assert "has no ffmpeg folder: scripts/fetch-tools.py --platform linux-arm64" in (
+        capsys.readouterr().err
+    )
+    assert not out.exists()
+
+
+@pytest.mark.usefixtures("stub_sections")
+@pytest.mark.parametrize(
+    ("platform", "binary", "parts"),
+    [
+        (
+            "windows-x64",
+            "mkvpropedit.exe",
+            [
+                "Qt Base (Qt Core) 6.12.0 (LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only); "
+                "qtbase-everywhere-src-6.12.0.tar.xz",
+                "GNU MP 6.3.0 (LGPL-3.0-or-later OR GPL-2.0-or-later); gmp-6.3.0.tar.xz",
+            ],
+        ),
+        (
+            "linux-x64",
+            "AppImage type 2 runtime",
+            [
+                "libfuse 3.15.0 (LGPL-2.1-only); fuse-3.15.0.tar.xz",
+                "squashfuse 0.5.2 (BSD-2-Clause); squashfuse-0.5.2.tar.gz",
+            ],
+        ),
+    ],
+)
+def test_the_desktop_notices_list_each_library_a_static_build_links(
+    tmp_path: Path, platform: str, binary: str, parts: list[str]
+) -> None:
+    sections = dict(tpn.desktop_sections(platform, tmp_path / "no-tools"))
+
+    [entry] = sections["Statically linked libraries"]
+    assert binary in entry.name
+    for part in parts:
+        assert f"  {part}" in entry.text.splitlines()

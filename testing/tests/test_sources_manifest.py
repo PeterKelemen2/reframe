@@ -96,7 +96,54 @@ def _btbn_tree(root: Path) -> Path:
     return root
 
 
-def _tools(root: Path, *, mediainfo_sha: str = SHA_A, arm64: bool = False) -> Path:
+RUNTIME_COMMIT = "dd6cebedcbddde9c82f89b011e8e1d40b6e43868"
+MXE_COMMIT = "02b82ecfdc5a63decc4e64e06ca2dc8f0b7158f1"
+STATIC_BUILDS = f"""
+[binaries.appimage-runtime]
+description = "AppImage runtime"
+platforms = ["linux-x64"]
+license = "MIT"
+source_repository = "https://github.com/AppImage/type2-runtime"
+source_commit = "{RUNTIME_COMMIT}"
+
+[[binaries.appimage-runtime.parts]]
+name = "libfuse"
+version = "3.15.0"
+license = "LGPL-2.1-only"
+url = "https://github.com/libfuse/libfuse/releases/download/fuse-3.15.0/fuse-3.15.0.tar.xz"
+sha256 = "{"c" * 64}"
+
+[[binaries.appimage-runtime.parts]]
+name = "squashfuse"
+version = "0.5.2"
+license = "BSD-2-Clause"
+url = "https://github.com/vasi/squashfuse/archive/0.5.2.tar.gz"
+sha256 = "{"d" * 64}"
+archive = "squashfuse-0.5.2.tar.gz"
+
+[binaries.mkvpropedit]
+description = "mkvpropedit.exe, an MXE static build"
+platforms = ["windows-x64"]
+license = "GPL-2.0-only"
+source_repository = "https://codeberg.org/mbunkus/mxe"
+source_commit = "{MXE_COMMIT}"
+
+[[binaries.mkvpropedit.parts]]
+name = "GNU MP"
+version = "6.3.0"
+license = "LGPL-3.0-or-later OR GPL-2.0-or-later"
+url = "https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz"
+sha256 = "{"e" * 64}"
+"""
+
+
+def _tools(
+    root: Path,
+    *,
+    mediainfo_sha: str = SHA_A,
+    arm64: bool = False,
+    static_builds: str = STATIC_BUILDS,
+) -> Path:
     root.mkdir(parents=True)
     base = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08"
     platforms = {"linux-x64": "linux64", "windows-x64": "win64"}
@@ -130,6 +177,7 @@ def _tools(root: Path, *, mediainfo_sha: str = SHA_A, arm64: bool = False) -> Pa
             for platform in ("linux-x64", "linux-arm64")
         )
     )
+    (root / "static-builds.toml").write_text(static_builds)
     return root
 
 
@@ -329,3 +377,85 @@ def test_a_stage_line_the_script_cannot_read_is_an_error(tmp_path: Path) -> None
 
     with pytest.raises(sm.ManifestError, match="cannot read the stage"):
         sm.btbn_stages(tree, "linux64", "gpl-shared", "9.0")
+
+
+def test_the_callers_script_variables_do_not_change_the_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clean = sm.encode(_build(tmp_path / "a"))
+    monkeypatch.setenv("SCRIPT_TOKEN", "from the runner")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/reframe")
+
+    leaky = _build(tmp_path / "b")
+
+    x264 = next(e for e in leaky["entries"] if e["name"].startswith("btbn-50-x264-"))
+    assert set(x264["variables"]) == {"SCRIPT_COMMIT", "SCRIPT_REPO"}
+    assert sm.encode(leaky) == clean
+
+
+def test_each_static_build_brings_its_tree_and_every_linked_library(tmp_path: Path) -> None:
+    entries = _entries(_build(tmp_path))
+
+    runtime = entries[f"type2-runtime-{RUNTIME_COMMIT[:12]}.tar.xz"]
+    mxe = entries[f"mxe-{MXE_COMMIT[:12]}.tar.xz"]
+    assert (runtime["kind"], runtime["commit"], runtime["platforms"]) == (
+        "repository",
+        RUNTIME_COMMIT,
+        ["linux-x64"],
+    )
+    assert (mxe["repository"], mxe["platforms"]) == (
+        "https://codeberg.org/mbunkus/mxe",
+        ["windows-x64"],
+    )
+    fuse = entries["fuse-3.15.0.tar.xz"]
+    assert (fuse["kind"], fuse["sha256"], fuse["license"], fuse["platforms"]) == (
+        "url",
+        "c" * 64,
+        "LGPL-2.1-only",
+        ["linux-x64"],
+    )
+    assert entries["squashfuse-0.5.2.tar.gz"]["url"].endswith("/archive/0.5.2.tar.gz")
+    assert entries["gmp-6.3.0.tar.xz"]["platforms"] == ["windows-x64"]
+
+
+def test_a_static_build_part_without_a_pinned_checksum_is_an_error(tmp_path: Path) -> None:
+    static = STATIC_BUILDS.replace(f'sha256 = "{"e" * 64}"', "")
+
+    with pytest.raises(sm.ManifestError, match=r"GNU MP 6\.3\.0: the SHA-256 of .* is not pinned"):
+        _build(tmp_path, static_builds=static)
+
+
+def test_a_tarball_that_two_static_builds_link_is_one_entry_for_both(tmp_path: Path) -> None:
+    gmp = STATIC_BUILDS.split("[[binaries.mkvpropedit.parts]]")[1]
+    static = STATIC_BUILDS + "\n[[binaries.appimage-runtime.parts]]" + gmp
+
+    entries = _entries(_build(tmp_path, static_builds=static))
+
+    assert entries["gmp-6.3.0.tar.xz"]["platforms"] == ["linux-x64", "windows-x64"]
+
+
+def test_two_different_tarballs_with_one_archive_name_are_an_error(tmp_path: Path) -> None:
+    gmp = STATIC_BUILDS.split("[[binaries.mkvpropedit.parts]]")[1].replace("e" * 64, "f" * 64)
+    static = STATIC_BUILDS + "\n[[binaries.appimage-runtime.parts]]" + gmp
+
+    with pytest.raises(sm.ManifestError, match=r"both be the archive gmp-6\.3\.0\.tar\.xz"):
+        _build(tmp_path, static_builds=static)
+
+
+def test_the_repositorys_static_builds_name_the_gpl_and_lgpl_parts() -> None:
+    entries = sm.static_entries(REPO_ROOT / "tools")
+
+    names = {
+        platform: {e["component"].split(",")[0] for e in entries if platform in e["platforms"]}
+        for platform in ("linux-x64", "windows-x64")
+    }
+    for part in ("libfuse 3.15.0", "squashfuse 0.5.2", "musl 1.2.5", "zstd 1.5.6", "zlib 1.3.1"):
+        assert part in names["linux-x64"]
+    for part in ("Qt Base (Qt Core) 6.12.0", "GNU MP 6.3.0", "libdvdread 6.1.3"):
+        assert part in names["windows-x64"]
+    trees = [e for e in entries if e["kind"] == "repository"]
+    assert {(e["name"], tuple(e["platforms"])) for e in trees} == {
+        (f"type2-runtime-{RUNTIME_COMMIT[:12]}", ("linux-x64",)),
+        (f"mxe-{MXE_COMMIT[:12]}", ("windows-x64",)),
+    }
+    assert len(sm.manifest(entries)["entries"]) == len(entries)

@@ -9,8 +9,18 @@ FROM ${UV_IMAGE} AS uv
 
 FROM ${UBUNTU_IMAGE}
 ENV DEBIAN_FRONTEND=noninteractive
+# Every package comes from the archive as it was at APT_SNAPSHOT, so the libraries the Linux
+# packages carry stay the ones the source manifest was resolved from until this moves (22.04's
+# apt has no --snapshot). The snapshot is HTTPS only: until ca-certificates is in, apt trusts the
+# archive's signatures alone, as it does with the image's default http:// archive.
+ARG APT_SNAPSHOT=20261114T000000Z
 # libdrm-dev, meson and ninja-build: bundle-tools.py builds libva next to the bundled FFmpeg.
-RUN apt-get update \
+RUN printf 'deb https://snapshot.ubuntu.com/ubuntu/%s %s main restricted universe multiverse\n' \
+        "$APT_SNAPSHOT" jammy "$APT_SNAPSHOT" jammy-updates "$APT_SNAPSHOT" jammy-security \
+        > /etc/apt/sources.list \
+    && apt-get -o Acquire::https::Verify-Peer=false update \
+    && apt-get -o Acquire::https::Verify-Peer=false install -y --no-install-recommends ca-certificates \
+    && apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential ca-certificates curl file git pkg-config wget xz-utils \
         libayatana-appindicator3-dev librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev libxdo-dev \

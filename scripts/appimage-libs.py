@@ -1,14 +1,17 @@
-"""The distro packages whose files the AppImage carries, with their source packages and versions,
-for the source manifest (``sources-manifest.py --appimage-libs``).
+"""The distro packages whose files the Linux packages carry, with their source packages and
+versions, for the source manifest (``sources-manifest.py --appimage-libs``).
 
 The notices name the sources release, so the list must be known before the AppImage is built:
 ``resolve`` reads the committed package list (``desktop/packaging/linux/appimage-packages.txt``)
 with ``dpkg-query`` in the build image. After ``tauri build``, ``check`` maps every distro file
-in the real AppDir to its package and fails unless the packages and versions are the ones the
-manifest was made from. Both run in the Linux build image (Ubuntu, dpkg)::
+in the real AppDir (the libraries linuxdeploy copies, and those the frozen sidecar of every Linux
+package carries) to its package and fails unless the packages and versions are the ones the
+manifest was made from; ``check-runtime`` fails unless the AppImage starts with the pinned
+runtime. ``resolve`` and ``check`` run in the Linux build image (Ubuntu, dpkg)::
 
     uv run --no-project python scripts/appimage-libs.py resolve --out appimage-libs.json
     uv run --no-project python scripts/appimage-libs.py check APPDIR --expected appimage-libs.json
+    uv run --no-project python scripts/appimage-libs.py check-runtime APPIMAGE --runtime FILE
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ import argparse
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 from collections.abc import Iterable, Mapping, Sequence
@@ -36,8 +40,14 @@ OWN_PREFIXES = (
     "usr/share/icons/",
     "apprun-hooks/",
 )
+#: PyInstaller copies the system libraries the sidecar needs here, next to wheel libraries; the
+#: .deb and .rpm carry the same folder.
+SIDECAR_LIBS = "usr/lib/Reframe/sidecar/_internal/"
+_LIBRARY_DIRS = ("/lib/", "/usr/lib/")
 #: Caches that linuxdeploy's GTK plugin generates in the AppDir.
 GENERATED = frozenset({"loaders.cache", "immodules.cache", "giomodule.cache", "gschemas.compiled"})
+#: Sections of the type 2 runtime that appimagetool fills in when it writes the AppImage.
+RUNTIME_WRITTEN = frozenset({".digest_md5", ".upd_info", ".sha256_sig", ".sig_key"})
 _FIELDS = ("package", "architecture", "version", "source", "source_version")
 
 
@@ -126,6 +136,12 @@ def owner(relative: str, index: Mapping[str, Sequence[tuple[str, str]]]) -> set[
     return set()
 
 
+def sidecar_owner(name: str, index: Mapping[str, Sequence[tuple[str, str]]]) -> set[str]:
+    """The packages that own a system library of the name ``name``: empty for the sidecar's
+    other files (Python's own library, wheel libraries)."""
+    return {pkg for path, pkg in index.get(name, ()) if path.startswith(_LIBRARY_DIRS)}
+
+
 def appdir_packages(appdir: Path, index: Mapping[str, Sequence[tuple[str, str]]]) -> list[str]:
     """The packages of every distro file in ``appdir``.
 
@@ -135,9 +151,16 @@ def appdir_packages(appdir: Path, index: Mapping[str, Sequence[tuple[str, str]]]
     unknown = []
     for path in sorted(appdir.rglob("*")):
         relative = path.relative_to(appdir).as_posix()
-        if (path.is_dir() and not path.is_symlink()) or _is_own(relative):
+        if path.is_dir() and not path.is_symlink():
             continue
-        owners = owner(relative, index)
+        if relative.startswith(SIDECAR_LIBS) and "/" not in relative.removeprefix(SIDECAR_LIBS):
+            owners = sidecar_owner(path.name, index)
+            if not owners:
+                continue
+        elif _is_own(relative):
+            continue
+        else:
+            owners = owner(relative, index)
         if len(owners) == 1:
             found |= owners
         elif path.name not in GENERATED:
@@ -195,6 +218,39 @@ def check(appdir: Path, expected_file: Path, packages_file: Path) -> list[str]:
     return problems
 
 
+def _elf_sections(data: bytes) -> dict[str, tuple[int, int]]:
+    """``(offset, size)`` of each section of a 64-bit little-endian ELF file, by name."""
+    try:
+        if data[:6] != b"\x7fELF\x02\x01":
+            raise AppImageLibsError("not a 64-bit little-endian ELF file")
+        shoff = struct.unpack_from("<Q", data, 0x28)[0]
+        entsize, count, names_index = struct.unpack_from("<HHH", data, 0x3A)
+        headers = [struct.unpack_from("<I20xQQ", data, shoff + i * entsize) for i in range(count)]
+        _, names_offset, _ = headers[names_index]
+        sections = {}
+        for name_offset, offset, size in headers:
+            start = names_offset + name_offset
+            sections[data[start : data.index(b"\0", start)].decode()] = (offset, size)
+        return sections
+    except (struct.error, IndexError, ValueError, UnicodeDecodeError) as e:
+        raise AppImageLibsError(f"cannot read the ELF section headers: {e}") from e
+
+
+def runtime_matches(appimage: bytes, runtime: bytes) -> bool:
+    """Whether ``appimage`` starts with ``runtime``, apart from what appimagetool writes into it.
+
+    :raises AppImageLibsError: ``runtime`` is not a type 2 runtime.
+    """
+    sections = _elf_sections(runtime)
+    if not set(sections) >= RUNTIME_WRITTEN:
+        raise AppImageLibsError("not an AppImage type 2 runtime: its data sections are missing")
+    head, pinned = bytearray(appimage[: len(runtime)]), bytearray(runtime)
+    for name in RUNTIME_WRITTEN:
+        offset, size = sections[name]
+        head[offset : offset + size] = pinned[offset : offset + size] = bytes(size)
+    return head == pinned
+
+
 def _print(lines: Iterable[str]) -> None:
     for line in lines:
         sys.stderr.write(f"appimage-libs: {line}\n")
@@ -209,11 +265,25 @@ def main(argv: list[str] | None = None) -> int:
     check_parser = commands.add_parser("check", help="compare a built AppDir with the list")
     check_parser.add_argument("appdir", type=Path)
     check_parser.add_argument("--expected", type=Path, required=True)
+    runtime_parser = commands.add_parser(
+        "check-runtime", help="compare the AppImage's runtime with the pinned one"
+    )
+    runtime_parser.add_argument("appimage", type=Path)
+    runtime_parser.add_argument("--runtime", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "resolve":
             data = resolve(args.packages, args.out)
             print(f"wrote {args.out} ({len(data['packages'])} packages)")
+            return 0
+        if args.command == "check-runtime":
+            runtime = args.runtime.read_bytes()
+            with args.appimage.open("rb") as appimage:
+                head = appimage.read(len(runtime))
+            if not runtime_matches(head, runtime):
+                _print([f"{args.appimage} does not start with the runtime {args.runtime}"])
+                return 1
+            print(f"{args.appimage} starts with the runtime {args.runtime}")
             return 0
         problems = check(args.appdir, args.expected, args.packages)
     except (AppImageLibsError, OSError, ValueError) as e:
