@@ -3,12 +3,21 @@
 # clean copy of the working tree: its tracked and untracked files, without the ignored ones.
 # Usage: desktop/packaging/linux/build.sh OUT_DIR
 # REFRAME_BUILD_NAME names the image and the cache volumes (default reframe-linux-build).
+# A release sets REFRAME_SOURCES_URL and REFRAME_SOURCES_SUMS (its sources release and that
+# release's SHA256SUMS file, for the notices) and REFRAME_APPIMAGE_LIBS (the appimage-libs.sh
+# file the source manifest was made from: the AppImage must carry exactly those packages).
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(git -C "$here" rev-parse --show-toplevel)
 out=$(realpath -m "${1:?usage: build.sh OUT_DIR}")
 name=${REFRAME_BUILD_NAME:-reframe-linux-build}
+sums=/dev/null
+[ -n "${REFRAME_SOURCES_SUMS:-}" ] && sums=$(realpath "$REFRAME_SOURCES_SUMS")
+if [ -n "${REFRAME_APPIMAGE_LIBS:-}" ]; then
+    libs=$(realpath "$REFRAME_APPIMAGE_LIBS")
+    [ -f "$libs" ] || { echo "build.sh: no file $libs" >&2; exit 1; }
+fi
 
 DOCKER_BUILDKIT=0 docker build -t "$name" "$here"
 mkdir -p "$out"
@@ -21,13 +30,25 @@ git ls-files -z --cached --others --exclude-standard --deduplicate \
         -v "$name-cargo:/opt/cargo/registry" \
         -v "$name-target:/build/target" \
         -v "$name-cache:/root/.cache" \
+        -v "$sums:/sources/SHA256SUMS:ro" \
         -e CARGO_TARGET_DIR=/build/target \
         -e npm_config_cache=/root/.cache/npm \
         -e OUT_OWNER="$(id -u):$(id -g)" \
+        -e REFRAME_SOURCES_URL="${REFRAME_SOURCES_URL:-}" \
         "$name" sh -c '
             mkdir -p /build/reframe && tar -xf - -C /build/reframe
             sh /build/reframe/desktop/packaging/linux/build-in-container.sh
             status=$?
             chown -R "$OUT_OWNER" /out
             exit $status'
+
+if [ -n "${REFRAME_APPIMAGE_LIBS:-}" ]; then
+    docker run --rm \
+        -v "$repo/scripts:/src/scripts:ro" \
+        -v "$here:/src/desktop/packaging/linux:ro" \
+        -v "$libs:/appimage-libs.json:ro" \
+        -v "$name-target:/build/target:ro" \
+        "$name" sh -c 'uv run --no-project python /src/scripts/appimage-libs.py \
+            check /build/target/release/bundle/appimage/*.AppDir --expected /appimage-libs.json'
+fi
 ls -l "$out"

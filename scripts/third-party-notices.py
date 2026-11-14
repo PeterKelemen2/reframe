@@ -1,11 +1,16 @@
-"""Write THIRD_PARTY_NOTICES for a desktop package: the licences of the Python packages that the
-frozen sidecar ships, of the frontend's production packages and of the desktop app's Rust crates,
-and the bundled tool builds with their licences and corresponding-source links.
+"""Write THIRD_PARTY_NOTICES for a desktop package or the Docker image: the licences of the
+Python packages that the frozen sidecar (or the image) ships, of the frontend's production
+packages and of the desktop app's Rust crates, the bundled tool builds with their licences and
+corresponding-source links, and the sources release with the SHA-256 of each archive in it.
 
 Run it after the sidecar build and the tools layout, in the project environment with
 pip-licenses next to it; ``npx`` and ``cargo about`` must be on ``PATH``::
 
-    uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py --platform linux-x64
+    uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py --platform linux-x64 \\
+        --sources-url URL --sources-sums SHA256SUMS
+
+For the Docker image, ``--tools`` holds only the FFmpeg folder that ``fetch-tools.py`` makes,
+and the interpreter must be the one the image installs (``uv run --python``).
 """
 
 from __future__ import annotations
@@ -40,6 +45,16 @@ LICENSE_CHECKER = "license-checker@25.0.1"
 MEDIAINFOLIB_LICENSE = "https://raw.githubusercontent.com/MediaArea/MediaInfoLib/v{version}/LICENSE"
 USER_AGENT = "reframe-third-party-notices/1"
 RUST_TARGETS = {"linux-x64": "x86_64-unknown-linux-gnu", "windows-x64": "x86_64-pc-windows-msvc"}
+#: The Docker image's platforms: the pinned FFmpeg platform and the machine of each.
+DOCKER_PLATFORMS = {
+    "docker-linux-x64": ("linux-x64", "x86_64"),
+    "docker-linux-arm64": ("linux-arm64", "aarch64"),
+}
+DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile"
+#: The packages the image's ``uv sync`` installs, as ``uv export`` options.
+DOCKER_EXPORT = ("--frozen", "--no-dev", "--all-packages", "--extra", "cli", "--extra", "mediainfo")
+_DOCKER_PYTHON_RE = re.compile(r"uv python install (\S+)")
+_SUMS_LINE_RE = re.compile(r"^([0-9a-f]{64}) [ *]([A-Za-z0-9._-]+)$")
 # Reframe's own distributions: their licence is not a third party's.
 OWN_DISTRIBUTIONS = frozenset({"reframe", "reframe-server"})
 # The bootloader and its runtime modules are inside every frozen executable.
@@ -192,10 +207,105 @@ def python_interpreter_entry() -> Entry:
     raise NoticesError(f"no LICENSE.txt in the Python installation {base}")
 
 
+def parse_uv_export(text: str, machine: str) -> list[str]:
+    """The distributions of ``uv export`` requirement lines whose markers hold on Linux on
+    ``machine``, without Reframe's own."""
+    from packaging.markers import Marker
+
+    environment = {
+        "sys_platform": "linux",
+        "platform_system": "Linux",
+        "os_name": "posix",
+        "platform_machine": machine,
+    }
+    found = set()
+    for line in text.splitlines():
+        requirement, _, marker = line.partition(";")
+        name, sep, _version = requirement.strip().partition("==")
+        if not sep or line.startswith((" ", "#", "-")):
+            continue
+        if marker.strip() and not Marker(marker.strip()).evaluate(environment):
+            continue
+        found.add(_canonical(name))
+    return sorted(found - OWN_DISTRIBUTIONS)
+
+
+def docker_distributions(machine: str) -> list[str]:
+    """The third-party distributions that the image's ``uv sync`` installs on ``machine``."""
+    export = _run(
+        [
+            "uv",
+            "export",
+            *DOCKER_EXPORT,
+            "--no-hashes",
+            "--no-emit-workspace",
+            "--no-header",
+            "--no-annotate",
+        ],
+        cwd=REPO_ROOT,
+    )
+    return parse_uv_export(export, machine)
+
+
+def docker_python_version(dockerfile: Path = DOCKERFILE) -> str:
+    """The CPython version that the image installs."""
+    found = _DOCKER_PYTHON_RE.findall(dockerfile.read_text(encoding="utf-8"))
+    if not found:
+        raise NoticesError(f"{dockerfile} installs no Python with uv")
+    return str(found[-1])
+
+
+def docker_mediainfo_entry() -> list[Entry]:
+    """The MediaInfo library in the pymediainfo wheel of this environment (the image's has it
+    too)."""
+    import pymediainfo
+
+    return _mediainfo_library(Path(pymediainfo.__file__).parent)
+
+
+def read_sources_sums(path: Path) -> list[tuple[str, str]]:
+    """``(sha256, archive)`` of each line of a ``SHA256SUMS`` file (``sha256sum`` format).
+
+    :raises NoticesError: the file is empty or has a line in another format.
+    """
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as e:
+        raise NoticesError(f"cannot read {path}: {e}") from e
+    sums = []
+    for line in lines:
+        match = _SUMS_LINE_RE.match(line)
+        if match is None:
+            raise NoticesError(f"{path}: not a SHA256SUMS line: {line!r}")
+        sums.append((match[1], match[2]))
+    if not sums:
+        raise NoticesError(f"{path} lists no archive")
+    return sums
+
+
+def sources_text(url: str, sums: Sequence[tuple[str, str]]) -> str:
+    lines = [
+        "The source code of the third-party parts under the GPL or LGPL (FFmpeg and the",
+        "libraries its build links, with the build scripts; MKVToolNix; the distribution",
+        "libraries of the AppImage) is in this sources release:",
+        "",
+        f"  {url}",
+        "",
+        "It holds a manifest of these sources and one archive for each. The SHA-256 of each",
+        "archive:",
+        "",
+    ]
+    return "\n".join(lines + [f"  {sha256}  {name}" for sha256, name in sums])
+
+
 def mediainfo_library_entry(sidecar: Path) -> list[Entry]:
     """The MediaInfo library that pymediainfo's wheel carries: the wheel holds pymediainfo's
     licence only, so the library's comes from MediaInfoLib's tag of that version."""
-    if not any((sidecar / "_internal" / "pymediainfo").glob("*mediainfo*")):
+    return _mediainfo_library(sidecar / "_internal" / "pymediainfo")
+
+
+def _mediainfo_library(package: Path) -> list[Entry]:
+    if not any(package.glob("*mediainfo*")):
         return []
     from pymediainfo import MediaInfo
 
@@ -394,10 +504,13 @@ def _library_entries(
     return entries
 
 
-def tool_entries(tools: Path, manifests: Path, platform: str) -> list[Entry]:
-    """One entry per bundled tool folder in ``tools`` and per library built into one, with
-    every field of its pin: the download, its checksum and the corresponding-source links. A
-    folder without a pin is an error: its source could not be named."""
+def tool_entries(
+    tools: Path, manifests: Path, platform: str, *, libraries: bool = True
+) -> list[Entry]:
+    """One entry per bundled tool folder in ``tools`` and, with ``libraries``, per library built
+    into one, with every field of its pin: the download, its checksum and the
+    corresponding-source links. A folder without a pin is an error: its source could not be
+    named."""
     entries = []
     folders = sorted(p for p in tools.iterdir() if p.is_dir()) if tools.is_dir() else []
     for folder in folders:
@@ -417,18 +530,27 @@ def tool_entries(tools: Path, manifests: Path, platform: str) -> list[Entry]:
         entries.append(
             _pin_entry(folder.name, build, archive, manifest, license_file, tools, platform)
         )
-    if folders:
+    if folders and libraries:
         entries += _library_entries(tools, folders, manifests, platform)
     return entries
 
 
-def render(sections: Sequence[tuple[str, Sequence[Entry]]], *, version: str, platform: str) -> str:
+def render(
+    sections: Sequence[tuple[str, Sequence[Entry]]],
+    *,
+    version: str,
+    platform: str,
+    preface: Sequence[str] = (),
+) -> str:
+    """The notices file; each ``preface`` paragraph follows the introduction."""
     out = [
         f"Third-party notices for Reframe {version} ({platform})",
         "",
         "This package contains the third-party software listed below. Each part keeps its own",
         "licence; the licence texts follow each entry.",
     ]
+    for paragraph in preface:
+        out += ["", paragraph]
     for title, entries in sections:
         out += ["", _RULE, title, _RULE]
         for entry in entries:
@@ -442,34 +564,72 @@ def render(sections: Sequence[tuple[str, Sequence[Entry]]], *, version: str, pla
     return "\n".join(out) + "\n"
 
 
+def desktop_sections(platform: str, tools: Path) -> list[tuple[str, list[Entry]]]:
+    names = shipped_top_level_names(DEFAULT_SIDECAR)
+    distributions = shipped_distributions(names, importlib.metadata.packages_distributions())
+    return [
+        ("Bundled tools", tool_entries(tools, TOOL_MANIFESTS, platform)),
+        ("Python (the sidecar's interpreter)", [python_interpreter_entry()]),
+        (
+            "Python packages (the sidecar)",
+            python_entries(distributions) + mediainfo_library_entry(DEFAULT_SIDECAR),
+        ),
+        ("JavaScript packages (the user interface)", javascript_entries(FRONTEND)),
+        ("Rust crates (the desktop app)", rust_entries(TAURI_DIR / "Cargo.toml", platform)),
+    ]
+
+
+def docker_sections(platform: str, tools: Path) -> list[tuple[str, list[Entry]]]:
+    """The image's FFmpeg, Python and its packages, and the frontend's packages. The Python
+    entry describes this interpreter, so it must be the image's version."""
+    ffmpeg_platform, machine = DOCKER_PLATFORMS[platform]
+    wanted = docker_python_version()
+    if host_platform.python_version() != wanted:
+        raise NoticesError(
+            f"the image ships Python {wanted}: run this with it (uv run --python {wanted})"
+        )
+    return [
+        ("Bundled tools", tool_entries(tools, TOOL_MANIFESTS, ffmpeg_platform, libraries=False)),
+        ("Python (the image's interpreter)", [python_interpreter_entry()]),
+        (
+            "Python packages (the server)",
+            python_entries(docker_distributions(machine)) + docker_mediainfo_entry(),
+        ),
+        ("JavaScript packages (the user interface)", javascript_entries(FRONTEND)),
+    ]
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("--platform", required=True, choices=sorted(RUST_TARGETS))
+    parser.add_argument(
+        "--platform", required=True, choices=sorted([*RUST_TARGETS, *DOCKER_PLATFORMS])
+    )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    parser.add_argument("--tools", type=Path, default=DEFAULT_TOOLS)
+    parser.add_argument("--sources-url", help="the sources release that the notices name")
+    parser.add_argument("--sources-sums", type=Path, help="that release's SHA256SUMS")
     args = parser.parse_args(argv)
+    if (args.sources_url is None) != (args.sources_sums is None):
+        parser.error("--sources-url and --sources-sums go together")
     # The packages carry the desktop app's version, not the core's.
     config = json.loads((TAURI_DIR / "tauri.conf.json").read_text(encoding="utf-8"))
 
     try:
-        names = shipped_top_level_names(DEFAULT_SIDECAR)
-        distributions = shipped_distributions(names, importlib.metadata.packages_distributions())
-        sections = [
-            ("Bundled tools", tool_entries(DEFAULT_TOOLS, TOOL_MANIFESTS, args.platform)),
-            ("Python (the sidecar's interpreter)", [python_interpreter_entry()]),
-            (
-                "Python packages (the sidecar)",
-                python_entries(distributions) + mediainfo_library_entry(DEFAULT_SIDECAR),
-            ),
-            ("JavaScript packages (the user interface)", javascript_entries(FRONTEND)),
-            (
-                "Rust crates (the desktop app)",
-                rust_entries(TAURI_DIR / "Cargo.toml", args.platform),
-            ),
-        ]
+        preface = []
+        if args.sources_url is not None:
+            preface.append(sources_text(args.sources_url, read_sources_sums(args.sources_sums)))
+        if args.platform in DOCKER_PLATFORMS:
+            preface.append(
+                "The Debian packages installed in the image are listed, with their source\n"
+                "packages, versions and source links, in a file next to this one."
+            )
+            sections = docker_sections(args.platform, args.tools)
+        else:
+            sections = desktop_sections(args.platform, args.tools)
     except NoticesError as e:
         sys.stderr.write(f"third-party-notices: {e}\n")
         return 1
-    text = render(sections, version=config["version"], platform=args.platform)
+    text = render(sections, version=config["version"], platform=args.platform, preface=preface)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     partial = args.out.with_name(args.out.name + ".part")
     partial.write_text(text, encoding="utf-8")
