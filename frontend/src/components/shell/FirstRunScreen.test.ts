@@ -275,6 +275,23 @@ describe('the first-run screen', () => {
       await wrapper.find('.first-run__continue').trigger('click')
       expect(localStorage.getItem(FIRST_RUN_KEY)).toBe('true')
     })
+
+    it('tells a Windows user without MKVToolNix what to install', async () => {
+      Object.assign(platform, { kind: 'desktop' })
+      const windows: SystemInfo = {
+        ...info({ origin: 'bundled', version: '9.0.2' }, { origin: 'bundled' }),
+        platform: 'win32',
+      }
+      windows.tools.mkvpropedit = tool('mkvpropedit', {
+        status: 'missing',
+        origin: null,
+        reason: 'mkvpropedit was not found.',
+      })
+      await mountFirstRun(windows)
+      const reason = toolRow('mkvpropedit')?.querySelector('[data-field="reason"]')?.textContent
+      expect(reason).toContain('Install MKVToolNix from mkvtoolnix.download')
+      expect(reason).not.toContain('mkvpropedit was not found.')
+    })
   })
 
   describe('Use bundled FFmpeg with a bundled build', () => {

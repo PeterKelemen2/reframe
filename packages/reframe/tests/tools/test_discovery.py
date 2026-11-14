@@ -302,7 +302,6 @@ async def test_nothing_found(tmp_path: Path, empty_path: str) -> None:
     assert tools.ffmpeg.reason is not None
     assert "REFRAME_FFMPEG" in tools.ffmpeg.reason
     assert tools.mediainfo.reason is not None
-    assert "optional" in tools.mediainfo.reason
     assert "REFRAME_MEDIAINFO" in tools.mediainfo.reason
 
 
@@ -434,6 +433,90 @@ def test_windows_path_search_ignores_scripts(tmp_path: Path) -> None:
     )
     assert located["mkvpropedit"].path == with_exe / "mkvpropedit.exe"
     assert located["mkvpropedit"].origin is ToolOrigin.PATH
+
+
+@pytest.mark.parametrize(
+    ("platform", "mkvpropedit", "mediainfo"),
+    [
+        (
+            "win32",
+            "It is part of MKVToolNix: install MKVToolNix from https://mkvtoolnix.download/",
+            "Install the MediaInfo command-line program from https://mediaarea.net/en/MediaInfo",
+        ),
+        (
+            "linux",
+            "It is part of MKVToolNix: install your distribution's mkvtoolnix package",
+            "Install your distribution's mediainfo package",
+        ),
+    ],
+)
+def test_a_missing_optional_tool_says_what_to_install(
+    tmp_path: Path, empty_path: str, platform: str, mkvpropedit: str, mediainfo: str
+) -> None:
+    """No package bundles mkvpropedit: the reason must name MKVToolNix and where to get it."""
+    located = locate_tools(
+        environ=WIN_ENV, bundled_roots=[], search_path=empty_path, platform=platform
+    )
+    assert located["mkvpropedit"].problem == (
+        f"mkvpropedit was not found. {mkvpropedit}, or set REFRAME_MKVPROPEDIT to its path."
+    )
+    assert located["mediainfo"].problem == (
+        f"mediainfo was not found. {mediainfo}, or set REFRAME_MEDIAINFO to its path."
+    )
+
+
+def test_windows_finds_mkvpropedit_where_mkvtoolnixs_installer_put_it(
+    tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """MKVToolNix's installer records its folder in the registry but does not add it to PATH,
+    so a user who installs it as told would still see mkvpropedit missing."""
+    folder = tmp_path / "Programs" / "MKVToolNix"
+    exe = _exe(folder / "mkvpropedit.exe")
+    keys: list[str] = []
+
+    def registry(key: str) -> list[str]:
+        keys.append(key)
+        return [f'"{folder / "mkvtoolnix-gui.exe"}"']
+
+    monkeypatch.setattr(discovery, "_registered_app_paths", registry)
+    located = locate_tools(
+        environ=WIN_ENV, bundled_roots=[], search_path=empty_path, platform="win32"
+    )
+    assert (located["mkvpropedit"].path, located["mkvpropedit"].origin) == (
+        exe,
+        ToolOrigin.INSTALLED,
+    )
+    assert located["mkvpropedit"].problem is None
+    assert keys == [r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\mkvtoolnix-gui.exe"]
+
+    on_path = _exe(tmp_path / "path" / "mkvpropedit.exe")
+    located = locate_tools(
+        environ=WIN_ENV, bundled_roots=[], search_path=str(on_path.parent), platform="win32"
+    )
+    assert (located["mkvpropedit"].path, located["mkvpropedit"].origin) == (
+        on_path,
+        ToolOrigin.PATH,
+    )
+    located = locate_tools(environ={}, bundled_roots=[], search_path=empty_path, platform="linux")
+    assert located["mkvpropedit"].origin is None
+
+
+def test_windows_finds_mkvtoolnix_in_its_default_folder_without_a_registry_entry(
+    tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(discovery, "_registered_app_paths", lambda key: [])
+    exe = _exe(tmp_path / "Program Files" / "MKVToolNix" / "mkvpropedit.exe")
+    located = locate_tools(
+        environ={**WIN_ENV, "ProgramW6432": str(tmp_path / "Program Files")},
+        bundled_roots=[],
+        search_path=empty_path,
+        platform="win32",
+    )
+    assert (located["mkvpropedit"].path, located["mkvpropedit"].origin) == (
+        exe,
+        ToolOrigin.INSTALLED,
+    )
+    assert located["mediainfo"].origin is None  # only MKVToolNix's folder is searched
 
 
 def test_windows_script_tools_with_the_test_opt_in(tmp_path: Path, empty_path: str) -> None:

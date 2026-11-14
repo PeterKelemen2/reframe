@@ -1,13 +1,12 @@
 """Lay out the pinned tools that a desktop package ships (the app's ``tools`` resource folder).
 
 FFmpeg is the ``default`` build of ``tools/ffmpeg.toml``; the Windows layout also gets
-MKVToolNix and MediaInfo from ``tools/bundled-tools.toml``, and the Linux layout a libva built
-from its pinned source into FFmpeg's ``lib/`` (the libva of older distros lacks functions the
-build calls). Each archive's size and SHA-256 are checked before anything is extracted. A rerun
-keeps a tool folder whose files still have the hashes recorded when it was laid out, and the
-destination holds nothing but its ``README.md`` and the platform's tool folders afterwards. On
-the platform the layout is for, tool discovery must then find every bundled tool with its
-pinned version.
+MediaInfo from ``tools/bundled-tools.toml``, and the Linux layout a libva built from its pinned
+source into FFmpeg's ``lib/`` (the libva of older distros lacks functions the build calls). Each
+archive's size and SHA-256 are checked before anything is extracted. A rerun keeps a tool folder
+whose files still have the hashes recorded when it was laid out, and the destination holds
+nothing but its ``README.md`` and the platform's tool folders afterwards. On the platform the
+layout is for, tool discovery must then find every bundled tool with its pinned version.
 """
 
 from __future__ import annotations
@@ -45,7 +44,6 @@ WORK_PREFIX = ".bundle-"
 #: Every tool folder this script makes, with the tools that discovery finds in it.
 FOLDER_TOOLS: Mapping[str, tuple[str, ...]] = {
     "ffmpeg": ("ffmpeg", "ffprobe"),
-    "mkvtoolnix": ("mkvpropedit",),
     "mediainfo": ("mediainfo",),
 }
 #: Archive formats of the pins in ``tools/bundled-tools.toml``.
@@ -221,7 +219,7 @@ def _load_tools_manifest(manifest: Path) -> dict[str, object]:
 
 
 def tool_archives(manifest: Path, platform: str) -> list[Archive]:
-    """The MKVToolNix and MediaInfo archives pinned for ``platform`` (none on Linux)."""
+    """The tool archives (MediaInfo) pinned for ``platform``; none on Linux."""
     tools = _load_tools_manifest(manifest).get("tools")
     if not isinstance(tools, dict):
         raise fetch.FetchError(f"{manifest}: expected a [tools] table")
@@ -276,22 +274,29 @@ def _is_laid_out(folder: Path, archive: Archive) -> bool:
     return isinstance(files, dict) and bool(files) and fetch.tree_digest(folder) == files
 
 
+def _made_here(folder: Path) -> bool:
+    """An empty tool folder, or one with a layout marker: the bundler ships every folder here,
+    so one left by an earlier layout of a tool that is no longer pinned must go too."""
+    if folder.name in FOLDER_TOOLS and not any(folder.iterdir()):
+        return True
+    marker = fetch.installed_build(folder)
+    return marker is not None and marker.get("layout") == "bundled"
+
+
 def _clear_destination(dest: Path, wanted: Sequence[str]) -> None:
     """Remove what an earlier run left that this layout does not want (work folders, another
-    platform's tool folders). :raises FetchError: ``dest`` holds anything this script did not
-    make; nothing is removed then."""
+    platform's tool folders, a tool that is no longer bundled). :raises FetchError: ``dest``
+    holds anything this script did not make; nothing is removed then."""
     unknown: list[str] = []
     remove: list[Path] = []
     for entry in sorted(dest.iterdir()):
         if entry.name == README and entry.is_file():
             continue
-        if entry.name.startswith(WORK_PREFIX) and entry.is_dir() and not entry.is_symlink():
+        folder = entry.is_dir() and not entry.is_symlink()
+        if folder and entry.name.startswith(WORK_PREFIX):
             remove.append(entry)
-        elif entry.name in FOLDER_TOOLS and not entry.is_symlink() and entry.is_dir():
-            empty = not any(entry.iterdir())
-            if not empty and fetch.installed_build(entry) is None:
-                unknown.append(entry.name)
-            elif entry.name not in wanted:
+        elif folder and _made_here(entry):
+            if entry.name not in wanted:
                 remove.append(entry)
         else:
             unknown.append(entry.name)

@@ -8,7 +8,7 @@ from collections.abc import Iterator
 
 from reframe.models.issues import ValidationIssue
 from reframe.models.tools import ToolStatus
-from reframe.validation.common import error
+from reframe.validation.common import error, tool_problem
 from reframe.validation.context import JobContext
 from reframe.validation.inplace import write_new_file_fix
 from reframe.validation.registry import job_rule
@@ -36,11 +36,10 @@ def mkvpropedit(ctx: JobContext) -> Iterator[ValidationIssue]:
     tool = ctx.tools.mkvpropedit
     if not output.edit_in_place or output.container != "mkv" or tool.status is ToolStatus.FOUND:
         return
-    reason = f" ({tool.reason})" if tool.reason else ""
     yield error(
         "tool.mkvpropedit_missing",
         "output.edit_in_place",
-        f"Editing in place needs mkvpropedit, which is not available{reason}.",
+        f"Editing in place needs mkvpropedit, which is not available.{tool_problem(tool)}",
         write_new_file_fix(ctx),
         *tool.fixes,
     )

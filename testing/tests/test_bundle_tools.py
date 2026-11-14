@@ -96,19 +96,16 @@ class Setup:
                     f"{LINUX_ROOT}/LICENSE.txt": b"GPL-3",
                 }
             ),
-            "mkvtoolnix-64-bit.zip": _zip(
+            "MediaInfo_CLI_x64.zip": _zip(
                 {
-                    "mkvtoolnix/mkvpropedit.exe": b"MZ mkvpropedit",
-                    "mkvtoolnix/mkvtoolnix-gui.exe": b"MZ gui",
-                    "mkvtoolnix/doc/COPYING.txt": b"GPL-2",
-                    "mkvtoolnix/doc/NEWS.txt": b"news",
+                    "MediaInfo/MediaInfo.exe": b"MZ mediainfo",
+                    "MediaInfo/LICENSE": b"BSD-2",
+                    "MediaInfo/doc/History.txt": b"history",
+                    "MediaInfo/LIBCURL.DLL": b"MZ curl",
                 }
             ),
-            "MediaInfo_CLI_x64.zip": _zip(
-                {"MediaInfo.exe": b"MZ mediainfo", "LICENSE": b"BSD-2", "History.txt": b"h"}
-            ),
         }
-        self.mkvtoolnix_files = '["mkvpropedit.exe", "doc/COPYING.txt"]'
+        self.mediainfo_files = '["MediaInfo.exe", "LICENSE"]'
         self.libraries = ""
         self.write()
 
@@ -169,20 +166,9 @@ ffprobe = "bin/ffprobe.exe"
 """,
             encoding="utf-8",
         )
-        mkv, mi = "mkvtoolnix-64-bit.zip", "MediaInfo_CLI_x64.zip"
+        mi = "MediaInfo_CLI_x64.zip"
         self.tools_manifest.write_text(
             f"""schema_version = 1
-[tools.mkvtoolnix]
-version = "103.0"
-license = "GPL-2.0-only"
-license_file = "doc/COPYING.txt"
-source_url = "https://example.invalid/mkvtoolnix.tar.xz"
-[tools.mkvtoolnix.platforms.windows-x64]
-url = "{self.url(mkv)}"
-{self.pin(mkv)}format = "zip"
-root = "mkvtoolnix"
-binary = "mkvpropedit.exe"
-files = {self.mkvtoolnix_files}
 [tools.mediainfo]
 version = "26.10"
 license = "BSD-2-Clause"
@@ -191,8 +177,9 @@ source_url = "https://example.invalid/mediainfo.tar.xz"
 [tools.mediainfo.platforms.windows-x64]
 url = "{self.url(mi)}"
 {self.pin(mi)}format = "zip"
+root = "MediaInfo"
 binary = "MediaInfo.exe"
-files = ["MediaInfo.exe", "LICENSE"]
+files = {self.mediainfo_files}
 {self.libraries}""",
             encoding="utf-8",
         )
@@ -235,10 +222,20 @@ def test_windows_layout_has_each_tool_its_licence_and_nothing_else(setup: Setup)
         "ffmpeg/bin/ffprobe.exe",
         "mediainfo/LICENSE",
         "mediainfo/MediaInfo.exe",
-        "mkvtoolnix/doc/COPYING.txt",
-        "mkvtoolnix/mkvpropedit.exe",
     ]
-    assert (setup.dest / "mkvtoolnix" / "mkvpropedit.exe").read_bytes() == b"MZ mkvpropedit"
+    assert (setup.dest / "mediainfo" / "MediaInfo.exe").read_bytes() == b"MZ mediainfo"
+
+
+@pytest.mark.usefixtures("no_discovery")
+def test_a_tool_folder_of_an_earlier_layout_does_not_stay_to_be_shipped(setup: Setup) -> None:
+    """The bundler ships every folder of the layout: an mkvpropedit.exe laid out before
+    MKVToolNix stopped being bundled would end up in the installers."""
+    old = setup.dest / "mkvtoolnix"
+    old.mkdir()
+    (old / "mkvpropedit.exe").write_bytes(b"MZ mkvpropedit")
+    (old / bt.fetch.MARKER_NAME).write_text('{"build": "mkvtoolnix", "layout": "bundled"}')
+    setup.bundle()
+    assert sorted(p.name for p in setup.dest.iterdir()) == ["README.md", "ffmpeg", "mediainfo"]
 
 
 @pytest.mark.usefixtures("no_discovery")
@@ -246,7 +243,7 @@ def test_windows_layout_has_each_tool_its_licence_and_nothing_else(setup: Setup)
 def test_a_download_that_does_not_match_its_pin_is_never_extracted(
     setup: Setup, field: str
 ) -> None:
-    name = "mkvtoolnix-64-bit.zip"
+    name = "MediaInfo_CLI_x64.zip"
     pinned = setup.files[name]
     setup.write()
     # The server now serves other bytes of the same size, or one byte more.
@@ -254,7 +251,7 @@ def test_a_download_that_does_not_match_its_pin_is_never_extracted(
     (setup.archives / name).write_bytes(other)
     with pytest.raises(FetchError, match=r"SHA-256|size"):
         setup.bundle()
-    assert not (setup.dest / "mkvtoolnix").exists()
+    assert not (setup.dest / "mediainfo").exists()
     assert not [p for p in setup.dest.iterdir() if p.name.startswith(".bundle-")]
 
 
@@ -279,10 +276,10 @@ def test_a_rerun_keeps_an_intact_layout_and_repairs_a_changed_one(
 @pytest.mark.usefixtures("no_discovery")
 def test_a_changed_list_of_kept_files_is_laid_out_again(setup: Setup) -> None:
     setup.bundle()
-    setup.mkvtoolnix_files = '["mkvpropedit.exe", "doc/COPYING.txt", "doc/NEWS.txt"]'
+    setup.mediainfo_files = '["MediaInfo.exe", "LICENSE", "doc/History.txt"]'
     setup.write()
     setup.bundle()
-    assert (setup.dest / "mkvtoolnix" / "doc" / "NEWS.txt").read_bytes() == b"news"
+    assert (setup.dest / "mediainfo" / "doc" / "History.txt").read_bytes() == b"history"
 
 
 @pytest.mark.usefixtures("no_discovery")
@@ -301,7 +298,9 @@ def test_a_linux_layout_after_a_windows_one_drops_the_windows_tools(setup: Setup
 
 
 @pytest.mark.usefixtures("no_discovery")
-@pytest.mark.parametrize("foreign", ["notes.txt", "ffmpeg/ffmpeg.exe", "other/x"])
+@pytest.mark.parametrize(
+    "foreign", ["notes.txt", "ffmpeg/ffmpeg.exe", "other/x", "mkvtoolnix/mkvpropedit.exe"]
+)
 def test_files_the_script_did_not_make_are_refused_and_kept(setup: Setup, foreign: str) -> None:
     path = setup.dest / foreign
     path.parent.mkdir(exist_ok=True)
@@ -314,11 +313,11 @@ def test_files_the_script_did_not_make_are_refused_and_kept(setup: Setup, foreig
 
 @pytest.mark.usefixtures("no_discovery")
 def test_an_archive_without_a_pinned_file_lays_out_nothing(setup: Setup) -> None:
-    setup.mkvtoolnix_files = '["mkvpropedit.exe", "doc/COPYING.txt", "mkvmerge.exe"]'
+    setup.mediainfo_files = '["MediaInfo.exe", "LICENSE", "MediaInfo.dll"]'
     setup.write()
-    with pytest.raises(FetchError, match=r"has no mkvmerge\.exe"):
+    with pytest.raises(FetchError, match=r"has no MediaInfo\.dll"):
         setup.bundle()
-    assert not (setup.dest / "mkvtoolnix").exists()
+    assert not (setup.dest / "mediainfo").exists()
 
 
 def test_the_bundled_libva_searches_the_cores_driver_folders(
@@ -343,13 +342,13 @@ def test_the_bundled_libva_searches_the_cores_driver_folders(
 @pytest.mark.parametrize(
     ("change", "error"),
     [
-        (('files = ["mkvpropedit.exe", "doc/COPYING.txt"]', 'files = ["mkvpropedit.exe"]'),
-         "does not keep doc/COPYING.txt"),
-        (('root = "mkvtoolnix"\n', ""), None),
+        (('files = ["MediaInfo.exe", "LICENSE"]', 'files = ["MediaInfo.exe"]'),
+         "does not keep LICENSE"),
+        (('root = "MediaInfo"\n', ""), None),
         (('format = "zip"\nroot', 'format = "tar.xz"\nroot'), "format"),
         (("file://", "http://"), "https"),
-        (('binary = "mkvpropedit.exe"', 'binary = "../mkvpropedit.exe"'), "relative"),
-        (("[tools.mediainfo]", "[tools.mkvmerge]"), "unknown tool"),
+        (('binary = "MediaInfo.exe"', 'binary = "../MediaInfo.exe"'), "relative"),
+        (("[tools.mediainfo]\n", "[tools.mkvtoolnix]\n"), "unknown tool"),
         (('version = "26.10"\n', ""), "version"),
     ],
 )  # fmt: skip
@@ -360,10 +359,7 @@ def test_bad_tool_pins_are_refused(
     assert change[0] in text
     setup.tools_manifest.write_text(text.replace(change[0], change[1], 1), encoding="utf-8")
     if error is None:  # a zip without its top folder is fine to parse
-        assert [a.root for a in bt.tool_archives(setup.tools_manifest, "windows-x64")] == [
-            None,
-            None,
-        ]
+        assert [a.root for a in bt.tool_archives(setup.tools_manifest, "windows-x64")] == [None]
         return
     with pytest.raises(FetchError, match=error):
         bt.tool_archives(setup.tools_manifest, "windows-x64")
@@ -371,8 +367,10 @@ def test_bad_tool_pins_are_refused(
 
 def test_a_tar_xz_tool_archive_needs_its_top_folder(setup: Setup) -> None:
     text = setup.tools_manifest.read_text(encoding="utf-8")
-    text = text.replace("MediaInfo_CLI_x64.zip", "mi.tar.xz").replace(
-        'format = "zip"\nbinary', 'format = "tar.xz"\nbinary'
+    text = (
+        text.replace("MediaInfo_CLI_x64.zip", "mi.tar.xz")
+        .replace('format = "zip"', 'format = "tar.xz"')
+        .replace('root = "MediaInfo"\n', "")
     )
     setup.tools_manifest.write_text(text, encoding="utf-8")
     with pytest.raises(FetchError, match="needs its top folder"):
@@ -381,10 +379,8 @@ def test_a_tar_xz_tool_archive_needs_its_top_folder(setup: Setup) -> None:
 
 def test_the_real_pins_keep_each_binary_and_licence() -> None:
     windows = bt.tool_archives(bt.TOOLS_MANIFEST, "windows-x64")
-    assert {a.folder: a.required[0] for a in windows} == {
-        "mkvtoolnix": "mkvpropedit.exe",
-        "mediainfo": "MediaInfo.exe",
-    }
+    # MKVToolNix's Windows build links OpenSSL (Apache-2.0) into GPL-2.0-only code.
+    assert {a.folder: a.required[0] for a in windows} == {"mediainfo": "MediaInfo.exe"}
     for archive in windows:
         assert archive.files is not None
         assert set(archive.required) <= set(archive.files)

@@ -31,7 +31,7 @@ uv run python desktop/sidecar/build.py
 set -- --platform linux-x64
 if [ -n "${REFRAME_SOURCES_URL:-}" ]; then
     set -- "$@" --sources-url "$REFRAME_SOURCES_URL" --sources-sums /sources/SHA256SUMS \
-        --sources-manifest /sources/manifest.json
+        --sources-manifest /sources/manifest.json --sources-texts /sources/licence-texts.json
 fi
 uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py "$@"
 

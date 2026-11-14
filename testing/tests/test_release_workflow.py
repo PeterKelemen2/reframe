@@ -8,6 +8,7 @@ import importlib.util
 import itertools
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "release-workflow.py"
 REPO = "owner/reframe"
+TEXTS = "licence-texts.json"
 TAG = "sources-0123456789ab"
 ARCHIVES = ("ffmpeg.tar.xz", "gtk_3.0.tar", "lame.tar.xz")
 REQUIRED = {"TAURI_SIGNING_PRIVATE_KEY", "RELEASE_GPG_PRIVATE_KEY"}
@@ -170,7 +172,7 @@ def fetched(tmp_path: Path) -> tuple[Path, Path]:
     entries = [{"archive": name, "kind": "url"} for name in ARCHIVES]
     manifest.write_text(json.dumps({"entries": entries, "schema_version": 1}), encoding="utf-8")
     sums = ""
-    for name in ARCHIVES:
+    for name in sorted([*ARCHIVES, TEXTS]):
         data = f"the source of {name}".encode()
         (files / name).write_bytes(data)
         sums += f"{_sha256(data)}  {name}\n"
@@ -180,7 +182,7 @@ def fetched(tmp_path: Path) -> tuple[Path, Path]:
 
 def _published_sources(github: FakeGitHub, manifest: Path, files: Path) -> dict[str, Any]:
     contents = {"manifest.json": manifest.read_bytes()}
-    contents |= {name: (files / name).read_bytes() for name in ("SHA256SUMS", *ARCHIVES)}
+    contents |= {name: (files / name).read_bytes() for name in ("SHA256SUMS", TEXTS, *ARCHIVES)}
     return github.add_release(TAG, contents)
 
 
@@ -228,6 +230,8 @@ def test_a_complete_sources_release_is_reused_with_its_sums(
     assert rw.find_sources(REPO, TAG, manifest, sums_out) is True
 
     assert sums_out.read_bytes() == (files / "SHA256SUMS").read_bytes()
+    # The packages' notices need the licence texts even when nothing is fetched.
+    assert (tmp_path / "sources" / TEXTS).read_bytes() == (files / TEXTS).read_bytes()
 
 
 def _drop(github: FakeGitHub, name: str) -> None:
@@ -250,6 +254,7 @@ DAMAGE: dict[str, tuple[Callable[[FakeGitHub], None], str]] = {
         "manifest.json: 3 bytes",
     ),
     "no SHA256SUMS": (lambda gh: _drop(gh, "SHA256SUMS"), "SHA256SUMS: missing"),
+    "no licence texts": (lambda gh: _drop(gh, TEXTS), f"{TEXTS}: missing"),
     "an extra file": (
         lambda gh: gh._upload(gh.releases[0], "stray.tar.xz", b"x"),
         "stray.tar.xz: not a file of this release",
@@ -286,6 +291,50 @@ def test_sums_that_do_not_list_the_manifests_archives_stop_the_run(
 
     with pytest.raises(rw.ReleaseError, match=r"lame\.tar\.xz: not in its SHA256SUMS"):
         rw.find_sources(REPO, TAG, manifest, tmp_path / "SHA256SUMS")
+
+
+def test_sums_without_the_licence_texts_stop_the_run(
+    github: FakeGitHub, fetched: tuple[Path, Path], tmp_path: Path
+) -> None:
+    """A sources release made without its licence texts cannot give the notices theirs."""
+    manifest, files = fetched
+    _published_sources(github, manifest, files)
+    sums = github.asset(TAG, "SHA256SUMS")
+    lines = (files / "SHA256SUMS").read_bytes().splitlines(keepends=True)
+    without = b"".join(line for line in lines if TEXTS.encode() not in line)
+    github.content[sums["id"]] = without
+    sums.update(size=len(without), digest=f"sha256:{_sha256(without)}")
+
+    with pytest.raises(rw.ReleaseError, match=rf"{TEXTS}: not in its SHA256SUMS"):
+        rw.find_sources(REPO, TAG, manifest, tmp_path / "SHA256SUMS")
+
+
+def test_licence_texts_whose_bytes_are_not_the_sums_stop_the_run(
+    github: FakeGitHub, fetched: tuple[Path, Path], tmp_path: Path
+) -> None:
+    # The API may give no digest; the downloaded bytes are checked against SHA256SUMS then.
+    manifest, files = fetched
+    _published_sources(github, manifest, files)
+    texts = github.asset(TAG, TEXTS)
+    github.content[texts["id"]] = b"other texts"
+    texts.update(digest=None)
+
+    with pytest.raises(rw.ReleaseError, match=rf"{TEXTS}: downloaded bytes"):
+        rw.find_sources(REPO, TAG, manifest, tmp_path / "SHA256SUMS")
+    assert not (tmp_path / TEXTS).exists()
+
+
+def test_sources_find_writes_the_texts_where_it_is_told(
+    github: FakeGitHub, fetched: tuple[Path, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "github-output"))
+    _published_sources(github, *fetched)
+    args = ["sources-find", "--repo", REPO, "--tag", TAG, "--manifest", str(fetched[0])]
+    args += ["--sums-out", str(tmp_path / "SHA256SUMS")]
+
+    assert rw.main([*args, "--texts-out", str(tmp_path / "texts" / "t.json")]) == 0
+
+    assert (tmp_path / "texts" / "t.json").read_bytes() == (fetched[1] / TEXTS).read_bytes()
 
 
 def test_a_github_error_is_not_read_as_no_sources_release(
@@ -354,7 +403,7 @@ def test_the_sources_release_is_published_complete_and_never_latest(
     [release] = github.releases
     assert release["draft"] is False
     assert (release["make_latest"], release["target"]) == ("false", "0f1e2d3c")
-    assert _names(release) == sorted(["manifest.json", "SHA256SUMS", *ARCHIVES])
+    assert _names(release) == sorted(["manifest.json", "SHA256SUMS", TEXTS, *ARCHIVES])
     assert url == release["html_url"]
     assert rw.find_sources(REPO, TAG, manifest, tmp_path / "SHA256SUMS") is True
 
@@ -376,7 +425,7 @@ def test_an_interrupted_upload_is_not_published_and_the_next_run_starts_over(
     rw.publish_sources(REPO, TAG, manifest, files, "0f1e2d3c")
     [release] = github.releases
     assert release["draft"] is False
-    assert _names(release) == sorted(["manifest.json", "SHA256SUMS", *ARCHIVES])
+    assert _names(release) == sorted(["manifest.json", "SHA256SUMS", TEXTS, *ARCHIVES])
 
 
 @pytest.mark.parametrize(
@@ -410,6 +459,18 @@ def test_sources_whose_sums_do_not_match_the_archives_are_not_uploaded(
     (files / "lame.tar.xz").write_bytes(b"changed after the fetch")
 
     with pytest.raises(rw.ReleaseError, match=r"lame\.tar\.xz"):
+        rw.publish_sources(REPO, TAG, manifest, files, "0f1e2d3c")
+
+    assert github.commands("release") == []
+
+
+def test_sources_whose_licence_texts_are_not_in_the_sums_are_not_uploaded(
+    github: FakeGitHub, fetched: tuple[Path, Path]
+) -> None:
+    manifest, files = fetched
+    (files / TEXTS).write_bytes(b"written again after the sums")
+
+    with pytest.raises(rw.ReleaseError, match=TEXTS):
         rw.publish_sources(REPO, TAG, manifest, files, "0f1e2d3c")
 
     assert github.commands("release") == []
@@ -787,3 +848,18 @@ def test_no_signature_that_users_could_not_check_is_made(
     assert says in out
     if case != "another key in the docs":
         assert not (tmp_path / "out" / "SHA256SUMS.asc").exists()
+
+
+def test_every_package_job_hands_the_licence_texts_to_its_notices() -> None:
+    """Without them a package's notices would lack the texts; only a real run would show it."""
+    workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    texts = '"$RUNNER_TEMP/sources/licence-texts.json"'
+
+    calls = re.findall(r"third-party-notices\.py(.*?)(?:\n\n|\n      - )", workflow, re.DOTALL)
+    assert len(calls) == 2  # the Windows job and the Docker job
+    for call in calls:
+        assert f"--sources-texts {texts}" in call
+    assert "REFRAME_SOURCES_TEXTS: ${{ runner.temp }}/sources/licence-texts.json" in workflow
+    assert f"--texts-out {texts}" in workflow
+    assert "${{ runner.temp }}/sources/licence-texts.json\n" in workflow
+    assert '"$RUNNER_TEMP/sources/files/licence-texts.json"' in workflow

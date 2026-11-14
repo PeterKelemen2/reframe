@@ -9853,6 +9853,7 @@
       'settings',
       'bundled',
       'path',
+      'installed',
     ]),
     'title': 'ToolOrigin',
     'type': 'string',

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import itertools
 import json
 import re
 import shutil
@@ -262,25 +263,33 @@ def test_another_tools_pin_is_found_in_its_own_or_a_shared_manifest(
 
 def test_the_windows_tools_get_their_pins_from_the_repositorys_manifest(tmp_path: Path) -> None:
     tools = tmp_path / "tools"
-    (tools / "mkvtoolnix" / "doc").mkdir(parents=True)
-    (tools / "mkvtoolnix" / "doc" / "COPYING.txt").write_text("GPL-2.0 text")
-    (tools / "mediainfo").mkdir()
+    (tools / "mediainfo").mkdir(parents=True)
     (tools / "mediainfo" / "LICENSE").write_text("BSD-2-Clause text")
     manifest = tpn.tomllib.loads((REPO_ROOT / "tools" / "bundled-tools.toml").read_text())
 
-    entries = tpn.tool_entries(tools, REPO_ROOT / "tools", "windows-x64")
+    [entry] = tpn.tool_entries(tools, REPO_ROOT / "tools", "windows-x64")
 
-    assert [entry.name for entry in entries] == ["mediainfo", "mkvtoolnix"]
-    for entry in entries:
-        pin = manifest["tools"][entry.name]
-        assert (entry.version, entry.license) == (pin["version"], pin["license"])
-        for value in (
-            pin["source_url"],
-            pin["source_tag"],
-            pin["platforms"]["windows-x64"]["sha256"],
-        ):
-            assert value in entry.text
-    assert entries[1].text.endswith("GPL-2.0 text")
+    pin = manifest["tools"]["mediainfo"]
+    assert (entry.name, entry.version, entry.license) == (
+        "mediainfo",
+        pin["version"],
+        pin["license"],
+    )
+    for value in (pin["source_url"], pin["source_tag"], pin["platforms"]["windows-x64"]["sha256"]):
+        assert value in entry.text
+    assert entry.text.endswith("BSD-2-Clause text")
+
+
+def test_a_laid_out_mkvtoolnix_folder_stops_the_windows_notices(tmp_path: Path) -> None:
+    """No pin names MKVToolNix any more: a stale folder would ship without its notices."""
+    tools = tmp_path / "tools"
+    (tools / "mkvtoolnix" / "doc").mkdir(parents=True)
+    (tools / "mkvtoolnix" / "doc" / "COPYING.txt").write_text("GPL-2.0 text")
+
+    with pytest.raises(
+        tpn.NoticesError, match=r"mkvtoolnix is bundled but no manifest in .* pins it"
+    ):
+        tpn.tool_entries(tools, REPO_ROOT / "tools", "windows-x64")
 
 
 def test_a_bundled_tool_without_a_pin_is_an_error(tmp_path: Path) -> None:
@@ -403,13 +412,10 @@ MANIFEST = {
     "btbn-davs2-0123456789ab.tar.xz": ("btbn-stage", ["linux-x64"]),
     "btbn-mingw-0123456789ab.tar.xz": ("btbn-stage", ["windows-x64"]),
     "btbn-armonly-0123456789ab.tar.xz": ("btbn-stage", ["linux-arm64"]),
-    "mkvtoolnix-103.0.tar.xz": ("url", ["windows-x64"]),
     "MediaInfo_CLI_26.10_GNU_FromSource.tar.xz": ("url", ["windows-x64"]),
     "libva-2.24.1.tar.bz2": ("url", ["linux-x64"]),
     "ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar": ("ubuntu-source", ["linux-x64"]),
     "type2-runtime-dd6cebedcbdd.tar.xz": ("repository", ["linux-x64"]),
-    "mxe-02b82ecfdc5a.tar.xz": ("repository", ["windows-x64"]),
-    "gmp-6.3.0.tar.xz": ("url", ["windows-x64"]),
 }
 EVERY_PLATFORM = ["ffmpeg-2a571b606854.tar.xz", "ffmpeg-builds-6c9aec5d1a2b.tar.xz"]
 EVERY_PLATFORM += ["btbn-x264-0123456789ab.tar.xz"]
@@ -424,10 +430,7 @@ BUNDLED = {
     "windows-x64": [
         *EVERY_PLATFORM,
         "btbn-mingw-0123456789ab.tar.xz",
-        "mkvtoolnix-103.0.tar.xz",
         "MediaInfo_CLI_26.10_GNU_FromSource.tar.xz",
-        "mxe-02b82ecfdc5a.tar.xz",
-        "gmp-6.3.0.tar.xz",
     ],
     "docker-linux-x64": [*EVERY_PLATFORM, "btbn-davs2-0123456789ab.tar.xz"],
     "docker-linux-arm64": [*EVERY_PLATFORM, "btbn-armonly-0123456789ab.tar.xz"],
@@ -439,20 +442,46 @@ def _checksum(archive: str) -> str:
     return hashlib.sha256(archive.encode()).hexdigest()
 
 
+#: The Ubuntu source package's binary packages, as the manifest names them.
+GTK_PACKAGES = ["libgtk-3-0:amd64", "libgtk-3-common"]
+
+
+def _texts(manifest: Mapping[str, tuple[str, list[str]]] = MANIFEST) -> dict[str, Any]:
+    """One licence file per archive but the Ubuntu one, as sources-fetch.py writes them."""
+    return {
+        name: [{"path": "COPYING", "text": f"the licence of {name}"}]
+        for name, (kind, _) in manifest.items()
+        if kind != "ubuntu-source"
+    }
+
+
 def _sources(
-    folder: Path, manifest: Mapping[str, tuple[str, list[str]]] = MANIFEST, sums: str = ""
+    folder: Path,
+    manifest: Mapping[str, tuple[str, list[str]]] = MANIFEST,
+    sums: str = "",
+    texts: Mapping[str, Any] | None = None,
 ) -> list[str]:
-    """The ``--sources-*`` options for ``manifest`` and its sums (by default one line each), and
-    ``--tools``."""
+    """The ``--sources-*`` options for ``manifest``, its sums (by default one line each and one
+    for the licence texts) and its licence texts, ``--doc-root`` with the Ubuntu packages'
+    copyright files, and ``--tools``."""
     entries = [
         {"archive": name, "kind": kind, "name": name, "platforms": platforms}
+        | ({"binary_packages": GTK_PACKAGES} if kind == "ubuntu-source" else {})
         for name, (kind, platforms) in sorted(manifest.items())
     ]
     path = folder / "manifest.json"
     path.write_text(json.dumps({"schema_version": 1, "entries": entries}))
     if not sums:
-        sums = "".join(f"{_checksum(name)}  {name}\n" for name in sorted(manifest))
+        names = sorted([*manifest, tpn.TEXTS])
+        sums = "".join(f"{_checksum(name)}  {name}\n" for name in names)
     (folder / "SHA256SUMS").write_text(sums)
+    texts_file = folder / tpn.TEXTS
+    archives = _texts(manifest) if texts is None else texts
+    texts_file.write_text(json.dumps({"schema_version": 1, "archives": archives}))
+    doc = folder / "doc"
+    for package in GTK_PACKAGES:
+        (doc / package.partition(":")[0]).mkdir(parents=True, exist_ok=True)
+        (doc / package.partition(":")[0] / "copyright").write_text("GTK+ is LGPL-2.1+\n")
     return [
         "--sources-url",
         SOURCES_URL,
@@ -460,6 +489,10 @@ def _sources(
         str(folder / "SHA256SUMS"),
         "--sources-manifest",
         str(path),
+        "--sources-texts",
+        str(texts_file),
+        "--doc-root",
+        str(doc),
         "--tools",
         str(folder),
     ]
@@ -496,14 +529,13 @@ def test_the_notices_list_only_the_archives_that_the_platform_bundles(
 @pytest.mark.parametrize(
     ("archive", "platforms"),
     [
-        ("mkvtoolnix-103.0.tar.xz", {"windows-x64"}),
+        ("MediaInfo_CLI_26.10_GNU_FromSource.tar.xz", {"windows-x64"}),
         ("ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar", {"linux-x64"}),
         ("libva-2.24.1.tar.bz2", {"linux-x64"}),
         ("btbn-armonly-0123456789ab.tar.xz", {"docker-linux-arm64"}),
         ("btbn-mingw-0123456789ab.tar.xz", {"windows-x64"}),
         ("ffmpeg-2a571b606854.tar.xz", set(BUNDLED)),
         ("type2-runtime-dd6cebedcbdd.tar.xz", {"linux-x64"}),
-        ("mxe-02b82ecfdc5a.tar.xz", {"windows-x64"}),
     ],
 )
 def test_each_kind_of_source_goes_to_the_packages_that_bundle_it(
@@ -602,10 +634,13 @@ def test_a_file_that_is_not_a_source_manifest_is_an_error(tmp_path: Path, conten
         tpn.read_sources_manifest(path)
 
 
-@pytest.mark.parametrize("given", [[0], [1], [2], [0, 1], [0, 2], [1, 2]])
-def test_the_sources_options_are_given_all_three_or_none(tmp_path: Path, given: list[int]) -> None:
+@pytest.mark.parametrize(
+    "given",
+    [list(c) for size in (1, 2, 3) for c in itertools.combinations(range(4), size)],
+)
+def test_the_sources_options_are_given_all_four_or_none(tmp_path: Path, given: list[int]) -> None:
     options = _sources(tmp_path)
-    pairs = [options[i : i + 2] for i in range(0, 6, 2)]
+    pairs = [options[i : i + 2] for i in range(0, 8, 2)]
     partial = [word for i in given for word in pairs[i]]
 
     with pytest.raises(SystemExit) as exit_info:
@@ -748,34 +783,188 @@ def test_the_image_notices_need_the_folder_with_the_images_ffmpeg(
 
 
 @pytest.mark.usefixtures("stub_sections")
-@pytest.mark.parametrize(
-    ("platform", "binary", "parts"),
-    [
-        (
-            "windows-x64",
-            "mkvpropedit.exe",
-            [
-                "Qt Base (Qt Core) 6.12.0 (LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only); "
-                "qtbase-everywhere-src-6.12.0.tar.xz",
-                "GNU MP 6.3.0 (LGPL-3.0-or-later OR GPL-2.0-or-later); gmp-6.3.0.tar.xz",
-            ],
-        ),
-        (
-            "linux-x64",
-            "AppImage type 2 runtime",
-            [
-                "libfuse 3.15.0 (LGPL-2.1-only); fuse-3.15.0.tar.xz",
-                "squashfuse 0.5.2 (BSD-2-Clause); squashfuse-0.5.2.tar.gz",
-            ],
-        ),
-    ],
-)
-def test_the_desktop_notices_list_each_library_a_static_build_links(
-    tmp_path: Path, platform: str, binary: str, parts: list[str]
-) -> None:
-    sections = dict(tpn.desktop_sections(platform, tmp_path / "no-tools"))
+def test_the_desktop_notices_list_each_library_a_static_build_links(tmp_path: Path) -> None:
+    sections = dict(tpn.desktop_sections("linux-x64", tmp_path / "no-tools"))
 
     [entry] = sections["Statically linked libraries"]
-    assert binary in entry.name
-    for part in parts:
+    assert "AppImage type 2 runtime" in entry.name
+    for part in (
+        "libfuse 3.15.0 (LGPL-2.1-only); fuse-3.15.0.tar.xz",
+        "squashfuse 0.5.2 (BSD-2-Clause); squashfuse-0.5.2.tar.gz",
+    ):
         assert f"  {part}" in entry.text.splitlines()
+
+
+@pytest.mark.usefixtures("stub_sections")
+def test_the_windows_notices_name_no_static_build(tmp_path: Path) -> None:
+    """The installers no longer bundle MKVToolNix's mkvpropedit.exe (an MXE static build)."""
+    sections = dict(tpn.desktop_sections("windows-x64", tmp_path / "no-tools"))
+
+    assert sections["Statically linked libraries"] == []
+
+
+def _section(text: str, title: str) -> str:
+    return text.split(f"{title}\n{'=' * 78}\n", 1)[1]
+
+
+LINE = "-" * 78
+TEXTS_SECTION = "Licence texts of the parts in the sources release"
+
+
+@pytest.mark.usefixtures("no_sections")
+@pytest.mark.parametrize("platform", sorted(BUNDLED))
+def test_the_notices_carry_the_licence_text_of_each_archive_the_platform_bundles(
+    tmp_path: Path, platform: str
+) -> None:
+    """The owner's rule: every bundled part's licence text, not only its name and link."""
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    assert tpn.main(["--platform", platform, "--out", str(out), *_sources(tmp_path)]) == 0
+
+    section = _section(out.read_text(), TEXTS_SECTION)
+    for name, (kind, _) in MANIFEST.items():
+        text = "GTK+ is LGPL-2.1+" if kind == "ubuntu-source" else f"the licence of {name}"
+        assert (f"Source archive: {name}" in section) is (name in BUNDLED[platform])
+        assert (text in section) is (name in BUNDLED[platform])
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_a_licence_text_seen_before_is_named_not_repeated(tmp_path: Path) -> None:
+    texts = _texts()
+    texts["btbn-davs2-0123456789ab.tar.xz"] = [{"path": "COPYING", "text": "GPL-2.0 text\n"}]
+    texts["btbn-x264-0123456789ab.tar.xz"] = [{"path": "COPYING", "text": "GPL-2.0 text"}]
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    code = tpn.main(
+        ["--platform", "linux-x64", "--out", str(out), *_sources(tmp_path, texts=texts)]
+    )
+
+    assert code == 0
+    section = _section(out.read_text(), TEXTS_SECTION)
+    assert section.count("GPL-2.0 text") == 1
+    assert "COPYING: the same text as COPYING in btbn-davs2-0123456789ab.tar.xz." in section
+    assert section.count("GTK+ is LGPL-2.1+") == 1
+    assert "/libgtk-3-common/copyright: the same text as " in section
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_a_bundled_archive_without_licence_texts_is_an_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    texts = _texts()
+    del texts["libva-2.24.1.tar.bz2"]
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+    options = _sources(tmp_path, texts=texts)
+
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out), *options]) == 1
+    assert "the licence texts have none for libva-2.24.1.tar.bz2" in capsys.readouterr().err
+    assert not out.exists()
+    assert tpn.main(["--platform", "windows-x64", "--out", str(out), *options]) == 0
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_an_ubuntu_package_without_its_copyright_file_is_an_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    options = _sources(tmp_path)
+    (tmp_path / "doc" / "libgtk-3-common" / "copyright").unlink()
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out), *options]) == 1
+    err = capsys.readouterr().err
+    assert "libgtk-3-common/copyright" in err
+    assert "build image" in err
+    assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["not json", '{"schema_version": 2, "archives": {}}', '{"schema_version": 1}', "[]"],
+)
+def test_a_file_that_is_not_the_licence_texts_is_an_error(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "licence-texts.json"
+    path.write_text(content)
+
+    with pytest.raises(tpn.NoticesError, match="not the licence texts"):
+        tpn.read_sources_texts(path)
+
+
+def test_the_scripts_agree_on_the_licence_texts_file_name() -> None:
+    names = set()
+    for script in ("sources-fetch.py", "release-workflow.py", "third-party-notices.py"):
+        text = (REPO_ROOT / "scripts" / script).read_text(encoding="utf-8")
+        names |= set(re.findall(r'^TEXTS = "([^"]+)"$', text, re.MULTILINE))
+    assert names == {tpn.TEXTS}
+
+
+def test_a_package_without_a_licence_text_gets_the_committed_one() -> None:
+    entries = [
+        tpn.Entry("rfc6902", "5.3.0", "MIT"),
+        tpn.Entry("@rolldown/binding-win32-x64-msvc", "1.2.13", "MIT"),
+        tpn.Entry("vue", "3.5.0", "MIT", text="the vue licence"),
+    ]
+
+    found = tpn.with_texts(entries, "npm")
+
+    assert "Christopher Brown" in found[0].text
+    assert "VoidZero" in found[1].text
+    assert found[2].text == "the vue licence"
+
+
+@pytest.mark.parametrize("registry", ["npm", "pypi"])
+def test_a_package_without_any_licence_text_is_an_error(registry: str) -> None:
+    with pytest.raises(tpn.NoticesError, match=f"no licence text for the {registry} packages"):
+        tpn.with_texts([tpn.Entry("left-pad", "1.3.0", "WTFPL")], registry)
+
+
+def test_each_committed_licence_text_says_where_it_was_read() -> None:
+    data = tpn.tomllib.loads(tpn.LICENCE_TEXTS.read_text(encoding="utf-8"))
+    for registry, packages in data.items():
+        for name, table in packages.items():
+            assert registry in ("npm", "pypi", "sources")
+            assert table["source"].startswith("https://"), name
+            assert table["version"], name
+            assert re.search(r"copyright", table["text"], re.IGNORECASE), name
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_a_source_without_a_licence_file_gets_its_committed_text(tmp_path: Path) -> None:
+    """nv-codec-headers has its licence only in each header: the fetch finds no file."""
+    manifest = dict(MANIFEST) | {
+        "btbn-50-ffnvcodec-ef2a38b483ab.tar.xz": ("btbn-stage", ALL_FFMPEG)
+    }
+    texts = _texts(manifest) | {"btbn-50-ffnvcodec-ef2a38b483ab.tar.xz": []}
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+    options = _sources(tmp_path, manifest, texts=texts)
+
+    assert tpn.main(["--platform", "windows-x64", "--out", str(out), *options]) == 0
+
+    section = _section(out.read_text(), TEXTS_SECTION)
+    entry = section.split("Source archive: btbn-50-ffnvcodec-ef2a38b483ab.tar.xz", 1)[1]
+    assert "Copyright (c) 2010-2026 NVIDIA Corporation" in entry.split(LINE, 1)[0]
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_a_source_with_neither_a_licence_file_nor_a_committed_text_is_an_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    texts = _texts() | {"btbn-x264-0123456789ab.tar.xz": []}
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    code = tpn.main(
+        ["--platform", "linux-x64", "--out", str(out), *_sources(tmp_path, texts=texts)]
+    )
+
+    assert code == 1
+    assert "have none for btbn-x264-0123456789ab.tar.xz" in capsys.readouterr().err
+
+
+def test_the_frontend_packages_without_a_licence_file_get_the_committed_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    report = {"rfc6902@5.3.0": {"licenses": "MIT", "licenseFile": str(tmp_path / "README.md")}}
+    monkeypatch.setattr(tpn, "_run", lambda *args, **kwargs: json.dumps(report))
+
+    [entry] = tpn.javascript_entries(tmp_path)
+
+    assert "Copyright © 2014-2021 Christopher Brown" in entry.text

@@ -79,8 +79,9 @@ async def run_streaming(argv, *, on_stdout_line, on_stderr_line, cancel, timeout
 - [ ] Windows: `CREATE_NO_WINDOW`, so no console window flashes.
 - [ ] Discovery for each tool (`ffmpeg`, `ffprobe`, `mkvpropedit`, `mediainfo`) in the order
       from [02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg): environment variable →
-      Settings path → bundled directory → `PATH` (only without a bundled build). Record which
-      source won (`ToolInfo.origin = env | settings | bundled | path`) so the UI can show it.
+      Settings path → bundled directory → `PATH` (only without a bundled build) → on Windows,
+      MKVToolNix's install folder for mkvpropedit. Record which source won
+      (`ToolInfo.origin = env | settings | bundled | path | installed`) so the UI can show it.
 - [ ] `ffprobe` next to an overridden `ffmpeg` is preferred over the bundled `ffprobe`.
 - [ ] A broken override gives a `broken`/`missing` status with a reason and a "Use bundled"
       fix. It never falls back to the bundled build without telling the user.

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import importlib.util
+import io
+import json
 import os
 import subprocess
 import sys
@@ -104,20 +107,34 @@ def _git_entry(origin: Path, commit: str) -> dict[str, Any]:
 
 def test_a_git_source_is_the_commits_tree_without_git_data(tmp_path: Path) -> None:
     origin = tmp_path / "origin"
-    commit = _repo(origin, {"configure": "#!/bin/sh\n", ".gitignore": "*.o\n"})
+    commit = _repo(
+        origin, {"configure": "#!/bin/sh\n", ".gitignore": "*.o\n", "COPYING.GPLv3": "GPL"}
+    )
     out = tmp_path / "out"
 
     sf.fetch_all([_git_entry(origin, commit)], out)
 
     archive = out / "ffmpeg-1234.tar.xz"
-    assert _members(archive) == ["ffmpeg-1234/.gitignore", "ffmpeg-1234/configure"]
-    assert _sums(out) == {"ffmpeg-1234.tar.xz": hashlib.sha256(archive.read_bytes()).hexdigest()}
-    assert sorted(p.name for p in out.iterdir()) == ["SHA256SUMS", "ffmpeg-1234.tar.xz"]
+    assert _members(archive) == [
+        "ffmpeg-1234/.gitignore",
+        "ffmpeg-1234/COPYING.GPLv3",
+        "ffmpeg-1234/configure",
+    ]
+    texts = out / "licence-texts.json"
+    assert _sums(out) == {
+        "ffmpeg-1234.tar.xz": hashlib.sha256(archive.read_bytes()).hexdigest(),
+        "licence-texts.json": hashlib.sha256(texts.read_bytes()).hexdigest(),
+    }
+    assert sorted(p.name for p in out.iterdir()) == [
+        "SHA256SUMS",
+        "ffmpeg-1234.tar.xz",
+        "licence-texts.json",
+    ]
 
 
 def test_a_commit_that_cannot_be_fetched_leaves_no_archive(tmp_path: Path) -> None:
     origin = tmp_path / "origin"
-    _repo(origin, {"configure": ""})
+    _repo(origin, {"configure": "", "COPYING": ""})
     out = tmp_path / "out"
 
     with pytest.raises(sf.SourcesError):
@@ -130,7 +147,7 @@ def test_a_rerun_skips_the_archives_already_checked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     origin = tmp_path / "origin"
-    entry = _git_entry(origin, _repo(origin, {"configure": ""}))
+    entry = _git_entry(origin, _repo(origin, {"configure": "", "COPYING": "GPL"}))
     out = tmp_path / "out"
     sf.fetch_all([entry], out)
 
@@ -189,19 +206,22 @@ def test_a_btbn_stage_runs_its_download_commands_and_checks_the_pin(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     origin = tmp_path / "x264"
-    commit = _repo(origin, {"x264.c": "int main;\n"})
+    commit = _repo(origin, {"x264.c": "int main;\n", "COPYING": "GPL"})
     out = tmp_path / "out"
 
     sf.fetch_all([_stage_entry(tmp_path, origin, commit)], out)
 
-    assert _members(out / "btbn-50-x264-abcdef.tar.xz") == ["btbn-50-x264-abcdef/x264.c"]
+    assert _members(out / "btbn-50-x264-abcdef.tar.xz") == [
+        "btbn-50-x264-abcdef/COPYING",
+        "btbn-50-x264-abcdef/x264.c",
+    ]
     assert f"checked {origin.as_uri()}@{commit}" in capsys.readouterr().err
 
 
 @pytest.mark.usefixtures("helper_checkout")
 def test_a_stage_may_pin_one_repository_at_several_commits(tmp_path: Path) -> None:
     origin = tmp_path / "nv-codec-headers"
-    first = _repo(origin, {"sdk.h": "13\n"})
+    first = _repo(origin, {"sdk.h": "13\n", "LICENSE": "MIT"})
     (origin / "sdk.h").write_text("11\n")
     _git("commit", "-q", "-am", "sdk 11", cwd=origin)
     second = _git("rev-parse", "HEAD", cwd=origin)
@@ -217,7 +237,9 @@ def test_a_stage_may_pin_one_repository_at_several_commits(tmp_path: Path) -> No
     sf.fetch_all([entry], out)
 
     assert _members(out / entry["archive"]) == [
+        "btbn-50-x264-abcdef/sdk11/LICENSE",
         "btbn-50-x264-abcdef/sdk11/sdk.h",
+        "btbn-50-x264-abcdef/sdk13/LICENSE",
         "btbn-50-x264-abcdef/sdk13/sdk.h",
     ]
 
@@ -254,31 +276,40 @@ def _url_entry(path: Path, sha256: str) -> dict[str, Any]:
     }
 
 
+def _tarball(path: Path, files: Mapping[str, bytes], mode: str = "w:xz") -> bytes:
+    """A tarball of ``files`` at ``path`` (its parent made); its bytes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(path, mode) as tar:  # type: ignore[call-overload]
+        for name, data in files.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+    return path.read_bytes()
+
+
 def test_a_tarball_must_have_its_pinned_checksum(tmp_path: Path) -> None:
-    tarball = tmp_path / "upstream" / "mkvtoolnix-103.0.tar.xz"
-    tarball.parent.mkdir()
-    tarball.write_bytes(b"source")
+    tarball = tmp_path / "upstream" / "mediainfo-26.10.tar.xz"
+    source = _tarball(tarball, {"MediaInfo/LICENSE": b"BSD-2-Clause"})
     out = tmp_path / "out"
 
     with pytest.raises(sf.SourcesError, match="the SHA-256 is"):
         sf.fetch_all([_url_entry(tarball, "0" * 64)], out)
     assert not (out / tarball.name).exists()
 
-    sf.fetch_all([_url_entry(tarball, hashlib.sha256(b"source").hexdigest())], out)
-    assert (out / tarball.name).read_bytes() == b"source"
+    sf.fetch_all([_url_entry(tarball, hashlib.sha256(source).hexdigest())], out)
+    assert (out / tarball.name).read_bytes() == source
 
 
 def test_a_damaged_tarball_is_fetched_again(tmp_path: Path) -> None:
     tarball = tmp_path / "upstream" / "libva-2.24.1.tar.bz2"
-    tarball.parent.mkdir()
-    tarball.write_bytes(b"libva")
+    source = _tarball(tarball, {"libva-2.24.1/COPYING": b"MIT"}, mode="w:bz2")
     out = tmp_path / "out"
     out.mkdir()
     (out / tarball.name).write_bytes(b"truncated")
 
-    sf.fetch_all([_url_entry(tarball, hashlib.sha256(b"libva").hexdigest())], out)
+    sf.fetch_all([_url_entry(tarball, hashlib.sha256(source).hexdigest())], out)
 
-    assert (out / tarball.name).read_bytes() == b"libva"
+    assert (out / tarball.name).read_bytes() == source
 
 
 DSC = """-----BEGIN PGP SIGNED MESSAGE-----
@@ -341,6 +372,8 @@ def test_an_ubuntu_source_package_is_its_dsc_and_every_file_it_lists(
         "gtk+3.0_3.24.33-1ubuntu2.2/gtk+3.0_3.24.33-1ubuntu2.2.dsc",
         "gtk+3.0_3.24.33-1ubuntu2.2/gtk+3.0_3.24.33.orig.tar.xz",
     ]
+    # Its licence comes from the build image's /usr/share/doc, not from this archive.
+    assert _texts(out) == {}
 
 
 def test_a_dsc_of_another_version_is_an_error(
@@ -397,18 +430,21 @@ def test_main_reports_a_failure_and_exits_1(
 
 
 def test_a_static_builds_tree_is_fetched_by_commit_like_a_git_source(tmp_path: Path) -> None:
-    origin = tmp_path / "mxe"
-    entry = _git_entry(origin, _repo(origin, {"src/gmp.mk": "PKG := gmp\n"}))
+    origin = tmp_path / "type2-runtime"
+    entry = _git_entry(origin, _repo(origin, {"src/runtime.c": "", "LICENSE": "MIT"}))
     entry |= {
         "kind": "repository",
-        "name": "mxe-02b82ecfdc5a",
-        "archive": "mxe-02b82ecfdc5a.tar.xz",
+        "name": "type2-runtime-dd6cebedcbdd",
+        "archive": "type2-runtime-dd6cebedcbdd.tar.xz",
     }
     out = tmp_path / "out"
 
     sf.fetch_all([entry], out)
 
-    assert _members(out / entry["archive"]) == ["mxe-02b82ecfdc5a/src/gmp.mk"]
+    assert _members(out / entry["archive"]) == [
+        "type2-runtime-dd6cebedcbdd/LICENSE",
+        "type2-runtime-dd6cebedcbdd/src/runtime.c",
+    ]
 
 
 # Answers `svn info --show-item url|revision PATH` from PATH/.svn/info (url, then revision).
@@ -430,6 +466,7 @@ def fake_svn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def _svn_entry(tmp_path: Path, checked_out: str) -> dict[str, Any]:
     commands = (
         f"mkdir -p lame/.svn && printf '%s\\n%s\\n' '{LAME}' '{checked_out}' > lame/.svn/info"
+        " && echo LGPL > lame/COPYING"
     )
     return {
         "kind": "btbn-stage",
@@ -452,7 +489,9 @@ def test_an_svn_checkout_must_be_at_its_pinned_revision(
 
     sf.fetch_all([_svn_entry(tmp_path / "b", "6835")], tmp_path / "out-b")
     assert f"checked {LAME}@6835" in capsys.readouterr().err
-    assert _members(tmp_path / "out-b" / "btbn-50-lame-abcdef.tar.xz") == []
+    assert _members(tmp_path / "out-b" / "btbn-50-lame-abcdef.tar.xz") == [
+        "btbn-50-lame-abcdef/lame/COPYING"
+    ]
 
 
 @pytest.mark.usefixtures("helper_checkout")
@@ -509,3 +548,151 @@ def test_a_dsc_that_names_a_file_outside_its_folder_is_refused(name: str) -> Non
 
     with pytest.raises(sf.SourcesError, match="outside its folder"):
         sf.dsc_files(fields)
+
+
+def _texts(out: Path) -> dict[str, dict[str, str]]:
+    document = json.loads((out / "licence-texts.json").read_text(encoding="utf-8"))
+    return {
+        archive: {item["path"]: item["text"] for item in items}
+        for archive, items in document["archives"].items()
+    }
+
+
+def test_the_licence_texts_hold_the_licence_files_at_the_top_of_each_archive(
+    tmp_path: Path,
+) -> None:
+    """The packages' notices carry these texts: a missed file is a licence they lack."""
+    origin = tmp_path / "origin"
+    files = {
+        "COPYING.LGPLv2.1": "LGPL\r\n",
+        "LICENSE.md": "FFmpeg is LGPL",
+        "LGPL2.txt": "LGPL 2",
+        "COPYING.MinGW-w64-runtime/COPYING.MinGW-w64-runtime.txt": "ZPL",
+        "LICENSES/MIT.txt": "MIT",
+        "libavutil/LICENSE": "a vendored part",
+        "license.c": "int code;",
+        "COPYING.in": "@VERSION@",
+        "README.md": "readme",
+    }
+    sf.fetch_all([_git_entry(origin, _repo(origin, files))], tmp_path / "out")
+
+    assert _texts(tmp_path / "out") == {
+        "ffmpeg-1234.tar.xz": {
+            "COPYING.LGPLv2.1": "LGPL\n",
+            "COPYING.MinGW-w64-runtime/COPYING.MinGW-w64-runtime.txt": "ZPL",
+            "LGPL2.txt": "LGPL 2",
+            "LICENSE.md": "FFmpeg is LGPL",
+            "LICENSES/MIT.txt": "MIT",
+        }
+    }
+
+
+@pytest.mark.usefixtures("helper_checkout")
+def test_a_stage_that_checks_out_into_sub_folders_gives_each_ones_licence(
+    tmp_path: Path,
+) -> None:
+    headers, loader = tmp_path / "headers", tmp_path / "loader"
+    first = _repo(headers, {"cl.h": "", "LICENSE": "Apache headers"})
+    second = _repo(loader, {"icd.c": "", "LICENSE": "Apache loader"})
+    entry = _stage_entry(tmp_path, headers, first)
+    entry["commands"] = (
+        f'git-mini-clone "{headers.as_uri()}" "{first}" headers\n'
+        f'git-mini-clone "{loader.as_uri()}" "{second}" loader'
+    )
+    entry["download_hash"] = hashlib.sha256((entry["commands"] + "\n").encode()).hexdigest()
+    entry["variables"] |= {"SCRIPT_REPO2": loader.as_uri(), "SCRIPT_COMMIT2": second}
+
+    sf.fetch_all([entry], tmp_path / "out")
+
+    assert _texts(tmp_path / "out")[entry["archive"]] == {
+        "headers/LICENSE": "Apache headers",
+        "loader/LICENSE": "Apache loader",
+    }
+
+
+def test_an_archive_without_a_licence_file_stops_the_fetch_and_is_kept(tmp_path: Path) -> None:
+    origin = tmp_path / "origin"
+    entry = _git_entry(origin, _repo(origin, {"configure": "", "doc/manual/COPYING": "deeper"}))
+    out = tmp_path / "out"
+
+    with pytest.raises(sf.SourcesError, match="no licence file found at the top of ffmpeg-1234"):
+        sf.fetch_all([entry], out)
+
+    assert (out / "ffmpeg-1234.tar.xz").is_file()
+    assert not (out / "licence-texts.json").exists()
+    assert not (out / "SHA256SUMS").exists()
+
+
+def test_a_latin_1_licence_and_a_link_to_a_licence_are_read(tmp_path: Path) -> None:
+    tarball = tmp_path / "upstream" / "musl-1.2.5.tar.gz"
+    tarball.parent.mkdir()
+    with tarfile.open(tarball, "w:gz") as tar:
+        data = "Copyright © Rich Felker".encode("latin-1")
+        info = tarfile.TarInfo("musl-1.2.5/COPYRIGHT")
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+        link = tarfile.TarInfo("musl-1.2.5/LICENSE")
+        link.type, link.linkname = tarfile.SYMTYPE, "COPYRIGHT"
+        tar.addfile(link)
+    out = tmp_path / "out"
+
+    sf.fetch_all([_url_entry(tarball, hashlib.sha256(tarball.read_bytes()).hexdigest())], out)
+
+    assert _texts(out)["musl-1.2.5.tar.gz"] == {
+        "COPYRIGHT": "Copyright © Rich Felker",
+        "LICENSE": "Copyright © Rich Felker",
+    }
+
+
+@pytest.mark.parametrize(
+    ("paths", "chosen"),
+    [
+        (["COPYING", "src/LICENSE"], ["COPYING"]),
+        (["a/LICENSE", "b/COPYING.LIB", "b/src/COPYING"], ["a/LICENSE", "b/COPYING.LIB"]),
+        (["NOTICE", "notices.txt", "PATENTS", "Unlicense", "AGPL-3.0.txt"], None),
+        (["licensing.c", "COPYING.am", "LICENSE.json", "copyright.h", "license.py"], []),
+    ],
+)
+def test_which_files_are_licence_files(paths: list[str], chosen: list[str] | None) -> None:
+    assert sf.select_licence_files(paths) == (sorted(paths) if chosen is None else chosen)
+
+
+def test_vendored_components_bring_their_licence_files(tmp_path: Path) -> None:
+    """librsvg vendors its crates, libjxl has highway as a submodule: their code is linked too."""
+    origin = tmp_path / "origin"
+    files = {
+        "COPYING.LIB": "LGPL",
+        "vendor/smallvec-1.13.2/LICENSE-MIT": "MIT smallvec",
+        "third_party/highway/LICENSE": "Apache highway",
+        "subprojects/proxy-libintl/COPYING": "LGPL intl",
+        "third_party/highway/hwy/LICENSE": "deeper, not read",
+        "src/vendor/x/LICENSE": "not at the top",
+    }
+    sf.fetch_all([_git_entry(origin, _repo(origin, files))], tmp_path / "out")
+
+    assert sorted(_texts(tmp_path / "out")["ffmpeg-1234.tar.xz"]) == [
+        "COPYING.LIB",
+        "subprojects/proxy-libintl/COPYING",
+        "third_party/highway/LICENSE",
+        "vendor/smallvec-1.13.2/LICENSE-MIT",
+    ]
+
+
+def test_an_archive_whose_licence_is_committed_needs_no_licence_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    committed = tmp_path / "licence-texts.toml"
+    committed.write_text('[sources."ffmpeg-*.tar.xz"]\ntext = "MIT, in each header"\n')
+    monkeypatch.setattr(sf, "LICENCE_TEXTS", committed)
+    origin = tmp_path / "origin"
+    entry = _git_entry(origin, _repo(origin, {"include/sdk.h": "/* MIT */"}))
+
+    sf.fetch_all([entry], tmp_path / "out")
+
+    assert _texts(tmp_path / "out") == {"ffmpeg-1234.tar.xz": {}}
+
+
+def test_the_committed_texts_cover_the_real_sources_without_a_licence_file() -> None:
+    patterns = sf.committed_texts(sf.LICENCE_TEXTS)
+
+    assert any(fnmatch.fnmatchcase("btbn-50-ffnvcodec-ef2a38b483ab.tar.xz", p) for p in patterns)

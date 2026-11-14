@@ -127,3 +127,83 @@ def test_the_build_takes_only_the_notices_of_its_own_platform(
 
     assert (result.returncode == 0) == ok, result.stderr
     assert ("is not the one for docker-linux-x64" in result.stderr) == (not ok)
+
+
+def _doc_root(tmp_path: Path, texts: dict[str, str]) -> Path:
+    """``/usr/share/doc`` with a copyright file per package (``name`` → text)."""
+    doc = tmp_path / "doc"
+    for name, text in texts.items():
+        (doc / name).mkdir(parents=True)
+        (doc / name / "copyright").write_text(text, encoding="utf-8")
+    return doc
+
+
+COPYRIGHTS = {
+    "libc6": "glibc: LGPL-2.1+\n",
+    "login": "shadow: BSD-3-Clause\n",
+    "mkvtoolnix": "MKVToolNix: GPL-2.0\n",
+    "tini": "tini: MIT, Copyright (c) Thomas Orozco\n",
+}
+
+
+@skip_windows
+def test_the_notices_get_each_installed_packages_copyright_file_once(
+    tmp_path: Path, fake_dpkg: dict[str, str]
+) -> None:
+    """The owner's rule: every bundled part's licence text, the image's Debian packages too."""
+    notices = tmp_path / "THIRD_PARTY_NOTICES"
+    notices.write_text("Third-party notices for Reframe 1.0.0 (docker-linux-x64)\n")
+    texts = COPYRIGHTS | {"login": "glibc: LGPL-2.1+\n", "removed-package": "not installed\n"}
+    env = fake_dpkg | {"REFRAME_DOC_ROOT": str(_doc_root(tmp_path, texts))}
+
+    subprocess.run(
+        ["sh", str(DOCKER / "debian-packages.sh"), str(tmp_path / "LIST"), str(notices)],
+        env=env,
+        check=True,
+        timeout=30,
+    )
+
+    text = notices.read_text(encoding="utf-8")
+    assert text.startswith("Third-party notices for Reframe 1.0.0 (docker-linux-x64)\n\n")
+    section = text.split("the copyright file of each\n", 1)[1]
+    packages = re.findall(r"^-{78}\n(\S+)\n-{78}$", section, re.MULTILINE)
+    assert packages == ["libc6:amd64", "login", "mkvtoolnix", "tini"]
+    assert section.count("glibc: LGPL-2.1+") == 1
+    assert "The same text as libc6:amd64 above." in section
+    for package in ("mkvtoolnix", "tini"):
+        assert COPYRIGHTS[package] in section
+    assert "not installed" not in section
+    assert not notices.with_name("THIRD_PARTY_NOTICES.part").exists()
+
+
+@skip_windows
+def test_a_package_without_its_copyright_file_stops_the_image_build(
+    tmp_path: Path, fake_dpkg: dict[str, str]
+) -> None:
+    notices = tmp_path / "THIRD_PARTY_NOTICES"
+    notices.write_text("notices\n")
+    texts = {name: text for name, text in COPYRIGHTS.items() if name != "tini"}
+    env = fake_dpkg | {"REFRAME_DOC_ROOT": str(_doc_root(tmp_path, texts))}
+
+    result = subprocess.run(
+        ["sh", str(DOCKER / "debian-packages.sh"), str(tmp_path / "LIST"), str(notices)],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert result.returncode != 0
+    assert "tini has no" in result.stderr
+    assert notices.read_text() == "notices\n"
+
+
+def test_the_image_build_adds_the_copyright_files_to_its_notices() -> None:
+    dockerfile = (DOCKER / "Dockerfile").read_text(encoding="utf-8").replace("\\\n", " ")
+
+    assert re.search(
+        r"sh /tmp/debian-packages\.sh /opt/reframe/notices/DEBIAN_PACKAGES\s+"
+        r"/opt/reframe/notices/THIRD_PARTY_NOTICES",
+        dockerfile,
+    )

@@ -3,7 +3,7 @@ tag of its sources release: ``sources-`` and the first 12 hex digits of the mani
 
 The manifest names, for every pinned FFmpeg platform, the FFmpeg commit, the BtbN build scripts'
 commit and each dependency download those scripts make for that platform (found by running the
-scripts' own ``generate.sh``), the MKVToolNix and MediaInfo source tarballs, the libva source,
+scripts' own ``generate.sh``), the MediaInfo source tarball, the libva source,
 the tree and the linked libraries of each static build in ``tools/static-builds.toml``, and the
 Ubuntu source package of each distro package the Linux packages carry. The same pins give the
 same bytes, so the tag changes only when a source changes. ``bash`` and ``git`` must be on

@@ -23,6 +23,7 @@ from reframe.validation.common import (
     remove,
     replace,
     switch_container_fixes,
+    tool_problem,
     usable_encoder,
     warning,
 )
@@ -234,8 +235,8 @@ def track_flags(ctx: JobContext) -> Iterator[ValidationIssue]:
                     yield warning(
                         "tool.mkvpropedit_missing",
                         path,
-                        f"The {label} flag needs mkvpropedit after muxing, and mkvpropedit was "
-                        "not found: the flag will be lost.",
+                        f"The {label} flag needs mkvpropedit after muxing, which is not "
+                        f"available: the flag will be lost.{tool_problem(ctx.tools.mkvpropedit)}",
                         clear,
                     )
                 continue

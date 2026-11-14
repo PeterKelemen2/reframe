@@ -118,7 +118,7 @@ Every desktop package bundles the pinned FFmpeg from `tools/ffmpeg.toml`
 
 | Platform | FFmpeg | mkvpropedit / mediainfo |
 |----------|--------|-------------------------|
-| Windows | Bundled in `resources/tools/ffmpeg/` | Bundled MKVToolNix CLI tools (`mkvpropedit.exe`) and MediaInfo CLI |
+| Windows | Bundled in `resources/tools/ffmpeg/` | Bundled MediaInfo CLI. MKVToolNix is not bundled ([decision 0079](../decisions/0079-q5-release-process.md) item 11): the user installs it, and discovery finds its install folder |
 | Linux AppImage | Bundled inside the AppImage | System packages, if installed |
 | Linux .deb / .rpm | Bundled in `/usr/lib/Reframe/tools/ffmpeg/`. No dependency on the distro `ffmpeg` package | `Recommends: mkvtoolnix, mediainfo` |
 
@@ -221,14 +221,16 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       Windows *(Windows testing phase)*. Record each host and its result in `docs/decisions/0002-bundled-ffmpeg.md`, and
       list there the hosts that were not tested as not verified
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 7).
-- [x] CI downloads the pinned FFmpeg / MKVToolNix / MediaInfo builds, verifies the checksums,
+- [x] CI downloads the pinned FFmpeg / MediaInfo builds (MKVToolNix: not bundled since
+      [decision 0079](../decisions/0079-q5-release-process.md) item 11), verifies the checksums,
       and puts them in `resources/tools/` (`scripts/bundle-tools.py`; one build platform per
       layout, so no sub-folder per OS). The same step feeds the .deb/.rpm layout. The
       `desktop-smoke` CI job and the Linux package build run it; the job has not run on GitHub
       ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md)).
 - [x] Settings → Tools: a path override per tool, **Test**, **Use bundled**, env overrides shown
-      read-only. The first-run check runs before the main UI. On Linux; the Windows rows of the
-      bundled MKVToolNix and MediaInfo are checked with D-8's installer
+      read-only. The first-run check runs before the main UI. On Linux; the Windows row of the
+      bundled MediaInfo is checked with D-8's installer (a missing mkvpropedit says to install
+      MKVToolNix: [decision 0079](../decisions/0079-q5-release-process.md) "Fix round — FL")
       ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) "Task U").
 
 ### D-8 Packaging, signing, updates

@@ -6987,7 +6987,7 @@ export interface components {
          * @description Where the tool path came from, in discovery order.
          * @enum {string}
          */
-        ToolOrigin: "env" | "settings" | "bundled" | "path";
+        ToolOrigin: "env" | "settings" | "bundled" | "path" | "installed";
         /**
          * ToolPaths
          * @description Tool path overrides (``None`` = no override). A path may name the binary or its folder.

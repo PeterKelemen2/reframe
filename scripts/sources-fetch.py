@@ -1,12 +1,14 @@
 """Fetch one archive for each entry of a source manifest (``sources-manifest.py``) into a folder,
-check each against its pin, and write the folder's ``SHA256SUMS``.
+check each against its pin, write the licence files of the archives to ``licence-texts.json``
+(the packages' notices carry them), and write the folder's ``SHA256SUMS``.
 
 An archive appears under its final name only after its check passed, so a rerun skips it. Git
 sources and trees are fetched by commit; a BtbN dependency runs the build scripts' own download
 commands (with their ``git-mini-clone`` and ``retry-tool``) after checking that they are the
 ones the build used; tarballs must have their pinned SHA-256; an Ubuntu source package is its
 ``.dsc`` from Launchpad and every file the ``.dsc`` lists, with the checksums it gives. Git and
-SVN metadata stay out of the archives. Linux only: ``git``, GNU ``tar``, ``xz``, ``bash`` and the
+SVN metadata stay out of the archives. An Ubuntu source package's licence is read from the build
+image's ``/usr/share/doc`` instead. Linux only: ``git``, GNU ``tar``, ``xz``, ``bash`` and the
 tools the download commands call (:data:`STAGE_TOOLS`) must be on ``PATH``::
 
     uv run python scripts/sources-fetch.py --manifest sources/manifest.json --out sources/files
@@ -15,6 +17,7 @@ tools the download commands call (:data:`STAGE_TOOLS`) must be on ``PATH``::
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import hashlib
 import json
 import os
@@ -26,6 +29,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import tomllib
 import urllib.parse
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
@@ -35,12 +39,16 @@ from reframe.tools import fetch
 from reframe.tools.runner import CancelToken
 
 SUMS = "SHA256SUMS"
+TEXTS = "licence-texts.json"
+LICENCE_TEXTS = Path(__file__).resolve().parent.parent / "tools" / "licence-texts.toml"
 WORK_PREFIX = ".work-"
 #: What the BtbN download commands call besides git.
 STAGE_TOOLS = ("svn", "cargo", "meson", "python3", "autoreconf", "automake", "libtoolize")
 LAUNCHPAD_FILES = "https://launchpad.net/ubuntu/+archive/primary/+sourcefiles/{source}/{version}/"
 MAX_TARBALL = 4 << 30
 MAX_DSC = 1 << 20
+#: A licence file larger than this is not read: no licence text is that long.
+MAX_TEXT = 1 << 20
 STAGE_TIMEOUT = 2 * 3600
 GIT_TIMEOUT = 1800
 #: Attempts of a clone or a stage's commands: dozens of clones in a row meet network errors.
@@ -51,6 +59,25 @@ _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _REV = re.compile(r"^[0-9]+$")
 # The way BtbN's download.sh runs a stage's commands.
 _STAGE_SHELL = 'set -xe -o pipefail\nshopt -s dotglob\neval "set -e; $REFRAME_STAGE_COMMANDS"\n'
+_LICENCE_FILE = re.compile(
+    r"^(?:(?:licen[cs]es?|copying|copyright|notices?|unlicense|patents)(?:[-_.].*)?"
+    r"|[al]?gpl[-_.]?v?[0-9.]*(?:\.txt|\.md)?)$",
+    re.IGNORECASE,
+)
+# REUSE's LICENSES/, and folders such as mingw-w64's COPYING.MinGW-w64-runtime/.
+_LICENCE_DIR = re.compile(r"^(?:licen[cs]es|(?:copying|licen[cs]e)[-_.].+)$", re.IGNORECASE)
+# Folders of vendored components (cargo vendor, git submodules, meson subprojects): each one's
+# licence goes with the code it puts into the build.
+_VENDOR_DIR = re.compile(
+    r"^(?:vendor|vendored|third[-_]?party|3rd[-_]?party|external|extern|subprojects|deps)$",
+    re.IGNORECASE,
+)
+# Code and build files named like a licence (license.c, COPYING.in) are not one.
+_NOT_TEXT = re.compile(
+    r"\.(?:c|h|cc|cpp|hpp|py|js|ts|rs|go|java|rb|pl|pm|sh|m4|in|am|ac|cmake|json|xml|ya?ml|toml"
+    r"|pc|mk|png|svg|ico|o|a|so|dll|exe|gz|xz|bz2|zip|sig|asc)$",
+    re.IGNORECASE,
+)
 
 
 class SourcesError(Exception):
@@ -355,7 +382,9 @@ def load_manifest(path: Path) -> list[dict[str, Any]]:
         raise SourcesError(f"{path}: not a source manifest with entries")
     entries: list[dict[str, Any]] = data["entries"]
     names = [str(entry.get("archive", "")) for entry in entries]
-    bad = [n for n in names if not n or Path(n).name != n or n.startswith(".") or n == SUMS]
+    bad = [
+        n for n in names if not n or Path(n).name != n or n.startswith(".") or n in (SUMS, TEXTS)
+    ]
     if bad or len(set(names)) != len(names):
         raise SourcesError(f"{path}: archive names must be unique plain file names: {bad}")
     return entries
@@ -363,7 +392,7 @@ def load_manifest(path: Path) -> list[dict[str, Any]]:
 
 def check_out_dir(out: Path, entries: Iterable[Mapping[str, Any]]) -> None:
     """:raises SourcesError: ``out`` holds a file that is not one of the manifest's archives."""
-    wanted = {str(entry["archive"]) for entry in entries} | {SUMS}
+    wanted = {str(entry["archive"]) for entry in entries} | {SUMS, TEXTS}
     if not out.is_dir():
         return
     stray = sorted(
@@ -373,11 +402,128 @@ def check_out_dir(out: Path, entries: Iterable[Mapping[str, Any]]) -> None:
         raise SourcesError(f"{out} holds files of no manifest entry: {', '.join(stray)}")
 
 
+def _is_licence_path(parts: Sequence[str], *, vendored: bool = True) -> bool:
+    """A licence file at the top of ``parts`` (a path below one folder), a file in a licence
+    folder there, or the same one level into a folder of vendored components."""
+    if not parts or _NOT_TEXT.search(parts[-1]):
+        return False
+    if len(parts) == 1:
+        return bool(_LICENCE_FILE.match(parts[0]))
+    if len(parts) == 2 and _LICENCE_DIR.match(parts[0]):
+        return True
+    return (
+        vendored
+        and len(parts) > 2
+        and bool(_VENDOR_DIR.match(parts[0]))
+        and _is_licence_path(parts[2:], vendored=False)
+    )
+
+
+def select_licence_files(paths: Iterable[str]) -> list[str]:
+    """The licence files among ``paths`` (``/``-separated, below the archive's top folder): those
+    at the top, else those one folder down (a stage that checks its sources out into
+    sub-folders)."""
+    top: list[str] = []
+    below: list[str] = []
+    for path in paths:
+        parts = path.split("/")
+        if _is_licence_path(parts):
+            top.append(path)
+        elif len(parts) > 1 and _is_licence_path(parts[1:]):
+            below.append(path)
+    return sorted(top or below)
+
+
+def _decode(data: bytes) -> str:
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        text = data.decode("latin-1")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def archive_licence_texts(archive: Path) -> dict[str, str]:
+    """The licence files of a source archive by their path below its top folder (one pass, so a
+    ``.tar.xz`` is read once). A link to a licence file gets that file's text.
+
+    :raises SourcesError: the archive cannot be read.
+    """
+    texts: dict[str, str] = {}
+    links: dict[str, str] = {}
+    tops: set[str] = set()
+    try:
+        with tarfile.open(archive, "r|*") as tar:
+            for member in tar:
+                name = member.name.removeprefix("./").strip("/")
+                top, _, below = name.partition("/")
+                tops.add(top)
+                if not below or not select_licence_files([below]):
+                    continue
+                if member.issym() or member.islnk():
+                    target = member.linkname.removeprefix("./")
+                    if member.issym():
+                        target = os.path.normpath(os.path.join(os.path.dirname(name), target))
+                    links[below] = target.partition("/")[2]
+                elif member.isfile() and member.size <= MAX_TEXT:
+                    file = tar.extractfile(member)
+                    data = file.read() if file is not None else b""
+                    if b"\0" not in data:
+                        texts[below] = _decode(data)
+    except (OSError, tarfile.TarError, EOFError) as e:
+        raise SourcesError(f"{archive.name}: cannot read it: {e}") from e
+    if len(tops) != 1:
+        raise SourcesError(f"{archive.name}: not one top folder ({len(tops)} at the top)")
+    for path, target in links.items():
+        if target in texts:
+            texts[path] = texts[target]
+    return {path: texts[path] for path in select_licence_files(texts)}
+
+
+def committed_texts(path: Path) -> list[str]:
+    """The archive name patterns that ``tools/licence-texts.toml`` gives a text for (a source
+    whose licence is only in its files' headers)."""
+    sources = tomllib.loads(path.read_text(encoding="utf-8")).get("sources", {})
+    return [str(pattern) for pattern in sources]
+
+
+def write_texts(out: Path, entries: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    """``out/licence-texts.json``: the licence files of each archive but the Ubuntu source
+    packages.
+
+    :raises SourcesError: an archive has no licence file and ``tools/licence-texts.toml`` no
+        text for it: its part's notices would lack it.
+    """
+    archives: dict[str, list[dict[str, str]]] = {}
+    for entry in sorted(entries, key=lambda entry: str(entry["archive"])):
+        if entry["kind"] == "ubuntu-source":
+            continue
+        name = str(entry["archive"])
+        texts = archive_licence_texts(out / name)
+        archives[name] = [{"path": path, "text": text} for path, text in texts.items()]
+    patterns = committed_texts(LICENCE_TEXTS)
+    missing = sorted(
+        name
+        for name, texts in archives.items()
+        if not texts and not any(fnmatch.fnmatchcase(name, p) for p in patterns)
+    )
+    if missing:
+        raise SourcesError(
+            f"no licence file found at the top of {', '.join(missing)}: look in the archive, "
+            "then extend the rule of select_licence_files or add its text to "
+            f"{LICENCE_TEXTS.name} [sources]"
+        )
+    document = {"schema_version": 1, "archives": archives}
+    partial = out / f"{WORK_PREFIX}{TEXTS}"
+    partial.write_text(
+        json.dumps(document, indent=1, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+    os.replace(partial, out / TEXTS)
+    return document
+
+
 def write_sums(out: Path, entries: Iterable[Mapping[str, Any]]) -> str:
-    lines = [
-        f"{fetch.sha256_file(out / str(entry['archive']))}  {entry['archive']}\n"
-        for entry in sorted(entries, key=lambda entry: str(entry["archive"]))
-    ]
+    names = sorted([*(str(entry["archive"]) for entry in entries), TEXTS])
+    lines = [f"{fetch.sha256_file(out / name)}  {name}\n" for name in names]
     text = "".join(lines)
     partial = out / f"{SUMS}.part"
     partial.write_text(text, encoding="utf-8")
@@ -409,6 +555,7 @@ def fetch_all(entries: Sequence[Mapping[str, Any]], out: Path) -> None:
         for number, entry in enumerate(todo, 1):
             _log(f"[{number}/{len(todo)}] {entry['archive']}")
             fetch_entry(entry, out, helpers)
+    write_texts(out, entries)
     write_sums(out, entries)
 
 
