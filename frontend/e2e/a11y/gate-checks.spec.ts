@@ -403,10 +403,11 @@ function revealLate(when: string): string {
 }
 
 test('a stop that comes into view at the next rendering update is not hidden', async ({ page }) => {
-  // As WebKit reveals a focused field: one frame after the Tab, not in it.
+  // As WebKit reveals a focused field: in the second frame callback after the Tab, not in it.
   const css = '.late { position: fixed; left: 24px; top: 200vh }'
   const late = '<div class="late"><button id="one">One</button></div>'
-  await made(page, css, late, revealLate('requestAnimationFrame'))
+  const secondFrame = '((f) => requestAnimationFrame(() => requestAnimationFrame(f)))'
+  await made(page, css, late, revealLate(secondFrame))
   expect(await focusFindings(page, WHOLE)).toEqual([])
   await made(page, css, late, revealLate('((f) => setTimeout(f, 500))'))
   expect(light(await focusFindings(page, WHOLE))).toContain('obscured #one')
