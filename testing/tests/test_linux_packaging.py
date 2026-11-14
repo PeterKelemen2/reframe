@@ -129,10 +129,12 @@ def _mounts(run: list[str]) -> dict[str, str]:
 def sources(tmp_path: Path) -> dict[str, str]:
     (tmp_path / "SHA256SUMS").write_text("")
     (tmp_path / "manifest.json").write_text("{}")
+    (tmp_path / "licence-texts.json").write_text("{}")
     return {
         "REFRAME_SOURCES_URL": "https://example.invalid/releases/tag/sources-0123456789ab",
         "REFRAME_SOURCES_SUMS": str(tmp_path / "SHA256SUMS"),
         "REFRAME_SOURCES_MANIFEST": str(tmp_path / "manifest.json"),
+        "REFRAME_SOURCES_TEXTS": str(tmp_path / "licence-texts.json"),
     }
 
 
@@ -146,6 +148,7 @@ def test_a_release_build_mounts_the_sources_files_and_passes_the_url(
     mounts = _mounts(run)
     assert mounts["/sources/SHA256SUMS"] == str(tmp_path / "SHA256SUMS")
     assert mounts["/sources/manifest.json"] == str(tmp_path / "manifest.json")
+    assert mounts["/sources/licence-texts.json"] == str(tmp_path / "licence-texts.json")
     assert f"REFRAME_SOURCES_URL={sources['REFRAME_SOURCES_URL']}" in run
 
 
@@ -157,14 +160,21 @@ def test_a_build_without_a_sources_release_mounts_nothing_in_their_place(tmp_pat
     mounts = _mounts(run)
     assert mounts["/sources/SHA256SUMS"] == "/dev/null"
     assert mounts["/sources/manifest.json"] == "/dev/null"
+    assert mounts["/sources/licence-texts.json"] == "/dev/null"
     assert "REFRAME_SOURCES_URL=" in run
 
 
 @skip_windows
 @pytest.mark.parametrize(
-    "unset", ["REFRAME_SOURCES_URL", "REFRAME_SOURCES_SUMS", "REFRAME_SOURCES_MANIFEST"]
+    "unset",
+    [
+        "REFRAME_SOURCES_URL",
+        "REFRAME_SOURCES_SUMS",
+        "REFRAME_SOURCES_MANIFEST",
+        "REFRAME_SOURCES_TEXTS",
+    ],
 )
-def test_the_sources_variables_are_set_all_three_or_none(
+def test_the_sources_variables_are_set_all_four_or_none(
     tmp_path: Path, sources: dict[str, str], unset: str
 ) -> None:
     del sources[unset]
@@ -172,15 +182,16 @@ def test_the_sources_variables_are_set_all_three_or_none(
     result, run = _build(tmp_path, **sources)
 
     assert result.returncode == 1
-    assert "REFRAME_SOURCES_MANIFEST together, or none of them" in result.stderr
+    assert "REFRAME_SOURCES_TEXTS together, or none of them" in result.stderr
     assert run == []
 
 
 @skip_windows
+@pytest.mark.parametrize("variable", ["REFRAME_SOURCES_MANIFEST", "REFRAME_SOURCES_TEXTS"])
 def test_a_missing_sources_file_stops_the_build_before_docker(
-    tmp_path: Path, sources: dict[str, str]
+    tmp_path: Path, sources: dict[str, str], variable: str
 ) -> None:
-    sources["REFRAME_SOURCES_MANIFEST"] = str(tmp_path / "missing.json")
+    sources[variable] = str(tmp_path / "missing.json")
 
     result, run = _build(tmp_path, **sources)
 
@@ -193,8 +204,8 @@ def test_the_notices_read_the_sources_files_where_build_sh_mounts_them() -> None
     inside = (BUILD / "build-in-container.sh").read_text()
     outside = (BUILD / "build.sh").read_text()
 
-    passed = re.findall(r"--sources-(sums|manifest) (/sources/\S+)", inside)
-    assert sorted(option for option, _ in passed) == ["manifest", "sums"]
+    passed = re.findall(r"--sources-(sums|manifest|texts) (/sources/\S+)", inside)
+    assert sorted(option for option, _ in passed) == ["manifest", "sums", "texts"]
     for _, path in passed:
         assert f':{path}:ro"' in outside
 

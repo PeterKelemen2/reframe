@@ -172,7 +172,7 @@ image tag `latest` only when its version is the highest `vX.Y.Z` tag. A patch of
 | Job | What |
 |-----|------|
 | Version, secrets and visibility | `stamp-version.py --check`, then `release-workflow.py preflight`: the tag is `v` and the stamped version, the version is `X.Y.Z` within the MSI's limits, the secrets are set (the certificate with its password and timestamp server), the repository is public; and whether the version is the highest `vX.Y.Z` tag (the latest). `release-notes.py` finds the version's section in `CHANGELOG.md`. `release-workflow.py sums` signs a test file with the release key and checks it with the key in this file. |
-| Sources release | `desktop/packaging/linux/appimage-libs.sh` reads the distro packages that the AppImage will carry (dpkg in the Linux build image); `sources-manifest.py` writes the source manifest and gives its tag `sources-<12 hex>`. `release-workflow.py sources-find` looks for a release with that tag: a published one is used only when it has the manifest, `SHA256SUMS` and every archive with the expected SHA-256; a draft (an interrupted upload) is deleted. Otherwise `sources-fetch.py` downloads and checks one archive per entry in the image of `desktop/packaging/sources/Dockerfile` (Ubuntu 26.04 with the tools BtbN's download commands need), and `release-workflow.py sources-publish` uploads the manifest, the archives and `SHA256SUMS` to a draft and publishes it when GitHub has every file: never "latest", with no `v` in its tag. The other jobs get its URL, the manifest, `SHA256SUMS` and the AppImage package list. |
+| Sources release | `desktop/packaging/linux/appimage-libs.sh` reads the distro packages that the AppImage will carry (dpkg in the Linux build image); `sources-manifest.py` writes the source manifest and gives its tag `sources-<12 hex>`. `release-workflow.py sources-find` looks for a release with that tag: a published one is used only when it has the manifest, `SHA256SUMS`, `licence-texts.json` and every archive with the expected SHA-256; a draft (an interrupted upload) is deleted. Otherwise `sources-fetch.py` downloads and checks one archive per entry in the image of `desktop/packaging/sources/Dockerfile` (Ubuntu 26.04 with the tools BtbN's download commands need), it also writes `licence-texts.json`, the licence files of each archive (the Ubuntu source packages' come from the Linux build image's `/usr/share/doc` instead), and `release-workflow.py sources-publish` uploads the manifest, the archives, `licence-texts.json` and `SHA256SUMS` to a draft and publishes it when GitHub has every file: never "latest", with no `v` in its tag. The other jobs get its URL, the manifest, `SHA256SUMS`, `licence-texts.json` and the AppImage package list. |
 | Linux packages | `desktop/packaging/linux/build.sh` builds the AppImage, `.deb` and `.rpm` in the Ubuntu 22.04 build image, with notices that name the sources release, and checks that the AppImage carries exactly the distro packages the manifest lists. `install-test.sh` installs, runs and removes them in Ubuntu 22.04, Debian 12 and Fedora. |
 | Windows installers | The tools layout, the frozen sidecar, the notices, then `tauri build` (NSIS and MSI), signed with the certificate when it is set. `tauri signer sign --app-version` signs the NSIS installer for the updater. |
 | Docker image | One build per platform, each on a runner of that architecture (`ubuntu-24.04`, `ubuntu-24.04-arm`) and with its own `docker/notices/THIRD_PARTY_NOTICES`. Each is pushed to GHCR by digest only, without a tag. |
@@ -184,8 +184,11 @@ once their update path is verified (not done: [decision 0072](decisions/0072-m10
 task W); until then Linux installs get no update offer. The MSI and the `.rpm` are never
 updated by the app.
 
-Each package's `THIRD_PARTY_NOTICES` names the sources release and lists the SHA-256 of the
-archives of the parts that this platform bundles; the release notes list them all.
+Each package's `THIRD_PARTY_NOTICES` names the sources release, lists the SHA-256 of the
+archives of the parts that this platform bundles and carries their licence texts; the release
+notes list them all. A part without a licence text stops the notices: a new npm or PyPI package
+that ships none needs its text in `tools/licence-texts.toml`, a new source archive with no
+licence file at its top a look at `select_licence_files` in `scripts/sources-fetch.py`.
 
 ## When a run fails
 
@@ -232,8 +235,8 @@ The first release also checks the workflow itself: it has never run on GitHub (0
   updater").
 - `notices/THIRD_PARTY_NOTICES` in a package and `/opt/reframe/notices/THIRD_PARTY_NOTICES` in
   the image name the same sources release as the notes.
-- The sources release has one archive per manifest entry, and `sha256sum -c SHA256SUMS` passes
-  in a folder with them. The first time, record its total size (more than 1 GB was measured
+- The sources release has one archive per manifest entry and `licence-texts.json`, and
+  `sha256sum -c SHA256SUMS` passes in a folder with them. The first time, record its total size (more than 1 GB was measured
   for part of it: 0079, task S). GitHub's limit is 2 GiB per file; the largest archive
   measured was about 263 MB.
 - `docker pull ghcr.io/peterkelemen2/reframe:1.1.0` on amd64 and on arm64; the server starts and

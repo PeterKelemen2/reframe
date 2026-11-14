@@ -115,6 +115,7 @@ jobs:
           --repo "$GITHUB_REPOSITORY" --tag "$TAG"
           --manifest "$RUNNER_TEMP/sources/manifest.json"
           --sums-out "$RUNNER_TEMP/sources/SHA256SUMS"
+          --texts-out "$RUNNER_TEMP/sources/licence-texts.json"
 
       # BtbN's download commands need the tools of its Ubuntu 26.04 base image.
       - name: Fetch and check one archive per manifest entry
@@ -125,7 +126,8 @@ jobs:
           docker run --rm -v "$PWD:/src:ro" -v "$RUNNER_TEMP/sources:/sources" -w /src \
             -e UV_FROZEN=1 reframe-sources-fetch \
             uv run python scripts/sources-fetch.py --manifest /sources/manifest.json --out /sources/files
-          cp "$RUNNER_TEMP/sources/files/SHA256SUMS" "$RUNNER_TEMP/sources/SHA256SUMS"
+          cp "$RUNNER_TEMP/sources/files/SHA256SUMS" "$RUNNER_TEMP/sources/files/licence-texts.json" \
+            "$RUNNER_TEMP/sources/"
           du -sh "$RUNNER_TEMP/sources/files"
           df -h "$RUNNER_TEMP"
 
@@ -146,6 +148,7 @@ jobs:
           path: |
             ${{ runner.temp }}/sources/manifest.json
             ${{ runner.temp }}/sources/SHA256SUMS
+            ${{ runner.temp }}/sources/licence-texts.json
             ${{ runner.temp }}/sources/appimage-libs.json
           if-no-files-found: error
 
@@ -171,6 +174,7 @@ jobs:
           REFRAME_SOURCES_URL: ${{ needs.sources.outputs.url }}
           REFRAME_SOURCES_SUMS: ${{ runner.temp }}/sources/SHA256SUMS
           REFRAME_SOURCES_MANIFEST: ${{ runner.temp }}/sources/manifest.json
+          REFRAME_SOURCES_TEXTS: ${{ runner.temp }}/sources/licence-texts.json
           REFRAME_APPIMAGE_LIBS: ${{ runner.temp }}/sources/appimage-libs.json
         run: desktop/packaging/linux/build.sh dist/linux
 
@@ -251,6 +255,7 @@ jobs:
           --platform windows-x64 --sources-url "$SOURCES_URL"
           --sources-sums "$RUNNER_TEMP/sources/SHA256SUMS"
           --sources-manifest "$RUNNER_TEMP/sources/manifest.json"
+          --sources-texts "$RUNNER_TEMP/sources/licence-texts.json"
 
       # The bundler signs the installers, Reframe.exe and every unsigned .exe and .dll in the
       # resources with this certificate.
@@ -372,7 +377,7 @@ jobs:
         working-directory: frontend
 
       # The notices take FFmpeg's licence from the platform's pinned build; they refuse any
-      # Python but the image's.
+      # Python but the image's. The image adds its Debian packages' copyright files to them.
       - name: Write docker/notices/THIRD_PARTY_NOTICES
         env:
           FFMPEG_PLATFORM: ${{ matrix.ffmpeg }}
@@ -385,6 +390,7 @@ jobs:
             --platform "$PLATFORM" --tools "$RUNNER_TEMP/tools" \
             --sources-url "$SOURCES_URL" --sources-sums "$RUNNER_TEMP/sources/SHA256SUMS" \
             --sources-manifest "$RUNNER_TEMP/sources/manifest.json" \
+            --sources-texts "$RUNNER_TEMP/sources/licence-texts.json" \
             --out docker/notices/THIRD_PARTY_NOTICES
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1

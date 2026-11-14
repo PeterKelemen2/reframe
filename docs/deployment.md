@@ -29,8 +29,9 @@ The runtime image is Debian 13 (trixie) slim with:
   (Intel VAAPI) and `libmfx-gen1.2` (the oneVPL GPU runtime for Intel QSV). The NVIDIA driver
   comes from the host, through the NVIDIA Container Toolkit. The `linux/arm64` image has no GPU
   drivers: it has the software encoders only (see [GPU](#gpu));
-- in `/opt/reframe/notices/`: `THIRD_PARTY_NOTICES` (the licences, and the sources release of
-  the bundled FFmpeg) and `DEBIAN_PACKAGES`, written during the build: each Debian package in
+- in `/opt/reframe/notices/`: `THIRD_PARTY_NOTICES` (the licence texts, the sources release of
+  the bundled FFmpeg, and at its end the copyright file of each Debian package in the image,
+  added during the build) and `DEBIAN_PACKAGES`, written during the build: each Debian package in
   the image with its version, its source package and version, and that source on
   [snapshot.debian.org](https://snapshot.debian.org/), which keeps every Debian source version;
 - the web frontend in `/opt/reframe/frontend/` (`REFRAME_STATIC_DIR`);

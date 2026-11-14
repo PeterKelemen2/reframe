@@ -57,7 +57,9 @@ The owner chose between three ways (2026-11-13):
    workflow uses it. If not, the workflow creates it before the app release.
 3. **Each app release names its sources release.** `THIRD_PARTY_NOTICES` (from
    `scripts/third-party-notices.py`) and the release notes give the sources release's URL and
-   the SHA-256 of each archive.
+   the SHA-256 of each archive. (2026-11-14, [0079](0079-q5-release-process.md) item 11 and
+   "Fix round — FL": the notices also carry each archive's licence texts, from the sources
+   release's `licence-texts.json`.)
 4. **A sources release is never GitHub's "latest" and never has a `v*` tag.** The updater reads
    `releases/latest/download/latest.json` (`desktop/src-tauri/tauri.conf.json`), and a `v*` tag
    starts the release workflow. So the workflow creates a sources release with

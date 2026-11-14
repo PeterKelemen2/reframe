@@ -95,6 +95,7 @@ RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
         tini=0.19.0-3+b8 \
     && rm -rf /var/lib/apt/lists/* \
     && sh /tmp/debian-packages.sh /opt/reframe/notices/DEBIAN_PACKAGES \
+        /opt/reframe/notices/THIRD_PARTY_NOTICES \
     && rm /tmp/debian-packages.sh
 
 COPY --from=python /opt/reframe/python /opt/reframe/python

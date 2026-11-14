@@ -29,6 +29,8 @@ RELEASE_DOC = REPO_ROOT / "docs" / "release.md"
 SUMS = "SHA256SUMS"
 SIGNATURE = "SHA256SUMS.asc"
 MANIFEST = "manifest.json"
+#: The licence files of the sources release's archives (sources-fetch.py writes it).
+TEXTS = "licence-texts.json"
 
 # ASCII digits only, no leading zeros: the spelling PEP 440 and SemVer share.
 _FINAL_VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
@@ -47,8 +49,8 @@ SECRETS = (*REQUIRED_SECRETS, CERTIFICATE, *WITH_CERTIFICATE)
 
 SOURCES_NOTES = (
     "The source code of the third-party programs and libraries that Reframe's packages bundle: "
-    f"one archive per entry of {MANIFEST}, and their {SUMS}. Each Reframe release names the "
-    "sources release it was built with.\n"
+    f"one archive per entry of {MANIFEST}, their licence files ({TEXTS}) and their {SUMS}. Each "
+    "Reframe release names the sources release it was built with.\n"
 )
 
 
@@ -222,9 +224,21 @@ def publish(
     return str(release["html_url"])
 
 
-def find_sources(repo: str, tag: str, manifest: Path, sums_out: Path) -> bool:
+def _download(repo: str, asset: Mapping[str, Any]) -> bytes:
+    return gh(
+        "api",
+        "-H",
+        "Accept: application/octet-stream",
+        f"repos/{repo}/releases/assets/{asset['id']}",
+    )
+
+
+def find_sources(
+    repo: str, tag: str, manifest: Path, sums_out: Path, texts_out: Path | None = None
+) -> bool:
     """Whether the sources release ``tag`` is published with every file of ``manifest``; when it
-    is, its ``SHA256SUMS`` is written to ``sums_out``. A draft of it is deleted.
+    is, its ``SHA256SUMS`` is written to ``sums_out`` and its licence texts to ``texts_out``
+    (default: next to it). A draft of it is deleted.
 
     :raises ReleaseError: it is published but incomplete, or it is another manifest's.
     """
@@ -235,14 +249,9 @@ def find_sources(repo: str, tag: str, manifest: Path, sums_out: Path) -> bool:
     sums_asset = next((a for a in assets if a["name"] == SUMS and a["state"] == "uploaded"), None)
     if sums_asset is None:
         raise _incomplete(tag, [f"{SUMS}: missing"])
-    data = gh(
-        "api",
-        "-H",
-        "Accept: application/octet-stream",
-        f"repos/{repo}/releases/assets/{sums_asset['id']}",
-    )
+    data = _download(repo, sums_asset)
     sums = parse_sums(data.decode("utf-8"), f"{SUMS} of {tag}")
-    archives = set(archive_names(manifest))
+    archives = {*archive_names(manifest), TEXTS}
     problems = [f"{name}: not in its {SUMS}" for name in sorted(archives - set(sums))]
     problems += [
         f"{name}: in its {SUMS}, not in the manifest" for name in sorted(set(sums) - archives)
@@ -255,8 +264,12 @@ def find_sources(repo: str, tag: str, manifest: Path, sums_out: Path) -> bool:
     problems += asset_problems(assets, wanted)
     if problems:
         raise _incomplete(tag, problems)
-    sums_out.parent.mkdir(parents=True, exist_ok=True)
-    sums_out.write_bytes(data)
+    texts = _download(repo, next(a for a in assets if a["name"] == TEXTS))
+    if hashlib.sha256(texts).hexdigest() != sums[TEXTS]:
+        raise _incomplete(tag, [f"{TEXTS}: downloaded bytes that are not the ones in its {SUMS}"])
+    for path, content in ((sums_out, data), (texts_out or sums_out.with_name(TEXTS), texts)):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
     return True
 
 
@@ -269,10 +282,11 @@ def _incomplete(tag: str, problems: list[str]) -> ReleaseError:
 
 
 def publish_sources(repo: str, tag: str, manifest: Path, files: Path, target: str) -> str:
-    """Makes the sources release: the manifest, ``SHA256SUMS`` and each fetched archive."""
+    """Makes the sources release: the manifest, ``SHA256SUMS``, each fetched archive and their
+    licence texts."""
     if manifest.name != MANIFEST:
         raise ReleaseError(f"{manifest}: the manifest's asset must be named {MANIFEST}")
-    archives = archive_names(manifest)
+    archives = [*archive_names(manifest), TEXTS]
     sums = parse_sums((files / SUMS).read_text(encoding="utf-8"), str(files / SUMS))
     paths = [manifest, files / SUMS, *(files / name for name in archives)]
     wanted = local_files(paths)
@@ -495,6 +509,9 @@ def _parser() -> argparse.ArgumentParser:
     find.add_argument("--tag", required=True)
     find.add_argument("--manifest", type=Path, required=True)
     find.add_argument("--sums-out", type=Path, required=True)
+    find.add_argument(
+        "--texts-out", type=Path, help=f"where its {TEXTS} goes (default: next to --sums-out)"
+    )
 
     sources = commands.add_parser("sources-publish", help="make the sources release")
     sources.add_argument("--repo", required=True)
@@ -537,7 +554,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "preflight":
             return _preflight(args)
         if args.command == "sources-find":
-            found = find_sources(args.repo, args.tag, args.manifest, args.sums_out)
+            found = find_sources(args.repo, args.tag, args.manifest, args.sums_out, args.texts_out)
             _set_outputs(found=str(found).lower())
             print(f"{args.tag}: {'published and complete' if found else 'not published'}")
         elif args.command == "sources-publish":

@@ -3,8 +3,9 @@
 # clean copy of the working tree: its tracked and untracked files, without the ignored ones.
 # Usage: desktop/packaging/linux/build.sh OUT_DIR
 # REFRAME_BUILD_NAME names the image and the cache volumes (default reframe-linux-build).
-# A release sets REFRAME_SOURCES_URL, REFRAME_SOURCES_SUMS and REFRAME_SOURCES_MANIFEST (its
-# sources release and that release's SHA256SUMS and manifest.json files, for the notices) and
+# A release sets REFRAME_SOURCES_URL, REFRAME_SOURCES_SUMS, REFRAME_SOURCES_MANIFEST and
+# REFRAME_SOURCES_TEXTS (its sources release and that release's SHA256SUMS, manifest.json and
+# licence-texts.json files, for the notices) and
 # REFRAME_APPIMAGE_LIBS (the appimage-libs.sh file the source manifest was made from: the
 # AppImage must carry exactly those packages).
 set -eu
@@ -15,17 +16,19 @@ out=$(realpath -m "${1:?usage: build.sh OUT_DIR}")
 name=${REFRAME_BUILD_NAME:-reframe-linux-build}
 sums=/dev/null
 manifest=/dev/null
-if [ -n "${REFRAME_SOURCES_URL:-}${REFRAME_SOURCES_SUMS:-}${REFRAME_SOURCES_MANIFEST:-}" ]; then
+texts=/dev/null
+if [ -n "${REFRAME_SOURCES_URL:-}${REFRAME_SOURCES_SUMS:-}${REFRAME_SOURCES_MANIFEST:-}${REFRAME_SOURCES_TEXTS:-}" ]; then
     if [ -z "${REFRAME_SOURCES_URL:-}" ] || [ -z "${REFRAME_SOURCES_SUMS:-}" ] \
-        || [ -z "${REFRAME_SOURCES_MANIFEST:-}" ]; then
-        echo "build.sh: set REFRAME_SOURCES_URL, REFRAME_SOURCES_SUMS and" \
-            "REFRAME_SOURCES_MANIFEST together, or none of them" >&2
+        || [ -z "${REFRAME_SOURCES_MANIFEST:-}" ] || [ -z "${REFRAME_SOURCES_TEXTS:-}" ]; then
+        echo "build.sh: set REFRAME_SOURCES_URL, REFRAME_SOURCES_SUMS, REFRAME_SOURCES_MANIFEST" \
+            "and REFRAME_SOURCES_TEXTS together, or none of them" >&2
         exit 1
     fi
     sums=$(realpath "$REFRAME_SOURCES_SUMS")
     manifest=$(realpath "$REFRAME_SOURCES_MANIFEST")
+    texts=$(realpath "$REFRAME_SOURCES_TEXTS")
     # docker run would mount a missing file as an empty folder.
-    for file in "$sums" "$manifest"; do
+    for file in "$sums" "$manifest" "$texts"; do
         [ -f "$file" ] || { echo "build.sh: no file $file" >&2; exit 1; }
     done
 fi
@@ -47,6 +50,7 @@ git ls-files -z --cached --others --exclude-standard --deduplicate \
         -v "$name-cache:/root/.cache" \
         -v "$sums:/sources/SHA256SUMS:ro" \
         -v "$manifest:/sources/manifest.json:ro" \
+        -v "$texts:/sources/licence-texts.json:ro" \
         -e CARGO_TARGET_DIR=/build/target \
         -e npm_config_cache=/root/.cache/npm \
         -e OUT_OWNER="$(id -u):$(id -g)" \

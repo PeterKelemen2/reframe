@@ -133,7 +133,10 @@ This is not legal advice. Review it before any public or commercial distribution
 - [ ] Recommended licence for Reframe: **GPL-3.0-or-later** (open question 2 in
       [01-scope.md](01-scope.md#open-questions-owner-to-decide)).
 - [ ] CI generates `THIRD_PARTY_NOTICES` (`pip-licenses`, `license-checker`, `cargo about`) and
-      bundles it with every artefact. It also writes source links for the bundled tool builds.
+      bundles it with every artefact. It also writes source links for the bundled tool builds,
+      and the full licence text of every bundled part (the owner's answer,
+      [decision 0079](../decisions/0079-q5-release-process.md) item 11, "Fix round — FL"; the
+      parts still without one are listed there).
       **Built, not in CI yet**: `scripts/third-party-notices.py` is run by the package builds
       before `tauri build` (`desktop/packaging/linux/build.sh`, and the Windows build) and ships
       as `notices/THIRD_PARTY_NOTICES` next to `sidecar/` and `tools/`; checked in the Linux

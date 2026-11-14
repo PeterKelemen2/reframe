@@ -976,3 +976,134 @@ tool:**
   `bundled`"), the M10 row ("D-7 done (bundled FFmpeg, MKVToolNix, MediaInfo …)") and the "Tool
   paths and bundled FFmpeg" row ("ship FFmpeg, MKVToolNix and MediaInfo") now say too much;
   `docs/m10-breakdown.md` (T's task, contracts and file list) is history.
+
+**Part 2: the full licence texts in the notices.**
+
+What the notices carried before, per part (checked with the real `docker-linux-x64` notices of
+the old script and `scripts/third-party-notices.py`'s code):
+
+| Part | Text before | Where the text comes from now |
+|---|---|---|
+| Python packages (pip-licenses) | yes, all 37 of the image and 43 of the sidecar | unchanged; a package without one stops the run unless `tools/licence-texts.toml` `[pypi]` has its text |
+| JavaScript packages (license-checker) | 102 of 105: none for `rfc6902` 5.3.0 (no licence file; its README points to an MIT text), `@vue/devtools-api` 6.6.4 (the nested copy has none), `@rolldown/binding-linux-x64-gnu` | the three texts read upstream at those versions, in `[npm]` (the rolldown binding by the glob `@rolldown/binding-*`, one name per platform); a new package without one stops the run |
+| Rust crates (cargo about) | yes (a crate without a licence file gets the SPDX text) | unchanged |
+| FFmpeg, libva, MediaInfo CLI (the tool folders) | the licence file of each | unchanged |
+| The BtbN stages linked into FFmpeg (115 for `linux64`, 96 `win64`, 112 `linuxarm64`), FFmpeg's and the BtbN scripts' trees | **no** | the sources release's `licence-texts.json` |
+| The AppImage runtime (type2-runtime, libfuse, squashfuse, musl, zstd, zlib, mimalloc); MediaInfo's source (MediaInfo, MediaInfoLib, ZenLib) | **no** (names only) | `licence-texts.json` |
+| The AppImage's Ubuntu libraries (98 source packages), the sidecar's `libgcc_s`, `libstdc++`, `libz` (in that list since "Fix round — FS") | **no** (linuxdeploy copies the copyright files into the AppImage, the `.deb` and `.rpm` had none) | `/usr/share/doc/<package>/copyright` of each binary package, read in the Linux build image where the notices run |
+| The Docker image's Debian packages | **no** (a list with source links) | `docker/debian-packages.sh` appends each installed package's copyright file to the image's `THIRD_PARTY_NOTICES` |
+
+**How a release produces them.**
+
+- `sources-fetch.py` reads, after the fetch, the licence files of every archive but the Ubuntu
+  source packages and writes `licence-texts.json` (archive → path and text), listed in
+  `SHA256SUMS`. A licence file is a file at the archive's top whose name is a licence's
+  (`LICENSE*`, `COPYING*`, `COPYRIGHT*`, `NOTICE*`, `PATENTS`, `GPL2.txt`, …; not code or build
+  files such as `license.c`, `COPYING.in`), a file in a licence folder there (`LICENSES/`,
+  mingw-w64's `COPYING.MinGW-w64-runtime/`), or the same one level into a folder of vendored
+  components (`vendor/`, `third_party/`, `subprojects/`, …: librsvg's vendored crates, libjxl's
+  highway, GLib's proxy-libintl). A stage that checks its sources out into sub-folders gets the
+  licence files one folder down. Latin-1 files are read as such, CRLF becomes LF, a link gets its
+  target's text. An archive with no licence file stops the fetch (its archive kept for the rerun)
+  unless `tools/licence-texts.toml` `[sources]` has its text.
+- `release-workflow.py`: `sources-find` requires `licence-texts.json` in a published release's
+  `SHA256SUMS`, downloads it and checks its bytes against that line (the API's digest may be
+  null), and writes it to `--texts-out` (default: next to `--sums-out`); `sources-publish`
+  uploads it with the archives. So a release that reuses the sources release gets the texts too.
+- `release.yml`: the `sources` job passes `--texts-out`, copies the fetched file, and puts it into
+  the `sources` artifact; the Linux job sets `REFRAME_SOURCES_TEXTS` (`build.sh` mounts it at
+  `/sources/licence-texts.json`; the four variables together or none); the Windows and Docker
+  notices get `--sources-texts`. actionlint 1.7.12 with shellcheck: clean.
+- `third-party-notices.py --sources-texts FILE` (with `--sources-url`, `--sources-sums` and
+  `--sources-manifest`: all four or none) adds a last section, "Licence texts of the parts in the
+  sources release": one entry per archive the platform bundles, each licence file's text, a text
+  seen before named instead of repeated. An Ubuntu source package's entry has the `copyright`
+  file of each of its binary packages from `/usr/share/doc` (the manifest's `binary_packages`);
+  outside the build image the files are missing and the run stops. An archive without a text and
+  without a committed one stops the run.
+- **Licences only in file headers**, found by checking every real stage (below):
+  nv-codec-headers (each header: "This copyright notice applies to this header file only", MIT,
+  NVIDIA or 2016) and libglvnd (the licence section at the end of its `README.md`, with X.Org,
+  Mesa, uthash, buildconf and ax-pthread): their texts, read at the pinned commits, are in
+  `[sources]`.
+
+**Checked against the real sources (no full fetch).**
+
+- Every one of the 117 BtbN stages of the current manifest: a tree-only fetch (`git fetch
+  --depth=1 --filter=blob:none`) of each repository it pins, placed where its commands check it
+  out, the rule applied to the tree and the chosen files' blobs read. Each stage has licence
+  files but nv-codec-headers and libglvnd (now committed texts); LAME and Xvid (SVN) list
+  `COPYING`, `LICENSE` and `LICENSE` at their pinned revisions over HTTPS. This check does not
+  see submodules, `cargo vendor` and generated files; the real archives have them.
+- A real fetch with `sources-fetch.py` of 18 entries (the 2 git trees, 7 stages: xorgproto,
+  zlib, xz, OpenCL (two checkouts), dav1d, nv-codec-headers (three), libass; the 8 tarballs; the
+  type2-runtime tree; 34.6 MB), on this host with stub `svn` and `meson` (no stage of the subset
+  calls them). First run: it stopped at nv-codec-headers, as it should; with the committed text,
+  `licence-texts.json` 373 KB, every archive with its files (xorgproto 37 `COPYING-*`, xz 5,
+  FFmpeg 5, fuse `GPL2.txt`, `LGPL2.txt`, `LICENSE`, MediaInfo's source 5 one folder down).
+  A rerun skipped the 18 archives and wrote the same texts.
+- `docker/debian-packages.sh` in the pinned `debian:trixie-…-slim` with the runtime stage's
+  `apt-get install` (same pins): 159 packages, 159 copyright files (the slim image keeps them:
+  `path-include /usr/share/doc/*/copyright`; `libgcc-s1` is a link to `gcc-14-base`), 44 texts
+  named as repeats, 3.6 MB appended (Boost's copyright file alone 2.2 MB: `mkvtoolnix` pulls
+  `libboost-filesystem1.83.0`).
+
+**Real runs of the notices and their size** (2026-11-14):
+
+| Platform | Before | Now | Of which the source texts |
+|---|---|---|---|
+| `linux-x64` (the build image `reframe-l`, Ubuntu 22.04: `uv sync`, `bundle-tools.py`, the frozen sidecar, `npm ci`, `cargo about`, as `build-in-container.sh`) | 1.07 MB | **3.73 MB** | 2.64 MB: 223 archives (2 git, 115 stages, 7 tarballs, the runtime tree, 98 Ubuntu source packages with 138 binary packages' copyright files) |
+| `docker-linux-x64` (this host, `uv run --python 3.14.8`) | 0.45 MB | **1.89 MB**, plus 3.6 MB of Debian copyright files that the image build appends: 5.5 MB in the image | 1.42 MB: 117 archives |
+| `windows-x64` (not runnable here: the Windows sidecar and crates; the section alone, computed with the script's functions) | about 1 MB (0072 "Task W") | about 2.2 MB | 1.23 MB: 99 archives |
+| `docker-linux-arm64` (the section alone) | about 0.45 MB | about 1.85 MB, plus the Debian files (fewer: no GPU drivers; not measured) | 1.40 MB: 114 archives |
+
+The full runs used the full manifest (226 entries, tag `sources-b769054396f7`) with a texts file
+made of the 18 fetched archives and, for the other stages, the texts of the tree-only check, and
+`SHA256SUMS` with stand-in lines (the SHA-256 of each name) for the archives not fetched; the
+subset runs used only real files: `linux-x64` 1.37 MB, `docker-linux-x64` 0.72 MB.
+
+**Not covered** (each still has its name and source link, not its full text):
+
+1. **CPython's own libraries.** The sidecar and the image use python-build-standalone 3.14.8
+   (release `20261013`); its `install_only` build has CPython's `LICENSE.txt` only, not the
+   texts of OpenSSL, libffi, SQLite, xz, bzip2, zlib, ncurses/libedit, mpdecimal, expat (and on
+   Windows Tcl/Tk and the VC++ runtime DLLs). The release's `full` archives (113 MB for
+   `x86_64-unknown-linux-gnu`) hold them in `python/licenses/`; a pin of those per platform and
+   an extraction would close it.
+2. **MediaInfoLib's own third-party code** in pymediainfo's `libmediainfo` (every platform: the
+   strings show ZenLib, TinyXML-2, Brian Gladman's AES and SHA-256) and in `MediaInfo.exe`:
+   their licences are in the headers of `Source/ThirdParty/*` (no licence files); Gladman's asks
+   for its notice in a binary's documentation. Committed texts would close it.
+3. **The AppImage's `AppRun` and linuxdeploy-plugin-gtk's hook** (MIT): not pinned, no text.
+4. **Windows only, not checked here:** WebView2Loader inside `Reframe.exe` (webview2-com), the
+   NSIS stub and plugins inside the NSIS installer, WiX's custom actions inside the MSI, the
+   sidecar's DLLs; and license-checker's tree on Windows (another rolldown binding: covered by
+   the glob; other native packages: not seen).
+
+**Tests** (each fails on the defect; mutation in brackets; 38 mutations, all caught):
+`test_sources_fetch.py` the files at the top [no `GPL2.txt` names; no licence folders; CRLF
+kept], sub-folders [no fallback], vendored components [none], code files not taken [the filter
+off], Latin-1 and links [UTF-8 with replacement; links not followed], an archive without one
+stops the fetch [accepted], a committed text lets it pass [ignored], the real nv-codec-headers
+pattern, the texts in `SHA256SUMS` [left out], Ubuntu archives not read [read];
+`test_release_workflow.py` a reused release gives its texts [not allowed in the sums; not
+written], sums without the texts, bytes not the sums' [not checked], `--texts-out` [ignored],
+uploaded with the archives [not uploaded], texts written after the sums not uploaded, every
+package job gets the texts from `release.yml` [the Windows option removed];
+`test_third_party_notices.py` the texts per platform [every archive on every platform; no
+section; the `:amd64` suffix kept], a text named once [no dedupe], a missing archive text, a
+missing copyright file [each skipped], the four options together [`--sources-texts` optional],
+the texts file's format [any schema], committed npm/PyPI texts with globs [exact names], none
+at all [accepted], committed source texts [ignored], `javascript_entries` uses them [not],
+the scripts agree on the file name, each committed text has a source and a copyright line;
+`test_linux_packaging.py` the texts mounted [not], the four variables [three],
+`build-in-container.sh` passes them [not]; `test_docker_image.py` each installed package's
+copyright file once [no dedupe; removed packages included], a missing one stops the build
+[skipped], the Dockerfile passes the notices [not].
+
+**For the lead and W.** New input of the release: the sources release's `licence-texts.json`
+(no secret). The `linux` job's `build.sh` needs `REFRAME_SOURCES_TEXTS` with the other three.
+A sources release published without `licence-texts.json` (none exists yet) is "incomplete" for
+`sources-find`: delete it and re-run (`docs/release.md`). A release whose new npm or PyPI
+package has no licence file, or whose new source archive has none at its top, stops in the
+package jobs or the sources job with the name; its text goes into `tools/licence-texts.toml`.

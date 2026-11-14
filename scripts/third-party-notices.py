@@ -1,14 +1,17 @@
 """Write THIRD_PARTY_NOTICES for a desktop package or the Docker image: the licences of the
 Python packages that the frozen sidecar (or the image) ships, of the frontend's production
 packages and of the desktop app's Rust crates, the bundled tool builds with their licences and
-corresponding-source links, and the sources release with the SHA-256 of each of its archives that
-the package's platform bundles.
+corresponding-source links, and the sources release with the SHA-256 and the licence texts of
+each of its archives that the package's platform bundles. Every part must come with a licence
+text: a part without one stops the run.
 
 Run it after the sidecar build and the tools layout, in the project environment with
-pip-licenses next to it; ``npx`` and ``cargo about`` must be on ``PATH``::
+pip-licenses next to it; ``npx`` and ``cargo about`` must be on ``PATH``. The Linux packages'
+notices read the Ubuntu packages' ``/usr/share/doc/*/copyright``, so they run in the build image::
 
     uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py --platform linux-x64 \\
-        --sources-url URL --sources-sums SHA256SUMS --sources-manifest manifest.json
+        --sources-url URL --sources-sums SHA256SUMS --sources-manifest manifest.json \\
+        --sources-texts licence-texts.json
 
 For the Docker image, ``--tools`` is required and holds only the FFmpeg folder that
 ``fetch-tools.py`` makes, and the interpreter must be the one the image installs
@@ -18,6 +21,8 @@ For the Docker image, ``--tools`` is required and holds only the FFmpeg folder t
 from __future__ import annotations
 
 import argparse
+import dataclasses
+import fnmatch
 import importlib.metadata
 import json
 import os
@@ -42,7 +47,13 @@ DEFAULT_OUT = TAURI_DIR / "resources" / "notices" / "THIRD_PARTY_NOTICES"
 DEFAULT_SIDECAR = TAURI_DIR / "resources" / "sidecar"
 DEFAULT_TOOLS = TAURI_DIR / "resources" / "tools"
 TOOL_MANIFESTS = REPO_ROOT / "tools"
+#: Licence texts of bundled packages that ship without one, and of sources whose licence is only
+#: in their files' headers.
+LICENCE_TEXTS = TOOL_MANIFESTS / "licence-texts.toml"
 FRONTEND = REPO_ROOT / "frontend"
+#: The sources release's licence texts (sources-fetch.py writes it next to the archives).
+TEXTS = "licence-texts.json"
+DOC_ROOT = Path("/usr/share/doc")
 
 LICENSE_CHECKER = "license-checker@25.0.1"
 MEDIAINFOLIB_LICENSE = "https://raw.githubusercontent.com/MediaArea/MediaInfoLib/v{version}/LICENSE"
@@ -171,7 +182,7 @@ def python_entries(distributions: Sequence[str]) -> list[Entry]:
             *distributions,
         ]
     )
-    return parse_pip_licenses(json.loads(output), distributions)
+    return with_texts(parse_pip_licenses(json.loads(output), distributions), "pypi")
 
 
 def parse_pip_licenses(rows: Sequence[Mapping[str, str]], wanted: Sequence[str]) -> list[Entry]:
@@ -334,11 +345,11 @@ def platform_sources(
     :raises NoticesError: ``sums`` has an archive of no entry, a bundled entry has no sum, or
         ``platform`` bundles nothing (the manifest was made without its FFmpeg pin).
     """
-    archives = {str(entry["archive"]) for entry in entries}
+    archives = {str(entry["archive"]) for entry in entries} | {TEXTS}
     unknown = sorted(name for _, name in sums if name not in archives)
     if unknown:
         raise NoticesError(f"the sums list archives of no manifest entry: {', '.join(unknown)}")
-    checksums = {name: sha256 for sha256, name in sums}
+    checksums = {name: sha256 for sha256, name in sums if name != TEXTS}
     wanted = sorted(str(entry["archive"]) for entry in entries if bundles(entry, platform))
     if not wanted:
         raise NoticesError(f"the source manifest has no source of {platform}")
@@ -346,6 +357,95 @@ def platform_sources(
     if missing:
         raise NoticesError(f"the sums have no line for {', '.join(missing)}")
     return [(checksums[name], name) for name in wanted]
+
+
+def read_sources_texts(path: Path) -> dict[str, list[tuple[str, str]]]:
+    """The licence files of each archive, from the sources release's ``licence-texts.json``.
+
+    :raises NoticesError: the file is not one.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if data.get("schema_version") != 1:
+            raise ValueError("schema_version is not 1")
+        return {
+            str(archive): [(str(item["path"]), str(item["text"])) for item in items]
+            for archive, items in data["archives"].items()
+        }
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as e:
+        raise NoticesError(f"{path}: not the licence texts of a sources release ({e})") from e
+
+
+def _copyright_texts(entry: Mapping[str, Any], doc_root: Path) -> list[tuple[str, str]]:
+    """The ``copyright`` file of each binary package of an Ubuntu source package, as dpkg
+    installed it: the text the binary package ships under."""
+    texts = []
+    for package in entry.get("binary_packages", []):
+        path = doc_root / str(package).partition(":")[0] / "copyright"
+        try:
+            texts.append((path.as_posix(), path.read_text(encoding="utf-8", errors="replace")))
+        except OSError as e:
+            raise NoticesError(
+                f"{entry['archive']}: cannot read {path} ({e.strerror or e}): the Linux "
+                "packages' notices run in their build image, which has these packages"
+            ) from e
+    return texts
+
+
+def source_text_entries(
+    entries: Sequence[Mapping[str, Any]],
+    texts: Mapping[str, Sequence[tuple[str, str]]],
+    platform: str,
+    doc_root: Path = DOC_ROOT,
+) -> list[Entry]:
+    """One entry per archive that ``platform`` bundles, with its licence files' texts (or the
+    committed text of a source whose licence is only in its files' headers); a text seen
+    before is named, not repeated.
+
+    :raises NoticesError: an archive has no licence text.
+    """
+    committed = read_licence_texts().get("sources", [])
+    first: dict[str, str] = {}
+    found = []
+    for entry in sorted(entries, key=lambda entry: str(entry["archive"])):
+        if not bundles(entry, platform):
+            continue
+        archive = str(entry["archive"])
+        if entry["kind"] == "ubuntu-source":
+            files = _copyright_texts(entry, doc_root)
+        else:
+            files = (
+                list(texts.get(archive, ()))
+                or [
+                    (LICENCE_TEXTS.name, text)
+                    for pattern, text in committed
+                    if fnmatch.fnmatchcase(archive, pattern)
+                ][:1]
+            )
+        if not files:
+            raise NoticesError(
+                f"the licence texts have none for {archive}, and {LICENCE_TEXTS.name} "
+                "[sources] neither"
+            )
+        parts = []
+        for path, text in files:
+            text = text.strip()
+            where = f"{path} in {archive}"
+            if text in first:
+                parts.append(f"{path}: the same text as {first[text]}.")
+            else:
+                first[text] = where
+                parts.append(f"{path}:\n\n{text}")
+        found.append(
+            Entry(
+                name=str(entry.get("component") or archive),
+                version="",
+                license=str(entry.get("license", "")) or "see the texts",
+                url="",
+                text=f"Source archive: {archive}\n\n" + "\n\n".join(parts),
+            )
+        )
+    return found
 
 
 def sources_text(url: str, sums: Sequence[tuple[str, str]]) -> str:
@@ -357,7 +457,8 @@ def sources_text(url: str, sums: Sequence[tuple[str, str]]) -> str:
         f"  {url}",
         "",
         "It holds the sources of every Reframe package and a manifest of them. This",
-        "package's parts are these archives, with the SHA-256 of each:",
+        "package's parts are these archives, with the SHA-256 of each (their licence",
+        "texts are in the last section):",
         "",
     ]
     return "\n".join(lines + [f"  {sha256}  {name}" for sha256, name in sums])
@@ -406,7 +507,7 @@ def javascript_entries(frontend: Path) -> list[Entry]:
             str(frontend),
         ]
     )
-    return parse_license_checker(json.loads(output))
+    return with_texts(parse_license_checker(json.loads(output)), "npm")
 
 
 def parse_license_checker(packages: Mapping[str, Mapping[str, Any]]) -> list[Entry]:
@@ -432,6 +533,39 @@ def parse_license_checker(packages: Mapping[str, Mapping[str, Any]]) -> list[Ent
             )
         )
     return entries
+
+
+def read_licence_texts(path: Path = LICENCE_TEXTS) -> dict[str, list[tuple[str, str]]]:
+    """``[registry."name"]`` tables of ``tools/licence-texts.toml``: ``(name pattern, text)`` by
+    registry (``npm``, ``pypi``, and ``sources`` for archive names)."""
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    return {
+        registry: [(str(name), str(table["text"])) for name, table in sorted(packages.items())]
+        for registry, packages in data.items()
+        if isinstance(packages, dict)
+    }
+
+
+def with_texts(entries: Sequence[Entry], registry: str) -> list[Entry]:
+    """``entries``, each without a licence text given the committed one of its package.
+
+    :raises NoticesError: a package has none: its licence could not be shipped.
+    """
+    known = read_licence_texts().get(registry, [])
+    done, missing = [], []
+    for entry in entries:
+        if not entry.text.strip():
+            text = next((t for name, t in known if fnmatch.fnmatchcase(entry.name, name)), "")
+            if not text:
+                missing.append(f"{entry.name} {entry.version}")
+            entry = dataclasses.replace(entry, text=text)
+        done.append(entry)
+    if missing:
+        raise NoticesError(
+            f"no licence text for the {registry} packages {', '.join(missing)}: find each one's "
+            f"licence upstream and add it to {LICENCE_TEXTS.relative_to(REPO_ROOT).as_posix()}"
+        )
+    return done
 
 
 def _about_config(target: str) -> str:
@@ -714,10 +848,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sources-url", help="the sources release that the notices name")
     parser.add_argument("--sources-sums", type=Path, help="that release's SHA256SUMS")
     parser.add_argument("--sources-manifest", type=Path, help="that release's manifest.json")
+    parser.add_argument("--sources-texts", type=Path, help=f"that release's {TEXTS}")
+    parser.add_argument("--doc-root", type=Path, default=DOC_ROOT, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
-    given = [args.sources_url, args.sources_sums, args.sources_manifest]
+    given = [args.sources_url, args.sources_sums, args.sources_manifest, args.sources_texts]
     if None in given and any(value is not None for value in given):
-        parser.error("--sources-url, --sources-sums and --sources-manifest go together")
+        parser.error(
+            "--sources-url, --sources-sums, --sources-manifest and --sources-texts go together"
+        )
     if args.platform in DOCKER_PLATFORMS and args.tools is None:
         parser.error(f"--tools is required for {args.platform}: the image's FFmpeg folder")
     # The packages carry the desktop app's version, not the core's.
@@ -725,21 +863,30 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         preface = []
+        texts_section: list[tuple[str, list[Entry]]] = []
         if args.sources_url is not None:
+            manifest = read_sources_manifest(args.sources_manifest)
             sources = platform_sources(
-                read_sources_manifest(args.sources_manifest),
-                read_sources_sums(args.sources_sums),
-                args.platform,
+                manifest, read_sources_sums(args.sources_sums), args.platform
             )
             preface.append(sources_text(args.sources_url, sources))
+            texts = read_sources_texts(args.sources_texts)
+            texts_section.append(
+                (
+                    "Licence texts of the parts in the sources release",
+                    source_text_entries(manifest, texts, args.platform, args.doc_root),
+                )
+            )
         if args.platform in DOCKER_PLATFORMS:
             preface.append(
                 "The Debian packages installed in the image are listed, with their source\n"
-                "packages, versions and source links, in a file next to this one."
+                "packages, versions and source links, in a file next to this one. Their\n"
+                "copyright files are at the end of this file."
             )
             sections = docker_sections(args.platform, args.tools)
         else:
             sections = desktop_sections(args.platform, args.tools or DEFAULT_TOOLS)
+        sections = [*sections, *texts_section]
     except NoticesError as e:
         sys.stderr.write(f"third-party-notices: {e}\n")
         return 1
