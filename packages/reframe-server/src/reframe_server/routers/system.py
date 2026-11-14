@@ -8,6 +8,8 @@ import sys
 from fastapi import Request, Response
 from pydantic import BaseModel, ConfigDict
 
+from reframe.applog import logs_dir
+from reframe.diagnostics import home_relative
 from reframe.models import AppWarningEvent, CapabilitySnapshot, ToolSet
 from reframe.tasks import TaskContext
 from reframe_server.api import JsonTextResponse, TaskAccepted, accepted, api_router
@@ -77,10 +79,11 @@ async def info(reframe: ReframeDep, config: ConfigDep) -> SystemInfo:
 
 
 @router.get("/diagnostics")
-async def diagnostics(reframe: ReframeDep) -> DiagnosticsReport:
+async def diagnostics(reframe: ReframeDep, config: ConfigDep) -> DiagnosticsReport:
     """The diagnostics report for a bug report. Waits for a tool discovery that is running;
     never waits for an encoder detection (the report gives each encoder's status now)."""
-    return DiagnosticsReport(text="", logs_dir=str(reframe.data_dir / "logs"))
+    text = await reframe.diagnostics(server={"Mode": config.mode, "Login": config.auth_mode})
+    return DiagnosticsReport(text=text, logs_dir=home_relative(str(logs_dir(reframe.data_dir))))
 
 
 @router.get("/system/encoders")
