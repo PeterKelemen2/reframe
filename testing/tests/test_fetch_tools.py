@@ -133,8 +133,10 @@ def _copier(archive: bytes, calls: list[str]) -> Callable[[str, Path], None]:
 def test_real_manifest_is_valid() -> None:
     builds = ft.load_manifest(MANIFEST)
     assert set(builds) == {"default", "override-test"}
+    # Only the Docker image ships arm64; the override job runs on x64.
+    assert set(builds["default"].platforms) == {"linux-x64", "linux-arm64", "windows-x64"}
+    assert set(builds["override-test"].platforms) == {"linux-x64", "windows-x64"}
     for build in builds.values():
-        assert set(build.platforms) == {"linux-x64", "windows-x64"}
         assert build.license == "GPL-3.0-or-later"
         assert len(build.source_commit) == 40
         assert build.platforms["windows-x64"].ffmpeg.endswith(".exe")
@@ -151,6 +153,25 @@ def test_real_manifest_pins_immutable_assets() -> None:
             assert "/releases/download/autobuild-" in pbuild.url
             assert "latest" not in pbuild.url
             assert pbuild.file_name.startswith(pbuild.root)
+
+
+def test_every_platform_of_a_build_is_built_from_its_source_commit() -> None:
+    # BtbN's release also has master builds (ffmpeg-N-…): pinning one of those for a platform
+    # would ship a binary whose source the sources release does not hold.
+    raw = tomllib.loads(MANIFEST.read_text(encoding="utf-8"))["builds"]
+    for name, build in ft.load_manifest(MANIFEST).items():
+        describe = build.version.rsplit("-", 1)[0]
+        assert describe.endswith("-g" + build.source_commit[:10])
+        for pbuild in build.platforms.values():
+            assert pbuild.root.startswith(f"ffmpeg-{describe}-"), (name, pbuild.platform)
+            assert f"-{raw[name]['variant']}-" in pbuild.root, (name, pbuild.platform)
+            assert f"/download/{raw[name]['release_tag']}/" in pbuild.url, (name, pbuild.platform)
+
+
+def test_the_arm64_pin_is_the_aarch64_build() -> None:
+    pbuild = ft.load_manifest(MANIFEST)["default"].platforms["linux-arm64"]
+    assert "-linuxarm64-" in pbuild.root
+    assert (pbuild.format, pbuild.ffmpeg, pbuild.ffprobe) == ("tar.xz", "bin/ffmpeg", "bin/ffprobe")
 
 
 def _set(data: dict[str, Any], path: str, value: object) -> dict[str, Any]:
@@ -206,13 +227,19 @@ def test_manifest_needs_default_build() -> None:
 
 @pytest.mark.parametrize(
     ("sys_platform", "machine", "expected"),
-    [("linux", "x86_64", "linux-x64"), ("win32", "AMD64", "windows-x64")],
+    [
+        ("linux", "x86_64", "linux-x64"),
+        ("win32", "AMD64", "windows-x64"),
+        ("linux", "aarch64", "linux-arm64"),
+    ],
 )
 def test_detect_platform(sys_platform: str, machine: str, expected: str) -> None:
     assert ft.detect_platform(sys_platform, machine) == expected
 
 
-@pytest.mark.parametrize(("sys_platform", "machine"), [("darwin", "arm64"), ("linux", "aarch64")])
+@pytest.mark.parametrize(
+    ("sys_platform", "machine"), [("darwin", "arm64"), ("win32", "ARM64"), ("linux", "armv7l")]
+)
 def test_detect_platform_unsupported(sys_platform: str, machine: str) -> None:
     with pytest.raises(ft.FetchError, match="--platform"):
         ft.detect_platform(sys_platform, machine)

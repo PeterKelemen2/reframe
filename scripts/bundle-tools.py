@@ -36,6 +36,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FFMPEG_MANIFEST = REPO_ROOT / "tools" / "ffmpeg.toml"
 TOOLS_MANIFEST = REPO_ROOT / "tools" / "bundled-tools.toml"
 DEFAULT_DEST = REPO_ROOT / "desktop" / "src-tauri" / "resources" / "tools"
+#: The desktop packages are built for x64 only.
+PLATFORMS = ("linux-x64", "windows-x64")
 
 #: The committed file of the destination folder.
 README = "README.md"
@@ -467,7 +469,7 @@ def bundle(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
-    parser.add_argument("--platform", required=True, choices=fetch.PLATFORMS)
+    parser.add_argument("--platform", required=True, choices=PLATFORMS)
     parser.add_argument("--dest", type=Path, default=DEFAULT_DEST, help="default: %(default)s")
     parser.add_argument(
         "--ffmpeg-manifest", type=Path, default=FFMPEG_MANIFEST, help=argparse.SUPPRESS

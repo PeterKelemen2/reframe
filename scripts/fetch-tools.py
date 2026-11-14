@@ -35,7 +35,7 @@ DEFAULT_MANIFEST = REPO_ROOT / "tools" / "ffmpeg.toml"
 DEFAULT_DEST = REPO_ROOT / ".tools"
 
 SCHEMA_VERSION = 1
-PLATFORMS = ("linux-x64", "windows-x64")
+PLATFORMS = ("linux-x64", "linux-arm64", "windows-x64")
 FORMATS = ("tar.xz", "zip")
 # Reframe needs at least FFmpeg 7.0. A pinned build below that is a manifest error.
 MIN_FFMPEG_VERSION = (7, 0)
@@ -226,6 +226,8 @@ def detect_platform(sys_platform: str | None = None, machine: str | None = None)
             return "linux-x64"
         if sys_platform == "win32":
             return "windows-x64"
+    if machine in ("aarch64", "arm64") and sys_platform.startswith("linux"):
+        return "linux-arm64"
     raise FetchError(f"no pinned FFmpeg build for {sys_platform}/{machine}; use --platform")
 
 
