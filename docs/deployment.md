@@ -10,23 +10,29 @@ repository. The choices are recorded in
 
 ### What the image holds
 
-`docker/Dockerfile` builds one image in four stages:
+`docker/Dockerfile` builds one image for `linux/amd64` or `linux/arm64` in five stages:
 
 | Stage | What it does |
 |-------|--------------|
+| `notices` | Checks that `docker/notices/THIRD_PARTY_NOTICES` is there and is the one for the image's platform (`docker-linux-x64` or `docker-linux-arm64`) |
 | `frontend` | `npm ci` and `npm run build:web` (Node 24) |
 | `python` | uv and a uv-managed CPython 3.14.8 (`.python-version` names 3.14, the version CI tests) |
-| `tools` | `scripts/fetch-tools.py` downloads the pinned FFmpeg of `tools/ffmpeg.toml`, checks its size and SHA-256 before it extracts anything, and runs `ffmpeg -version` and `ffprobe -version` |
+| `tools` | `scripts/fetch-tools.py` downloads the pinned FFmpeg of `tools/ffmpeg.toml` for the platform (`linux-x64` or `linux-arm64`), checks its size and SHA-256 before it extracts anything, and runs `ffmpeg -version` and `ffprobe -version` |
 | `app` | `uv sync --frozen` installs `reframe[cli,mediainfo]` and `reframe-server` from `uv.lock` into `/opt/reframe/venv` |
 
 The runtime image is Debian 13 (trixie) slim with:
 
 - the bundled FFmpeg in `/opt/reframe/tools/ffmpeg/`, where tool discovery finds it;
 - `mkvtoolnix` (mkvpropedit) and `mediainfo` from Debian;
-- the GPU user-space drivers that FFmpeg loads at run time: `mesa-va-drivers` (AMD and other
-  Mesa VAAPI drivers), `intel-media-va-driver-non-free` (Intel VAAPI) and `libmfx-gen1.2`
-  (the oneVPL GPU runtime for Intel QSV). The NVIDIA driver comes from the host, through the
-  NVIDIA Container Toolkit;
+- on `linux/amd64` only, the GPU user-space drivers that FFmpeg loads at run time:
+  `mesa-va-drivers` (AMD and other Mesa VAAPI drivers), `intel-media-va-driver-non-free`
+  (Intel VAAPI) and `libmfx-gen1.2` (the oneVPL GPU runtime for Intel QSV). The NVIDIA driver
+  comes from the host, through the NVIDIA Container Toolkit. The `linux/arm64` image has no GPU
+  drivers: it has the software encoders only (see [GPU](#gpu));
+- in `/opt/reframe/notices/`: `THIRD_PARTY_NOTICES` (the licences, and the sources release of
+  the bundled FFmpeg) and `DEBIAN_PACKAGES`, written during the build: each Debian package in
+  the image with its version, its source package and version, and that source on
+  [snapshot.debian.org](https://snapshot.debian.org/), which keeps every Debian source version;
 - the web frontend in `/opt/reframe/frontend/` (`REFRAME_STATIC_DIR`);
 - `tini` as process 1, and `reframe-entrypoint`, which starts the server as `PUID:PGID`.
 
@@ -37,15 +43,22 @@ the Debian archive on the day of the build.
 
 ### Build
 
-From the repository root:
+From the repository root, first write the notices for the platform of the image
+(`docker-linux-x64`, or `docker-linux-arm64` on an arm64 host), then build:
 
 ```sh
+uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py \
+    --platform docker-linux-x64 --out docker/notices/THIRD_PARTY_NOTICES
 docker build -f docker/Dockerfile -t reframe:local .
 ```
 
-or `docker compose -f docker/compose.example.yml build`. The Dockerfile uses no BuildKit-only
-syntax: it also builds with the classic builder (`DOCKER_BUILDKIT=0`, or a Docker without
-buildx, where `docker compose build` uses the classic builder by itself).
+or `docker compose -f docker/compose.example.yml build` for the second line. Without the
+notices, or with the notices of the other platform, the build stops at the `notices` stage
+and says so. The Dockerfile uses no BuildKit-only syntax: it also builds with the classic
+builder (`DOCKER_BUILDKIT=0`, or a Docker without buildx, where `docker compose build` uses the
+classic builder by itself). It then builds for the architecture of the host. With buildx,
+`--platform linux/arm64` builds the arm64 image (buildx's `TARGETARCH`); build one platform at a
+time, each with its own notices.
 
 ### Run with Docker Compose
 
@@ -152,6 +165,9 @@ with `deploy.resources.reservations.devices`; the image sets
 `NVIDIA_DRIVER_CAPABILITIES=compute,video,utility`, so the toolkit mounts the encoder library.
 
 **No GPU.** Delete the `devices` lines. The software encoders (x264, x265, SVT-AV1) work.
+
+**arm64.** The `linux/arm64` image has the software encoders only: it has no VAAPI drivers, and
+no QSV or NVENC is claimed for it. Delete the `devices` lines and use the `reframe` service.
 
 The hardware encoders show as available in Settings → Encoders after a test encode. Test
 encodes run at the first start unless `encoders.hardware_tests` is off.
