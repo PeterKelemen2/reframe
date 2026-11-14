@@ -266,8 +266,9 @@ Read in a depth-1 clone of `github.com/BtbN/FFmpeg-Builds` at `build_scripts_com
 - Entry kinds: `git` (FFmpeg at `source_commit`, the BtbN scripts at `build_scripts_commit`),
   `btbn-stage` (one per download archive, with the platforms that use it, its commands, its
   `SCRIPT_*` variables and the patches it mounts), `url` (the MKVToolNix and MediaInfo
-  `source_url` with a `source_sha256`, libva's pinned tarball), `ubuntu-source` (one per source
-  package and version of the AppImage list). JSON with sorted keys, entries sorted by archive
+  `source_url` with a `source_sha256`, libva's pinned tarball, and each library a static build
+  links: "Fix round — FS"), `repository` (the tree a static build was built from),
+  `ubuntu-source` (one per source package and version of the AppImage list). JSON with sorted keys, entries sorted by archive
   name; archive names keep only `[A-Za-z0-9._-]` (what GitHub keeps in an asset name;
   `gtk+3.0` becomes `gtk_3.0`). The tag is `sources-` and 12 hex digits of the file's SHA-256.
 - Run here at the current pins (with the `source_sha256` values below): 219 entries (2 `git`,
@@ -328,18 +329,20 @@ Read in a depth-1 clone of `github.com/BtbN/FFmpeg-Builds` at `build_scripts_com
   packages and versions equal FILE's. Run here against that real AppDir: every file mapped, and
   it matched; an edited version and a removed package were reported. `build.sh` runs it after the
   build when `REFRAME_APPIMAGE_LIBS` names the file the manifest was made from.
-- 0073's open question: the build image stays pinned by digest; its apt packages are not
-  pinned. If apt gives another version between the sources job and the Linux build, the check
-  fails and the release is run again (a new sources release follows).
-- Not in the manifest: linuxdeploy's `AppRun` and the AppImage runtime (MIT, not distro files).
+- 0073's open question: the build image stays pinned by digest, and its apt packages come from
+  one `snapshot.ubuntu.com` timestamp ("Fix round — FS", m5), so the sources job and the Linux
+  build resolve the same versions until the timestamp moves; the check stays.
+- Not in the manifest: linuxdeploy's `AppRun` (MIT, from Tauri's `apprun-old` release). The
+  AppImage runtime is pinned and in the manifest with what it links ("Fix round — FS", B2).
 
 ### The notices (`scripts/third-party-notices.py`)
 
 - `--sources-url` and `--sources-sums` put the sources release and the archives' SHA-256 after
   the introduction (with `--sources-manifest`, only the platform's part: "Fix — N" below).
 - `docker-linux-x64` and `docker-linux-arm64`: FFmpeg with the pin of `linux-x64` or
-  `linux-arm64` (its licence from the `--tools` folder, e.g. `fetch-tools.py`'s; no libva: the
-  image uses Debian's), CPython (the script refuses an interpreter other than the image's
+  `linux-arm64` (its licence from the `--tools` folder that holds `fetch-tools.py`'s `ffmpeg`
+  folder, required for these platforms since "Fix round — FS"; no libva: the image uses
+  Debian's), CPython (the script refuses an interpreter other than the image's
   `uv python install` version), the server's packages from `uv export` with the selection of
   the image's `uv sync` (a test compares it with the Dockerfile) and the markers evaluated for
   the platform's machine, the MediaInfo library of the pymediainfo wheel, the frontend's
@@ -354,8 +357,8 @@ The manifest needed no new field (its tag is unchanged): an entry's `kind` says 
 `platforms` mean. `git` and `btbn-stage` list FFmpeg platforms, so they go to every package of
 that FFmpeg platform (`linux-x64` → the desktop Linux packages and `docker-linux-x64`,
 `linux-arm64` → `docker-linux-arm64`, `windows-x64` → Windows). `url` (MKVToolNix, MediaInfo:
-`windows-x64`; libva: `linux-x64`) and `ubuntu-source` (`linux-x64`) list desktop package
-platforms, so the image, which bundles only FFmpeg, gets none of them. An unknown kind, an
+`windows-x64`; libva: `linux-x64`), `repository` and `ubuntu-source` (`linux-x64`) list
+desktop package platforms, so the image, which bundles only FFmpeg, gets none of them. An unknown kind, an
 archive in the sums that no entry names, a bundled entry without a sum, and a platform with no
 entry (a manifest made without its FFmpeg pin) are errors. The notices text says the release
 holds the sources of every package and lists this package's archives. `build.sh` takes
@@ -590,3 +593,166 @@ removed).
 ## Review and fix round
 
 (Filled by the lead.)
+
+### Fix round — FS
+
+Done 2026-11-14 on the AMD desktop, for review R1's findings B1, B2, m2, m3, m4, m5, the FS
+test holes of m8 and the FS nits. Each finding was reproduced first.
+
+**B1: the sources of mkvpropedit.exe's MXE build.**
+
+- Reproduced in the review's copy of `mkvpropedit.exe` (from the pinned zip): the strings name
+  `Qt 6.12.0 (… static release build; by GCC 16.2.0)`, `GNU MP`, the prefix
+  `/opt/mxe/usr-master-20261004-a9135e507-qt-12-0/`, `mingw-w64-v14.0.0`, the source path
+  `libdvdread-6.1.3/src/ifo_read.c`, 318 OpenSSL `crypto/…/*.c` paths, `deflate 1.3.2`,
+  libiconv's alias table, `10.49 2026-09-28` (PCRE2) and zstd's error texts.
+- Which MXE: `packaging/windows/setup_cross_compilation_env.sh` of MKVToolNix at `release-103.0`
+  (Codeberg) clones `codeberg.org/mbunkus/mxe`. That fork has the branch
+  `master-20261004-a9135e507-qt-12-0` (head `02b82ecfdc5a63decc4e64e06ca2dc8f0b7158f1`): MXE
+  `a9135e507` (on GitHub's `mxe/mxe` too) and 15 MKVToolNix commits (libdvdread 6.1.3, libdvdcss
+  1.4.3, Qt without databases, FFmpeg and WebView, gcc 16 fixes, …). Its `build.sh` installs into
+  `usr-<branch>` with `plugins/gcc16`: the binary's prefix and GCC 16.2.0. Upstream `a9135e507`
+  alone has libdvdread 6.0.1 and GCC 11.5.0, so the branch, not the upstream commit, is the
+  source. Its `MKVTOOLNIX_DEPENDENCIES`: gettext, libiconv, zlib, boost, flac, ogg, pthreads,
+  vorbis, cmark, libdvdread, gmp, qt6, qt6-qtmultimedia.
+- Which packages are in the executable: the `Rakefile` at the tag links mkvpropedit with
+  `$common_libs` (boost_filesystem, flac, z, pugixml, intl, iconv, fmt, qt_non_gui = Qt Core,
+  gmp, cmark, dvdread; libebml, libmatroska, fmt and pugixml are in MKVToolNix's own tarball). A
+  static link keeps only the objects it uses, so the binary decides: markers found for Boost,
+  gettext (libintl), GNU MP, libdvdcss (its `DVDCSS_*` variables), libdvdread, libiconv,
+  mingw-w64 (the C runtime and winpthreads), OpenSSL (libcrypto), PCRE2, Qt Base, zlib, zstd;
+  none for FLAC, Ogg, Vorbis, cmark, Brotli (only OpenSSL's names for it), FreeType, HarfBuzz,
+  libpng, JPEG, GLib, ICU, D-Bus, SQLite, Dr. MinGW. The GCC runtime is under the GCC Runtime
+  Library Exception and stays out, as for the BtbN builds.
+- **`tools/static-builds.toml`** (new) `[binaries.mkvpropedit]`: the tree (repository, commit)
+  and the 12 parts, each with the URL and SHA-256 that MXE's `src/*.mk` (and `mxe.github.mk`
+  for zlib and zstd) give at that commit. All 12 were downloaded here and matched: 342 MB
+  (Boost 199 MB, OpenSSL 55 MB, Qt Base 51 MB). mingw-w64's licence was read in its COPYING
+  files; the others are the projects' stated licences.
+- `sources-manifest.py` makes a `repository` entry for the tree (archive
+  `<repository name>-<12 hex>.tar.xz`, fetched by commit like `git`) and a `url` entry per part
+  (an `archive` field names files such as GitHub's `v1.5.7.tar.gz`), for the binary's
+  `platforms`. A tarball that two pins name is one entry with both platforms; two different
+  files with one name are an error. `sources-fetch.py` fetched the MXE tree by commit from
+  Codeberg (depth 1 by hash works there), with `type2-runtime`, squashfuse, zstd 1.5.6 and
+  libdvdcss, into checked archives.
+- `third-party-notices.py`: a `repository` entry goes to the packages of its platforms (not to
+  the image), and the desktop notices get a section "Statically linked libraries": per binary,
+  its tree and commit, then each part with its version, licence and source archive.
+
+**B2: the AppImage runtime.**
+
+- Tauri 2.12.4 (`crates/tauri-bundler/src/bundle/linux/appimage/linuxdeploy.rs` at
+  `tauri-cli-v2.12.4`) downloads linuxdeploy from `tauri-apps/binary-releases`
+  (`linuxdeploy-07333c6`), `AppRun` (`apprun-old`) and `linuxdeploy-plugin-appimage` from that
+  plugin's floating `continuous` release into `~/.cache/tauri` once. The plugin's appimagetool
+  downloads `type2-runtime/releases/download/continuous/runtime-x86_64` at every build unless
+  it gets `--runtime-file`; the plugin passes `LDAI_RUNTIME_FILE` as `--runtime-file` (strings
+  of the cached plugin). A run in the build image **without network**: Tauri's
+  `linuxdeploy-07333c6` and the cached plugin on a small AppDir ran
+  `appimagetool … --runtime-file /rt/runtime-x86_64` and wrote the AppImage with
+  `LDAI_RUNTIME_FILE`; without it, "Downloading runtime file from …/continuous/runtime-x86_64"
+  failed. The AppImage's first 944 632 bytes equal the runtime file apart from `.digest_md5`.
+- The pin: type2-runtime's tagged release `20251108` (tag commit
+  `dd6cebedcbddde9c82f89b011e8e1d40b6e43868`); `runtime-x86_64` SHA-256 `2fca8b44…260d` equals
+  the release asset's digest and a download. (The 2026-11-12 AppImage had `continuous`,
+  `fedfad5`, which GitHub replaces on every push.) Its build at the tag: `alpine:3.21` with
+  `zstd-static`, `zlib-static`, `musl-dev`, `mimalloc-dev`; libfuse 3.15.0 (SHA-256 in its
+  script) with `patches/libfuse/mount.c.diff`; squashfuse 0.5.2 (SHA-256 in its script); a
+  `static-pie` link of `-lsquashfuse -lsquashfuse_ll -lzstd -lz -lfuse3 -lmimalloc`. Its strings
+  say squashfuse 0.5.2, zstd 1.5.6, zlib 1.3.1, FUSE 3.15.0, commit `dd6cebe`. The Alpine 3.21
+  packages of the release date (aports `3.21-stable`, the last APKBUILD change before
+  2025-12-08): musl 1.2.5-r9, zstd 1.5.6-r2, zlib 1.3.1-r2, mimalloc2 2.1.7-r0; each upstream
+  tarball's SHA-512 equals its APKBUILD's, and the pin holds its SHA-256. Alpine's own patches
+  (musl has 9) live in aports and are not in the manifest: those parts are MIT, BSD or Zlib;
+  the LGPL part, libfuse, is complete with its patch in the type2-runtime tree.
+- `desktop/packaging/linux/appimage-runtime.sh` downloads the pinned file into the cache volume
+  and checks its SHA-256 at every use; `build-in-container.sh` exports `LDAI_RUNTIME_FILE`
+  before `tauri build` and runs `appimage-libs.py check-runtime` after it, which fails unless
+  the AppImage starts with the pinned runtime outside the four sections appimagetool writes
+  (`.digest_md5`, `.upd_info`, `.sha256_sig`, `.sig_key`). Checked on the small AppImage above
+  (match) and on the review's runtime from the 2026-11-12 AppImage (no match).
+- **A whole `build.sh` run here** (the snapshot image of m5, an empty Tauri cache, the version
+  stamped to `0.1.0` in the build's copy, `REFRAME_APPIMAGE_LIBS` from the snapshot image): the
+  bundler downloaded the `continuous` plugin (appimagetool "build 295", 2025-12-04), which ran
+  `appimagetool … --runtime-file /root/.cache/reframe/appimage-runtime-2fca8b44…`;
+  `check-runtime` passed, the library check passed (138 packages, with the sidecar's), the
+  notices have the runtime's section, and `glibc.txt` still ends at GLIBC_2.35. The plugin that
+  `linuxdeploy-07333c6` carries for a failed download reads `LDAI_RUNTIME_FILE` too (strings).
+- The tree and its 6 parts (11 MB) are `linux-x64` entries; the linux notices list them.
+
+**m2: the sidecar's system libraries.** In the 2026-11-12 build, `_internal/libgcc_s.so.1`,
+`libstdc++.so.6` and `libz.so.1` of the frozen sidecar are byte-equal to the build image's files
+of `libgcc-s1`, `libstdc++6` and `zlib1g` in the `.deb` (the review's) and the `.rpm` (read with
+`bsdtar`), and changed by linuxdeploy in the AppDir. The old `check` passed that AppDir
+without them. `check` now maps a file at the top of `_internal/` to the package that owns a
+library of that name under `/lib` or `/usr/lib`, and skips the others (Python's own library,
+wheel libraries); the list has the three packages. Run against that AppDir in its image: the
+old list fails with the three named; the new list (138 packages, 98 source packages: `zlib`
+added, `gcc-12` was there) matches. The `.deb` and `.rpm` carry the same sidecar and the same
+`linux-x64` notices, so these sources cover them; the check runs on the AppDir only (the build
+image cannot open the `.rpm`).
+
+**m3: the Docker notices.** Reproduced: the earlier script with the documented command wrote
+notices with no bundled tool (no FFmpeg) and exit 0. Now `--tools` is required for `docker-*`
+(exit 2 without it) and must hold an `ffmpeg` folder (exit 1, naming the `fetch-tools.py`
+command). `docs/deployment.md` gives `fetch-tools.py --install-dir`, `npm ci` and
+`uv run --python 3.14.8 … --tools`; run here as written: 1 tool, CPython 3.14.8, 38 Python
+and 105 JavaScript packages.
+
+**m4: the caller's environment.** Reproduced on the real BtbN scripts (`6c9aec5`): with
+`SCRIPT_LEAK=1` and `GITHUB_REPOSITORY` set, the earlier script put the variable into all 117
+stage entries and the tag changed (`sources-c55552c2a535` against `sources-783c16dc5132`).
+`generate.sh` and the stage evaluation now get only `PATH` and `LC_ALL=C`: the same tag with
+and without them, and the 220 entries of the earlier script's clean run are unchanged.
+
+**m5: the build image's apt.** `desktop/packaging/linux/Dockerfile` writes
+`/etc/apt/sources.list` for `https://snapshot.ubuntu.com/ubuntu/<APT_SNAPSHOT>/` (`jammy`,
+`jammy-updates`, `jammy-security`, all components; `20261114T000000Z`, the fetch image's). The
+snapshot answers HTTP with a redirect to HTTPS and the base image has no CA certificates, so
+the first `update` and the `ca-certificates` install run with `Acquire::https::Verify-Peer=false`
+(apt still checks the signed indexes, as with the image's default `http://` archive). Built
+here: `appimage-libs.py resolve` gave 138 packages with the same versions as the 2026-11-12
+image. When the timestamp moves, the AppImage list is resolved again (a new sources release).
+
+**The manifest at these pins** (the real BtbN scripts, the snapshot image's list): 240 entries
+(2 `git`, 117 `btbn-stage`, 2 `repository`, 21 `url`, 98 `ubuntu-source`), tag
+`sources-a2cf246f4653`. `linux-x64` lists 223 archives, `windows-x64` 113, the images 117 and
+114 as before; every archive is in at least one. A sources release grows by about 345 MB for
+Windows and 11 MB for Linux.
+
+**Tests** (each named defect fails its test; mutation in brackets, all caught):
+`test_sources_manifest.py` the environment [FM1], the static builds' entries [FM2–FM4], a
+shared and a clashing tarball [FM5, FM6], the committed pins name Qt, GNU MP, libfuse and the
+rest [TB1]; `test_sources_fetch.py` a tree by commit [FR1], SVN pins [SF13], mirror pins
+[SF14], archive times and owners [SF3, SF15], the `.dsc` path guard [SF12];
+`test_appimage_libs.py` the sidecar's libraries, only libraries, only the top folder
+[AL-m2, AL-m2b, AL-m2c], two owners [AL3], the distribution [AL5], `check-runtime` [RT1–RT4], the list [PK1];
+`test_third_party_notices.py` the kinds per platform [TN-repo, TN-repo2], the section and the
+licences [TN-static, TN-static2], `--tools` and the `ffmpeg` folder [TN-m3a, TN-m3b], no libva
+in the image [TN6]; `test_linux_packaging.py` the library check run, a failed check and a
+missing list [BS1–BS3], the runtime download, its checksum and the cached copy [RS1, RS2], the
+runtime handed to the bundler and checked [RS3, RS4]; `test_docker_image.py` the notices
+stage [DK2].
+
+**Owner questions.**
+
+1. The notices name each static part's licence and point to its source archive; they do not
+   carry the licence texts with the copyright lines. BSD, MIT, ISC and ZPL ask for those in
+   binary distributions (mingw-w64's `COPYING.MinGW-w64-runtime.txt` says so for every program
+   linked with it), and the same holds for FFmpeg's BtbN dependencies. Should the notices carry
+   them (for example taken from the archives when the sources release is made)?
+2. Boost (BSL-1.0) needs no source and is 199 MB of the 345 MB. Keep it (item 10 says every
+   linked MXE package) or leave it out?
+3. `mkvpropedit.exe` links OpenSSL 4 (Apache-2.0). `tools/bundled-tools.toml` says MKVToolNix
+   is `GPL-2.0-only` (its README: "GPL v2"); Apache-2.0 code cannot join GPL-2.0-only code
+   (GPL-2.0-or-later can, under GPL-3.0). Worth a look at MKVToolNix's terms before v1 ships
+   the executable; it is upstream's build, not Reframe's.
+
+**For the lead and FW.** No new workflow input: `build.sh` fetches the runtime itself from the
+pin (a GitHub release download in the `linux` job). The `sources` job's fetch now also reaches
+codeberg.org, gmplib.org, ftp.gnu.org, download.videolan.org, download.qt.io,
+archives.boost.io, downloads.sourceforge.net, musl.libc.org and zlib.net. A Linux build from a
+dev tree (version `0.1.0-dev.0`) fails at the rpm: Tauri's rpm bundler refuses `-` in the
+version ("invalid version \"0.1.0-dev.0\": contains invalid character"), the rpm counterpart of
+review finding m10; the full build here ran with the version stamped to `0.1.0` in its copy.
