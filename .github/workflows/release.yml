@@ -94,10 +94,13 @@ jobs:
         with:
           enable-cache: true
 
-      # The manifest names the libraries linuxdeploy will copy into the AppImage, read in the
-      # Linux build image, so the notices in the packages can name this sources release.
-      - name: List the AppImage's distro libraries (Linux build image)
-        run: desktop/packaging/linux/build.sh --appimage-libs "$RUNNER_TEMP/appimage-libs.txt"
+      # The manifest names the distro packages that the AppImage will carry, read with dpkg in
+      # the Linux build image before the build, so the packages' notices can name this release.
+      - name: Resolve the AppImage's distro packages (Linux build image)
+        run: |
+          DOCKER_BUILDKIT=0 docker build -t reframe-linux-build desktop/packaging/linux
+          docker run --rm -v "$PWD:/src" -w /src reframe-linux-build \
+            uv run --no-project python scripts/appimage-libs.py resolve --out /src/appimage-libs.json
 
       - name: Write the source manifest
         id: manifest
@@ -105,7 +108,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/sources"
           tag=$(uv run python scripts/sources-manifest.py \
             --out "$RUNNER_TEMP/sources/manifest.json" \
-            --appimage-libs "$RUNNER_TEMP/appimage-libs.txt")
+            --appimage-libs appimage-libs.json)
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$tag" >> "$GITHUB_OUTPUT"
 

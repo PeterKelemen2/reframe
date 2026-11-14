@@ -210,9 +210,11 @@ reading a `latest.json` from a real release.
 
 **Interfaces this workflow assumes from other tasks** (the lead reconciles):
 
-- The AppImage library list for `sources-manifest.py --appimage-libs` is written by
-  `desktop/packaging/linux/build.sh --appimage-libs FILE` (task S decides how; the step calls
-  that form).
+- The AppImage library list for `sources-manifest.py --appimage-libs` is written in the Linux
+  build image by `uv run --no-project python scripts/appimage-libs.py resolve --out FILE`
+  (task S's interface as its unfinished tree showed it; the `sources` job builds the image and
+  runs that). The `linux` job builds the image again on another runner: an Ubuntu package
+  updated in between makes the AppImage differ from the manifest (S's `check` would find it).
 - `build.sh` passes `REFRAME_SOURCES_URL` and `REFRAME_SOURCES_SUMS` into the container, and
   `build-in-container.sh` gives them to `third-party-notices.py` as `--sources-url` and
   `--sources-sums` (neither file is task W's).
