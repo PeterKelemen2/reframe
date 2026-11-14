@@ -523,3 +523,15 @@ pass twice in a row in WebKit, and stay green in Chromium and Firefox.
 |------|------|
 | 2026-11-14 | WebKit installed on the host (0077 Context); the `webkit` project added; first run 87 passed, 12 failed (causes A–E). This section and 0077 committed; wave 1 (W1, W2, W3) launched. |
 | 2026-11-14 | Merged W3 (92db6db: a chapter pick no longer closes the Range popover, a real defect in Chromium and WebKit), W1 (30ef787: the magnifier canvas `content-box`, flow 4 at any device pixel ratio), W2 (f84d8ce: the language picker under a still pointer; the gate waits a rendering update after each Tab and judges pictures in device pixels) and the gate's own tests (a6ec03a). The lead broke each task's fix once; its test failed each time. Whole e2e suite in Chromium, Firefox and WebKit: 303 passed twice in a row (13.7 and 14.0 min); unit 2150; lint, format, types clean. Review R1 launched. |
+| 2026-11-14 | Review R1 (no blocker; 1 major reproduced by the lead: a still pointer on an open PrimeVue list took the arrow keys' option in WebKit; 3 minors, 2 nits). Fix FA merged (d7c006d: one app-wide filter for WebKit's still-pointer moves, `components/base/stillPointer.ts`; the picker's local fix removed; the Range click drop armed per main press and disarmed by the next press; `e2e/still-pointer.spec.ts`), the lead's nit fix (da28a06). The lead's final runs found an intermittent flow 4 failure (Firefox; W1 saw it once in Chromium): a late job update replaced a crop value being typed; fixed with a test that failed before (279a397). Final: e2e 309 passed twice in a row (13.7 min each, three browsers), unit 2158, server 105, lint, format, types and the web build clean. |
+
+#### Where F-17 ended (2026-11-14)
+
+Done on Linux, on `m10-hardening`, not merged into `main`, not pushed. Every worktree and
+branch of the run (W1, W2, W3, FA) is removed; R1 worked read-only in the main checkout. Each
+task's fix was broken once by the lead after its merge, and its test caught it. The e2e suite runs
+in Chromium, Firefox (kept by the owner) and WebKit; on this host WebKit needs the Ubuntu
+libraries of 0077 Context (redo the libjxl link after a Playwright upgrade). Recorded, not
+changed: PrimeVue's `Select` picks on any button's press, and `Popover` takes any press inside it
+as its own (0077 "Review and fix round"). Rest of M10: Q-4, Q-5, the release checklist; S-6's
+NVIDIA/Intel checks wait for such a host.

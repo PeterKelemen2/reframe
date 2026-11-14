@@ -644,7 +644,7 @@ F-18, built before F-16. Built on 2026-11-13: 0074 "Built"; in a group the shown
   [decision 0067](../decisions/0067-m8-picture.md), "Task F". M10 built flow 5 with F-19, which
   reads the queued job back through the server; [decision
   0074](../decisions/0074-range-selector-in-m10.md), "Built".)
-- [ ] Each flow comes with its screens: the Playwright set-up and flow 3 in M4, flow 1 in M6,
+- [x] Each flow comes with its screens: the Playwright set-up and flow 3 in M4, flow 1 in M6,
       flow 2 in M7, flow 4 in M8, flow 5 with F-19 in M10. M10 runs all five in Chromium and WebKit
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).
 

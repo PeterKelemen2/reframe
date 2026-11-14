@@ -205,7 +205,33 @@ the defect is only here.
 
 ## Review and fix round
 
-(Filled by the lead.)
+One fresh reviewer (R1, read-only, `xhigh`) looked at the five changes for a user in each
+engine (mouse, keyboard, touch), at whether the gate fixes weaken the gate, and at the tests
+(a mutation of each fix). No blocker. Findings:
+
+| # | Severity | Finding | Outcome |
+|---|---|---|---|
+| 1 | major | In WebKit, a pointer resting on an open PrimeVue `Select`/`Listbox`/`AutoComplete` list pulls the arrow keys' focused option back when the list scrolls (`focusOnHover` on WebKit's still-pointer `mousemove`), so Enter picks the wrong value. Reproduced by the lead: the Range "From" list chose chapter 12, the keys 16 (Chromium 16). | Fixed (FA): one app-wide filter |
+| 2 | minor | The language picker's local fix recorded the point only over options, so a still-pointer move after a move over the dialog's padding still took the active option. | Fixed (FA): the local fix removed, the filter covers it |
+| 3 | minor | A press in a chapter list armed a release listener for any button with no expiry; a release the page never gets (a context menu) made the next click anywhere be dropped. | Fixed (FA): main button only, disarmed by the next press |
+| 4 | minor | Untested: the click listener's removal (a scrollbar press in Chromium gives no click) and a leaking release listener (the unit test clicked with no press). | Fixed (FA): whole press sequences in unit tests |
+| 5 | nit | The gate's late-reveal test failed without the wait only in WebKit. | Fixed (lead, da28a06): the test reveals in the second frame callback; without the wait it fails in Chromium and WebKit (Firefox's round trip takes the frames itself) |
+| 6 | nit | The picker ignored a one-event jump onto an option. | Fixed with 2 |
+
+**Found in the lead's final runs: flow 4 failed once in Firefox** (W1 had seen it once in
+Chromium): after `left` was filled with 17 and left, the snap note still said "Top 23 → 22".
+`CropSection.vue` rewrote every crop input whenever the stored rectangle object changed, so a
+late job update (the answer to the previous edit) replaced the text being typed in another edge,
+and its blur then committed nothing. A user typing quickly after an edit could lose the text in
+the same way. Only an edge whose stored value changed is rewritten now (279a397). The new unit
+test ("keeps a crop value being typed when the job changes under it, and commits it") failed
+before the fix (`expected '0' to be '17'`); flow 4 then passed 15 times (five per browser).
+
+Also recorded by the reviewer and FA, not changed (PrimeVue's own behaviour): `Select` chooses
+an option on a press of any button, so a right press on a chapter chooses it; `Popover` marks
+any press inside it as its own, so a right press on the popover's title while a chapter list is
+open, then Escape, leaves the popover open on the next click outside (the click still reaches
+its target).
 
 ### Fix round — FA (review R1 findings 1–4 and 6)
 
