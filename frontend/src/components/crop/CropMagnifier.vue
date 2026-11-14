@@ -328,8 +328,10 @@ onBeforeUnmount(() => cancelAnimationFrame(pending))
   font-variant-numeric: tabular-nums;
 }
 
+/* The border goes outside the drawing: inside it, the canvas would be scaled down and smoothed. */
 .crop-magnifier__canvas {
   display: block;
+  box-sizing: content-box;
   border: 1px solid var(--rf-color-border);
   background: var(--rf-color-surface);
 }
