@@ -43,12 +43,8 @@ GENERATE_TIMEOUT = 300
 _HEX40 = re.compile(r"^[0-9a-f]{40}$")
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _ASSET_UNSAFE = re.compile(r"[^A-Za-z0-9._-]")
-_STAGE_RUN = re.compile(
-    r"^RUN --mount=src=(?P<script>scripts\.d/\S+?),dst=/stage\.sh "
-    r"--mount=src=\.cache/downloads/(?P<stage>\S+?)_(?P<hash>[0-9a-f]{64})\.tar\.xz,"
-    r"dst=/cache\.tar\.xz run_stage /stage\.sh$",
-    re.MULTILINE,
-)
+_MOUNT = re.compile(r"--mount=src=([^,\s]+),dst=(\S+)")
+_DOWNLOAD = re.compile(r"^\.cache/downloads/(?P<stage>.+)_(?P<hash>[0-9a-f]{64})\.tar\.xz$")
 # Prints the stage's download commands as the build hashes them, then its SCRIPT_* variables,
 # each NUL-terminated.
 _EVALUATE = r"""
@@ -75,6 +71,8 @@ class Stage:
     download_hash: str
     commands: str
     variables: Mapping[str, str]
+    build_files: Sequence[str] = ()
+    """Other files of the build scripts that the stage mounts (its patches)."""
 
 
 def asset_name(text: str) -> str:
@@ -206,21 +204,32 @@ def btbn_stages(tree: Path, target: str, variant: str, addin: str) -> list[Stage
         _run(["bash", "generate.sh", target, variant, addin], cwd=work, timeout=GENERATE_TIMEOUT)
         dockerfile = (work / "Dockerfile").read_text(encoding="utf-8")
         stages = []
-        for run in _STAGE_RUN.finditer(dockerfile):
-            evaluated = _evaluate(work, run["script"], target, variant, addin)
+        for line in dockerfile.splitlines():
+            if not line.startswith("RUN ") or " run_stage " not in line:
+                continue
+            mounts = {dst: src for src, dst in _MOUNT.findall(line)}
+            script = mounts.pop("/stage.sh", None)
+            cache = mounts.pop("/cache.tar.xz", None)
+            if cache is None:
+                continue
+            download = _DOWNLOAD.match(cache)
+            if script is None or download is None:
+                raise ManifestError(f"generate.sh {target}: cannot read the stage {line!r}")
+            evaluated = _evaluate(work, script, target, variant, addin)
             digest = hashlib.sha256((evaluated.commands + "\n").encode()).hexdigest()
-            if digest != run["hash"]:
+            if digest != download["hash"]:
                 raise ManifestError(
-                    f"{run['script']}: its download commands hash to {digest}, the {target} "
-                    f"build uses {run['hash']}"
+                    f"{script}: its download commands hash to {digest}, the {target} "
+                    f"build uses {download['hash']}"
                 )
             stages.append(
                 Stage(
-                    stage=run["stage"],
-                    script=run["script"],
-                    download_hash=run["hash"],
+                    stage=download["stage"],
+                    script=script,
+                    download_hash=download["hash"],
                     commands=evaluated.commands,
                     variables=evaluated.variables,
+                    build_files=sorted(mounts.values()),
                 )
             )
     if not stages:
@@ -263,6 +272,7 @@ def ffmpeg_entries(pin: FfmpegPin, tree: Path) -> list[dict[str, Any]]:
                 "build_scripts_repository": pin.build_scripts_repository,
                 "build_scripts_commit": pin.build_scripts_commit,
                 "script": stage.script,
+                "build_files": list(stage.build_files),
                 "download_hash": stage.download_hash,
                 "commands": stage.commands,
                 "variables": dict(stage.variables),

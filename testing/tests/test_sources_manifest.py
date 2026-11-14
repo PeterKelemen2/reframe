@@ -46,12 +46,18 @@ for SCRIPT in scripts.d/*.sh; do
         source "$SCRIPT"
         ffbuild_enabled || exit 0
         STG="$(ffbuild_dockerdl)"
+        NAME="$(basename "$SCRIPT" .sh)"
+        if [[ -z "$STG" ]]; then
+            echo "RUN --mount=src=$SCRIPT,dst=/stage.sh run_stage /stage.sh" >> Dockerfile
+            exit 0
+        fi
         HASH="$(sha256sum <<<"$STG" | cut -d" " -f1)"
         [[ -f "corrupt-$SCRIPT" ]] && HASH="$(sha256sum <<<"other" | cut -d" " -f1)"
-        NAME="$(basename "$SCRIPT" .sh)"
         CACHE=".cache/downloads/${NAME}_${HASH}.tar.xz"
-        echo "RUN --mount=src=$SCRIPT,dst=/stage.sh --mount=src=$CACHE,dst=/cache.tar.xz \
-run_stage /stage.sh" >> Dockerfile
+        PATCHES=""
+        [[ -d "patches/$NAME" ]] && PATCHES=" --mount=src=patches/$NAME,dst=/patches"
+        echo "RUN --mount=src=$SCRIPT,dst=/stage.sh --mount=src=$CACHE,dst=/cache.tar.xz\
+$PATCHES run_stage /stage.sh" >> Dockerfile
     )
 done
 """
@@ -83,6 +89,10 @@ def _btbn_tree(root: Path) -> Path:
     (root / "scripts.d" / "10-mingw.sh").write_text(
         _stage("https://example.invalid/mingw-w64.git", MINGW_COMMIT, "[[ $TARGET == win* ]]")
     )
+    (root / "scripts.d" / "99-finalize.sh").write_text(
+        'SCRIPT_SKIP="1"\nffbuild_enabled() {\n    return 0\n}\nffbuild_dockerdl() {\n    true\n}\n'
+    )
+    (root / "patches" / "50-x264").mkdir(parents=True)
     return root
 
 
@@ -164,6 +174,8 @@ def test_each_dependency_download_is_named_with_the_platforms_that_build_it(
         "SCRIPT_COMMIT": X264_COMMIT,
         "SCRIPT_REPO": "https://code.videolan.org/videolan/x264.git",
     }
+    assert x264["build_files"] == ["patches/50-x264"]
+    assert not [e for e in entries.values() if "finalize" in e["name"]]
     [mingw] = [e for e in entries.values() if e["name"].startswith("btbn-10-mingw-")]
     assert mingw["platforms"] == ["windows-x64"]
 
@@ -305,3 +317,15 @@ def test_main_writes_the_manifest_and_prints_its_tag(
     assert code == 0
     assert capsys.readouterr().out == sm.tag(out.read_bytes()) + "\n"
     assert json.loads(out.read_text())["schema_version"] == 1
+
+
+def test_a_stage_line_the_script_cannot_read_is_an_error(tmp_path: Path) -> None:
+    tree = _btbn_tree(tmp_path / "btbn")
+    (tree / "generate.sh").write_text(
+        "echo 'RUN --mount=src=scripts.d/50-x264.sh,dst=/stage.sh "
+        "--mount=src=.cache/downloads/50-x264.tar.xz,dst=/cache.tar.xz run_stage /stage.sh'"
+        " > Dockerfile\n"
+    )
+
+    with pytest.raises(sm.ManifestError, match="cannot read the stage"):
+        sm.btbn_stages(tree, "linux64", "gpl-shared", "9.0")
