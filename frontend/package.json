@@ -1,6 +1,6 @@
 {
   "name": "reframe-frontend",
-  "version": "0.0.0",
+  "version": "0.1.0-dev.0",
   "private": true,
   "description": "Reframe web and desktop UI (Vue 3 + PrimeVue)",
   "license": "GPL-3.0-or-later",
