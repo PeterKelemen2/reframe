@@ -69,7 +69,34 @@ None: the plan already asks for WebKit. Firefox staying is an addition, not a ch
 
 ## Task W2: focus and the tracks area (B, C)
 
-(Filled by W2.)
+**B — the gate measured too early (gate fixed, not the app).** WebKit scrolls a newly focused
+element into view at its next rendering update, not during the Tab. Measured in headless WebKit
+on the Tags tab (a `focusin` listener reading the field's top and `.editor-tabs__panels`'
+`scrollTop`): in the event, a microtask, a `setTimeout(0)` and the first frame callback the
+field is still at 770 px in a 720 px window (scrollTop 249); in the second frame callback it is
+at 639 px (scrollTop 380), with no frames between (a jump, not a smooth scroll). Chromium and
+Firefox scroll inside the Tab. The walk called `walkStep` (and `obscured`) right after the key
+press, so a field below the fold was still outside the window; `obscured` returns true for a
+stop outside it. Once scrolled, nothing covers the field (`elementsFromPoint` at its centre: the
+input first); the user sees it in view from the frame after the Tab. Fix: `gate.ts` waits for one
+rendering update (two frame callbacks) after each Tab before it judges the stop. The same wait
+cleared the naming overrides on `summary` and `group`. A test for the gate (a stop that comes
+into view one frame after its focus is not hidden; one that comes 500 ms later is) needs
+`gate-checks.spec.ts`, which W2 does not own: the diff went to the lead.
+
+**C — the pointer took the language picker's active option (app fixed).** WebKit sends a
+`mousemove` (and `pointermove`) at the pointer's unchanged place when the content under it
+changes: when the picker's list appears, when the search filters it, when it scrolls. Logged in
+headless WebKit: after typing `fren`, a trusted `mousemove` at the same client point
+(662, 387), movement 0, over `fr-CA`; after the reopen, one over `fil`. The test's pointer was
+left over the dialog by its earlier click, and the option's `@mousemove` made the option under
+it active, so Enter chose it (`fj` in the first run, `fil`/`fr-CA` in later ones). A WebKit user
+whose mouse rests over the list gets the same. `LanguagePicker.vue` now takes the active option
+from a `mousemove` only when the pointer's client point differs from the previous one seen since
+the picker opened (the first one only records it); a click still chooses at once. Unit test:
+"keeps the active option of the keys under a pointer that does not move, follows one that does".
+
+No known-list entry.
 
 ## Task W3: the Range popover (E)
 
