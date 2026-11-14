@@ -22,6 +22,8 @@ license = "GPL-2.0-only"
 license_file = "doc/COPYING.txt"
 # Corresponding source (GPL obligations): the release tarball and the tagged repository.
 source_url = "https://mkvtoolnix.download/sources/mkvtoolnix-103.0.tar.xz"
+# Equal to the site's mkvtoolnix-103.0.tar.xz.sha256.
+source_sha256 = "d609bc395c409eade05d0a3a5aedd26e09739e232ed03b0f937cf8bd9448c590"
 source_repository = "https://codeberg.org/mbunkus/mkvtoolnix"
 source_tag = "release-103.0"
 
@@ -46,6 +48,8 @@ release_url = "https://mediaarea.net/en/MediaInfo/Download/Windows"
 license = "BSD-2-Clause"
 license_file = "LICENSE"
 source_url = "https://mediaarea.net/download/binary/mediainfo/26.10/MediaInfo_CLI_26.10_GNU_FromSource.tar.xz"
+# MediaArea publishes no checksum: the SHA-256 of a download on 2026-11-14.
+source_sha256 = "7785bb75d69efd21b7c0b2c2269164aeb21cea2be6f6b9103ad79743af6fdec7"
 source_repository = "https://github.com/MediaArea/MediaInfo"
 source_tag = "v26.10"
 

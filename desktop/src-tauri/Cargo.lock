@@ -2893,7 +2893,7 @@ dependencies = [
 
 [[package]]
 name = "reframe-desktop"
-version = "0.1.0"
+version = "0.1.0-dev.0"
 dependencies = [
  "dirs",
  "getrandom 0.4.3",

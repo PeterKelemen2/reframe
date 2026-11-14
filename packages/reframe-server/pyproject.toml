@@ -22,7 +22,7 @@ requires = ["hatchling>=1.32.4"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
-path = "src/reframe_server/__init__.py"
+path = "../reframe/src/reframe/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/reframe_server"]

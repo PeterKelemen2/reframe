@@ -9,6 +9,7 @@ import { mountShell } from '@/components/shell/testing'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 
+import packageJson from '../../../package.json'
 import DiagnosticsSection from './DiagnosticsSection.vue'
 import { comboboxName, SettingsServer, systemInfo } from './testing'
 
@@ -146,12 +147,21 @@ describe('the Diagnostics section', () => {
         `Reframe report ${atLoad + 1}`,
         '',
         'Client',
+        `  version: ${packageJson.version}`,
         '  kind: web',
         `  user agent: ${navigator.userAgent}`,
         `  device pixel ratio: ${globalThis.devicePixelRatio}`,
         '',
       ].join('\n'),
     )
+  })
+
+  it('names the version the build was stamped with in the client part', async () => {
+    const { copy } = await mountDiagnostics()
+    await copy()
+    const client = writeText.mock.calls[0]?.[0].split('\n\nClient\n')[1] ?? ''
+    expect(client.split('\n')[0]).toBe(`  version: ${packageJson.version}`)
+    expect(packageJson.version).toMatch(/^\d+\.\d+\.\d+(-(alpha|beta|rc|dev)\.\d+)?$/)
   })
 
   it('keeps Copy focusable while it reads, says so, and reads once for a second press', async () => {

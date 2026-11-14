@@ -53,6 +53,17 @@ bin_dir = "bin"
 ffmpeg = "bin/ffmpeg"
 ffprobe = "bin/ffprobe"
 
+# Only the arm64 Docker image ships it; the desktop packages are x64.
+[builds.default.platforms.linux-arm64]
+url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n9.0.2-17-g2a571b6068-linuxarm64-gpl-shared-9.0.tar.xz"
+sha256 = "706ccdbc8b0537646345532713a9b6750c0a6258cc001ec1c0379754f0ae730a"
+size = 57679524
+format = "tar.xz"
+root = "ffmpeg-n9.0.2-17-g2a571b6068-linuxarm64-gpl-shared-9.0"
+bin_dir = "bin"
+ffmpeg = "bin/ffmpeg"
+ffprobe = "bin/ffprobe"
+
 [builds.default.platforms.windows-x64]
 url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n9.0.2-17-g2a571b6068-win64-gpl-shared-9.0.zip"
 sha256 = "3da6c7b60bb9ccd73ec5b5e815ba804a0879eb362ba0e3beebce50174c022696"

@@ -16,6 +16,10 @@ import { useSystemStore } from '@/stores/system'
 
 import { useSetting, useSettingsLocked } from './useSetting'
 
+/** The version the build was stamped with: Vite's `define` replaces the name. */
+// oxlint-disable-next-line no-underscore-dangle -- the define naming convention
+declare const __REFRAME_VERSION__: string
+
 type LogLevel = Schemas['DiagnosticsSettings']['log_level']
 type Report = Schemas['DiagnosticsReport']
 
@@ -94,6 +98,7 @@ async function readReport(): Promise<Report> {
 function clientPart(): string {
   return [
     'Client',
+    `  version: ${__REFRAME_VERSION__}`,
     `  kind: ${platform.kind}`,
     `  user agent: ${navigator.userAgent}`,
     `  device pixel ratio: ${globalThis.devicePixelRatio}`,

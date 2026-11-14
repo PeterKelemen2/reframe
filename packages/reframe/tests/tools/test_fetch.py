@@ -179,7 +179,7 @@ def test_the_core_and_the_script_read_the_manifest_alike() -> None:
             other.license,
             other.source_commit,
         )
-        assert sorted(build.platforms) == sorted(other.platforms) == ["linux-x64", "windows-x64"]
+        assert sorted(build.platforms) == sorted(other.platforms)
         for platform, entry in build.platforms.items():
             mine = (entry.url, entry.sha256, entry.size, entry.format, entry.root)
             script_entry = other.platforms[platform]
@@ -269,7 +269,8 @@ def test_load_manifest_errors(tmp_path: Path) -> None:
     [
         ("linux", "x86_64", "linux-x64"),
         ("win32", "AMD64", "windows-x64"),
-        ("linux", "aarch64", None),
+        ("linux", "aarch64", "linux-arm64"),
+        ("win32", "ARM64", None),
         ("darwin", "x86_64", None),
     ],
 )

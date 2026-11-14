@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { fileURLToPath, URL } from 'node:url'
 
 import vue from '@vitejs/plugin-vue'
@@ -12,6 +13,12 @@ const PLATFORMS = ['web', 'desktop'] as const
 // REFRAME_DEV_PORT pick them. The dev server never opens a browser itself.
 const BACKEND = process.env.REFRAME_DEV_BACKEND ?? 'http://127.0.0.1:8765'
 const DEV_PORT = process.env.REFRAME_DEV_PORT ? Number(process.env.REFRAME_DEV_PORT) : undefined
+// scripts/stamp-version.py writes the core's version here.
+const VERSION = (
+  JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
+    version: string
+  }
+).version
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), 'VITE_')
@@ -32,6 +39,7 @@ export default defineConfig(({ mode }) => {
       __VUE_I18N_FULL_INSTALL__: true,
       __VUE_I18N_LEGACY_API__: false,
       __INTLIFY_PROD_DEVTOOLS__: false,
+      __REFRAME_VERSION__: JSON.stringify(VERSION),
     },
     server: {
       host: '127.0.0.1',

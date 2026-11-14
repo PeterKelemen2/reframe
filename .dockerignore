@@ -14,6 +14,8 @@
 !tools/ffmpeg.toml
 !scripts/fetch-tools.py
 !docker/entrypoint.sh
+!docker/debian-packages.sh
+!docker/notices
 
 frontend/node_modules
 frontend/dist
