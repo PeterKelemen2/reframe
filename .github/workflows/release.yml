@@ -1,0 +1,514 @@
+# The release of a v* tag: the sources release that the packages name, the Linux packages, the
+# Windows installers, the Docker image (amd64, arm64), latest.json and the GitHub release.
+# The procedure and the secrets: docs/release.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Two tags with the same pins would both try to create the same sources release.
+  group: release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  version:
+    name: Version and secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      semver: ${{ steps.version.outputs.semver }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - name: The tag is v and the version that every version field carries
+        id: version
+        run: |
+          version=$(uv run --no-project python scripts/stamp-version.py --check)
+          semver=$(uv run --no-project python scripts/stamp-version.py --print-semver)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME is not v$version, the stamped version"
+            exit 1
+          fi
+          case $semver in
+            *-*) prerelease=true ;;
+            *) prerelease=false ;;
+          esac
+          {
+            echo "version=$version"
+            echo "semver=$semver"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: CHANGELOG.md has a section for the version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: uv run --no-project python scripts/release-notes.py "$VERSION" > /dev/null
+
+      # Checked before anything is published: without the key no update can be installed.
+      - name: The updater's signing key is set
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::The secret TAURI_SIGNING_PRIVATE_KEY is not set (docs/release.md)"
+            exit 1
+          fi
+
+  sources:
+    name: Sources release
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.manifest.outputs.tag }}
+      url: ${{ steps.manifest.outputs.url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      # The manifest names the libraries linuxdeploy will copy into the AppImage, read in the
+      # Linux build image, so the notices in the packages can name this sources release.
+      - name: List the AppImage's distro libraries (Linux build image)
+        run: desktop/packaging/linux/build.sh --appimage-libs "$RUNNER_TEMP/appimage-libs.txt"
+
+      - name: Write the source manifest
+        id: manifest
+        run: |
+          mkdir -p "$RUNNER_TEMP/sources"
+          tag=$(uv run python scripts/sources-manifest.py \
+            --out "$RUNNER_TEMP/sources/manifest.json" \
+            --appimage-libs "$RUNNER_TEMP/appimage-libs.txt")
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$tag" >> "$GITHUB_OUTPUT"
+
+      # A sources release is never "latest" (the updater reads the latest release) and its tag
+      # has no v (a v* tag starts this workflow).
+      - name: Use the sources release, or make it
+        env:
+          TAG: ${{ steps.manifest.outputs.tag }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/sums"
+          if gh release view "$TAG" > /dev/null; then
+            gh release download "$TAG" --pattern SHA256SUMS --dir "$RUNNER_TEMP/sums"
+          else
+            archives="$RUNNER_TEMP/sources/archives"
+            uv run python scripts/sources-fetch.py \
+              --manifest "$RUNNER_TEMP/sources/manifest.json" --out "$archives"
+            gh release create "$TAG" --latest=false --target "$GITHUB_SHA" \
+              --title "Sources $TAG" \
+              --notes "The source code of the third-party programs and libraries that Reframe's packages bundle, one archive per entry of manifest.json, with SHA256SUMS. Reframe's releases name the sources release they were built with." \
+              "$RUNNER_TEMP/sources/manifest.json" "$archives"/*
+            cp "$archives/SHA256SUMS" "$RUNNER_TEMP/sums/"
+          fi
+          du -sh "$RUNNER_TEMP/sources"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sources-sums
+          path: ${{ runner.temp }}/sums/SHA256SUMS
+          if-no-files-found: error
+
+  linux:
+    name: Linux packages
+    needs: [version, sources]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Into the working tree, untracked: build.sh carries it into the build container.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sources-sums
+          path: release-sources
+
+      - name: Build the AppImage, .deb and .rpm (Ubuntu 22.04 build image)
+        env:
+          REFRAME_SOURCES_URL: ${{ needs.sources.outputs.url }}
+          REFRAME_SOURCES_SUMS: release-sources/SHA256SUMS
+        run: desktop/packaging/linux/build.sh dist/linux
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      - name: Generate the test file for the install tests
+        run: |
+          bin_dir="$(uv run --no-project python scripts/fetch-tools.py --build default)"
+          PATH="$bin_dir:$PATH" uv run python scripts/make-testdata.py --only multitrack
+
+      - name: Install, run and remove the packages (Ubuntu 22.04, Debian 12, Fedora)
+        run: desktop/packaging/linux/install-test.sh dist/linux
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-packages
+          path: |
+            dist/linux/*.AppImage
+            dist/linux/*.deb
+            dist/linux/*.rpm
+          if-no-files-found: error
+
+  windows:
+    name: Windows installers
+    needs: [version, sources]
+    runs-on: windows-latest
+    timeout-minutes: 120
+    outputs:
+      signed: ${{ steps.signing.outputs.signed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.node-version
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sources-sums
+          path: release-sources
+
+      - run: uv sync --frozen
+
+      - name: Lay out the bundled tools (FFmpeg, MKVToolNix, MediaInfo)
+        run: uv run python scripts/bundle-tools.py --platform windows-x64
+
+      - name: Build the frozen sidecar
+        run: uv run python desktop/sidecar/build.py
+
+      - run: npm ci
+        working-directory: frontend
+      - run: npm ci
+        working-directory: desktop
+
+      # Without --features cli, cargo installs nothing and exits 0.
+      - name: Install cargo-about
+        run: cargo install --locked cargo-about@0.9.3 --features cli
+
+      # PYTHONUTF8: cargo about's output is UTF-8, not the runner's ANSI code page.
+      - name: Write THIRD_PARTY_NOTICES
+        env:
+          PYTHONUTF8: "1"
+          SOURCES_URL: ${{ needs.sources.outputs.url }}
+        run: >-
+          uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py
+          --platform windows-x64 --sources-url "$SOURCES_URL"
+          --sources-sums release-sources/SHA256SUMS
+
+      # The bundler signs the installers, Reframe.exe and every unsigned .exe and .dll in the
+      # resources with this certificate.
+      - name: Code signing certificate (only when its secrets are set)
+        id: signing
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE) {
+            Write-Output "::warning::WINDOWS_CERTIFICATE is not set: the installers are not code-signed"
+            "signed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          if (-not $env:WINDOWS_TIMESTAMP_URL) {
+            Write-Output "::error::The variable WINDOWS_TIMESTAMP_URL is not set (docs/release.md)"
+            exit 1
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item $pfx
+          $overlay = @{ bundle = @{ windows = @{
+            certificateThumbprint = $cert.Thumbprint
+            digestAlgorithm = 'sha256'
+            timestampUrl = $env:WINDOWS_TIMESTAMP_URL
+            tsp = $true
+          } } }
+          $overlay | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'tauri.signing.json')
+          "signed=true" >> $env:GITHUB_OUTPUT
+
+      - name: Build the NSIS and MSI installers
+        working-directory: desktop
+        env:
+          SIGNED: ${{ steps.signing.outputs.signed }}
+        run: |
+          config=()
+          if [ "$SIGNED" = true ]; then
+            config=(--config "$RUNNER_TEMP/tauri.signing.json")
+          fi
+          npx tauri build "${config[@]}"
+
+      - name: Check the installers' Authenticode signatures
+        if: steps.signing.outputs.signed == 'true'
+        shell: pwsh
+        run: |
+          $installers = Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*-setup.exe, desktop/src-tauri/target/release/bundle/msi/*.msi
+          foreach ($file in $installers) {
+            $status = (Get-AuthenticodeSignature $file.FullName).Status
+            Write-Output "$($file.Name): $status"
+            if ($status -ne 'Valid') { exit 1 }
+          }
+
+      # Bound to the version: the app refuses a signature made for another one.
+      - name: Sign the NSIS installer for the updater
+        working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          SEMVER: ${{ needs.version.outputs.semver }}
+        run: >-
+          npx tauri signer sign --app-version "$SEMVER"
+          "src-tauri/target/release/bundle/nsis/Reframe_${SEMVER}_x64-setup.exe"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-installers
+          path: |
+            desktop/src-tauri/target/release/bundle/nsis/Reframe_*_x64-setup.exe
+            desktop/src-tauri/target/release/bundle/nsis/Reframe_*_x64-setup.exe.sig
+            desktop/src-tauri/target/release/bundle/msi/Reframe_*.msi
+          if-no-files-found: error
+
+  docker:
+    # One build per platform, each with its own notices, pushed by digest only: the tags are
+    # set once every package has been built.
+    name: Docker image (linux/${{ matrix.arch }})
+    needs: [version, sources]
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            notices: docker-linux-x64
+          - arch: arm64
+            notices: docker-linux-arm64
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.node-version
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sources-sums
+          path: ${{ runner.temp }}/release-sources
+
+      - run: uv sync --frozen
+      - run: npm ci
+        working-directory: frontend
+
+      - name: Write docker/notices/THIRD_PARTY_NOTICES
+        env:
+          PLATFORM: ${{ matrix.notices }}
+          SOURCES_URL: ${{ needs.sources.outputs.url }}
+        run: >-
+          uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py
+          --platform "$PLATFORM" --sources-url "$SOURCES_URL"
+          --sources-sums "$RUNNER_TEMP/release-sources/SHA256SUMS"
+          --out docker/notices/THIRD_PARTY_NOTICES
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        if: matrix.arch != 'amd64'
+        with:
+          platforms: ${{ matrix.arch }}
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build and push the image by digest
+        env:
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/reframe"
+          docker buildx build -f docker/Dockerfile --platform "linux/$ARCH" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.version=$VERSION" \
+            --output "type=image,name=$image,push-by-digest=true,name-canonical=true,push=true" \
+            --metadata-file "$RUNNER_TEMP/metadata.json" .
+          digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/metadata.json")
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docker-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+
+  docker-tags:
+    name: Docker image tags
+    needs: [version, docker, linux, windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: docker-digest-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/digests
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      # A pre-release gets its version tag only, never "latest".
+      - name: Tag the multi-platform image
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/reframe"
+          tags=(--tag "$image:$VERSION")
+          if [ "$PRERELEASE" = false ]; then
+            tags+=(--tag "$image:latest")
+          fi
+          sources=()
+          for digest in "$RUNNER_TEMP"/digests/*; do
+            sources+=("$image@sha256:${digest##*/}")
+          done
+          docker buildx imagetools create "${tags[@]}" \
+            --annotation "index:org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            "${sources[@]}"
+          docker buildx imagetools inspect "$image:$VERSION"
+
+  release:
+    name: GitHub release
+    needs: [version, sources, linux, windows, docker-tags]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      VERSION: ${{ needs.version.outputs.version }}
+      SEMVER: ${{ needs.version.outputs.semver }}
+      PRERELEASE: ${{ needs.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: linux-packages
+          path: dist/linux
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows-installers
+          path: dist/windows
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sources-sums
+          path: dist/sources
+
+      # Linux has no entry yet: the AppImage and .deb update is not checked.
+      - name: Write latest.json
+        run: |
+          uv run --no-project python scripts/release-notes.py "$VERSION" > "$RUNNER_TEMP/changes.md"
+          uv run --no-project python scripts/updater-manifest.py \
+            --version "$SEMVER" --notes "$RUNNER_TEMP/changes.md" \
+            --base-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME" \
+            --out dist/latest.json "dist/windows/nsis/Reframe_${SEMVER}_x64-setup.exe"
+
+      - name: Write the release notes
+        env:
+          SIGNED: ${{ needs.windows.outputs.signed }}
+          SOURCES_URL: ${{ needs.sources.outputs.url }}
+        run: |
+          {
+            cat "$RUNNER_TEMP/changes.md"
+            echo
+            if [ "$SIGNED" != true ]; then
+              echo "**The Windows installers are not code-signed.** Windows SmartScreen warns before it starts them."
+              echo
+            fi
+            echo "### Source code"
+            echo
+            echo "The source code of the third-party programs and libraries in these packages: $SOURCES_URL"
+            echo
+            echo "SHA-256 of each archive:"
+            echo
+            echo '```'
+            cat dist/sources/SHA256SUMS
+            echo '```'
+          } > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+
+      # A draft until every file is up, so the updater never sees a release without latest.json.
+      - name: Publish the release
+        run: |
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
+            --title "Reframe $VERSION" --notes-file "$RUNNER_TEMP/notes.md" \
+            dist/linux/* dist/windows/nsis/* dist/windows/msi/* dist/latest.json
+          if [ "$PRERELEASE" = true ]; then
+            gh release edit "$GITHUB_REF_NAME" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          fi
