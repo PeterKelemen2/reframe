@@ -96,6 +96,23 @@ from a `mousemove` only when the pointer's client point differs from the previou
 the picker opened (the first one only records it); a click still chooses at once. Unit test:
 "keeps the active option of the keys under a pointer that does not move, follows one that does".
 
+**A — the gate's pictures in CSS pixels (gate fixed, found by W1).** `Desktop Safari` has
+`deviceScaleFactor` 2 (Chromium and Firefox 1). With `scale: 'css'` WebKit gives a picture in
+which the thumbnail's rounded 2 px ring, on a fractional CSS pixel (top 463.31), is blended into
+the rows next to it: one full row and two `166,162,242` half rows, 195 of 218 px at 3:1. In the
+device-scale picture it is a solid 4-device-px band. The ring is complete on screen. Checked on
+a page made for it: a rounded 1 px black ring on a half CSS pixel at device scale factor 2 is two
+crisp device rows; WebKit's CSS-scale picture paints it as two `59` rows (68 of 197 px at 3:1);
+Chromium's CSS-scale picture and Firefox's draw it crisp, unless the ring is square-cornered
+(then WebKit draws it crisp too). Fix: `gate.ts` takes the pictures with `scale: 'device'`;
+`comparePixels` walks the device pixels (its scale is the picture's width over the clip's) and
+needs `2 × (width + height) × scale²` of them: a 1 CSS px line round the visible part. At scale 1
+the walk and the count are the ones before. Only `comparePixels` reads pictures; `obscured`, the
+motion check and the computed-colour checks use CSS coordinates from the DOM, not pictures, so
+the device scale does not reach them (W1 also saw `toast` fail on `obscured` at scale factor 1:
+cause B, above, is not the ratio). Test for the gate (with the one for B, in
+`gate-checks.spec.ts`, a file W2 does not own: the diff went to the lead).
+
 No known-list entry.
 
 ## Task W3: the Range popover (E)
