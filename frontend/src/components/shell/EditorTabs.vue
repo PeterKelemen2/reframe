@@ -63,24 +63,15 @@ watch(active, () => {
   height: 100%;
 }
 
-/*
- * Tab and a reveal scroll a control into view only above the scroll padding: the sticky command
- * drawer (`--video-command-drawer-height` while shown) would cover it otherwise. A size container,
- * so that what sticks to the foot can size itself by the tab's height.
- */
+/* A size container: a tab can size itself by the panels' height. */
 .editor-tabs__panels {
   container-type: size;
   flex: 1;
   min-height: 0;
   padding-bottom: 0;
   overflow: auto;
-  scroll-padding-bottom: calc(var(--video-command-drawer-height, 0px) + var(--rf-space-3));
 }
 
-/*
- * A sticky drawer stops at the scroller's padding, and what scrolls under it shows in the gap.
- * The bottom padding belongs to the panels, except the one that ends in the drawer.
- */
 /* Firefox gives the scroller a Tab stop of its own; PrimeVue's panels have no outline. Inside, as
    the column around it clips. */
 .editor-tabs__panels:focus-visible {
@@ -88,6 +79,7 @@ watch(active, () => {
   outline-offset: calc(-1 * var(--p-focus-ring-width));
 }
 
+/* The bottom padding belongs to the panels, except the one that ends in the drawer. */
 .editor-tabs__panels :deep([role='tabpanel']) {
   padding-bottom: 1.125rem;
 }

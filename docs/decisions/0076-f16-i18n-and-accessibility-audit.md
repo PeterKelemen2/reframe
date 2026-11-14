@@ -741,3 +741,17 @@ Not taught, with the reason:
 - Task G's note that a Tab during a Dialog's enter transition goes to the page behind: in both
   browsers the modal dialog's focus trap focuses `[autofocus]` as the dialog mounts, so the Tab
   went inside the dialog and the late focus took it back. That is what `dialogFocus.ts` fixes.
+
+**Phase 2** (on m10-hardening with FG merged, 95c4f10). FG's wider gate listed three new causes
+in the known lists. All three are fixed, and the lists are empty. Before each fix, the gate ran
+on the old code with the lists emptied and failed on the screens below. After the fixes, the
+same screens passed (16 of 16).
+
+| Gate finding | Fix |
+|--------------|-----|
+| Firefox makes a box that scrolls a Tab stop. Its ring (2 px, 2 px outside) was cut away by a clipping ancestor: the tab list viewport (`toast`, `status-error`, `crop-manual`, `group`), the preview panel's content (the same screens and `preview-frames`, `split-compare`), the settings body (`settings`); "1.00:1 on self" or "766 px at 3:1, 1886 needed" | `main.css`: a focused element that is not a control and has no `tabindex` (a box focused only because it scrolls) draws its ring inside itself. The other elements keep their rings. `video` and `audio` keep theirs too: in the first full run, the preview clip's `<video controls>` (`preview-clip`, Firefox) put its inset ring on the picture, and the change fell below the gate's pixel count. `:focus-visible` only, so a mouse user sees no change |
+| `crop-manual`, light, both browsers: the magnifier's *Previous frame* button at the first frame (`aria-disabled`, kept focusable) faded its whole box, the ring too: 2.88:1 | `CropMagnifier.vue`: the icon and the border fade, not the button, so its focus ring keeps its colour |
+| `command-drawer`: axe `target-size`. The sticky drawer lay over the Video options, so an option partly under it kept less than 24 px (Chromium: the frame-rate mode's help button; Firefox: the RF field and the slider handle) | The Video tab is as tall as the panels (`100cqh`). Its options scroll in a box of their own, with the drawer below them, so no option goes under the drawer. With the overlay gone, the drawer-height variable and its `ResizeObserver`, the panels' `scroll-padding-bottom` and the drawer's side-padding gradient are removed. `e2e/layout.spec.ts`: the test that the drawer painted over the side padding (where a field's bar showed through) is now "the open command drawer covers no Video option, the options scrolled to the top or the end". On the old code it failed in both browsers (145 px of an option under the drawer, at the top) |
+
+`CommandPreview.test.ts` loses its test of the drawer-height variable, because the variable is
+gone.
