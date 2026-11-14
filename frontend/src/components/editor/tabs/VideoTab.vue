@@ -524,28 +524,35 @@ function defaultLabel(field: 'tune' | 'profile' | 'level'): string {
       <Section :title="t('video.sections.metadata')">
         <TrackMetadataEditor list="video" />
       </Section>
-
-      <CommandPreview />
     </div>
+    <CommandPreview v-if="video !== null" />
   </section>
 </template>
 
 <style scoped>
+/*
+ * The tab is as tall as the panels (a size container); the options scroll above the command
+ * drawer, so the drawer covers none of them.
+ */
 .video-tab {
-  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  height: 100cqh;
 }
 
 .video-tab__content {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: var(--rf-space-5);
-  min-height: 100%;
-  padding: var(--rf-space-4) var(--rf-space-4) 0;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--rf-space-4);
 }
 
-/* The command drawer stays at the panel's foot while the panel scrolls. */
-.video-tab__content > :last-child {
-  margin-top: auto;
+.video-tab > :last-child {
+  flex: none;
+  margin-inline: var(--rf-space-4);
 }
 
 .video-tab__inline {

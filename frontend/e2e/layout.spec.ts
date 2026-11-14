@@ -122,7 +122,60 @@ test('the workspace with a file open is one window high, its icons at full size'
   await expectIconsAtFullSize(rows.first().locator('.track-row__buttons'), 'a track row')
 })
 
-test("the open command drawer covers the padding where a field's bar is drawn", async ({
+/**
+ * How much of a Video option is painted where the command drawer is: the part of each field
+ * that its scroller shows, cut by the drawer's box. 0 when the drawer covers no option.
+ */
+function optionsUnderDrawer(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    // This file is type-checked without the DOM library.
+    interface Rect {
+      top: number
+      bottom: number
+    }
+    interface Box {
+      getBoundingClientRect(): Rect
+      parentElement: Box | null
+    }
+    const doc = Reflect.get(globalThis, 'document') as {
+      querySelector(selector: string): Box | null
+      querySelectorAll(selector: string): Iterable<Box>
+    }
+    const view = Reflect.get(globalThis, 'getComputedStyle') as (box: Box) => { overflowY: string }
+    const drawer = doc.querySelector('.command-preview')?.getBoundingClientRect()
+    if (drawer === undefined) return Number.NaN
+    let worst = 0
+    for (const field of doc.querySelectorAll('[data-tab="video"] .rf-field')) {
+      let shown = field.getBoundingClientRect()
+      for (let box = field.parentElement; box !== null; box = box.parentElement) {
+        if (!['auto', 'scroll', 'hidden', 'clip'].includes(view(box).overflowY)) continue
+        const clip = box.getBoundingClientRect()
+        shown = { top: Math.max(shown.top, clip.top), bottom: Math.min(shown.bottom, clip.bottom) }
+      }
+      const under = Math.min(shown.bottom, drawer.bottom) - Math.max(shown.top, drawer.top)
+      worst = Math.max(worst, under)
+    }
+    return worst
+  })
+}
+
+async function scrollOptionsTo(page: Page, where: 'top' | 'end'): Promise<void> {
+  await page.evaluate((to) => {
+    // This file is type-checked without the DOM library.
+    interface Scroller {
+      scrollTop: number
+      scrollHeight: number
+    }
+    const doc = Reflect.get(globalThis, 'document') as {
+      querySelectorAll(selector: string): Iterable<Scroller>
+    }
+    for (const box of doc.querySelectorAll('.editor-tabs__panels, .video-tab__content')) {
+      box.scrollTop = to === 'end' ? box.scrollHeight : 0
+    }
+  }, where)
+}
+
+test('the open command drawer covers no Video option, the options scrolled to the top or the end', async ({
   page,
 }) => {
   await openApp(page)
@@ -135,23 +188,11 @@ test("the open command drawer covers the padding where a field's bar is drawn", 
   if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
   await expect(drawer.locator('.command-preview__body')).toBeVisible()
 
-  const box = await drawer.boundingBox()
-  if (box === null) throw new Error('the drawer has no box')
-  // A field's bar is drawn 8 px left of the field, 3 px wide: its middle is 6 px left of the drawer.
-  const hit = await page.evaluate(
-    ({ x, y }) => {
-      // This file is type-checked without the DOM library.
-      interface Box {
-        closest(selector: string): Box | null
-      }
-      const doc = Reflect.get(globalThis, 'document') as {
-        elementFromPoint(x: number, y: number): Box | null
-      }
-      return doc.elementFromPoint(x, y)?.closest('.command-preview') != null
-    },
-    { x: box.x - 6, y: box.y + box.height / 2 },
-  )
-  expect(hit, 'the drawer is what is painted beside its own left edge').toBe(true)
+  // An option under the drawer cannot be reached by the pointer and keeps a smaller target.
+  await scrollOptionsTo(page, 'top')
+  await expect.poll(() => optionsUnderDrawer(page), 'scrolled to the top').toBeLessThan(0.5)
+  await scrollOptionsTo(page, 'end')
+  await expect.poll(() => optionsUnderDrawer(page), 'scrolled to the end').toBeLessThan(0.5)
 })
 
 /** The distance between the bottom edges of the editor's panels and of the command drawer. */
