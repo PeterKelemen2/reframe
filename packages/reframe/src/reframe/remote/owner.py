@@ -24,6 +24,7 @@ import httpx
 from pydantic import ValidationError
 
 from reframe import paths
+from reframe.applog import SERVER_LOG, logs_dir
 from reframe.models.queue import ServerEndpoint
 from reframe.platform.childproc import CREATE_NO_WINDOW, launch_detached, user_environ
 from reframe.queue.lock import LOCK_FILE, StoreLock
@@ -125,7 +126,7 @@ def endpoint_path(data_dir: Path, environ: Mapping[str, str] | None = None) -> P
 
 def server_log(data_dir: Path) -> Path:
     """Where a started owner writes its messages (its stderr)."""
-    return data_dir / "logs" / "server.log"
+    return logs_dir(data_dir) / SERVER_LOG
 
 
 def usable_token(token: str) -> bool:
