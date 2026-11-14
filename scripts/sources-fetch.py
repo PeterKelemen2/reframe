@@ -135,9 +135,10 @@ def _checkouts(tree: Path, marker: str) -> list[Path]:
 def check_stage_pins(tree: Path, variables: Mapping[str, str]) -> list[str]:
     """The checkouts in ``tree`` that match a pin of the stage, as ``url@revision`` lines.
 
-    :raises SourcesError: a checkout of a pinned repository is at another commit or revision.
+    :raises SourcesError: a checkout of a pinned repository is at none of its pinned commits
+        or revisions (a stage may pin one repository more than once).
     """
-    pins: dict[str, str] = {}
+    pins: dict[str, set[str]] = {}
     for name, value in variables.items():
         for prefix in ("SCRIPT_REPO", "SCRIPT_MIRROR"):
             if name.startswith(prefix):
@@ -146,7 +147,7 @@ def check_stage_pins(tree: Path, variables: Mapping[str, str]) -> list[str]:
                     f"SCRIPT_REV{suffix}"
                 )
                 if ref and (_HEX40.match(ref) or _REV.match(ref)):
-                    pins[value.removesuffix(".git").rstrip("/")] = ref
+                    pins.setdefault(value.removesuffix(".git").rstrip("/"), set()).add(ref)
     found = []
     checkouts = [(path, "git") for path in _checkouts(tree, ".git")]
     checkouts += [(path, "svn") for path in _checkouts(tree, ".svn")]
@@ -159,8 +160,9 @@ def check_stage_pins(tree: Path, variables: Mapping[str, str]) -> list[str]:
             head = _run(["svn", "info", "--show-item", "revision", str(path)], timeout=60)
         url, head = url.strip().removesuffix(".git").rstrip("/"), head.strip()
         if url in pins:
-            if head != pins[url]:
-                raise SourcesError(f"{path.name}: {url} is at {head}, the pin is {pins[url]}")
+            if head not in pins[url]:
+                pinned = ", ".join(sorted(pins[url]))
+                raise SourcesError(f"{path.name}: {url} is at {head}, the pin is {pinned}")
             found.append(f"{url}@{head}")
     return found
 

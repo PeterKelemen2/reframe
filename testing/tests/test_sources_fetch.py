@@ -199,6 +199,30 @@ def test_a_btbn_stage_runs_its_download_commands_and_checks_the_pin(
 
 
 @pytest.mark.usefixtures("helper_checkout")
+def test_a_stage_may_pin_one_repository_at_several_commits(tmp_path: Path) -> None:
+    origin = tmp_path / "nv-codec-headers"
+    first = _repo(origin, {"sdk.h": "13\n"})
+    (origin / "sdk.h").write_text("11\n")
+    _git("commit", "-q", "-am", "sdk 11", cwd=origin)
+    second = _git("rev-parse", "HEAD", cwd=origin)
+    entry = _stage_entry(tmp_path, origin, first)
+    entry["commands"] = (
+        f'git-mini-clone "{origin.as_uri()}" "{first}" sdk13\n'
+        f'git-mini-clone "{origin.as_uri()}" "{second}" sdk11'
+    )
+    entry["download_hash"] = hashlib.sha256((entry["commands"] + "\n").encode()).hexdigest()
+    entry["variables"] |= {"SCRIPT_REPO2": origin.as_uri(), "SCRIPT_COMMIT2": second}
+    out = tmp_path / "out"
+
+    sf.fetch_all([entry], out)
+
+    assert _members(out / entry["archive"]) == [
+        "btbn-50-x264-abcdef/sdk11/sdk.h",
+        "btbn-50-x264-abcdef/sdk13/sdk.h",
+    ]
+
+
+@pytest.mark.usefixtures("helper_checkout")
 def test_a_stage_checkout_at_another_commit_than_its_pin_is_an_error(tmp_path: Path) -> None:
     origin = tmp_path / "x264"
     commit = _repo(origin, {"x264.c": ""})
