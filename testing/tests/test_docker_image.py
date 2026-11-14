@@ -83,3 +83,47 @@ def test_the_package_list_links_each_installed_package_to_its_source_on_snapshot
         f"tini 0.19.0-3+b8 tini 0.19.0-3 {snapshot}/tini/0.19.0-3/",
     ]
     assert not out.with_name("DEBIAN_PACKAGES.part").exists()
+
+
+def _notices_check(notices: Path, arch: str) -> subprocess.CompletedProcess[str]:
+    """The notices stage's RUN command against the folder ``notices`` in place of /notices."""
+    run = _stage("notices").split("\nRUN ", 1)[1].replace("\\\n", "")
+    return subprocess.run(
+        ["sh", "-c", re.sub("(?<!docker)/notices/", f"{notices}/", run)],
+        env={"PATH": "/usr/bin:/bin", "TARGETARCH": arch},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+
+@skip_windows
+@pytest.mark.parametrize("content", [None, ""])
+def test_the_build_stops_without_the_notices_and_says_how_to_write_them(
+    tmp_path: Path, content: str | None
+) -> None:
+    (tmp_path / "notices").mkdir()
+    if content is not None:
+        (tmp_path / "notices" / "THIRD_PARTY_NOTICES").write_text(content)
+
+    result = _notices_check(tmp_path / "notices", "amd64")
+
+    assert result.returncode == 1
+    assert "docker/notices/THIRD_PARTY_NOTICES is missing: write it with" in result.stderr
+
+
+@skip_windows
+@pytest.mark.parametrize(("arch", "ok"), [("amd64", False), ("arm64", True)])
+def test_the_build_takes_only_the_notices_of_its_own_platform(
+    tmp_path: Path, arch: str, ok: bool
+) -> None:
+    (tmp_path / "notices").mkdir()
+    (tmp_path / "notices" / "THIRD_PARTY_NOTICES").write_text(
+        "Third-party notices for Reframe 1.0.0 (docker-linux-arm64)\n"
+    )
+
+    result = _notices_check(tmp_path / "notices", arch)
+
+    assert (result.returncode == 0) == ok, result.stderr
+    assert ("is not the one for docker-linux-x64" in result.stderr) == (not ok)
