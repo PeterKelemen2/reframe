@@ -52,7 +52,19 @@ describe('the Settings view', () => {
     const { wrapper } = await mountView()
     expect(
       wrapper.findAll('[data-section]').map((section) => section.attributes('data-section')),
-    ).toEqual(['tools', 'encoders', 'output', 'languages', 'preview', 'queue', 'appearance'])
+    ).toEqual([
+      'tools',
+      'encoders',
+      'output',
+      'languages',
+      'preview',
+      'queue',
+      'appearance',
+      'diagnostics',
+    ])
+    expect(
+      wrapper.find('[data-section="diagnostics"] [data-action="copy-diagnostics"]').exists(),
+    ).toBe(true)
   })
 
   it('shows the desktop app’s own settings last, in the desktop app only', async () => {

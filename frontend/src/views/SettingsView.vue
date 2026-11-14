@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import AppearanceSection from '@/components/settings/AppearanceSection.vue'
 import DesktopSection from '@/components/settings/DesktopSection.vue'
+import DiagnosticsSection from '@/components/settings/DiagnosticsSection.vue'
 import EncodersSection from '@/components/settings/EncodersSection.vue'
 import LanguagesSection from '@/components/settings/LanguagesSection.vue'
 import OutputSection from '@/components/settings/OutputSection.vue'
@@ -30,6 +31,7 @@ const ALL_SECTIONS = [
   'preview',
   'queue',
   'appearance',
+  'diagnostics',
   'desktop',
 ] as const
 type SectionId = (typeof ALL_SECTIONS)[number]
@@ -55,6 +57,8 @@ function sectionTitle(id: SectionId): string {
       return t('settings.appearance.title')
     case 'desktop':
       return t('window.settings.title')
+    case 'diagnostics':
+      return t('settings.diagnostics.title')
   }
 }
 
@@ -123,7 +127,11 @@ watch([() => route.hash, ready], focusHash)
           <PreviewSection v-else-if="id === 'preview'" />
           <QueueSection v-else-if="id === 'queue'" />
           <AppearanceSection v-else-if="id === 'appearance'" />
-          <DesktopSection v-else-if="platform.desktop !== null" :shell="platform.desktop" />
+          <DesktopSection
+            v-else-if="id === 'desktop' && platform.desktop !== null"
+            :shell="platform.desktop"
+          />
+          <DiagnosticsSection v-else-if="id === 'diagnostics'" />
         </div>
       </div>
     </div>

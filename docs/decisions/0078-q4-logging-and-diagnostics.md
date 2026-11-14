@@ -153,7 +153,60 @@ Built (2026-11-14, Linux):
 
 ## Task U: the Diagnostics section (frontend)
 
-(Filled by U.)
+Phase 1 (against the stub, mocked reports in the tests):
+
+- **Place.** `components/settings/DiagnosticsSection.vue`, a section of Settings after
+  Appearance and before the desktop app's own section (that one stays last), with its link and
+  `/settings#diagnostics`.
+- **Log level (item 4).** A `Select` of the four levels with plain labels (Errors only,
+  Warnings and errors, Normal, Detailed (debug)) and one line of help that says a change applies
+  at once. One `useSetting('/diagnostics/log_level')` change per pick; disabled when the
+  settings are read-only. A document without `diagnostics` shows `info` (the default).
+- **Logs folder (items 6, 7).** `logs_dir` of `GET /api/diagnostics`, read once when the
+  section mounts, in a read-only text field (selectable, in the Tab order) with a visible line,
+  linked by `aria-describedby`, that names `reframe.log` and the job logs, and `sidecar.log` in
+  the desktop app (phase 2 adds the rest). A failed read is an issue at the field. The section
+  has no other use of the report at mount.
+- **Copy diagnostics (item 6).** The report is read again when the button is pressed, so it
+  holds the state at that moment. The client part is appended after a blank line, not
+  translated (the bug report's reader reads it): a `Client` section with `kind`
+  (`platform.kind`), `user agent` and `device pixel ratio`. Written with `navigator.clipboard.writeText`. A live
+  region (`role="status"`, in the page before the press) says "Reading the diagnostics…", then
+  "Diagnostics copied to the clipboard." or the failure in plain words. When the clipboard
+  refuses the text or is missing (a web server over plain http is not a secure context), the
+  report shows in a read-only text area, focused and selected, so Ctrl+C or the context menu
+  copies it. A failed read says why and copies nothing. The button is never disabled while it
+  reads (a disabled button drops the keyboard focus to the page); a second press then does
+  nothing.
+- **Clipboard checked in the engines (Playwright 1.64.1, headless, `e2e` server on this host,
+  2026-11-14).** `writeText` after an awaited `fetch`, after 3 s, and `clipboard.write` with a
+  `ClipboardItem` of a promise: Firefox and WebKit accept all of them without a permission;
+  Chromium refuses every write ("Write permission denied") unless the context has
+  `clipboard-write`, and then accepts all of them (read back with `readText`). So Playwright's
+  engines do not show a user-gesture rule for a write after the fetch. Not checked: the desktop
+  app's WebKitGTK webview; if it refuses the write, the user gets the report to select.
+- **The gate.** `settings-diagnostics` (the section) and `settings-diagnostics-report` (the
+  report shown after the clipboard is removed from `navigator`) in `e2e/a11y/screens/shell.ts`;
+  `known/shell.ts` stays empty.
+
+Phase 2 (after P merged, against the real report, 2026-11-14):
+
+- **The client part follows the report's layout**: P's text has a head of `Key: value` lines
+  and then sections, each a heading line and `  key: value` lines, with a blank line between
+  sections. The client part is one more such section (`Client`, then `  kind:`,
+  `  user agent:`, `  device pixel ratio:`), after a blank line.
+- **The logs folder's line with a `~` path.** In web mode the folder is on the server's
+  computer, and there is no `sidecar.log`: the line says "On the server's computer. Holds the
+  app log (reframe.log) and a log for each job."; in the desktop app it names `sidecar.log`
+  too. When `logs_dir` starts with `~`, it adds "~ is the home folder."
+- **Checked in a real server** (`scripts/dev-server.py`, the e2e servers, headless, all three
+  engines): the logs folder shows `logs_dir`; Tab from it reaches *Copy diagnostics*, Enter
+  copies, the status says "Diagnostics copied to the clipboard."; in Chromium (with
+  `clipboard-read`/`clipboard-write` granted) the clipboard read back holds P's whole report
+  (head, Tools, Encoders, Settings, Logs) and the `Client` section after it.
+- **Real-server test** `components/settings/diagnostics.server.test.ts`: the report has text,
+  no token, and names the same folder as `logs_dir`; the section's change
+  (`/diagnostics/log_level` = `debug`, through the settings store) is saved by the server.
 
 ## Review and fix round
 

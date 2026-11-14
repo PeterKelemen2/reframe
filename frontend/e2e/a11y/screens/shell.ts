@@ -17,6 +17,7 @@ const SETTINGS_SECTIONS = [
   'preview',
   'queue',
   'appearance',
+  'diagnostics',
 ] as const
 
 async function addToQueue(page: Page, toast = 'Added to the queue'): Promise<void> {
@@ -181,6 +182,22 @@ export const screens: Screen[] = [
       await expect(page.locator(`[data-section="${section}"]`)).toBeInViewport()
     },
   })),
+  {
+    // The report shown to select by hand, as when the browser gives no clipboard.
+    id: 'settings-diagnostics-report',
+    area: 'shell',
+    region: '[data-section="diagnostics"]',
+    async setup(page) {
+      await openApp(page)
+      await goTo(page, 'Settings')
+      await page.locator('[data-section-link="diagnostics"]').click()
+      await page.evaluate(() => {
+        Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+      })
+      await page.locator('[data-action="copy-diagnostics"]').click()
+      await expect(page.locator('[data-section="diagnostics"] textarea')).toBeFocused()
+    },
+  },
   {
     id: 'login',
     area: 'shell',
