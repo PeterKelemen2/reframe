@@ -584,3 +584,4 @@ confirmation; keyboard, i18n and the gate as F-16 requires; the whole e2e suite 
 | Date | What |
 |------|------|
 | 2026-11-14 | 0078, this section and wave 0 committed; wave 1 (P, U) launched. |
+| 2026-11-14 | P merged (5330b9c: `reframe/applog.py`, `reframe/diagnostics.py`, the level through `Reframe.create(on_log_level=…)`, the route's report), U phase 1 against the stub, then phase 2 against P's report, merged (2de580d: Settings → Diagnostics; `diagnostics.server.test.ts`). The lead broke each task once (the access log let into the file; the client part left out of the copy); its tests caught it. A real server's `reframe.log` and report checked by hand (JSON lines, no token). Review R1 launched. |
