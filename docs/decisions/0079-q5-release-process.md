@@ -76,9 +76,9 @@ the certificate secrets are set; an arm64 FFmpeg pin; no PyPI for v1.
    arm64 has software encoders only (no VAAPI/QSV/NVENC claimed). Its sources are in the
    manifest.
 7. **The release workflow** (`.github/workflows/release.yml`, on a `v*` tag): check the tag
-   against the stamped version → the sources release (made if its tag does not exist, never
-   "latest", no `v`) → in parallel: the Linux packages, the Windows installers, the Docker image
-   (both platforms, to GHCR) — each with the notices that name the sources release → the
+   against the stamped version → the sources release (made unless a published release with
+   its tag has every file of the manifest, never "latest", no `v`) → in parallel: the Linux
+   packages, the Windows installers, the Docker image (both platforms, to GHCR) — each with the notices that name the sources release → the
    updater's `latest.json` → a GitHub release with the packages, `latest.json`, the changelog
    section and the sources link. Windows code signing runs when the certificate secrets are
    set; without them the installers are unsigned and the release notes say so. The updater
@@ -213,9 +213,9 @@ Checked against the real tools:
      `uv tool run git-cliff==2.14.2 --unreleased --tag vX.Y.Z --prepend CHANGELOG.md`, then
      read the result.
   3. Commit (`chore(release): vX.Y.Z`), then tag `vX.Y.Z`.
-  4. The workflow checks the tag with
-     `test "$GITHUB_REF_NAME" = "v$(uv run --no-project python scripts/stamp-version.py --check)"`,
-     and gets the notes with `scripts/release-notes.py "$GITHUB_REF_NAME"`.
+  4. The workflow checks the tag against `stamp-version.py --check`'s output
+     (`release-workflow.py preflight` since "Fix round — FW"), and gets the notes with
+     `scripts/release-notes.py "$GITHUB_REF_NAME"`.
 
 ## Task S: the source manifest and the sources release
 
@@ -462,7 +462,8 @@ the same day). Nothing ran on GitHub (nothing is pushed).
 **`.github/workflows/release.yml`** (on `v*`; workflow `permissions: contents: read`, one
 `concurrency` group without cancelling, `UV_FROZEN=1`, every action pinned by commit SHA):
 
-1. `version`: `stamp-version.py --check` prints the version; the tag must be `v` and it, and
+1. `version` (since "Fix round — FW": `release-workflow.py preflight` makes these checks, and
+   more): `stamp-version.py --check` prints the version; the tag must be `v` and it, and
    the version must be `X.Y.Z` (no pre-releases in v1: task V found that a SemVer pre-release
    cannot build the MSI and that dpkg sorts `1.1.0-rc.1` after `1.1.0`; the lead's decision).
    A final version is spelled the same in PEP 440 and SemVer, so the workflow has one version.
@@ -470,7 +471,8 @@ the same day). Nothing ran on GitHub (nothing is pushed).
    run stops here, before anything is published.
 2. `sources` (`contents: write`, 5 h): `appimage-libs.sh` (task S: builds the Linux build image
    and resolves the AppImage's packages in it) → `sources-manifest.py --out … --appimage-libs …`
-   (stdout: the tag) → `gh release view TAG`: if found, its `SHA256SUMS` is downloaded; else the
+   (stdout: the tag) → `gh release view TAG` (replaced by `release-workflow.py sources-find`
+   and `sources-publish`: "Fix round — FW"): if found, its `SHA256SUMS` is downloaded; else the
    fetch image (`desktop/packaging/sources/Dockerfile`, below) is built and
    `sources-fetch.py --manifest /sources/manifest.json --out /sources/files` runs in it (the
    repository mounted read-only, uv's environment in the image), then `gh release create TAG
@@ -506,14 +508,16 @@ the same day). Nothing ran on GitHub (nothing is pushed).
      third-party binfmt image, and a build time like amd64's. It needs `ubuntu-24.04-arm` to be
      available to the repository (`docs/release.md` says what to change if it is not).
 4. `docker-tags`, after `docker`, `linux` and `windows`: `docker buildx imagetools create` with
-   the version and `latest`. No tag is published unless every package built.
+   the version and `latest` (`latest` only for the highest version since "Fix round — FW"). No
+   tag is published unless every package built.
 5. `release` (`contents: write`): `release-notes.py` → `updater-manifest.py` (the NSIS installer
    only: Linux entries come once the Linux update path is verified, the owner's answer) → the
    notes (the changelog section, a "not code-signed" line when `signed` is not true, the
    sources URL and the whole release's `SHA256SUMS`) → `gh release create --verify-tag --draft`
    with the AppImage, `.deb`, `.rpm`, NSIS + `.sig`, MSI and `latest.json`, then `gh release
    edit --draft=false --latest`. The draft keeps `releases/latest/download/latest.json` from
-   pointing at a release whose files are not all up.
+   pointing at a release whose files are not all up. (Since "Fix round — FW": the signed
+   `SHA256SUMS`, then `release-workflow.py publish`.)
 
 **`desktop/packaging/sources/Dockerfile`** (the fetch image): `ubuntu:26.04` by digest (the
 digest S used), uv 0.13.5 by digest with CPython 3.14.8, and BtbN's tools for the download
@@ -555,7 +559,8 @@ artefacts for one target; a non-https URL.
   `digestAlgorithm`, `timestampUrl`, `tsp`.
 - The signing step's overlay and `GITHUB_OUTPUT` line in PowerShell 7.4 (the
   `mcr.microsoft.com/powershell` image, removed after): valid JSON without a BOM.
-- The `run:` blocks under `bash -eo pipefail`: `version` on an exported tree (`0.1.0.dev0` and
+- The `run:` blocks under `bash -eo pipefail` (as they were before "Fix round — FW", which
+  ran its own): `version` on an exported tree (`0.1.0.dev0` and
   `1.2.0rc1` refused as pre-releases, `v1.2.1` against `1.2.0` refused, `v1.2.0` passes);
   `windows` (the `--config` array with and without signing; the signer command), `docker-tags`
   and `release` (with `gh`/`docker`/`npx` stubs that print their arguments, the real
@@ -590,3 +595,121 @@ removed).
 ## Review and fix round
 
 (Filled by the lead.)
+
+### Fix round — FW (the workflow), 2026-11-14
+
+Each finding was reproduced first; each fix has a test that fails on it (the mutation is named;
+all 39 were caught). The workflow's logic moved into **`scripts/release-workflow.py`** (stdlib
+only, one subcommand per step: `preflight`, `sources-find`, `sources-publish`, `notes`, `sums`,
+`publish`), tested in `testing/tests/test_release_workflow.py` against a fake GitHub that keeps
+releases, drafts, assets and tags as the API reports them. `gh` is its only way to GitHub, and
+any non-zero exit of `gh` stops the step.
+
+**M1: a draft or partial sources release was reused.** Reproduced in gh 2.102.1's source
+(`pkg/cmd/release/shared/fetch.go`, `create/create.go`, `create/http.go` at `v2.102.1`):
+`gh release view TAG` looks the tag up as a published release and, at the same time, as a
+draft (GraphQL `release(tagName:)`, then REST by id), so it succeeds for a draft; `gh release
+create` with files and without `--draft` creates a draft, uploads, then publishes, and deletes
+the draft only when an upload returns an error (a cancelled or timed-out job leaves it). The
+old step with a stub `gh`: a draft gave `found=true`, an HTTP 502 `found=false`. The release job
+had the same shape (`gh release create --draft` beside a leftover draft, then `gh release edit`
+by tag). Now:
+
+- `sources-find` lists the releases (`gh api --paginate --slurp
+  'repos/R/releases?per_page=100'`: the by-tag endpoint finds published releases only, the list
+  has drafts for a token with push access — REST docs; real call: a list of pages), deletes each
+  draft with the tag (`DELETE /releases/{id}`), and counts a published one as found only when it
+  has `manifest.json` with the local manifest's SHA-256 and size, `SHA256SUMS` (downloaded by
+  asset id with `Accept: application/octet-stream`; a real public asset's bytes hash to its
+  `digest`) listing exactly the manifest's archives, and each archive, every asset `state
+  uploaded` with the `digest` of its line, nothing else. Otherwise it stops and says what to do.
+  A draft with the tag can only be an interrupted run's: the concurrency group runs one release
+  at a time.
+- `sources-publish` and `publish` (the release job): a published release with the tag stops the
+  step (never replaced); drafts are deleted; `gh release create TAG --draft …` uploads (gh does
+  not publish a `--draft`); then exactly one draft must have exactly the local files (state,
+  size, digest); only then `PATCH /releases/{id}` with `draft=false` and `make_latest`. A failed
+  upload leaves the draft for the next run to delete.
+- Tests (mutations): drafts deleted, not reused (RW1); a release on a later page (RW2); a
+  published release with an unfinished, short, changed, missing or extra file, another
+  manifest, or `SHA256SUMS` that lists other archives stops the run (RW3–RW8, RW34); a published
+  version is never replaced (RW9); an incomplete draft is not published (RW10); a second draft
+  during the upload (RW32); local sums that do not match the archives (RW14); a gh failure is not
+  "not found" (RW27); `found` reaches `$GITHUB_OUTPUT` (RW28).
+
+**m6: `latest` always moved.** `preflight` sets `latest` when no `vX.Y.Z` tag is numerically
+higher (`gh api --paginate --slurp repos/R/git/matching-refs/tags/v`; real calls: `refs/tags/v…`
+entries, `[]` for this repository today); tags with a pre-release part are not versions. The
+image gets `:latest` and the release `make_latest=true` only then (REST: `make_latest` "Defaults
+to true for newly published releases", so it is always sent). Tests: RW21 (string order), RW22,
+RW11.
+
+**m7: a private repository.** `preflight` refuses when `gh api repos/R` says `private` (real:
+`true` today). Test RW20.
+
+**m8 (FW): test holes.** CL1: the git-cliff test repository gets a `sources-0123456789ab` tag
+between conventional commits; without `tag_pattern` the release's section loses the commits
+before it (caught). The run blocks' logic is in the script now: the tag (RW15), pre-releases and
+non-ASCII digits (RW16), the MSI's limits (RW17), found/not found (RW1, RW28), the notes (RW24,
+RW36), the private repository (RW20), latest (RW21, RW22). What stays in the workflow is calls,
+plus three lines of shell for the image tags (run by the harness below).
+
+**m9: the Linux packages "signed".** The release job writes `SHA256SUMS` of every file of the
+release (`sha256sum` format, name order) and `SHA256SUMS.asc` (armored, detached) with
+`RELEASE_GPG_PRIVATE_KEY` and `RELEASE_GPG_PASSPHRASE` in a new GnuPG home, then verifies it in
+a second home that holds only the first public key block of `docs/release.md`, so a signature
+users could not check stops the job. The version job runs the same on `CHANGELOG.md`: a missing
+secret, a wrong passphrase, another key or no key in the doc stop the run before anything is
+built (`preflight` names a missing secret first). Checked with GnuPG 2.4.9: a protected secret
+key imports in batch without its passphrase; a wrong passphrase fails ("Bad passphrase") in a
+new home, but signs in a home whose agent cached the right one (hence a new home per run); `gpg
+--verify` exits 0 for a good signature by an untrusted key and 1 for a changed file; a key
+without a passphrase signs with an empty `--passphrase-fd 0`; the doc's `gpg --quick-gen-key
+'Reframe releases' ed25519 sign never` works without an e-mail address. Tests: the signature
+verifies as a user checks it and fails on a changed `SHA256SUMS` (RW26); a wrong passphrase,
+another key in the doc (RW25), no key in the doc (RW35), no secret. `docs/release.md`: the key's
+procedure, the key block (empty until the owner makes the key: until then no release can be
+made) and "Check a download". The `.deb` and `.rpm` carry no package signature of their own.
+
+**m10: `tauri build` from a development tree.** Read in the bundler at `tauri-cli-v2.12.4`
+(`crates/tauri-bundler/src/bundle/windows/msi/mod.rs`, `bundle.rs`, `settings.rs`): the MSI's
+version is `bundle.windows.wix.version` when set, else `convert_version(version)`, which refuses
+a pre-release that is not a number ("optional pre-release identifier in app version must be
+numeric-only and cannot be greater than 65535 for msi target"); `validate_wix_version` allows at
+most 255.255.65535. The bundles are made in `targets` order (`nsis`, `msi`), so a dev `tauri
+build` writes the NSIS installer and then fails. Chosen: no config change (a committed
+`wix.version` would apply to releases too and need stamping); `docs/release.md` "Installers from
+a development tree": `npx tauri build --bundles nsis`, or a local, uncommitted
+`stamp-version.py --set X.Y.Z` for an MSI (as 0072's updater tests used 0.1.0 and 0.1.1). The
+release path is unchanged; `preflight` also refuses a version beyond WiX's limits (RW17). Not run
+on Windows (no VM work in Q-5). For the lead: 0072's VM procedure and `docs/m10-breakdown.md`
+("Machines and commands") still say plain `npx tauri build`.
+
+**Nits.** The version job requires `WINDOWS_CERTIFICATE_PASSWORD` and `WINDOWS_TIMESTAMP_URL`
+when `WINDOWS_CERTIFICATE` is set (RW18, RW19; `ConvertTo-SecureString` cannot take an empty
+password); the secrets reach the script only as `${{ secrets.X != '' }}`. `to_semver`: `[0-9]`
+and `fullmatch` (SV-N1, SV-N2; `'1.1.0\n'`, `'١.1.0'`, `'1.1.0rc٣'` were stamped before).
+Concurrency: GitHub's docs (read 2026-11-14) keep one running and one pending run per group, and
+a newer run cancels the pending one. `queue: max` would keep up to 100, but actionlint 1.7.12 (the
+newest `actionlint-py`, 1.7.12.25) refuses the key (`unexpected key "queue" for "concurrency"
+section`), so `docs/release.md` says to push one tag at a time and re-run a cancelled run.
+
+**Run locally** (nothing runs on GitHub): every changed run block under `bash -eo pipefail`, with
+`gh` being the tests' fake GitHub as an executable (its state in a JSON file), `docker` stubbed, a
+tree stamped 1.1.0, a throwaway GPG key pasted into a copy of `docs/release.md` and a throwaway
+updater key: `preflight` (1.1.0 the highest tag: `version=1.1.0`, `latest=true`; a private
+repository, no GPG secret and a certificate without its URL: three `::error::` lines; tag
+`v1.1.1` for 1.1.0: refused); the signing check (passes; a wrong passphrase and the committed
+doc without a key fail); sources (a leftover draft deleted, `found=false`; an upload cut after
+two files leaves a draft; the next run deletes it, uploads all five files and publishes with
+`make_latest=false` and the target; a third run: `found=true`, the downloaded `SHA256SUMS` equals
+the fetched one); the image tags with `latest` true and false; the release (latest.json with a
+real updater signature, the notes, the signed sums, a leftover draft deleted, nine assets,
+`make_latest=true`; the same step again is refused); then a user's check with the doc's
+commands ("Good signature", `sha256sum --check --ignore-missing` OK). actionlint 1.7.12 with
+shellcheck 0.11.0: clean.
+
+**Not verified** (needs GitHub): gh's writes (draft, upload, `DELETE`, `PATCH`) against the real
+API; whether a draft's assets have a `digest` right after the upload (documented "string or
+null"; null skips only the digest comparison); `${{ secrets.X != '' }}` as `true`/`false` in a
+step's environment (the documented coercion).
