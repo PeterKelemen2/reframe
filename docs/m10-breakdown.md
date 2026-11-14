@@ -522,3 +522,4 @@ pass twice in a row in WebKit, and stay green in Chromium and Firefox.
 | Date | What |
 |------|------|
 | 2026-11-14 | WebKit installed on the host (0077 Context); the `webkit` project added; first run 87 passed, 12 failed (causes A–E). This section and 0077 committed; wave 1 (W1, W2, W3) launched. |
+| 2026-11-14 | Merged W3 (92db6db: a chapter pick no longer closes the Range popover, a real defect in Chromium and WebKit), W1 (30ef787: the magnifier canvas `content-box`, flow 4 at any device pixel ratio), W2 (f84d8ce: the language picker under a still pointer; the gate waits a rendering update after each Tab and judges pictures in device pixels) and the gate's own tests (a6ec03a). The lead broke each task's fix once; its test failed each time. Whole e2e suite in Chromium, Firefox and WebKit: 303 passed twice in a row (13.7 and 14.0 min); unit 2150; lint, format, types clean. Review R1 launched. |
