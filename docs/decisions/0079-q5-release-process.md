@@ -94,6 +94,22 @@ the certificate secrets are set; an arm64 FFmpeg pin; no PyPI for v1.
    update path is checked (0072 "Task W"). Each artefact's notices list **only the part of the
    sources release its platform bundles** (task N). RFC 3161 timestamps for Windows signing.
 
+10. **The owner's answers to review R1 (2026-11-14).**
+   - **The Windows `mkvpropedit.exe` is an MXE static build** that contains Qt 6.12.0 and GNU
+     MP (and Boost and others); review R1 found it, the lead confirmed it with `strings`. Its
+     corresponding source is the MXE commit it was built with and the source of every MXE
+     package linked into it: they go into the source manifest for `windows-x64`, with their
+     licences in the Windows notices (0073's table missed them).
+   - **The AppImage runtime** (type2-runtime, static: libfuse LGPL-2.1, squashfuse, musl, zstd,
+     zlib) is pinned and its sources go into the manifest for `linux-x64` (0079 "Task S" called
+     it MIT only).
+   - **The arm64 image builds on GitHub's native `ubuntu-24.04-arm` runner**; the repository
+     is made public before the first release (the sources release must be as reachable as the
+     binaries anyway), and the workflow refuses to run while it is private.
+   - **Linux packages:** the release attaches a `SHA256SUMS` of every artefact and a detached
+     GPG signature of it (the key from a repository secret; the public key in
+     `docs/release.md`). That is the "signed" of 09 §Q-5 for the AppImage, .deb and .rpm.
+
 ## Consequences
 
 - Nothing in this step can run on GitHub before a push: the workflow is checked with

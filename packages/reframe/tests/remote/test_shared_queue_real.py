@@ -20,6 +20,7 @@ import httpx
 import psutil
 import pytest
 
+from reframe import __version__
 from reframe.cli import EXIT_FAILED, EXIT_INTERRUPTED, EXIT_OK, STOPPED_BY_OTHERS
 from reframe.models import ServerEndpoint
 from reframe.platform.power import DRY_RUN_ENV
@@ -441,7 +442,7 @@ def test_a_server_of_another_api_version_is_not_used_and_the_client_says_why(hom
     assert result.returncode == EXIT_OK, (result.stdout, result.stderr)
     pid = processes.interpreter(server.pid).pid
     assert (
-        f"warning: no Reframe server can take the jobs (Reframe 0.1.0.dev0 (pid {pid}) "
+        f"warning: no Reframe server can take the jobs (Reframe {__version__} (pid {pid}) "
         "owns the queue, and it speaks API version 2, not 1 as this reframe does): they run "
         "in this process."
     ) in result.stderr
