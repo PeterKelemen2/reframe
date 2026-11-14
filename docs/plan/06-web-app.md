@@ -613,9 +613,14 @@ F-18, built before F-16. Built on 2026-11-13: 0074 "Built"; in a group the shown
 [0075](../decisions/0075-the-range-in-a-group-and-the-shown-job.md).)
 
 ### F-16 i18n and accessibility
-- [ ] Audit that every string goes through vue-i18n (English first; the rule and its check
+- [x] Audit that every string goes through vue-i18n (English first; the rule and its check
       start in F-1). Full keyboard paths. Visible focus. WCAG AA contrast in both themes.
       Respect `prefers-reduced-motion`.
+
+  (Done on 2026-11-14. What the audit checks, and the gate in the end-to-end tests
+  (`e2e/a11y/`) that keeps it true, are in
+  [decision 0076](../decisions/0076-f16-i18n-and-accessibility-audit.md). F-17 runs the gate in
+  WebKit with the flows.)
 
 ### F-17 End-to-end tests
 - [x] Playwright against `reframe-server` with fixture media and fake FFmpeg:

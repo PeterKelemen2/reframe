@@ -459,4 +459,16 @@ start in F-1). Full keyboard paths. Visible focus. WCAG AA contrast in both them
 
 | Date | What |
 |------|------|
-| 2026-11-13 | This section and 0076 committed; wave 1 (G, K1, K2, K3 phase 1) next. |
+| 2026-11-13 | This section and 0076 committed (d222ee7); wave 1 (G, K1, K2, K3 phase 1) launched. |
+| 2026-11-13 | Phase 1 merged: K1 (b710275), K2 (50f37b6, follow-up c508865), K3 (e6c43ef, follow-up c77bc3b); G merged (f24bf3b: the gate, 42 screens, 124 e2e tests). K1–K3 phase 2 resumed on their own e2e ports. |
+| 2026-11-14 | Phase 2 merged: K3 (556d091), K2 (0869075, with the probe's straight-alpha fix), K1 (41178b6); every known list and the script-text allowlist empty; e2e 144 twice. Reviews R1 (the gate: 2 majors) and R2 (keyboard and strings: 1 major), all reproduced by the lead. Fixes FP phase 1 (edb476b), FG (95c4f10: the gate widened, 198 e2e tests) and FP phase 2 (ef2e7c9). Final checks and the docs: [0076](decisions/0076-f16-i18n-and-accessibility-audit.md) "Review and fix round". |
+
+#### Where F-16 ended (2026-11-14)
+
+Done on Linux, on `m10-hardening`, not merged into `main`, not pushed. Every worktree and
+branch of the run (G, K1, K2, K3, R1, R2, FG, FP) is removed. Each task was broken once by the
+lead after its merge, and its tests caught it. Recorded, not fixed: 0076 "Review and fix
+round". Owner question: a layout for small windows (default: a later step). The end-to-end run
+now takes 7.7 min (198 tests: five flows, the layout checks, the gate and three keyboard
+specs). Rest of M10: F-17 in WebKit (the five flows and the gate), Q-4, Q-5, the release
+checklist.

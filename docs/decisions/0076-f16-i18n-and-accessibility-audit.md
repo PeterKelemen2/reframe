@@ -686,7 +686,102 @@ fixes and removes. This task also removed its Range button from `known/shell.ts`
 
 ## Review and fix round
 
-(Filled in after the reviews.)
+Two fresh reviews (Opus 5.5, `effort: high`) of `d222ee7..41178b6` were given the code and this
+record's Decision, not the builders' accounts:
+
+- R1 asked whether the gate checks what item 1 claims.
+- R2 walked the keyboard paths and the strings area by area, and tested the tests.
+
+The lead reproduced the three majors with the reviewers' scripts on ports of their own.
+
+**The majors:**
+
+- **R1-1: whole-page walks stopped at the end of the page.** In Chromium the walk stuck on the
+  last element; in Firefox it left the page. So the workspace header, the source items, the
+  editor tabs and the login field were never judged. Removing their focus styles passed the
+  gate on `toast`, `crop-manual`, `summary`, `group` and `login`.
+- **R1-2: regions hid UI that appears only on regioned screens.** These were the season group
+  in the sources tree, the settings links and the status bar's error state. A whole-page axe
+  run on `group` found a real `label-content-name-mismatch` (2.5.3) on the group row and its
+  members, in both browsers and both themes.
+- **R2-1: Tab or Shift+Tab in any PrimeVue popup Menu sent the focus out of the page.** The
+  menus are *Add track*, *Preset actions*, *Name choices*, chapter *Export*/*Reset* and
+  `Field`'s override menu. PrimeVue hides the menu on Tab without giving the focus back.
+
+**The fixes**, each with a test that failed first, in two parallel tasks with disjoint files:
+
+- **FG (`frontend/e2e/**`)** widened the gate. Its sub-section under Task G has the details:
+  - walks start at the top of the page;
+  - axe runs on the whole page of every screen;
+  - new whole-page screens `settings` and `status-error`;
+  - each stop is judged by its own indicator, and items reached by arrow keys are judged too;
+  - the probe paints as the browser does: opacity, gradients, clipping, pixel comparison over
+    pictures;
+  - new findings `trap`, `region-exit` and `unreached`;
+  - motion is checked after the walk;
+  - axe's open contrast nodes are measured;
+  - a known entry needs its rule and its exact target.
+
+  Every check has a proof by mutation in `gate-checks.spec.ts`. The wider gate found new real
+  findings: Firefox scroll boxes whose ring was clipped, a 2.88:1 ring on the magnifier, and
+  `target-size` under the command drawer.
+- **FP (`frontend/src/**`, two phases)**, in its own sub-section:
+  - phase 1 fixed R2-1 once in `base/keyboard.ts`, R1-2's group row (the sources tree is flat
+    now), the focus lost after a move to another view, the Dialog's late refocus undoing a
+    fast Tab, the four identical names in Settings → Tools, two weak tests and three joined
+    strings;
+  - phase 2 fixed FG's new findings (an inset ring on scroll boxes, the magnifier ring, the
+    Video tab laid out above the drawer) and emptied the known lists.
+
+**The lead's checks.** Each task was merged with `--no-ff` and broken once by the lead; its
+tests failed and passed again after the restore. The merges were G, K1–K3 (both phases),
+FG and FP.
+
+R1's mutation spec was run again against the widened gate. Every mutation it makes is now
+caught on at least one screen. The ones a regioned screen still passes are caught on the
+screen that shows that part whole:
+
+- the header: `toast`, `crop-manual`, `group`;
+- the settings links: `settings`;
+- the status bar's error: `status-issues`.
+
+**The end state (2026-11-14, ef2e7c9):**
+
+- The three known lists and the script-text allowlist are empty.
+- On Linux:
+  - `uv run ruff check`, `ruff format --check`, `mypy`, `mypy --platform win32`: clean.
+  - `uv run pytest -m "not needs_gpu"`: 7798 passed, 2 skipped, 26 deselected.
+  - `npm run lint`, `fmt:check`, `typecheck`: clean.
+  - `npm test`: 2147 passed. `npm run test:server`: 105 passed. `npm run build:web`: built.
+  - `npm run e2e`: 198 passed, twice in a row, 7.7 min each. Before F-16 it was 24 tests in
+    1.3 min.
+
+**Recorded, not fixed:**
+
+- Item 5 stands: small windows, server messages, WebKit (F-17), screen readers and the native
+  dialogs are not in F-16. The owner was asked whether small windows belong in F-16; the
+  default "later" stands until an answer.
+- **Joined strings and the script-text check:**
+  - The visually hidden `{severity}: ` prefix of an issue is split across elements in nine
+    components. It needs one `{severity}: {message}` message when a second locale comes.
+  - The ` → ` of the picture pipeline would point the wrong way in a right-to-left locale.
+  - The script-text check's remaining blind spots are listed in FP's sub-section: `String()`
+    and `${x}` numbers, hand-made plurals, `push`/`map`/`join`, joins across elements.
+- **What the gate does not judge:**
+  - It does not judge arrow-key moves in radios, sliders or closed comboboxes, because the
+    arrows change their value.
+  - Axe's open nodes behind a modal mask, nodes re-rendered before the probe looks, and nodes
+    over images stay unmeasured. FG counted them, one run each (Chromium / Firefox): 41 / 41
+    behind a mask, 17 / 12 re-rendered, 6 / 4 over an image.
+  - The smooth-scroll check skips a scroll within 300 ms of another scroll or a focus change.
+    This rule has no test.
+- **The sources tree.** A season group's row now has its visible button texts in its name
+  (*… Edit group Check group Add group to queue*). Axe asks for the visible text in the name,
+  and the buttons sit in the row.
+- **Sign-in.** After a keyboard sign-in the focus is on the page, as after any page load.
+- **Flow 4 in Chromium.** The snap-note check ("Left 17 → 16" read as "Top …") failed twice
+  under load, once in G's baseline and once in K3's run. It passed in every later run, the
+  final two included. It is flow 4's, not F-16's.
 
 ### Review fixes (FP)
 
