@@ -472,3 +472,53 @@ round". Owner question: a layout for small windows (default: a later step). The 
 now takes 7.7 min (198 tests: five flows, the layout checks, the gate and three keyboard
 specs). Rest of M10: F-17 in WebKit (the five flows and the gate), Q-4, Q-5, the release
 checklist.
+
+## F-17: the flows and the gate in WebKit (2026-11-14)
+
+The spec is [06 §F-17](plan/06-web-app.md#f-17-end-to-end-tests) and
+[0077](decisions/0077-f17-webkit.md) (the host set-up, the first run's five causes A–E, the
+Done when). Same rules as above ("Rules for every agent"), with 0077 in place of 0072; every
+agent `model: "opus"`, `effort: "high"`, a fresh agent, `isolation: "worktree"` on
+`m10-hardening` (`git merge --ff-only m10-hardening` first). Commits start with `F-17: `. Each
+task fills its own section of 0077.
+
+### Tasks and waves
+
+| Wave | Task | What | Ports |
+|------|------|------|-------|
+| 1 | W1 | A (the thumbnail's focus ring) and D (the magnifier smoothed) | e2e 8720 |
+| 1 | W2 | B (focused fields covered) and C (the language picker's typing) | e2e 8730 |
+| 1 | W3 | E (flow 5: the Range popover's Selects) | e2e 8740 |
+| 2 | R1 | review: the fixes, and the gate's measurements in WebKit | e2e 8780 |
+| 3 | fixes | one agent per area of the findings | e2e 8770, 8700 |
+| lead | | merges, checks, one mutation per task, the CI timeout, the docs | e2e 8750 |
+
+Each agent runs e2e with `REFRAME_E2E_PORT=<its port>` (three servers on three ports from
+it). `npm run test:server` has fixed ports: an agent runs it only for its own test files, never
+the whole project at the same time as another agent.
+
+### Who owns which files
+
+| Task | Owns |
+|------|------|
+| W1 | `components/{media,crop,clip,dimensions}/**`, `shell/PreviewPanel.vue`, `e2e/flow4-manual-crop.spec.ts`, `e2e/a11y/{screens,known}/picture.ts` |
+| W2 | `components/{naming,language,tracks,chapters,matrix,batch}/**`, `editor/tabs/**` except `DimensionsTab.vue`, `src/styles/**`, `components/base/**`, `e2e/a11y/{gate.ts,page/**,types.ts,steps.ts}`, `e2e/a11y/keyboard-tracks.spec.ts`, `e2e/a11y/{screens,known}/{shell,tracks}.ts` |
+| W3 | `components/range/**`, `e2e/flow5-range.spec.ts` |
+| lead | `docs/**`, `playwright.config.ts`, `e2e/support/**`, `.github/**`, the stores (`src/stores/**`), anything not listed |
+
+A change in another task's file goes back to the lead in the report (with the diff). A finding
+that turns out to be the gate measuring WebKit wrongly is W2's (it owns the gate); W1 shows the
+pixels or DOM in its report and the lead routes it.
+
+### Done when (word for word in each brief)
+
+06 §F-17: "Each flow comes with its screens … M10 runs all five in Chromium and WebKit". 0077
+Decision items 3–4: each failure fixed in the app, or in the gate when the gate measures WebKit
+wrongly (shown, not assumed); a known-list entry only with a reason in 0077; the task's tests
+pass twice in a row in WebKit, and stay green in Chromium and Firefox.
+
+### F-17 progress
+
+| Date | What |
+|------|------|
+| 2026-11-14 | WebKit installed on the host (0077 Context); the `webkit` project added; first run 87 passed, 12 failed (causes A–E). This section and 0077 committed; wave 1 (W1, W2, W3) launched. |

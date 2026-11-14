@@ -252,7 +252,7 @@ jobs:
 
   frontend-server:
     # The frontend against a real reframe-server and a real FFmpeg: the server tests (vitest)
-    # and the browser flows (Playwright, Chromium and Firefox). Linux only: the tests find the
+    # and the browser flows (Playwright, Chromium, Firefox and WebKit). Linux only: the tests find the
     # pinned FFmpeg through .tools/ and start the servers with a POSIX shell.
     name: Frontend, npm run ${{ matrix.script }} (ubuntu-latest)
     strategy:
@@ -312,7 +312,7 @@ jobs:
 
       - name: Install the browsers
         if: matrix.script == 'e2e'
-        run: npx playwright install --with-deps chromium firefox
+        run: npx playwright install --with-deps chromium firefox webkit
         working-directory: frontend
 
       - run: npm run ${{ matrix.script }}

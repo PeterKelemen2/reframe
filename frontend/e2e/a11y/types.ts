@@ -4,7 +4,7 @@ export type Area = 'shell' | 'picture' | 'tracks'
 export type Check = 'axe' | 'focus' | 'motion'
 export type Theme = 'light' | 'dark'
 /** The Playwright projects the gate runs in. */
-export type Browser = 'chromium' | 'firefox'
+export type Browser = 'chromium' | 'firefox' | 'webkit'
 
 export interface Screen {
   /** Binding: the known lists and the reports name the screen by it. */
@@ -27,7 +27,7 @@ export interface Known {
   check: Check
   /** Without it, the finding is expected in both themes. */
   theme?: Theme
-  /** Without it, the finding is expected in both browsers. */
+  /** Without it, the finding is expected in every browser. */
   browser?: Browser
   /** axe's rule id, or the gate's own rule (see `RULES`). */
   rule: string

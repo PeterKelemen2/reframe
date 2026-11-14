@@ -8,7 +8,7 @@ import { projectServers, webServers } from './e2e/support/servers'
 // when a test fails.
 const headless = true
 
-const servers = projectServers(['chromium', 'firefox'])
+const servers = projectServers(['chromium', 'firefox', 'webkit'])
 
 export default defineConfig({
   testDir: './e2e',
@@ -36,6 +36,11 @@ export default defineConfig({
       name: 'firefox',
       workers: 1,
       use: { ...devices['Desktop Firefox'], headless, baseURL: servers.firefox },
+    },
+    {
+      name: 'webkit',
+      workers: 1,
+      use: { ...devices['Desktop Safari'], headless, baseURL: servers.webkit },
     },
   ],
 })
