@@ -116,7 +116,110 @@ the certificate secrets are set; an arm64 FFmpeg pin; no PyPI for v1.
 
 ## Task W: the release workflow
 
-(Filled by W.)
+Built 2026-11-14 on the AMD desktop. Nothing ran on GitHub (nothing is pushed).
+
+**`.github/workflows/release.yml`** (on `v*`; workflow `permissions: contents: read`, one
+`concurrency` group without cancelling, `UV_FROZEN=1`, every action pinned by commit SHA):
+
+1. `version`: `stamp-version.py --check` prints the version and the tag must be `v` and it;
+   `--print-semver` gives the SemVer spelling; a SemVer with `-` is a pre-release.
+   `release-notes.py VERSION` must find a section. `TAURI_SIGNING_PRIVATE_KEY` must be set: the
+   run stops here, before anything is published.
+2. `sources` (`contents: write`): the AppImage library list, `sources-manifest.py --out …
+   --appimage-libs …` → the tag; `gh release view TAG` or else `sources-fetch.py` and
+   `gh release create TAG --latest=false --target $GITHUB_SHA` with the manifest, the archives
+   and `SHA256SUMS`. Outputs: the tag and its URL; `SHA256SUMS` as the artifact `sources-sums`.
+3. In parallel:
+   - `linux`: `build.sh dist/linux` with `REFRAME_SOURCES_URL` and `REFRAME_SOURCES_SUMS`
+     (a path in the working tree: `build.sh` carries untracked files into the container), then
+     the multitrack fixture and `install-test.sh dist/linux` (0072 task L's release-job
+     commands; `appimage-test.sh` needs KWin and is a manual check in `docs/release.md`).
+   - `windows` (0072 task W's job list): `bundle-tools.py --platform windows-x64`, the sidecar,
+     `cargo install --locked cargo-about@0.9.3 --features cli`, the notices with
+     `PYTHONUTF8=1` and `--sources-url/--sources-sums`; when the secret `WINDOWS_CERTIFICATE` is
+     set, the PFX goes into `Cert:\CurrentUser\My` and an overlay with its thumbprint,
+     `digestAlgorithm` `sha256`, `timestampUrl` (variable `WINDOWS_TIMESTAMP_URL`, required
+     with the certificate) and `tsp` true is passed to `tauri build --config`, then
+     `Get-AuthenticodeSignature` must say `Valid` for both installers; output `signed`. Then
+     `tauri signer sign --app-version SEMVER` of the NSIS installer (key and password from the
+     secrets, in that step's environment only). `createUpdaterArtifacts` stays off, as 0072
+     chose.
+   - `docker` (`packages: write`), one job per platform: the notices for
+     `docker-linux-x64|arm64` into `docker/notices/THIRD_PARTY_NOTICES` (one file per build
+     context, so one build per platform: task A's Dockerfile checks the file's platform), QEMU
+     for arm64, `docker buildx build --platform linux/ARCH` pushed **by digest only**
+     (`push-by-digest=true`), the digest as an artifact.
+4. `docker-tags`, after `docker`, `linux` and `windows`: `docker buildx imagetools create` with
+   the version tag, plus `latest` for a non-pre-release. No tag is published unless every
+   package built.
+5. `release` (`contents: write`): `release-notes.py` → `updater-manifest.py` (the NSIS installer
+   only) → the notes (the changelog section, a "not code-signed" line when `signed` is not
+   true, the sources URL and its `SHA256SUMS`) → `gh release create --verify-tag --draft` with
+   the AppImage, `.deb`, `.rpm`, NSIS + `.sig`, MSI and `latest.json`, then `gh release edit
+   --draft=false --latest` (or `--prerelease --latest=false`). The draft keeps
+   `releases/latest/download/latest.json` from pointing at a release whose files are not all up.
+
+Choices beyond the spec's words, each small: a pre-release version becomes a GitHub
+pre-release, never "latest" (the updater would offer an rc to everyone) and gets no Docker
+`latest`; the Linux install test runs before anything is published; `latest.json` has no Linux
+entries (0072 task W: the AppImage/deb update is not checked).
+
+**`scripts/updater-manifest.py`** (the contract, plus `--tauri-config`, default the committed
+`tauri.conf.json`): one platform entry per artefact, `{"signature": <the .sig file>, "url":
+<base-url>/<name>}`, `version`, `notes`, `pub_date` (RFC 3339, UTC). It refuses what the app
+would refuse after download: a `.sig` without `version:` or with another version (the app has
+`requireSignedVersion`), with another `file:`, or by a key whose id is not the committed
+`pubkey`'s; a version that is not SemVer (PEP 440 `1.1.0rc1`); an artefact the app never
+updates (MSI, rpm); two artefacts for one target; a non-https URL.
+
+**Checked against the real tools** (not memory):
+
+- `tauri-plugin-updater` 2.14.1 (its source in the cargo registry): the static format
+  (`version` parsed as SemVer after stripping `v`, optional `notes`, `pub_date` RFC 3339,
+  `platforms.<target>.{url, signature}`); the target is `{os}-{arch}-{installer}` then
+  `{os}-{arch}` (`windows-x86_64-nsis`, `linux-x86_64-appimage`, `linux-x86_64-deb`); the
+  signature field is base64 of the minisign signature text; the version check reads `version:`
+  from the trusted comment.
+- `tauri signer` (tauri-cli 2.12.4), with a throwaway key in the scratch folder: `.sig` = base64
+  of `untrusted comment…`, a 74-byte signature line (`ED` + 8-byte key id + 64), `trusted
+  comment: timestamp:…<TAB>file:<basename><TAB>version:<v>`; the public key's line is `Ed` +
+  the same key id + 32 bytes, so the key id check needs no cryptography; the key's content in
+  `TAURI_SIGNING_PRIVATE_KEY` signs as `-f` does. The committed `pubkey`'s key id is
+  `80B98CB268A32743` (0072's test key). The test uses a real signature and public key from this
+  run.
+- `config.schema.json` of tauri-cli 2.12.4: `bundle.windows.certificateThumbprint`,
+  `digestAlgorithm`, `timestampUrl`, `tsp`.
+- The signing step's overlay and `GITHUB_OUTPUT` line in PowerShell 7.4 (the
+  `mcr.microsoft.com/powershell` image, removed after): valid JSON without a BOM.
+- The `run:` blocks of the `version` job (on V's stamped tree: a matching tag passes, `v0.1.0`
+  against `0.1.0.dev0` fails), `windows` (the `--config` array with and without signing; the
+  signer command), `docker-tags` and `release` (with `gh`/`docker`/`npx` stubs that print their
+  arguments, the real `updater-manifest.py` and a real signature) under `bash -eo pipefail`.
+- The action SHAs from `gh api` (`upload-artifact` v7.0.2, `download-artifact` v8.0.2,
+  `setup-qemu-action` v4.4.0, `setup-buildx-action` v4.4.1) and their inputs from their
+  `action.yml`.
+- actionlint 1.7.12 (`uv tool run --from actionlint-py==1.7.12.25 --with
+  shellcheck-py==0.11.0.1 actionlint`, so its shellcheck rule runs): no findings.
+
+**Not verified** (needs GitHub, a certificate or buildx): any job on a runner; the classic
+builder (`DOCKER_BUILDKIT=0`) and the disk space of `ubuntu-latest` for `build.sh` (locally
+about 8 GB of image and cache volumes); buildx's `containerimage.digest` metadata key and
+`imagetools create --annotation`; the arm64 build under QEMU (time); signing with a CA
+certificate and an RFC 3161 server; `gh release` against the real repository; the updater
+reading a `latest.json` from a real release.
+
+**Interfaces this workflow assumes from other tasks** (the lead reconciles):
+
+- The AppImage library list for `sources-manifest.py --appimage-libs` is written by
+  `desktop/packaging/linux/build.sh --appimage-libs FILE` (task S decides how; the step calls
+  that form).
+- `build.sh` passes `REFRAME_SOURCES_URL` and `REFRAME_SOURCES_SUMS` into the container, and
+  `build-in-container.sh` gives them to `third-party-notices.py` as `--sources-url` and
+  `--sources-sums` (neither file is task W's).
+- `third-party-notices.py --platform docker-linux-*` runs with `uv sync` and `npm ci` in
+  `frontend/` done, and needs no frozen sidecar or cargo-about.
+- `sources-fetch.py --out DIR` writes only the archives and `SHA256SUMS` into `DIR` (the
+  manifest is uploaded from outside it; a second `manifest.json` in `DIR` would collide).
 
 ## Review and fix round
 
