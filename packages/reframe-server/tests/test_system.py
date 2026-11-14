@@ -54,6 +54,11 @@ async def test_a_missing_optional_tool_tells_a_web_client_what_it_can_do(
         assert "Settings" not in tools[name]["reason"]
 
 
+async def test_diagnostics_names_the_logs_folder(api: Api) -> None:
+    body = (await api.client.get("/api/diagnostics")).json()
+    assert body["logs_dir"] == str(api.reframe.data_dir / "logs")
+
+
 async def test_encoders_is_the_capability_snapshot(api: Api) -> None:
     await api.reframe.capabilities.wait()
     body = (await api.client.get("/api/system/encoders")).json()

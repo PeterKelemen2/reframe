@@ -167,6 +167,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Diagnostics
+         * @description The diagnostics report for a bug report. Waits for a tool discovery that is running;
+         *     never waits for an encoder detection (the report gives each encoder's status now).
+         */
+        get: operations["system_diagnostics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system/encoders": {
         parameters: {
             query?: never;
@@ -1689,6 +1710,7 @@ export interface components {
             preview?: components["schemas"]["PreviewSettings"];
             queue?: components["schemas"]["QueueSettings"];
             appearance?: components["schemas"]["AppearanceSettings"];
+            diagnostics?: components["schemas"]["DiagnosticsSettings"];
         };
         /**
          * AppWarningEvent
@@ -3226,6 +3248,35 @@ export interface components {
              * @enum {string}
              */
             type: "detach";
+        };
+        /**
+         * DiagnosticsReport
+         * @description What a bug report needs, for **Copy diagnostics**.
+         */
+        DiagnosticsReport: {
+            /**
+             * Text
+             * @description The report as plain text: the app version, the OS, each tool's version and build flags,
+             *     each encoder's status with its reason, and the settings without secrets. Paths under the
+             *     user's home folder start with ``~``.
+             */
+            text: string;
+            /**
+             * Logs Dir
+             * @description The folder of ``reframe.log``, the job logs and the desktop's sidecar log (``~`` for the
+             *     home folder).
+             */
+            logs_dir: string;
+        };
+        /** DiagnosticsSettings */
+        DiagnosticsSettings: {
+            /**
+             * Log Level
+             * @description The lowest level written to ``<data>/logs/reframe.log``.
+             * @default info
+             * @enum {string}
+             */
+            log_level: "error" | "warning" | "info" | "debug";
         };
         /**
          * DimensionSettings
@@ -8096,6 +8147,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemInfo"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    system_diagnostics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnosticsReport"];
                 };
             };
             /** @description An expected failure */

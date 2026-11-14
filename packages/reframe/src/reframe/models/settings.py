@@ -19,8 +19,10 @@ __all__ = [
     "AppSettings",
     "AppearanceSettings",
     "CollisionPolicy",
+    "DiagnosticsSettings",
     "EncoderSettings",
     "LanguageSettings",
+    "LogLevel",
     "OutputDefaults",
     "PartialFilePolicy",
     "PreviewSettings",
@@ -32,6 +34,7 @@ __all__ = [
 CollisionPolicy = Literal["ask", "auto_rename", "overwrite"]
 PartialFilePolicy = Literal["delete", "keep"]
 WhenDone = Literal["nothing", "notify", "quit", "sleep", "shutdown"]
+LogLevel = Literal["error", "warning", "info", "debug"]
 
 
 class ToolPaths(DocumentModel):
@@ -91,6 +94,11 @@ class AppearanceSettings(DocumentModel):
     ui_language: str = "en"
 
 
+class DiagnosticsSettings(DocumentModel):
+    log_level: LogLevel = "info"
+    """The lowest level written to ``<data>/logs/reframe.log``."""
+
+
 class AppSettings(DocumentModel):
     """``<config>/settings.json``."""
 
@@ -102,3 +110,4 @@ class AppSettings(DocumentModel):
     preview: PreviewSettings = Field(default_factory=PreviewSettings)
     queue: QueueSettings = Field(default_factory=QueueSettings)
     appearance: AppearanceSettings = Field(default_factory=AppearanceSettings)
+    diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)

@@ -535,3 +535,52 @@ libraries of 0077 Context (redo the libjxl link after a Playwright upgrade). Rec
 changed: PrimeVue's `Select` picks on any button's press, and `Popover` takes any press inside it
 as its own (0077 "Review and fix round"). Rest of M10: Q-4, Q-5, the release checklist; S-6's
 NVIDIA/Intel checks wait for such a host.
+
+## Q-4: logging and diagnostics (2026-11-14)
+
+The spec is [09 §Q-4](plan/09-quality-and-release.md#q-4-logging-and-diagnostics) and
+[0078](decisions/0078-q4-logging-and-diagnostics.md) (Decision items 1–7). Same rules as above
+("Rules for every agent"), with 0078 in place of 0072; every agent `model: "opus"`,
+`effort: "high"`, a fresh agent, `isolation: "worktree"` on `m10-hardening`
+(`git merge --ff-only m10-hardening` first). Commits start with `Q-4: `. Each task fills its own
+section of 0078.
+
+### Wave 0 (the lead, the contract)
+
+`AppSettings.diagnostics.log_level` (`LogLevel`: `error` | `warning` | `info` | `debug`,
+default `info`) in `reframe.models.settings`; `GET /api/diagnostics` → `DiagnosticsReport
+{text: str, logs_dir: str}` in `reframe_server/routers/system.py` (a stub: empty `text`); the
+schema snapshots and `frontend/src/api/schema.d.ts`. These names and shapes are binding.
+
+### Tasks and waves
+
+| Wave | Task | What | Ports |
+|------|------|------|-------|
+| 1 | P | the app log (0078 items 1–5) and the report's text (item 6, the server part) | none (pytest only) |
+| 1 | U | Settings → Diagnostics: the log level, the logs folder, Copy diagnostics with the client part (items 4, 6, 7); against the stub, then against P's report after P merges | e2e 8720; the only one to run `npm run test:server` |
+| 2 | R1 | review | e2e 8780 |
+| lead | | merges, checks, one mutation per task, the docs | e2e 8750 |
+
+### Who owns which files
+
+| Task | Owns |
+|------|------|
+| P | new modules in `packages/reframe/src/reframe/` for the log and the report; in `service.py` only the log-level reaction to a settings change and the report's facade method; `packages/reframe-server/src/reframe_server/{app.py,__main__.py,routers/system.py}`; their tests; `frontend/src/api/schema.d.ts` (regenerated with `npm run gen:api` when a docstring changes) |
+| U | `frontend/src/components/settings/DiagnosticsSection.vue` (new) and its tests, `frontend/src/views/SettingsView.vue` (the section's place), the `settings` messages, `frontend/e2e/a11y/{screens,known}/shell.ts` (the gate's `settings-diagnostics` screen) |
+| lead | `docs/**`, `reframe/models/**`, anything not listed |
+
+### Done when (word for word in each brief)
+
+09 §Q-4 (the three bullets) as 0078 Decision items 1–7 say. P: a running server writes
+`<data>/logs/reframe.log` as JSON lines at the level of the setting, rotates it at 5 MiB with
+three old files, applies a level change without a restart, keeps running when the file cannot
+be written; `GET /api/diagnostics` gives the report of item 6 with `~` paths and no token or
+password. U: Settings → Diagnostics sets the level (one setting change), shows the logs folder,
+and **Copy diagnostics** puts the report and the client part on the clipboard with a
+confirmation; keyboard, i18n and the gate as F-16 requires; the whole e2e suite stays green.
+
+### Q-4 progress
+
+| Date | What |
+|------|------|
+| 2026-11-14 | 0078, this section and wave 0 committed; wave 1 (P, U) launched. |

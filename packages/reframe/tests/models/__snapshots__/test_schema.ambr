@@ -34,6 +34,7 @@
   dict({
     '$defs': list([
       'AppearanceSettings',
+      'DiagnosticsSettings',
       'EncoderSettings',
       'LanguageSettings',
       'NamingOptions',
@@ -46,6 +47,9 @@
     'properties': dict({
       'appearance': dict({
         '$ref': '#/$defs/AppearanceSettings',
+      }),
+      'diagnostics': dict({
+        '$ref': '#/$defs/DiagnosticsSettings',
       }),
       'encoders': dict({
         '$ref': '#/$defs/EncoderSettings',
@@ -2509,6 +2513,28 @@
       'index',
     ]),
     'title': 'DataStream',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[DiagnosticsSettings]
+  dict({
+    '$defs': list([
+    ]),
+    'properties': dict({
+      'log_level': dict({
+        'default': 'info',
+        'description': 'The lowest level written to ``<data>/logs/reframe.log``.',
+        'enum': list([
+          'error',
+          'warning',
+          'info',
+          'debug',
+        ]),
+        'title': 'Log Level',
+        'type': 'string',
+      }),
+    }),
+    'title': 'DiagnosticsSettings',
     'type': 'object',
   })
 # ---
@@ -5007,6 +5033,19 @@
     ]),
     'maxLength': 64,
     'pattern': '^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$',
+    'type': 'string',
+  })
+# ---
+# name: test_json_schema_snapshot[LogLevel]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'error',
+      'warning',
+      'info',
+      'debug',
+    ]),
     'type': 'string',
   })
 # ---

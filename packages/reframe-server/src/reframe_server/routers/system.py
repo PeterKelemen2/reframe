@@ -37,6 +37,20 @@ class SystemInfo(BaseModel):
     """The settings file is newer than this server or unreadable: changes are not saved."""
 
 
+class DiagnosticsReport(BaseModel):
+    """What a bug report needs, for **Copy diagnostics**."""
+
+    model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
+
+    text: str
+    """The report as plain text: the app version, the OS, each tool's version and build flags,
+    each encoder's status with its reason, and the settings without secrets. Paths under the
+    user's home folder start with ``~``."""
+    logs_dir: str
+    """The folder of ``reframe.log``, the job logs and the desktop's sidecar log (``~`` for the
+    home folder)."""
+
+
 class FetchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
@@ -60,6 +74,13 @@ async def info(reframe: ReframeDep, config: ConfigDep) -> SystemInfo:
         problems=problems,
         settings_read_only=settings.read_only,
     )
+
+
+@router.get("/diagnostics")
+async def diagnostics(reframe: ReframeDep) -> DiagnosticsReport:
+    """The diagnostics report for a bug report. Waits for a tool discovery that is running;
+    never waits for an encoder detection (the report gives each encoder's status now)."""
+    return DiagnosticsReport(text="", logs_dir=str(reframe.data_dir / "logs"))
 
 
 @router.get("/system/encoders")

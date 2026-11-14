@@ -97,6 +97,9 @@ Benchmarks run in CI as a non-blocking job. A regression of more than 20 % comme
 - [ ] **Copy diagnostics** in Settings: app version, OS, tool versions and build flags, encoder
       statuses with reasons, settings with secrets removed. Used in bug reports.
 
+(How: [decision 0078](../decisions/0078-q4-logging-and-diagnostics.md): only the server writes
+`reframe.log`; the level is `AppSettings.diagnostics.log_level`; `GET /api/diagnostics`.)
+
 ## Q-5 Release process
 
 - [ ] Semantic versioning. One version source (core `__version__`). The server, frontend and
