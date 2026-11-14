@@ -12,6 +12,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 
+from reframe import applog
+from reframe.models.settings import LogLevel
 from reframe.service import Reframe
 from reframe_server import __version__, openapi, owner, security, static
 from reframe_server.api import JsonTextResponse, operation_id
@@ -73,17 +75,32 @@ first message and the media URLs accept a signature."""
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     config: ServerConfig = app.state.config
-    reframe = await Reframe.create(config.config_dir, config.data_dir)
-    hub = EventHub(reframe.events, config, hide=functools.partial(hide_server_folders, reframe))
-    app.state.reframe, app.state.hub = reframe, hub
+    app_log: applog.AppLog | None = None
+
+    def follow(level: LogLevel) -> None:
+        if app_log is not None:
+            app_log.set_level(level)
+
+    reframe = await Reframe.create(config.config_dir, config.data_dir, on_log_level=follow)
+    app_log = applog.install(
+        applog.logs_dir(reframe.data_dir), reframe.settings.get().diagnostics.log_level
+    )
+    app.state.app_log = app_log
     try:
-        owner.start(app)
-        yield
+        hub = EventHub(reframe.events, config, hide=functools.partial(hide_server_folders, reframe))
+        app.state.reframe, app.state.hub = reframe, hub
+        try:
+            owner.start(app)
+            yield
+        finally:
+            owner.withdraw(app)
+            await hub.close()
+            await reframe.close()
+            app.state.reframe = None
     finally:
-        owner.withdraw(app)
-        await hub.close()
-        await reframe.close()
-        app.state.reframe = None
+        if app_log is not None:
+            app_log.close()
+        app.state.app_log = None
 
 
 def _no_shutdown() -> None:
@@ -96,7 +113,8 @@ def create_app(config: ServerConfig) -> FastAPI:
     ``app.state``: ``config``, ``instance`` (random id of this run), ``started``
     (``time.monotonic()``), ``sources`` (:class:`SourceRegistry`), ``request_shutdown`` (the
     entry point replaces it), ``exit_code`` (the entry point's code when the app does not
-    start), and during the lifespan ``reframe`` and ``hub``.
+    start), and during the lifespan ``reframe``, ``hub`` and ``app_log`` (``None`` when
+    ``reframe.log`` cannot be written).
     """
     app = FastAPI(
         title="Reframe",
@@ -114,6 +132,7 @@ def create_app(config: ServerConfig) -> FastAPI:
     app.state.sources = SourceRegistry()
     app.state.reframe = None
     app.state.hub = None
+    app.state.app_log = None
     app.state.request_shutdown = _no_shutdown
     app.state.exit_code = 1
     install_error_handlers(app)

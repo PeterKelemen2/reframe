@@ -20,11 +20,12 @@ from types import TracebackType
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-from reframe import analysis, paths, preview
+from reframe import analysis, applog, paths, preview
 from reframe.analysis.subtitlefile import inspect_subtitle_file
 from reframe.batch.service import BatchService
 from reframe.capabilities import CapabilityService
 from reframe.definitions import load_definitions
+from reframe.diagnostics import build_report
 from reframe.events import EventBus
 from reframe.jobs import JobService
 from reframe.jsonpatch import JsonPatchError, apply_patch
@@ -35,7 +36,7 @@ from reframe.models.job import JobSettings
 from reframe.models.media import MediaSource, SubtitleFileInfo
 from reframe.models.naming import NamingOptions
 from reframe.models.preset import FieldChange, Preset, PresetFile
-from reframe.models.settings import AppSettings
+from reframe.models.settings import AppSettings, LogLevel
 from reframe.models.tasks import TaskInfo
 from reframe.models.template import JobTemplate
 from reframe.models.tools import ToolInfo, ToolName, ToolSet, ToolStatus
@@ -932,6 +933,7 @@ class Reframe:
         data_dir: Path,
         cache_dir: Path,
         settings: AppSettings | None = None,
+        on_log_level: Callable[[LogLevel], None] | None = None,
     ) -> None:
         """Wire the services without starting anything. Use :meth:`create` instead.
 
@@ -943,6 +945,7 @@ class Reframe:
         self.cache_dir = cache_dir
         self._closed = False
         self._reactions: set[asyncio.Task[None]] = set()
+        self._on_log_level = on_log_level
         self.events = EventBus()
         self.settings = SettingsService(
             SettingsStore(config_dir, self.events),
@@ -1020,6 +1023,7 @@ class Reframe:
         data_dir: Path | None = None,
         *,
         cache_dir: Path | None = None,
+        on_log_level: Callable[[LogLevel], None] | None = None,
     ) -> Reframe:
         """Create the facade and start tool discovery and encoder detection in the background.
         Returns at once. The saved queue is not opened here: the queue opens it at its first use.
@@ -1027,12 +1031,21 @@ class Reframe:
         The folders default to those of :mod:`reframe.paths`. ``data_dir`` also decides where
         the fetched tools are looked for (``<data dir>/tools``). Nothing is created on disk
         until a service writes there.
+
+        ``on_log_level`` is called with the new level whenever a settings change sets another
+        ``diagnostics.log_level``, before ``settings.update`` returns.
         """
         config = Path(config_dir) if config_dir is not None else paths.config_dir()
         data = Path(data_dir) if data_dir is not None else paths.data_dir()
         cache = Path(cache_dir) if cache_dir is not None else paths.cache_dir()
         settings = cls._load_settings(config)
-        app = cls(config_dir=config, data_dir=data, cache_dir=cache, settings=settings)
+        app = cls(
+            config_dir=config,
+            data_dir=data,
+            cache_dir=cache,
+            settings=settings,
+            on_log_level=on_log_level,
+        )
         app.tools.start()
         app.capabilities.start()
         return app
@@ -1048,15 +1061,35 @@ class Reframe:
         """The current settings (a copy). The one place where the services read them."""
         return self.settings.get()
 
+    async def diagnostics(self, *, server: Mapping[str, str] | None = None) -> str:
+        """The diagnostics report (:func:`reframe.diagnostics.build_report`); ``server``: the
+        lines the server adds after the version. Waits for a running tool discovery, never for
+        an encoder detection: the report says that one is running."""
+        tools = await self.tools.status()
+        return await asyncio.to_thread(
+            build_report,
+            tools=tools,
+            encoders=self.capabilities.snapshot,
+            settings=self.settings.get(),
+            logs=applog.logs_dir(self.data_dir),
+            server=server,
+        )
+
     def _settings_changed(self, old: AppSettings, new: AppSettings) -> None:
         """React to a settings change: tool discovery for tool paths, encoder detection for
-        the hardware-test settings. Runs in the background; :meth:`close` cancels it."""
+        the hardware-test settings (in the background; :meth:`close` cancels it), and a new
+        log level at once."""
+        if self._closed:
+            return
+        level = new.diagnostics.log_level
+        if self._on_log_level is not None and level != old.diagnostics.log_level:
+            self._on_log_level(level)
         tools = old.tools.model_dump(mode="json") != new.tools.model_dump(mode="json")
         encoders = (old.encoders.hardware_tests, old.encoders.vaapi_device) != (
             new.encoders.hardware_tests,
             new.encoders.vaapi_device,
         )
-        if self._closed or not (tools or encoders):
+        if not (tools or encoders):
             return
         task = asyncio.get_running_loop().create_task(
             self._react(tools=tools, encoders=encoders), name="reframe-settings-changed"
