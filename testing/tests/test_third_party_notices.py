@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
+import re
 import shutil
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -390,23 +393,214 @@ def test_the_notices_ship_in_every_desktop_package() -> None:
     assert tpn.DEFAULT_OUT.parent == REPO_ROOT / "desktop" / "src-tauri" / "resources" / "notices"
 
 
-SUMS = (
-    f"{'a' * 64}  ffmpeg-2a571b606854.tar.xz\n{'b' * 64} *ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar\n"
-)
+ALL_FFMPEG = ["linux-arm64", "linux-x64", "windows-x64"]
+#: A small source manifest: archive name → (kind, platforms), one of each kind of entry that
+#: decides which package bundles it.
+MANIFEST = {
+    "ffmpeg-2a571b606854.tar.xz": ("git", ALL_FFMPEG),
+    "ffmpeg-builds-6c9aec5d1a2b.tar.xz": ("git", ALL_FFMPEG),
+    "btbn-x264-0123456789ab.tar.xz": ("btbn-stage", ALL_FFMPEG),
+    "btbn-davs2-0123456789ab.tar.xz": ("btbn-stage", ["linux-x64"]),
+    "btbn-mingw-0123456789ab.tar.xz": ("btbn-stage", ["windows-x64"]),
+    "btbn-armonly-0123456789ab.tar.xz": ("btbn-stage", ["linux-arm64"]),
+    "mkvtoolnix-103.0.tar.xz": ("url", ["windows-x64"]),
+    "MediaInfo_CLI_26.10_GNU_FromSource.tar.xz": ("url", ["windows-x64"]),
+    "libva-2.24.1.tar.bz2": ("url", ["linux-x64"]),
+    "ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar": ("ubuntu-source", ["linux-x64"]),
+}
+EVERY_PLATFORM = ["ffmpeg-2a571b606854.tar.xz", "ffmpeg-builds-6c9aec5d1a2b.tar.xz"]
+EVERY_PLATFORM += ["btbn-x264-0123456789ab.tar.xz"]
+BUNDLED = {
+    "linux-x64": [
+        *EVERY_PLATFORM,
+        "btbn-davs2-0123456789ab.tar.xz",
+        "libva-2.24.1.tar.bz2",
+        "ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar",
+    ],
+    "windows-x64": [
+        *EVERY_PLATFORM,
+        "btbn-mingw-0123456789ab.tar.xz",
+        "mkvtoolnix-103.0.tar.xz",
+        "MediaInfo_CLI_26.10_GNU_FromSource.tar.xz",
+    ],
+    "docker-linux-x64": [*EVERY_PLATFORM, "btbn-davs2-0123456789ab.tar.xz"],
+    "docker-linux-arm64": [*EVERY_PLATFORM, "btbn-armonly-0123456789ab.tar.xz"],
+}
 SOURCES_URL = "https://github.com/owner/reframe/releases/tag/sources-0123456789ab"
 
 
-def test_the_notices_name_the_sources_release_and_each_archives_checksum(tmp_path: Path) -> None:
-    sums = tmp_path / "SHA256SUMS"
-    sums.write_text(SUMS)
+def _checksum(archive: str) -> str:
+    return hashlib.sha256(archive.encode()).hexdigest()
 
-    preface = tpn.sources_text(SOURCES_URL, tpn.read_sources_sums(sums))
-    text = tpn.render([], version="1.0.0", platform="windows-x64", preface=[preface])
 
-    lines = text.splitlines()
-    assert f"  {SOURCES_URL}" in lines
-    assert f"  {'a' * 64}  ffmpeg-2a571b606854.tar.xz" in lines
-    assert f"  {'b' * 64}  ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar" in lines
+def _sources(
+    folder: Path, manifest: Mapping[str, tuple[str, list[str]]] = MANIFEST, sums: str = ""
+) -> list[str]:
+    """The ``--sources-*`` options for ``manifest`` and its sums (by default one line each)."""
+    entries = [
+        {"archive": name, "kind": kind, "name": name, "platforms": platforms}
+        for name, (kind, platforms) in sorted(manifest.items())
+    ]
+    path = folder / "manifest.json"
+    path.write_text(json.dumps({"schema_version": 1, "entries": entries}))
+    if not sums:
+        sums = "".join(f"{_checksum(name)}  {name}\n" for name in sorted(manifest))
+    (folder / "SHA256SUMS").write_text(sums)
+    return [
+        "--sources-url",
+        SOURCES_URL,
+        "--sources-sums",
+        str(folder / "SHA256SUMS"),
+        "--sources-manifest",
+        str(path),
+    ]
+
+
+@pytest.fixture
+def no_sections(monkeypatch: pytest.MonkeyPatch) -> None:
+    entry = tpn.Entry("ffmpeg", "n9.0", "GPL-3.0-or-later")
+    monkeypatch.setattr(tpn, "docker_sections", lambda *args: [("Bundled tools", [entry])])
+    monkeypatch.setattr(tpn, "desktop_sections", lambda *args: [("Bundled tools", [entry])])
+
+
+def _listed_archives(text: str) -> list[str]:
+    return [line.split()[1] for line in text.splitlines() if re.match(r"^  [0-9a-f]{64}  ", line)]
+
+
+@pytest.mark.usefixtures("no_sections")
+@pytest.mark.parametrize("platform", sorted(BUNDLED))
+def test_the_notices_list_only_the_archives_that_the_platform_bundles(
+    tmp_path: Path, platform: str
+) -> None:
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    code = tpn.main(["--platform", platform, "--out", str(out), *_sources(tmp_path)])
+
+    assert code == 0
+    text = out.read_text()
+    assert f"  {SOURCES_URL}" in text.splitlines()
+    assert sorted(_listed_archives(text)) == sorted(BUNDLED[platform])
+    for name in BUNDLED[platform]:
+        assert f"  {_checksum(name)}  {name}" in text.splitlines()
+
+
+@pytest.mark.parametrize(
+    ("archive", "platforms"),
+    [
+        ("mkvtoolnix-103.0.tar.xz", {"windows-x64"}),
+        ("ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar", {"linux-x64"}),
+        ("libva-2.24.1.tar.bz2", {"linux-x64"}),
+        ("btbn-armonly-0123456789ab.tar.xz", {"docker-linux-arm64"}),
+        ("btbn-mingw-0123456789ab.tar.xz", {"windows-x64"}),
+        ("ffmpeg-2a571b606854.tar.xz", set(BUNDLED)),
+    ],
+)
+def test_each_kind_of_source_goes_to_the_packages_that_bundle_it(
+    archive: str, platforms: set[str]
+) -> None:
+    kind, ffmpeg_platforms = MANIFEST[archive]
+    entry = {"archive": archive, "kind": kind, "platforms": ffmpeg_platforms}
+
+    assert {p for p in BUNDLED if tpn.bundles(entry, p)} == platforms
+
+
+def test_the_platforms_with_notices_all_have_a_sources_selection() -> None:
+    assert set(BUNDLED) == {*tpn.RUST_TARGETS, *tpn.DOCKER_PLATFORMS}
+
+
+def test_an_unknown_kind_of_source_is_an_error() -> None:
+    with pytest.raises(tpn.NoticesError, match="unknown source kind"):
+        tpn.bundles({"archive": "x.tar", "kind": "svn", "platforms": ["linux-x64"]}, "linux-x64")
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_an_archive_in_the_sums_that_no_manifest_entry_names_is_an_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sums = "".join(f"{_checksum(n)}  {n}\n" for n in [*MANIFEST, "btbn-stray-0123.tar.xz"])
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    code = tpn.main(["--platform", "linux-x64", "--out", str(out), *_sources(tmp_path, sums=sums)])
+
+    assert code == 1
+    assert "btbn-stray-0123.tar.xz" in capsys.readouterr().err
+    assert not out.exists()
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_a_bundled_archive_missing_from_the_sums_is_an_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sums = "".join(f"{_checksum(n)}  {n}\n" for n in MANIFEST if not n.startswith("libva"))
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    code = tpn.main(["--platform", "linux-x64", "--out", str(out), *_sources(tmp_path, sums=sums)])
+
+    assert code == 1
+    assert "the sums have no line for libva-2.24.1.tar.bz2" in capsys.readouterr().err
+    assert not out.exists()
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_another_platforms_archive_missing_from_the_sums_is_not_this_ones_concern(
+    tmp_path: Path,
+) -> None:
+    sums = "".join(f"{_checksum(n)}  {n}\n" for n in MANIFEST if not n.startswith("libva"))
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    code = tpn.main(
+        ["--platform", "windows-x64", "--out", str(out), *_sources(tmp_path, sums=sums)]
+    )
+
+    assert code == 0
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_a_manifest_without_the_platforms_ffmpeg_is_an_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    manifest = {
+        name: (kind, [p for p in platforms if p != "linux-arm64"])
+        for name, (kind, platforms) in MANIFEST.items()
+        if platforms != ["linux-arm64"]
+    }
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+    options = _sources(tmp_path, manifest)
+
+    code = tpn.main(["--platform", "docker-linux-arm64", "--out", str(out), *options])
+
+    assert code == 1
+    assert "no source of docker-linux-arm64" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "not json",
+        '{"schema_version": 2, "entries": [{"archive": "a.tar", "platforms": []}]}',
+        '{"schema_version": 1, "entries": []}',
+        '{"schema_version": 1, "entries": [{"archive": "a.tar"}]}',
+        "[]",
+    ],
+)
+def test_a_file_that_is_not_a_source_manifest_is_an_error(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "manifest.json"
+    path.write_text(content)
+
+    with pytest.raises(tpn.NoticesError):
+        tpn.read_sources_manifest(path)
+
+
+@pytest.mark.parametrize("given", [[0], [1], [2], [0, 1], [0, 2], [1, 2]])
+def test_the_sources_options_are_given_all_three_or_none(tmp_path: Path, given: list[int]) -> None:
+    options = _sources(tmp_path)
+    pairs = [options[i : i + 2] for i in range(0, 6, 2)]
+    partial = [word for i in given for word in pairs[i]]
+
+    with pytest.raises(SystemExit) as exit_info:
+        tpn.main(["--platform", "linux-x64", "--out", str(tmp_path / "N"), *partial])
+
+    assert exit_info.value.code == 2
 
 
 @pytest.mark.parametrize("content", ["", "abc  file.tar\n", f"{'a' * 64}  ../file.tar\n"])
@@ -420,34 +614,11 @@ def test_a_sums_file_that_is_not_sha256sums_output_is_an_error(
         tpn.read_sources_sums(sums)
 
 
-def test_a_sources_url_without_its_sums_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(SystemExit) as exit_info:
-        tpn.main(["--platform", "linux-x64", "--out", str(tmp_path / "N"), "--sources-url", "x"])
-
-    assert exit_info.value.code == 2
-
-
-def test_the_sources_release_comes_before_the_entries_in_the_written_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    entry = tpn.Entry("ffmpeg", "n9.0", "GPL-3.0-or-later")
-    monkeypatch.setattr(tpn, "docker_sections", lambda *args: [("Bundled tools", [entry])])
-    sums = tmp_path / "SHA256SUMS"
-    sums.write_text(SUMS)
+@pytest.mark.usefixtures("no_sections")
+def test_the_sources_release_comes_before_the_entries_in_the_written_file(tmp_path: Path) -> None:
     out = tmp_path / "THIRD_PARTY_NOTICES"
 
-    code = tpn.main(
-        [
-            "--platform",
-            "docker-linux-arm64",
-            "--out",
-            str(out),
-            "--sources-url",
-            SOURCES_URL,
-            "--sources-sums",
-            str(sums),
-        ]
-    )
+    code = tpn.main(["--platform", "docker-linux-arm64", "--out", str(out), *_sources(tmp_path)])
 
     assert code == 0
     text = out.read_text()

@@ -1,13 +1,14 @@
 """Write THIRD_PARTY_NOTICES for a desktop package or the Docker image: the licences of the
 Python packages that the frozen sidecar (or the image) ships, of the frontend's production
 packages and of the desktop app's Rust crates, the bundled tool builds with their licences and
-corresponding-source links, and the sources release with the SHA-256 of each archive in it.
+corresponding-source links, and the sources release with the SHA-256 of each of its archives that
+the package's platform bundles.
 
 Run it after the sidecar build and the tools layout, in the project environment with
 pip-licenses next to it; ``npx`` and ``cargo about`` must be on ``PATH``::
 
     uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py --platform linux-x64 \\
-        --sources-url URL --sources-sums SHA256SUMS
+        --sources-url URL --sources-sums SHA256SUMS --sources-manifest manifest.json
 
 For the Docker image, ``--tools`` holds only the FFmpeg folder that ``fetch-tools.py`` makes,
 and the interpreter must be the one the image installs (``uv run --python``).
@@ -283,16 +284,78 @@ def read_sources_sums(path: Path) -> list[tuple[str, str]]:
     return sums
 
 
+def read_sources_manifest(path: Path) -> list[Mapping[str, Any]]:
+    """The entries of a ``sources-manifest.py`` manifest.
+
+    :raises NoticesError: the file is not such a manifest.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        raise NoticesError(f"cannot read the source manifest {path}: {e}") from e
+    entries = data.get("entries") if isinstance(data, dict) else None
+    if not isinstance(entries, list) or not entries or data.get("schema_version") != 1:
+        raise NoticesError(f"{path}: not a source manifest with entries")
+    for entry in entries:
+        if not (
+            isinstance(entry, dict)
+            and isinstance(entry.get("archive"), str)
+            and isinstance(entry.get("platforms"), list)
+        ):
+            raise NoticesError(f"{path}: an entry without an archive or platforms: {entry}")
+    return entries
+
+
+def bundles(entry: Mapping[str, Any], platform: str) -> bool:
+    """Whether a package of ``platform`` bundles the source of a manifest entry.
+
+    The ``platforms`` of an entry are FFmpeg platforms for the FFmpeg build's sources and
+    desktop package platforms for the others, so the image, which bundles only FFmpeg (its
+    other packages are Debian's), matches only the former.
+
+    :raises NoticesError: the entry is of a kind this script does not know.
+    """
+    kind = entry.get("kind")
+    if kind in ("git", "btbn-stage"):
+        ffmpeg = DOCKER_PLATFORMS[platform][0] if platform in DOCKER_PLATFORMS else platform
+        return ffmpeg in entry["platforms"]
+    if kind in ("url", "ubuntu-source"):
+        return platform in entry["platforms"]
+    raise NoticesError(f"{entry['archive']}: unknown source kind {kind!r}")
+
+
+def platform_sources(
+    entries: Sequence[Mapping[str, Any]], sums: Sequence[tuple[str, str]], platform: str
+) -> list[tuple[str, str]]:
+    """``(sha256, archive)`` of each archive in ``sums`` that ``platform`` bundles.
+
+    :raises NoticesError: ``sums`` has an archive of no entry, a bundled entry has no sum, or
+        ``platform`` bundles nothing (the manifest was made without its FFmpeg pin).
+    """
+    archives = {str(entry["archive"]) for entry in entries}
+    unknown = sorted(name for _, name in sums if name not in archives)
+    if unknown:
+        raise NoticesError(f"the sums list archives of no manifest entry: {', '.join(unknown)}")
+    checksums = {name: sha256 for sha256, name in sums}
+    wanted = sorted(str(entry["archive"]) for entry in entries if bundles(entry, platform))
+    if not wanted:
+        raise NoticesError(f"the source manifest has no source of {platform}")
+    missing = [name for name in wanted if name not in checksums]
+    if missing:
+        raise NoticesError(f"the sums have no line for {', '.join(missing)}")
+    return [(checksums[name], name) for name in wanted]
+
+
 def sources_text(url: str, sums: Sequence[tuple[str, str]]) -> str:
     lines = [
         "The source code of the third-party parts under the GPL or LGPL (FFmpeg and the",
-        "libraries its build links, with the build scripts; MKVToolNix; the distribution",
-        "libraries of the AppImage) is in this sources release:",
+        "libraries its build links, with the build scripts, and the other bundled parts",
+        "below) is in this sources release:",
         "",
         f"  {url}",
         "",
-        "It holds a manifest of these sources and one archive for each. The SHA-256 of each",
-        "archive:",
+        "It holds the sources of every Reframe package and a manifest of them. This",
+        "package's parts are these archives, with the SHA-256 of each:",
         "",
     ]
     return "\n".join(lines + [f"  {sha256}  {name}" for sha256, name in sums])
@@ -608,16 +671,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--tools", type=Path, default=DEFAULT_TOOLS)
     parser.add_argument("--sources-url", help="the sources release that the notices name")
     parser.add_argument("--sources-sums", type=Path, help="that release's SHA256SUMS")
+    parser.add_argument("--sources-manifest", type=Path, help="that release's manifest.json")
     args = parser.parse_args(argv)
-    if (args.sources_url is None) != (args.sources_sums is None):
-        parser.error("--sources-url and --sources-sums go together")
+    given = [args.sources_url, args.sources_sums, args.sources_manifest]
+    if None in given and any(value is not None for value in given):
+        parser.error("--sources-url, --sources-sums and --sources-manifest go together")
     # The packages carry the desktop app's version, not the core's.
     config = json.loads((TAURI_DIR / "tauri.conf.json").read_text(encoding="utf-8"))
 
     try:
         preface = []
         if args.sources_url is not None:
-            preface.append(sources_text(args.sources_url, read_sources_sums(args.sources_sums)))
+            sources = platform_sources(
+                read_sources_manifest(args.sources_manifest),
+                read_sources_sums(args.sources_sums),
+                args.platform,
+            )
+            preface.append(sources_text(args.sources_url, sources))
         if args.platform in DOCKER_PLATFORMS:
             preface.append(
                 "The Debian packages installed in the image are listed, with their source\n"

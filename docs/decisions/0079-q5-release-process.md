@@ -331,6 +331,28 @@ Read in a depth-1 clone of `github.com/BtbN/FFmpeg-Builds` at `build_scripts_com
   for `docker-linux-x64`: 1 tool, CPython 3.14.8, 38 Python packages and MediaInfoLib 24.12, 105
   JavaScript packages.
 
+**Fix — N (notices per platform), 2026-11-14.** The owner's answer (item 9): each package's
+notices list only the archives its platform bundles. `third-party-notices.py` takes
+`--sources-manifest FILE` with `--sources-url` and `--sources-sums` (all three or none: exit 2).
+The manifest needed no new field (its tag is unchanged): an entry's `kind` says what its
+`platforms` mean. `git` and `btbn-stage` list FFmpeg platforms, so they go to every package of
+that FFmpeg platform (`linux-x64` → the desktop Linux packages and `docker-linux-x64`,
+`linux-arm64` → `docker-linux-arm64`, `windows-x64` → Windows). `url` (MKVToolNix, MediaInfo:
+`windows-x64`; libva: `linux-x64`) and `ubuntu-source` (`linux-x64`) list desktop package
+platforms, so the image, which bundles only FFmpeg, gets none of them. An unknown kind, an
+archive in the sums that no entry names, a bundled entry without a sum, and a platform with no
+entry (a manifest made without its FFmpeg pin) are errors. The notices text says the release
+holds the sources of every package and lists this package's archives. `build.sh` takes
+`REFRAME_SOURCES_MANIFEST` (realpath'd, mounted read-only at `/sources/manifest.json`; the three
+variables together or none, and each file must exist, before any `docker` call), and
+`build-in-container.sh` passes `--sources-manifest /sources/manifest.json`. Run here: the real
+`sources-manifest.py` (with the task S AppImage list) gave 219 entries, tag
+`sources-baff46a3d47a` (the same bytes as task S's last run); with a sums file made from it,
+`linux-x64` lists 215 archives (2 git, 115 stages, libva, 97 Ubuntu sources), `windows-x64` 100
+(2 git, 96 stages, MKVToolNix, MediaInfo), `docker-linux-x64` 117 (2 git, 115 stages),
+`docker-linux-arm64` 114 (2 git, 112 stages; no davs2, xavs2, onevpl); every archive is in at
+least one. The workflow passes the manifest it fetched with (task W).
+
 ## Task A: the arm64 pin and the Docker image
 
 **The pin** (`tools/ffmpeg.toml`, `[builds.default.platforms.linux-arm64]`, copied into the
