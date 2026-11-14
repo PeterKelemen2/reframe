@@ -110,6 +110,17 @@ the certificate secrets are set; an arm64 FFmpeg pin; no PyPI for v1.
      GPG signature of it (the key from a repository secret; the public key in
      `docs/release.md`). That is the "signed" of 09 §Q-5 for the AppImage, .deb and .rpm.
 
+11. **The owner's answers to the fix round's questions (2026-11-14).**
+   - **The Windows installers stop bundling `mkvpropedit.exe`.** The upstream binary links
+     OpenSSL 4 (Apache-2.0) into a GPL-2.0-only program, and Apache-2.0 is generally held to be
+     incompatible with GPL-2.0-only (task FS). Windows users install MKVToolNix themselves;
+     Settings → Tools and the first-run check already report a missing tool with its reason.
+     The MXE sources leave the manifest with it; MediaInfo stays bundled.
+   - **Boost's source is not in the sources release** (moot once mkvpropedit goes).
+   - **The notices carry the full licence text** (with its copyright lines) of every bundled
+     third-party part, not only its name and source link: the BSD/MIT/ISC/zlib-style licences ask
+     for the text in a binary distribution.
+
 ## Consequences
 
 - Nothing in this step can run on GitHub before a push: the workflow is checked with
