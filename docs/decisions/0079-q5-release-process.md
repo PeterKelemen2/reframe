@@ -440,7 +440,136 @@ that cover both platforms instead.
 
 ## Task W: the release workflow
 
-(Filled by W.)
+Built 2026-11-14 on the AMD desktop, then reconciled with what V, S and A delivered (phase 2,
+the same day). Nothing ran on GitHub (nothing is pushed).
+
+**`.github/workflows/release.yml`** (on `v*`; workflow `permissions: contents: read`, one
+`concurrency` group without cancelling, `UV_FROZEN=1`, every action pinned by commit SHA):
+
+1. `version`: `stamp-version.py --check` prints the version; the tag must be `v` and it, and
+   the version must be `X.Y.Z` (no pre-releases in v1: task V found that a SemVer pre-release
+   cannot build the MSI and that dpkg sorts `1.1.0-rc.1` after `1.1.0`; the lead's decision).
+   A final version is spelled the same in PEP 440 and SemVer, so the workflow has one version.
+   `release-notes.py VERSION` must find a section. `TAURI_SIGNING_PRIVATE_KEY` must be set: the
+   run stops here, before anything is published.
+2. `sources` (`contents: write`, 5 h): `appimage-libs.sh` (task S: builds the Linux build image
+   and resolves the AppImage's packages in it) → `sources-manifest.py --out … --appimage-libs …`
+   (stdout: the tag) → `gh release view TAG`: if found, its `SHA256SUMS` is downloaded; else the
+   fetch image (`desktop/packaging/sources/Dockerfile`, below) is built and
+   `sources-fetch.py --manifest /sources/manifest.json --out /sources/files` runs in it (the
+   repository mounted read-only, uv's environment in the image), then `gh release create TAG
+   --latest=false --target $GITHUB_SHA` with the manifest and `files/*`. `df -h` and `du -sh`
+   go to the log (the size of a new sources release). The artifact `sources` carries the
+   manifest, `SHA256SUMS` and `appimage-libs.json` to the other jobs.
+3. In parallel:
+   - `linux`: `build.sh dist/linux` with `REFRAME_SOURCES_URL`, `REFRAME_SOURCES_SUMS`,
+     `REFRAME_SOURCES_MANIFEST` and `REFRAME_APPIMAGE_LIBS` (paths; `build.sh` mounts them and
+     checks the built AppImage's packages against the list: if apt moved since the `sources`
+     job, it fails and the release is run again, `docs/release.md`), then the multitrack fixture
+     and `install-test.sh dist/linux`. `appimage-test.sh` needs KWin and is a manual check.
+   - `windows` (0072 task W's job list): `bundle-tools.py --platform windows-x64`, the sidecar,
+     `cargo install --locked cargo-about@0.9.3 --features cli`, the notices with `PYTHONUTF8=1`,
+     `--sources-url`, `--sources-sums` and `--sources-manifest`; when the secret
+     `WINDOWS_CERTIFICATE` is set, the PFX goes into `Cert:\CurrentUser\My` and an overlay with
+     its thumbprint, `digestAlgorithm` `sha256`, `timestampUrl` (variable
+     `WINDOWS_TIMESTAMP_URL`, required with the certificate) and `tsp` true (RFC 3161, the
+     owner's answer) is passed to `tauri build --config`, then `Get-AuthenticodeSignature` must
+     say `Valid` for both installers; output `signed`. Then `tauri signer sign --app-version
+     VERSION` of the NSIS installer (key and password from the secrets, in that step's
+     environment only). `createUpdaterArtifacts` stays off, as 0072 chose.
+   - `docker` (`packages: write`), one job per platform, each on a runner of its architecture
+     (`ubuntu-24.04`, `ubuntu-24.04-arm`): `fetch-tools.py --platform linux-x64|linux-arm64
+     --install-dir $RUNNER_TEMP/tools/ffmpeg` (FFmpeg's licence for the notices), the notices
+     with `uv run --python 3.14.8 --with pip-licenses==5.5.5 … --platform docker-linux-x64|arm64
+     --tools … --sources-url/-sums/-manifest … --out docker/notices/THIRD_PARTY_NOTICES` after
+     `npm ci` in `frontend/`, then `docker buildx build --platform linux/ARCH` pushed **by digest
+     only** (`push-by-digest=true`), the digest as an artifact. One build per platform because
+     the notices differ per platform and the Dockerfile refuses another platform's (task A).
+     The arm64 runner instead of QEMU: no emulation (the image build runs `ffmpeg -version` of
+     the arm64 build natively, as A's `fetch-tools.py` check does on an aarch64 host), no
+     third-party binfmt image, and a build time like amd64's. It needs `ubuntu-24.04-arm` to be
+     available to the repository (`docs/release.md` says what to change if it is not).
+4. `docker-tags`, after `docker`, `linux` and `windows`: `docker buildx imagetools create` with
+   the version and `latest`. No tag is published unless every package built.
+5. `release` (`contents: write`): `release-notes.py` → `updater-manifest.py` (the NSIS installer
+   only: Linux entries come once the Linux update path is verified, the owner's answer) → the
+   notes (the changelog section, a "not code-signed" line when `signed` is not true, the
+   sources URL and the whole release's `SHA256SUMS`) → `gh release create --verify-tag --draft`
+   with the AppImage, `.deb`, `.rpm`, NSIS + `.sig`, MSI and `latest.json`, then `gh release
+   edit --draft=false --latest`. The draft keeps `releases/latest/download/latest.json` from
+   pointing at a release whose files are not all up.
+
+**`desktop/packaging/sources/Dockerfile`** (the fetch image): `ubuntu:26.04` by digest (the
+digest S used), uv 0.13.5 by digest with CPython 3.14.8, and BtbN's tools for the download
+commands: `git` 2.53, `subversion`, `cargo`, `meson`, `python3`, `automake`, `libtool`,
+`pkgconf`, `xz-utils`, `curl`, each at an exact version, installed from
+`snapshot.ubuntu.com` at `20261114T000000Z` (`apt-get update --snapshot`, checked in the
+image: it needs `ca-certificates` first, which is the only unpinned package), so a newer
+archive does not break the pins; and `autoconf_2.73-2_all.deb` (Ubuntu 26.04 has 2.72) from
+the same snapshot's pool with its SHA-256 (`7708a595…3270`, equal to the
+`archive.ubuntu.com` pool's file), installed by apt with the others. Built here with the
+classic builder; `sources-fetch.py` ran in it, exactly as the workflow calls it, on a subset
+manifest of four entries chosen for the tools (LAME: `autoreconf` with autoconf 2.73; libplacebo:
+`git submodule update --filter=blob:none`; Xvid: SVN; libva: a tarball): all four fetched and
+checked, 7.2 MB, `SHA256SUMS` written, in 2 min 35 s.
+
+**`scripts/updater-manifest.py`** (the contract, plus `--tauri-config`, default the committed
+`tauri.conf.json`): one platform entry per artefact, `{"signature": <the .sig file>, "url":
+<base-url>/<name>}`, `version`, `notes`, `pub_date` (RFC 3339, UTC). It refuses what the app
+would refuse after download: a `.sig` without `version:` or with another version (the app has
+`requireSignedVersion`), with another `file:`, or by a key whose id is not the committed
+`pubkey`'s; a version that is not SemVer; an artefact the app never updates (MSI, rpm); two
+artefacts for one target; a non-https URL.
+
+**Checked against the real tools** (not memory):
+
+- `tauri-plugin-updater` 2.14.1 (its source in the cargo registry): the static format
+  (`version` parsed as SemVer after stripping `v`, optional `notes`, `pub_date` RFC 3339,
+  `platforms.<target>.{url, signature}`); the target is `{os}-{arch}-{installer}` then
+  `{os}-{arch}` (`windows-x86_64-nsis`, `linux-x86_64-appimage`, `linux-x86_64-deb`); the
+  signature field is base64 of the minisign signature text; the version check reads `version:`
+  from the trusted comment.
+- `tauri signer` (tauri-cli 2.12.4), with throwaway keys (deleted): `.sig` = base64 of
+  `untrusted comment…`, a 74-byte signature line (`ED` + 8-byte key id + 64), `trusted
+  comment: timestamp:…<TAB>file:<basename><TAB>version:<v>`; the public key's line is `Ed` +
+  the same key id + 32 bytes, so the key id check needs no cryptography; the key's content in
+  `TAURI_SIGNING_PRIVATE_KEY` signs as `-f` does. The committed `pubkey`'s key id is
+  `80B98CB268A32743` (0072's test key). The test uses a real signature and public key.
+- `config.schema.json` of tauri-cli 2.12.4: `bundle.windows.certificateThumbprint`,
+  `digestAlgorithm`, `timestampUrl`, `tsp`.
+- The signing step's overlay and `GITHUB_OUTPUT` line in PowerShell 7.4 (the
+  `mcr.microsoft.com/powershell` image, removed after): valid JSON without a BOM.
+- The `run:` blocks under `bash -eo pipefail`: `version` on an exported tree (`0.1.0.dev0` and
+  `1.2.0rc1` refused as pre-releases, `v1.2.1` against `1.2.0` refused, `v1.2.0` passes);
+  `windows` (the `--config` array with and without signing; the signer command), `docker-tags`
+  and `release` (with `gh`/`docker`/`npx` stubs that print their arguments, the real
+  `release-notes.py` and `updater-manifest.py` and a real 1.1.0 signature).
+- The Docker notices command for `docker-linux-arm64` with a `fetch-tools.py --platform
+  linux-arm64 --install-dir` folder and a real `SHA256SUMS` (before `--sources-manifest`
+  existed: it is task N's): 1 tool, CPython 3.14.8, 38 Python and 105 JavaScript packages.
+- The action SHAs from `gh api` (`upload-artifact` v7.0.2, `download-artifact` v8.0.2,
+  `setup-buildx-action` v4.4.1) and their inputs from their `action.yml`.
+- actionlint 1.7.12 (`uv tool run --from actionlint-py==1.7.12.25 --with
+  shellcheck-py==0.11.0.1 actionlint`, so its shellcheck rule runs): no findings.
+
+**Not verified** (needs GitHub, a certificate or an arm64 host): any job on a runner; whether
+`ubuntu-24.04-arm` is available to this repository; the classic builder (`DOCKER_BUILDKIT=0`)
+and the free disk of `ubuntu-latest` for the `sources` job (two images and more than 1 GB of
+archives) and the Linux build (locally about 8 GB of image and cache volumes); a whole sources
+fetch (S fetched 162 of 215 `linux-x64` archives before github.com refused this host; a runner
+has another address); buildx's `containerimage.digest` metadata key and `imagetools create
+--annotation`; signing with a CA certificate and an RFC 3161 server; `gh release` against the
+real repository; the updater reading a `latest.json` from a real release.
+
+**Phase 2 changes** (after V, S, A and the lead's fcda364 merged): only final `X.Y.Z` tags (the
+`prerelease` output, `--prerelease` and the no-`latest` branches went; one version output
+instead of `version` and `semver`); the `sources` job calls `appimage-libs.sh` and fetches in
+the new fetch image; the artifact `sources` (manifest, sums, package list) replaces
+`sources-sums`; the Linux job passes the four `REFRAME_*` paths instead of an untracked file in
+the tree; every notices call gets `--sources-manifest` (the notices list only the platform's
+archives: the owner's answer, task N builds it); the Docker notices get `--tools` and
+`--python 3.14.8`; arm64 builds on `ubuntu-24.04-arm` instead of QEMU (`setup-qemu-action`
+removed).
 
 ## Review and fix round
 
