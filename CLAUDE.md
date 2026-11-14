@@ -25,7 +25,10 @@ Tauri 2 desktop app. FFmpeg/FFprobe run as subprocesses.
 | `D-x.y` | Tauri desktop shell | `07-desktop-app.md` |
 | `Q-x.y` | quality, CI, release | `09-quality-and-release.md` |
 
-Commit after each step, with the step ID first: `C-5: dimension maths with property tests`.
+Commit after each step as a conventional commit with the step ID as scope:
+`feat(C-5): dimension maths with property tests`, `fix(F-17): …`, `docs(status): …`. Types:
+`feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`, `chore`, `revert`; `!` or a
+`BREAKING CHANGE:` footer for a breaking change. The changelog is made from them (decision 0079).
 One branch per milestone (`m0-foundations`, `m1-read-media`, …), merged into `main` when the
 milestone demo passes. Never push.
 

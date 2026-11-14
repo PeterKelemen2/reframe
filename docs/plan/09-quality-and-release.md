@@ -104,7 +104,7 @@ Benchmarks run in CI as a non-blocking job. A regression of more than 20 % comme
 
 - [ ] Semantic versioning. One version source (core `__version__`). The server, frontend and
       Tauri versions are stamped from it at build time.
-- [ ] Changelog from conventional commits.
+- [ ] Changelog from conventional commits (the step ID as scope: `fix(F-17): …`), made by git-cliff.
 - [ ] A release workflow on tag `v*` builds:
   - Docker image → GHCR (`linux/amd64`, `linux/arm64` without HW encoders).
   - Windows NSIS (+ MSI) and Linux AppImage/deb/rpm → GitHub Release, signed.
@@ -112,7 +112,10 @@ Benchmarks run in CI as a non-blocking job. A regression of more than 20 % comme
   - The sources release of [decision 0073](../decisions/0073-gpl-corresponding-source-per-tool-pin.md),
     made before the packages if its manifest's hash is new, never "latest", and named in
     `THIRD_PARTY_NOTICES`.
-  - Optional: `reframe` wheel to PyPI, so others can script against the core.
+  - Optional: `reframe` wheel to PyPI, so others can script against the core. **Not for v1**
+    (the core's API is not promised as stable).
+
+(How: [decision 0079](../decisions/0079-q5-release-process.md).)
 
 ## Licensing
 

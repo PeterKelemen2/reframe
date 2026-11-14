@@ -595,3 +595,51 @@ once by the lead after its merge, and its tests caught it. Owner questions (0078
 a `reframe diagnostics` CLI command and a button that opens the logs folder are not built.
 Recorded, not changed: the rotation limit counts characters (0078 review item 8). Rest of M10:
 Q-5 and the release checklist; S-6's NVIDIA/Intel checks wait for such a host.
+
+## Q-5: the release process (2026-11-14)
+
+The spec is [09 §Q-5](plan/09-quality-and-release.md#q-5-release-process),
+[0079](decisions/0079-q5-release-process.md) (Decision items 1–8) and
+[0073](decisions/0073-gpl-corresponding-source-per-tool-pin.md). Same rules as above ("Rules
+for every agent"), with 0079 in place of 0072, and **commits as conventional commits with the
+step as scope** (`feat(Q-5): …`, `fix(Q-5): …`, `docs(Q-5): …`; 0079 item 2). Every agent
+`model: "opus"`, `effort: "high"`, a fresh agent, `isolation: "worktree"` on `m10-hardening`
+(`git merge --ff-only m10-hardening` first). Each task fills its own section of 0079. Nothing
+is pushed: no workflow runs on GitHub; each script a workflow calls is tested locally.
+
+### Contracts (binding; only options with defaults may be added)
+
+| Script (task) | Interface |
+|---|---|
+| `scripts/stamp-version.py` (V) | No argument: stamps `reframe.__version__` into every other version field and prints it. `--check`: changes nothing, exits 1 and names each field that differs. `--set VERSION`: writes `__version__` first, then stamps. `--print-semver`: prints the SemVer spelling (for Tauri and npm). |
+| `scripts/release-notes.py VERSION` (V) | Prints that version's section of `CHANGELOG.md` (without its heading); exits 1 when there is none. |
+| `scripts/sources-manifest.py --out FILE [--appimage-libs FILE]` (S) | Writes the source manifest (JSON, stable order) and prints its tag `sources-<first 12 hex of SHA-256>`. `--appimage-libs`: the AppImage's distro library list (how it is made before the notices: S decides and documents). |
+| `scripts/sources-fetch.py --manifest FILE --out DIR` (S) | One archive per manifest entry in `DIR`, each checked against its pin, and `DIR/SHA256SUMS`; rerunnable (skips a checked archive). |
+| `scripts/third-party-notices.py` (S) | Gains `--sources-url URL` and `--sources-sums FILE` (the notices name the sources release and each archive's SHA-256), and the platforms `docker-linux-x64`, `docker-linux-arm64`. |
+| `docker/Dockerfile` (A) | Builds for `linux/amd64` and `linux/arm64` (buildx `TARGETARCH`); copies `docker/notices/THIRD_PARTY_NOTICES` from the build context (the workflow writes it; git-ignored) and writes the runtime image's Debian package list with source links next to it. |
+| `scripts/updater-manifest.py --version V --notes FILE --base-url URL --out FILE ARTEFACT…` (W) | Writes Tauri's `latest.json` from the updater artefacts and their `.sig` files. |
+| `.github/workflows/release.yml` (W) | On `v*`: the jobs of 0079 item 7, calling the scripts above as they are given here. |
+
+### Tasks and waves
+
+| Wave | Task | What | Owns |
+|------|------|------|------|
+| 1 | V | 0079 items 1–3: the version stamp and its CI check, the Vite `define` (the version in the UI's diagnostics client part), `cliff.toml` (pinned git-cliff), `CHANGELOG.md` with the first section's frame, `release-notes.py` | `scripts/{stamp-version,release-notes}.py`, `cliff.toml`, `CHANGELOG.md`, the version fields (`packages/reframe-server/pyproject.toml` and its version source, `frontend/package.json`, `desktop/package.json`, `desktop/src-tauri/{tauri.conf.json,Cargo.toml,Cargo.lock}`), `frontend/vite.config.ts`, `frontend/src/components/settings/DiagnosticsSection.vue` (the client part's version line only), `.github/workflows/ci.yml` (the `--check` step only), their tests in `testing/tests/` |
+| 1 | S | 0079 items 4, 5 (the sources half): what BtbN pins and how to fetch it (checked against the real repository), the manifest, the fetch, the notices' sources link; measure one real fetch's size | `scripts/{sources-manifest,sources-fetch,third-party-notices}.py`, `desktop/packaging/linux/build.sh` only for the AppImage library list, their tests |
+| 1 | A | 0079 items 5 (the image half), 6: the `linuxarm64` pin (checked: checksum, the binary is aarch64, same source commit), `fetch-tools.py`/`bundle-tools.py` platforms, the multi-arch `docker/Dockerfile` with the notices and the Debian package list, S-6's docs | `tools/ffmpeg.toml`, `scripts/{fetch-tools,bundle-tools}.py` (platform lists), `docker/**`, `packages/reframe/src/reframe/tools/fetch.py` if it lists platforms, their tests |
+| 1 | W | 0079 item 7: `release.yml`, `updater-manifest.py`, `docs/release.md` (the steps, the secrets, the first-release checks); actionlint clean | `.github/workflows/release.yml`, `scripts/updater-manifest.py`, `docs/release.md`, its tests |
+| 2 | R1 | review | |
+| lead | | 0079, `CLAUDE.md`, the plan, merges, checks, one mutation per task | `docs/**` except `docs/release.md`, anything not listed |
+
+### Done when (word for word in each brief)
+
+09 §Q-5 as 0079 Decision items 1–8 say, for the task's items; every script's contract above;
+tests that fail on the defect a user (or a release manager) would see; ruff, format, both mypy
+runs and the touched tests green; the workflow (W) actionlint-clean, with each job's commands
+run locally where they can be.
+
+### Q-5 progress
+
+| Date | What |
+|------|------|
+| 2026-11-14 | Owner answers: conventional commits from now on, Windows signing when the secrets are set, an arm64 pin, no PyPI for v1. 0079, the plan, `CLAUDE.md` and this section committed; wave 1 (V, S, A, W) launched. |
