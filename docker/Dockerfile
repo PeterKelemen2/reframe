@@ -1,12 +1,33 @@
-# Reframe web server. Build from the repository root:
+# Reframe web server, for linux/amd64 and linux/arm64. Write docker/notices/THIRD_PARTY_NOTICES
+# for the platform first (docs/deployment.md), then build from the repository root:
 #   docker build -f docker/Dockerfile -t reframe:local .
-# It also builds with the classic builder (no BuildKit-only syntax).
+# It also builds with the classic builder (no BuildKit-only syntax). buildx sets TARGETARCH;
+# without it each stage takes the architecture it runs on.
 
 ARG DEBIAN_IMAGE=debian:trixie-20261027-slim@sha256:26c37952d274874448dd4f0943fc79bfb7c3d9cc8c8004ac4dc987489ca931be
 ARG NODE_IMAGE=node:24.22.1-trixie-slim@sha256:89c5244bc22a9bc3287d89ebc7e49b9cb5bb84cd40e6175ac3421d5a9f68b95a
 ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.13.5@sha256:32a7bb39b496babbd997b0a39a4d66c126bdaf5661b302bf6f06abda8deca6ff
 
 FROM ${UV_IMAGE} AS uv
+
+FROM ${DEBIAN_IMAGE} AS notices
+ARG TARGETARCH
+COPY docker/notices/ /notices/
+RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && file=docker/notices/THIRD_PARTY_NOTICES \
+    && if [ ! -s /notices/THIRD_PARTY_NOTICES ]; then \
+        echo "$file is missing: write it with scripts/third-party-notices.py --platform docker-linux-<x64|arm64> (docs/deployment.md)" >&2; \
+        exit 1; \
+    fi \
+    && case "$arch" in \
+        amd64) want=docker-linux-x64 ;; \
+        arm64) want=docker-linux-arm64 ;; \
+        *) echo "no image is built for $arch" >&2; exit 1 ;; \
+    esac \
+    && if ! head -n 1 /notices/THIRD_PARTY_NOTICES | grep -qF "($want)"; then \
+        echo "$file is not the one for $want (its first line: $(head -n 1 /notices/THIRD_PARTY_NOTICES))" >&2; \
+        exit 1; \
+    fi
 
 FROM ${NODE_IMAGE} AS frontend
 WORKDIR /src/frontend
@@ -26,10 +47,18 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/reframe/python \
 RUN uv python install 3.14.8
 
 FROM python AS tools
+ARG TARGETARCH
 COPY tools/ffmpeg.toml /src/tools/ffmpeg.toml
 COPY scripts/fetch-tools.py /src/scripts/fetch-tools.py
-RUN uv run --no-project --python 3.14.8 python /src/scripts/fetch-tools.py \
-        --manifest /src/tools/ffmpeg.toml --install-dir /opt/reframe/tools/ffmpeg
+RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "$arch" in \
+        amd64) platform=linux-x64 ;; \
+        arm64) platform=linux-arm64 ;; \
+        *) echo "no FFmpeg build is pinned for $arch" >&2; exit 1 ;; \
+    esac \
+    && uv run --no-project --python 3.14.8 python /src/scripts/fetch-tools.py \
+        --manifest /src/tools/ffmpeg.toml --platform "$platform" \
+        --install-dir /opt/reframe/tools/ffmpeg
 
 FROM python AS app
 ENV UV_PROJECT_ENVIRONMENT=/opt/reframe/venv \
@@ -45,18 +74,28 @@ COPY packages/reframe-server/src packages/reframe-server/src
 RUN uv sync --frozen --no-dev --all-packages --extra cli --extra mediainfo --no-editable
 
 FROM ${DEBIAN_IMAGE}
+ARG TARGETARCH
+COPY --from=notices /notices/THIRD_PARTY_NOTICES /opt/reframe/notices/THIRD_PARTY_NOTICES
+COPY docker/debian-packages.sh /tmp/debian-packages.sh
 # non-free: the Intel media driver with every encoder (the free build has no H.264/HEVC encode
-# before Ice Lake). Versions are exact; a Debian point release that drops one fails the build.
-RUN sed -i 's/^Components: main$/Components: main non-free/' /etc/apt/sources.list.d/debian.sources \
+# before Ice Lake). arm64 gets no GPU drivers: its image claims software encoders only.
+# Versions are exact; a Debian point release that drops one fails the build.
+RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
+    && case "$arch" in \
+        amd64) gpu="intel-media-va-driver-non-free=25.2.3+ds1-1 libmfx-gen1.2=25.1.4-1 mesa-va-drivers=25.0.7-2+deb13u1" ;; \
+        arm64) gpu="" ;; \
+        *) echo "no image is built for $arch" >&2; exit 1 ;; \
+    esac \
+    && sed -i 's/^Components: main$/Components: main non-free/' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        intel-media-va-driver-non-free=25.2.3+ds1-1 \
-        libmfx-gen1.2=25.1.4-1 \
+        $gpu \
         mediainfo=25.04-1 \
-        mesa-va-drivers=25.0.7-2+deb13u1 \
         mkvtoolnix=92.0-1+deb13u1 \
         tini=0.19.0-3+b8 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && sh /tmp/debian-packages.sh /opt/reframe/notices/DEBIAN_PACKAGES \
+    && rm /tmp/debian-packages.sh
 
 COPY --from=python /opt/reframe/python /opt/reframe/python
 COPY --from=app /opt/reframe/venv /opt/reframe/venv

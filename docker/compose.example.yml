@@ -1,5 +1,6 @@
 # Reframe with Docker Compose. Copy this file to docker/compose.yml (the build context is the
-# repository), change the host paths, then, from the repository root:
+# repository), change the host paths, write docker/notices/THIRD_PARTY_NOTICES (the build needs
+# it: docs/deployment.md, "Build"), then, from the repository root:
 #   docker compose -f docker/compose.yml up -d
 #   docker compose -f docker/compose.yml exec -it reframe reframe-server --set-password
 # The web UI is on http://<host>:8765/. See docs/deployment.md.
