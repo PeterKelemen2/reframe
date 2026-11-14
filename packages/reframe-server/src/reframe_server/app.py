@@ -82,15 +82,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             app_log.set_level(level)
 
     reframe = await Reframe.create(config.config_dir, config.data_dir, on_log_level=follow)
-    app_log = applog.install(
-        applog.logs_dir(reframe.data_dir), reframe.settings.get().diagnostics.log_level
-    )
-    app.state.app_log = app_log
     try:
         hub = EventHub(reframe.events, config, hide=functools.partial(hide_server_folders, reframe))
         app.state.reframe, app.state.hub = reframe, hub
         try:
             owner.start(app)
+            # One writer per data folder: rotation renames the file, which fails on Windows
+            # while another process has it open.
+            if reframe.queue.owns_store:
+                app_log = applog.install(
+                    applog.logs_dir(reframe.data_dir), reframe.settings.get().diagnostics.log_level
+                )
+                app.state.app_log = app_log
             yield
         finally:
             owner.withdraw(app)
@@ -113,8 +116,8 @@ def create_app(config: ServerConfig) -> FastAPI:
     ``app.state``: ``config``, ``instance`` (random id of this run), ``started``
     (``time.monotonic()``), ``sources`` (:class:`SourceRegistry`), ``request_shutdown`` (the
     entry point replaces it), ``exit_code`` (the entry point's code when the app does not
-    start), and during the lifespan ``reframe``, ``hub`` and ``app_log`` (``None`` when
-    ``reframe.log`` cannot be written).
+    start), and during the lifespan ``reframe``, ``hub`` and ``app_log`` (``None`` when this
+    server does not own the queue or ``reframe.log`` cannot be written).
     """
     app = FastAPI(
         title="Reframe",

@@ -58,8 +58,6 @@ def _log_config() -> dict[str, Any]:
     config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
     for handler in config["handlers"].values():
         handler["stream"] = "ext://sys.stderr"
-    # The app log may lower uvicorn.error to DEBUG for reframe.log; stderr stays at INFO.
-    config["handlers"]["default"]["level"] = "INFO"
     return config
 
 
