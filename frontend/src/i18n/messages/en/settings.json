@@ -169,7 +169,9 @@
       "debug": "Detailed (debug)"
     },
     "logsFolder": "Logs folder",
-    "logsFolderHelp": "Holds the app log (reframe.log), a log for each job and, in the desktop app, sidecar.log.",
+    "logsFolderHelp": "Holds the app log (reframe.log), a log for each job and sidecar.log.",
+    "logsFolderHelpWeb": "On the server's computer. Holds the app log (reframe.log) and a log for each job.",
+    "logsFolderHome": "{what} ~ is the home folder.",
     "logsFolderLoading": "Reading…",
     "logsFolderFailed": "The logs folder could not be read: {reason}",
     "copy": "Copy diagnostics",

@@ -12,6 +12,7 @@ import type { Schemas, ValidationIssue } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import Section from '@/components/base/Section.vue'
 import { platform } from '@/platform'
+import { useSystemStore } from '@/stores/system'
 
 import { useSetting, useSettingsLocked } from './useSetting'
 
@@ -20,6 +21,7 @@ type Report = Schemas['DiagnosticsReport']
 
 const { t } = useI18n()
 const locked = useSettingsLocked()
+const system = useSystemStore()
 const logLevel = useSetting<LogLevel>('/diagnostics/log_level')
 
 const levels = computed<{ value: LogLevel; label: string }[]>(() => [
@@ -36,6 +38,14 @@ const reportId = `${id}-report`
 
 const logsDir = ref<string | null>(null)
 const logsDirFailure = ref<string | null>(null)
+/** In web mode the folder is on the server's computer, and only the desktop app has a sidecar. */
+const logsFolderHelp = computed(() => {
+  const what =
+    system.info?.mode === 'desktop'
+      ? t('settings.diagnostics.logsFolderHelp')
+      : t('settings.diagnostics.logsFolderHelpWeb')
+  return logsDir.value?.startsWith('~') ? t('settings.diagnostics.logsFolderHome', { what }) : what
+})
 const logsDirIssues = computed<ValidationIssue[]>(() =>
   logsDirFailure.value === null
     ? []
@@ -84,9 +94,9 @@ async function readReport(): Promise<Report> {
 function clientPart(): string {
   return [
     'Client',
-    `  Kind: ${platform.kind}`,
-    `  User agent: ${navigator.userAgent}`,
-    `  Device pixel ratio: ${globalThis.devicePixelRatio}`,
+    `  kind: ${platform.kind}`,
+    `  user agent: ${navigator.userAgent}`,
+    `  device pixel ratio: ${globalThis.devicePixelRatio}`,
   ].join('\n')
 }
 
@@ -178,7 +188,7 @@ async function copyDiagnostics(): Promise<void> {
               data-field="logs-dir"
             />
             <p :id="logsDescriptionId" class="diagnostics-section__note">
-              {{ t('settings.diagnostics.logsFolderHelp') }}
+              {{ logsFolderHelp }}
             </p>
           </div>
         </template>

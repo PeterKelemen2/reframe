@@ -98,7 +98,27 @@ describe('the Diagnostics section', () => {
     expect(input.element.value).toBe(LOGS)
     expect(input.attributes('readonly')).toBeDefined()
     const described = input.attributes('aria-describedby') ?? ''
-    expect(document.getElementById(described)?.textContent).toContain('reframe.log')
+    expect(document.getElementById(described)?.textContent?.trim()).toBe(
+      "On the server's computer. Holds the app log (reframe.log) and a log for each job. " +
+        '~ is the home folder.',
+    )
+  })
+
+  it('names the sidecar log in the desktop app, and no home folder for a path without ~', async () => {
+    const server = new SettingsServer()
+    server.on('GET /api/diagnostics', { text: '', logs_dir: '/var/lib/reframe/logs' })
+    configureClient({ baseUrl: 'http://server', token: 't', fetch: server.fetch })
+    const { wrapper } = await mountShell(DiagnosticsSection, {
+      setup: () => {
+        useSystemStore().info = systemInfo({ mode: 'desktop' })
+        useSettingsStore().settings = structuredClone(server.document)
+      },
+    })
+    mounted.push(wrapper)
+    const described = wrapper.get('[data-field="logs-dir"]').attributes('aria-describedby') ?? ''
+    expect(document.getElementById(described)?.textContent?.trim()).toBe(
+      'Holds the app log (reframe.log), a log for each job and sidecar.log.',
+    )
   })
 
   it('says why the logs folder could not be read', async () => {
@@ -120,11 +140,18 @@ describe('the Diagnostics section', () => {
     const atLoad = server.count('GET /api/diagnostics')
     await copy()
     expect(server.count('GET /api/diagnostics')).toBe(atLoad + 1)
-    const copied = writeText.mock.calls[0]?.[0] ?? ''
-    expect(copied.startsWith(`Reframe report ${atLoad + 1}\n`)).toBe(true)
-    expect(copied).toContain(`User agent: ${navigator.userAgent}`)
-    expect(copied).toContain(`Device pixel ratio: ${globalThis.devicePixelRatio}`)
-    expect(copied).toContain('Kind: web')
+    // The client part is one more section of the report, in the server's layout.
+    expect(writeText).toHaveBeenCalledWith(
+      [
+        `Reframe report ${atLoad + 1}`,
+        '',
+        'Client',
+        '  kind: web',
+        `  user agent: ${navigator.userAgent}`,
+        `  device pixel ratio: ${globalThis.devicePixelRatio}`,
+        '',
+      ].join('\n'),
+    )
   })
 
   it('keeps Copy focusable while it reads, says so, and reads once for a second press', async () => {
@@ -168,7 +195,7 @@ describe('the Diagnostics section', () => {
     await copy()
     expect(status().text()).toContain('Select the report below and copy it')
     expect(report().element.value).toContain('Reframe report')
-    expect(report().element.value).toContain('User agent:')
+    expect(report().element.value).toContain('  user agent:')
     expect(report().attributes('readonly')).toBeDefined()
     expect(document.activeElement).toBe(report().element)
   })
