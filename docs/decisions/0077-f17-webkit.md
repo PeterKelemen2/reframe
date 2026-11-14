@@ -203,3 +203,107 @@ the defect is only here.
 ## Review and fix round
 
 (Filled by the lead.)
+
+### Fix round — FA (review R1 findings 1–4 and 6)
+
+**1, 2, 6 — a still pointer moves the active option of every list (app fixed, one filter).**
+Cause C (W2) is not only the language picker's. PrimeVue's `Select` and `Listbox` (and
+`AutoComplete`, `ContextMenu`) move their focused option to the one under the pointer on
+`mousemove` (`focusOnHover`, on by default); they do not listen to `pointermove`. So WebKit's
+move at a still pointer pulls the keys' option back. Reproduced in headless WebKit with the
+review's probe (`select-still`, a file with 24 chapters, the pointer resting on the Range *From*
+list, 10 ArrowDown 60 ms apart, a pause of 500 ms, 3 ArrowDown 300 ms apart, Enter): WebKit chose
+chapter 12 or 13, the keys 16 (DY 24, 8, 16); Chromium 16. The frame rate `Select` of
+`multitrack.mkv` gives the same in WebKit: 48, the keys 72.
+
+Fix: `components/base/stillPointer.ts`, `installStillPointerFilter()`, called in `main.ts` with
+the other app-wide fixes (`components/base` has no install point of its own). A window capture
+`mousemove` listener stops (`stopImmediatePropagation`) a move at the same client point as the
+move before it, unless a button is down. It is installed before the app mounts, so no listener
+of the app or of PrimeVue sees the move. What it leaves alone:
+- `:hover` (the browser sets it before the event), `mouseover`/`mouseenter`, pointer events and
+  presses and clicks. `pointermove` is not filtered: the crop handles drag on it with pointer
+  capture, and the frame viewer follows the pointer on it.
+- The first move after the page loads (there is no point before it). Checked in headless WebKit
+  on a list that a script scrolls three times, 300 ms apart: no move before any mouse event;
+  after a real move to 100,100, one move at 100,100 per scroll (`buttons` 0); none while a
+  button is held. Chromium and Firefox send none in the three cases.
+- A real move: another point passes at once, also the first move after a list opens.
+- A drag: a move with a button down always passes. PrimeVue's `Slider` and `Dialog` drag on
+  document `mousemove`. Headless WebKit, Chromium and Firefox, the quality slider: pressed,
+  +15 px, held still 400 ms, +30 px, released: 22 → 29.7 → 29.7 → 37.7 in all three.
+- Touch and pen: their compatibility `mousemove` is filtered like a mouse's (a second tap at
+  the same point gets none); their `mousedown`, `mouseup` and `click` go on, and PrimeVue
+  chooses on `mousedown` (the review's `range-touch` still picks chapter 6).
+- A real move of less than one CSS pixel is stopped (`clientX`/`clientY` are whole numbers):
+  the pointer is still over the same element.
+
+After the fix, WebKit still sends its moves (a `pointermove` at 587,406, movement 0,0, over
+options 11–14 after the pauses), and the focused option stays with the keys: `select-still`
+gives 16 at DY 24, 8 and 16 in WebKit and Chromium; `lang-stale` gives `sq` after 12 ArrowDown
+and `ale` after the 13th in both (before: `akk`, then `sq`, in WebKit). A wheel scroll under a
+still pointer leaves the active option where it was in WebKit, as Chromium does (`lang-hover`).
+
+The language picker's own fix (`pointerAt`, `onOptionMove`) is removed; its options take
+`@mousemove` again. The filter covers both gaps of that fix: a move over the dialog's padding
+records the point (`lang-stale`), and the first real move onto an option takes it.
+
+**3 — a press whose release never comes (app fixed).** `pressInList` arms only for
+`button === 0`, and adds a window capture `mousedown` listener (once) that removes a release
+listener still armed: the next press disarms it. `pointerup`/`pointercancel` was not used: no
+`pointercancel` comes when another window or a context menu takes the release. The two guards
+overlap: the next press removes the listener of a right press too, so no test fails with the
+button check alone removed (table below). Probe `range-lost-release` (a right press on a chapter,
+Escape, a click on *100 %* outside the popover): the first click reaches *100 %* and closes the
+popover in WebKit and Chromium (before: eaten, the second click did it).
+
+**4 — tests with whole sequences.** `RangeSelector.test.ts`: a click outside after a pick (a
+press, the release on `<body>` after the list has gone, its click), then a person's click on a
+button outside a task later: the button gets it and the popover closes; the same after a press
+in a list with no click (its scrollbar: `mousedown` + `mouseup` only); the same after a right
+press and after a main press whose release the page never got.
+
+**Tests.** `stillPointer.test.ts` (4): the first move passes, a move at the same point is
+stopped before the element, the document and a later window capture listener, a move elsewhere
+passes at once; every move of a drag passes; only `mousemove` is stopped (`pointermove`,
+`mouseover`, a tap's press, release and click go on); the filter can be removed.
+`LanguagePicker.test.ts` installs the filter as `main.ts` does; its pointer test covers the moves
+at a still point when the list opens, filters and empties beside the pointer, and the first move
+after a reopen. `e2e/still-pointer.spec.ts` (new): the frame rate `Select` (21 options, it
+scrolls) and the language picker, the pointer resting on or beside the list, with a person's
+pauses; both fail in WebKit without the filter (`Expected "72", Received "48"`;
+`Expected "sq", Received "akk"`) and pass in all three browsers with it. Runs with the fix:
+`still-pointer.spec.ts`, flows 1–5 and `a11y/keyboard-*.spec.ts` in Chromium, Firefox and
+WebKit, 48 passed (2.3 min); then the whole suite in the three, 309 passed (14.2 min). Unit
+2157 passed; lint, format and types clean.
+
+**Mutations** (each test function failed at least once; the code restored after each):
+
+| Mutation | Fails |
+|---|---|
+| filter stops nothing | `stillPointer` first-move, drag, only-mousemove; `LanguagePicker` pointer test |
+| a drag's still move stopped too | `stillPointer` drag |
+| only `clientX` compared | `stillPointer` first-move |
+| the first move stopped | `stillPointer` first-move, drag, only-mousemove |
+| `stopPropagation` instead of `stopImmediatePropagation` | `stillPointer` first-move |
+| `pointermove` filtered too | `stillPointer` only-mousemove |
+| the last point kept from the first move | `stillPointer` first-move, drag; `LanguagePicker` pointer test |
+| the filter not installed in the picker test | `LanguagePicker` pointer test (`hu` → `de`) |
+| the picker's old local fix, with the filter | `LanguagePicker` pointer test (the first real move onto an option ignored: `egy`, not `de`) |
+| the picker's old local fix, no filter | `LanguagePicker` pointer test (`lang-stale`: `egy` → `de`) |
+| `main.ts` without the filter (e2e, WebKit) | both `still-pointer.spec.ts` tests |
+| the original `pressInList` | right press, main press with no release |
+| no `setTimeout` removal of the click drop | press with no click (scrollbar) |
+| no disarm on the next press | main press with no release |
+| no button check | none: the disarm covers it |
+| no button check and no disarm | right press, main press with no release |
+| the release listener not `once`, no disarm | click outside after a pick (and the next three) |
+
+**Seen, not changed (PrimeVue).** `Popover` sets its `selfClick` on any `mousedown` in its
+content and clears it on the next click. A press in the popover that has no click (a right press
+on its title with a chapter list open, then Escape) makes the next click outside leave the
+popover open; that click still reaches its target (probe `range-lost-release` with
+`WHERE=title`, WebKit and Chromium; `pressInList` is not involved). PrimeVue's `Select` also
+chooses an option on a press of any button (a right press on a chapter chooses it).
+
+No known-list entry.
