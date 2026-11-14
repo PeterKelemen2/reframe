@@ -137,12 +137,14 @@ This is not legal advice. Review it before any public or commercial distribution
       **Built, not in CI yet**: `scripts/third-party-notices.py` is run by the package builds
       before `tauri build` (`desktop/packaging/linux/build.sh`, and the Windows build) and ships
       as `notices/THIRD_PARTY_NOTICES` next to `sidecar/` and `tools/`; checked in the Linux
-      packages and the Windows installers. No workflow runs a package build yet (Q-5's release
-      workflow will), and the Docker image does not carry the file
-      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) tasks L and W).
+      packages and the Windows installers ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md)
+      tasks L and W). Q-5 ([decision 0079](../decisions/0079-q5-release-process.md)): the Docker
+      image carries it too, with a list of its Debian packages and their source links; the
+      release workflow runs every build (not run on GitHub yet).
 - [ ] **The corresponding source** of the GPL parts (FFmpeg and the libraries the BtbN build
       links, MKVToolNix on Windows), or a written offer, ships with each release. The notices
       give only repository and commit links today. Decided
       ([decision 0073](../decisions/0073-gpl-corresponding-source-per-tool-pin.md)): one
       sources release for each set of pinned source versions, named by the hash of a source
-      manifest. Each app release's notices link to it. There is no written offer. Built by Q-5.
+      manifest. Each app release's notices link to it. There is no written offer. Built by Q-5
+      (`scripts/sources-manifest.py`, `scripts/sources-fetch.py`; 0079 "Task S").

@@ -27,7 +27,12 @@ export LINUXDEPLOY_EXCLUDED_LIBRARIES
 uv run python desktop/sidecar/build.py
 (cd frontend && npm ci --no-audit --no-fund)
 (cd desktop && npm ci --no-audit --no-fund)
-uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py --platform linux-x64
+# build.sh passes the sources release of a release build; /sources/SHA256SUMS is its sums file.
+set -- --platform linux-x64
+if [ -n "${REFRAME_SOURCES_URL:-}" ]; then
+    set -- "$@" --sources-url "$REFRAME_SOURCES_URL" --sources-sums /sources/SHA256SUMS
+fi
+uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py "$@"
 
 rm -rf "$CARGO_TARGET_DIR/release/bundle"
 (cd desktop && npx tauri build --verbose)
