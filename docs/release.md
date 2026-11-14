@@ -61,7 +61,8 @@ public key, so a release with the wrong key stops before it is published.
 
 ## Each release
 
-The version is PEP 440 (`1.0.0`, `1.1.0rc1`). The tag is `v` and that version (`v1.1.0rc1`).
+The version is `X.Y.Z` (the same in PEP 440 and SemVer). The tag is `v` and that version
+(`v1.1.0`).
 
 1. **Start from `main`** with every CI job green.
 2. **Set the version** in every version field:
@@ -88,7 +89,7 @@ The version is PEP 440 (`1.0.0`, `1.1.0rc1`). The tag is `v` and that version (`
    uv run --no-project python scripts/release-notes.py 1.1.0
    ```
 
-4. **Commit** the version fields and the changelog: `chore(release): 1.1.0`.
+4. **Commit** the version fields and the changelog: `chore(release): v1.1.0`.
 5. **Tag and push** the commit and the tag:
 
    ```sh
@@ -96,35 +97,48 @@ The version is PEP 440 (`1.0.0`, `1.1.0rc1`). The tag is `v` and that version (`
    git push origin main v1.1.0
    ```
 
-6. **Watch the workflow** (*Actions → Release*). The Linux and Windows builds take the longest;
-   each job stops after two hours.
+6. **Watch the workflow** (*Actions → Release*). The sources job takes the longest when it
+   makes a new sources release (more than 1 GB of downloads; it stops after five hours); the
+   Linux and Windows builds stop after two hours.
 7. **Check the release** (below).
 
-A version with a pre-release part (`1.1.0rc1`, `1.1.0b2`) is published as a GitHub
-pre-release. It is never "latest", so the updater does not offer it and the Docker image gets
-no `latest` tag. Users who want it download it from the release page.
+**Pre-releases are not supported in v1.** The workflow refuses a tag whose version has a
+pre-release part (`1.1.0rc1`, `1.1.0b2`, `0.1.0.dev0`). Its SemVer spelling (`1.1.0-rc.1`)
+cannot build the MSI (WiX accepts only a numeric pre-release), and dpkg sorts `1.1.0-rc.1`
+after `1.1.0`, so apt would not upgrade an rc to its release (0079, task V).
 
 ## What the workflow does
 
 | Job | What |
 |-----|------|
-| Version and secrets | `stamp-version.py --check`: every version field agrees, and the tag is `v` and that version. `release-notes.py` finds the version's section in `CHANGELOG.md`. The updater's key secret is set. |
-| Sources release | Reads the distro packages that the AppImage will carry (`appimage-libs.py resolve`, with dpkg in the Linux build image), writes the source manifest with `sources-manifest.py` and gets its tag `sources-<12 hex>`. If no release has that tag, `sources-fetch.py` downloads and checks one archive per entry, and the job makes the release: the manifest, the archives and `SHA256SUMS`, never "latest", with no `v` in its tag. The other jobs get its URL and `SHA256SUMS`. |
-| Linux packages | `desktop/packaging/linux/build.sh` builds the AppImage, `.deb` and `.rpm` in the Ubuntu 22.04 build image, with notices that name the sources release. `install-test.sh` installs, runs and removes them in Ubuntu 22.04, Debian 12 and Fedora. |
+| Version and secrets | `stamp-version.py --check`: every version field agrees, the tag is `v` and that version, and the version is `X.Y.Z`. `release-notes.py` finds the version's section in `CHANGELOG.md`. The updater's key secret is set. |
+| Sources release | `desktop/packaging/linux/appimage-libs.sh` reads the distro packages that the AppImage will carry (dpkg in the Linux build image); `sources-manifest.py` writes the source manifest and gives its tag `sources-<12 hex>`. If no release has that tag, `sources-fetch.py` downloads and checks one archive per entry in the image of `desktop/packaging/sources/Dockerfile` (Ubuntu 26.04 with the tools BtbN's download commands need), and the job makes the release: the manifest, the archives and `SHA256SUMS`, never "latest", with no `v` in its tag. The other jobs get its URL, the manifest, `SHA256SUMS` and the AppImage package list. |
+| Linux packages | `desktop/packaging/linux/build.sh` builds the AppImage, `.deb` and `.rpm` in the Ubuntu 22.04 build image, with notices that name the sources release, and checks that the AppImage carries exactly the distro packages the manifest lists. `install-test.sh` installs, runs and removes them in Ubuntu 22.04, Debian 12 and Fedora. |
 | Windows installers | The tools layout, the frozen sidecar, the notices, then `tauri build` (NSIS and MSI), signed with the certificate when it is set. `tauri signer sign --app-version` signs the NSIS installer for the updater. |
-| Docker image | One build per platform (`linux/amd64`, and `linux/arm64` under QEMU), each with its own `docker/notices/THIRD_PARTY_NOTICES`. Each is pushed to GHCR by digest only, without a tag. |
-| Docker image tags | After the Linux and Windows jobs have passed: one multi-platform image tagged with the version, and `latest` for a release that is not a pre-release. |
+| Docker image | One build per platform, each on a runner of that architecture (`ubuntu-24.04`, `ubuntu-24.04-arm`) and with its own `docker/notices/THIRD_PARTY_NOTICES`. Each is pushed to GHCR by digest only, without a tag. |
+| Docker image tags | After the Linux and Windows jobs have passed: one multi-platform image tagged with the version and `latest`. |
 | GitHub release | `latest.json` from `updater-manifest.py` (the NSIS installer only), the notes (the changelog section, a line when the installers are not signed, the sources release's URL and its `SHA256SUMS`), then the release as a draft with every file, published when the upload is complete. |
 
-`latest.json` has only the Windows NSIS installer. The AppImage and `.deb` update path is not
-checked yet ([decision 0072](decisions/0072-m10-bundling-packaging-smoke-tests.md), task W), so
-Linux installs get no update offer. The MSI and the `.rpm` are never updated by the app.
+`latest.json` has only the Windows NSIS installer. The AppImage and `.deb` entries are added
+once their update path is verified (not done: [decision 0072](decisions/0072-m10-bundling-packaging-smoke-tests.md),
+task W); until then Linux installs get no update offer. The MSI and the `.rpm` are never
+updated by the app.
+
+Each package's `THIRD_PARTY_NOTICES` names the sources release and lists the SHA-256 of the
+archives of the parts that this platform bundles; the release notes list them all.
 
 ## When a run fails
 
 Fix the cause, then use *Re-run failed jobs*. What a failed run leaves:
 
 - **A sources release** stays and is used again by the next run with the same manifest.
+- **The Linux job fails when apt moved**: an Ubuntu package of the AppImage got a new version
+  between the sources job and the Linux build, so the AppImage would not match the manifest.
+  Re-run the whole workflow (*Re-run all jobs*): it makes a new manifest, so a new sources
+  release.
+- **The sources job fails during the fetch**: github.com and the Ubuntu archive sometimes
+  refuse connections after many clones (each clone and download is tried 3 times). Re-run it:
+  the fetch starts again from the beginning on a new runner.
 - **Docker image digests without a tag** in GHCR. They are not visible to `docker pull` by tag.
   Delete them in the package's settings if you like.
 - **A draft release**, if the last job failed during the upload. Delete the draft
@@ -148,15 +162,20 @@ The first release also checks the workflow itself: it has never run on GitHub (0
 - `notices/THIRD_PARTY_NOTICES` in a package and `/opt/reframe/notices/THIRD_PARTY_NOTICES` in
   the image name the same sources release as the notes.
 - The sources release has one archive per manifest entry, and `sha256sum -c SHA256SUMS` passes
-  in a folder with them. The first time, record its total size (0073 left it unmeasured).
+  in a folder with them. The first time, record its total size (more than 1 GB was measured
+  for part of it: 0079, task S). GitHub's limit is 2 GiB per file; the largest archive
+  measured was about 263 MB.
 - `docker pull ghcr.io/peterkelemen2/reframe:1.1.0` on amd64 and on arm64; the server starts and
   answers (`docs/deployment.md`). arm64 has software encoders only.
 - The AppImage on a desktop: `desktop/packaging/linux/appimage-test.sh` (it needs KWin, so it
   runs on a developer machine, not in the workflow).
 - The Windows installers' signatures (signed releases): `Get-AuthenticodeSignature` says
   `Valid`; the SmartScreen prompt names the publisher.
-- The first runs only: the Linux job's free disk space on the runner (locally the build image and
-  its cache volumes take about 8 GB, plus the container's copy of the tree) and its time.
+- The first runs only: the free disk space that the sources and Linux jobs print or need (the
+  sources job holds the Linux build image, the fetch image and more than 1 GB of archives;
+  locally the Linux build image and its cache volumes take about 8 GB), and each job's time.
+- The arm64 image job runs on `ubuntu-24.04-arm`. If that runner is not available to the
+  repository, change the job to `ubuntu-24.04` with `docker/setup-qemu-action`.
 
 ## Keep or delete old releases
 

@@ -29,8 +29,6 @@ jobs:
     timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
-      semver: ${{ steps.version.outputs.semver }}
-      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -38,24 +36,21 @@ jobs:
 
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
+      # Only final versions: the MSI cannot carry a SemVer pre-release, and dpkg orders
+      # 1.1.0-rc.1 after 1.1.0. A final version is spelled the same in PEP 440 and SemVer.
       - name: The tag is v and the version that every version field carries
         id: version
         run: |
           version=$(uv run --no-project python scripts/stamp-version.py --check)
-          semver=$(uv run --no-project python scripts/stamp-version.py --print-semver)
           if [ "$GITHUB_REF_NAME" != "v$version" ]; then
             echo "::error::The tag $GITHUB_REF_NAME is not v$version, the stamped version"
             exit 1
           fi
-          case $semver in
-            *-*) prerelease=true ;;
-            *) prerelease=false ;;
-          esac
-          {
-            echo "version=$version"
-            echo "semver=$semver"
-            echo "prerelease=$prerelease"
-          } >> "$GITHUB_OUTPUT"
+          if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::$version is a pre-release: only X.Y.Z versions are released (docs/release.md)"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: CHANGELOG.md has a section for the version
         env:
@@ -76,7 +71,7 @@ jobs:
     name: Sources release
     needs: version
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 300
     permissions:
       contents: write
     outputs:
@@ -94,49 +89,63 @@ jobs:
         with:
           enable-cache: true
 
-      # The manifest names the distro packages that the AppImage will carry, read with dpkg in
-      # the Linux build image before the build, so the packages' notices can name this release.
+      # Read before any package is built: the notices in the packages name this release.
       - name: Resolve the AppImage's distro packages (Linux build image)
-        run: |
-          DOCKER_BUILDKIT=0 docker build -t reframe-linux-build desktop/packaging/linux
-          docker run --rm -v "$PWD:/src" -w /src reframe-linux-build \
-            uv run --no-project python scripts/appimage-libs.py resolve --out /src/appimage-libs.json
+        run: desktop/packaging/linux/appimage-libs.sh "$RUNNER_TEMP/sources/appimage-libs.json"
 
       - name: Write the source manifest
         id: manifest
         run: |
-          mkdir -p "$RUNNER_TEMP/sources"
           tag=$(uv run python scripts/sources-manifest.py \
             --out "$RUNNER_TEMP/sources/manifest.json" \
-            --appimage-libs appimage-libs.json)
+            --appimage-libs "$RUNNER_TEMP/sources/appimage-libs.json")
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$tag" >> "$GITHUB_OUTPUT"
 
-      # A sources release is never "latest" (the updater reads the latest release) and its tag
-      # has no v (a v* tag starts this workflow).
-      - name: Use the sources release, or make it
+      - name: Look for the sources release
+        id: existing
         env:
           TAG: ${{ steps.manifest.outputs.tag }}
         run: |
-          mkdir -p "$RUNNER_TEMP/sums"
           if gh release view "$TAG" > /dev/null; then
-            gh release download "$TAG" --pattern SHA256SUMS --dir "$RUNNER_TEMP/sums"
+            gh release download "$TAG" --pattern SHA256SUMS --dir "$RUNNER_TEMP/sources"
+            echo "found=true" >> "$GITHUB_OUTPUT"
           else
-            archives="$RUNNER_TEMP/sources/archives"
-            uv run python scripts/sources-fetch.py \
-              --manifest "$RUNNER_TEMP/sources/manifest.json" --out "$archives"
-            gh release create "$TAG" --latest=false --target "$GITHUB_SHA" \
-              --title "Sources $TAG" \
-              --notes "The source code of the third-party programs and libraries that Reframe's packages bundle, one archive per entry of manifest.json, with SHA256SUMS. Reframe's releases name the sources release they were built with." \
-              "$RUNNER_TEMP/sources/manifest.json" "$archives"/*
-            cp "$archives/SHA256SUMS" "$RUNNER_TEMP/sums/"
+            echo "found=false" >> "$GITHUB_OUTPUT"
           fi
-          du -sh "$RUNNER_TEMP/sources"
+
+      # BtbN's download commands need the tools of its Ubuntu 26.04 base image.
+      - name: Fetch and check one archive per manifest entry
+        if: steps.existing.outputs.found == 'false'
+        run: |
+          df -h "$RUNNER_TEMP"
+          DOCKER_BUILDKIT=0 docker build -t reframe-sources-fetch desktop/packaging/sources
+          docker run --rm -v "$PWD:/src:ro" -v "$RUNNER_TEMP/sources:/sources" -w /src \
+            -e UV_FROZEN=1 reframe-sources-fetch \
+            uv run python scripts/sources-fetch.py --manifest /sources/manifest.json --out /sources/files
+          cp "$RUNNER_TEMP/sources/files/SHA256SUMS" "$RUNNER_TEMP/sources/SHA256SUMS"
+          du -sh "$RUNNER_TEMP/sources/files"
+          df -h "$RUNNER_TEMP"
+
+      # Never "latest" (the updater reads the latest release), and no v in its tag (a v* tag
+      # starts this workflow).
+      - name: Make the sources release
+        if: steps.existing.outputs.found == 'false'
+        env:
+          TAG: ${{ steps.manifest.outputs.tag }}
+        run: >-
+          gh release create "$TAG" --latest=false --target "$GITHUB_SHA"
+          --title "Sources $TAG"
+          --notes "The source code of the third-party programs and libraries that Reframe's packages bundle: one archive per entry of manifest.json, and their SHA256SUMS. Each Reframe release names the sources release it was built with."
+          "$RUNNER_TEMP/sources/manifest.json" "$RUNNER_TEMP/sources/files"/*
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: sources-sums
-          path: ${{ runner.temp }}/sums/SHA256SUMS
+          name: sources
+          path: |
+            ${{ runner.temp }}/sources/manifest.json
+            ${{ runner.temp }}/sources/SHA256SUMS
+            ${{ runner.temp }}/sources/appimage-libs.json
           if-no-files-found: error
 
   linux:
@@ -149,16 +158,19 @@ jobs:
         with:
           persist-credentials: false
 
-      # Into the working tree, untracked: build.sh carries it into the build container.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: sources-sums
-          path: release-sources
+          name: sources
+          path: ${{ runner.temp }}/sources
 
+      # build.sh fails when the AppImage's distro packages differ from the list the manifest
+      # was made from (apt moved since the sources job): run the release again.
       - name: Build the AppImage, .deb and .rpm (Ubuntu 22.04 build image)
         env:
           REFRAME_SOURCES_URL: ${{ needs.sources.outputs.url }}
-          REFRAME_SOURCES_SUMS: release-sources/SHA256SUMS
+          REFRAME_SOURCES_SUMS: ${{ runner.temp }}/sources/SHA256SUMS
+          REFRAME_SOURCES_MANIFEST: ${{ runner.temp }}/sources/manifest.json
+          REFRAME_APPIMAGE_LIBS: ${{ runner.temp }}/sources/appimage-libs.json
         run: desktop/packaging/linux/build.sh dist/linux
 
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
@@ -208,8 +220,8 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: sources-sums
-          path: release-sources
+          name: sources
+          path: ${{ runner.temp }}/sources
 
       - run: uv sync --frozen
 
@@ -236,7 +248,8 @@ jobs:
         run: >-
           uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py
           --platform windows-x64 --sources-url "$SOURCES_URL"
-          --sources-sums release-sources/SHA256SUMS
+          --sources-sums "$RUNNER_TEMP/sources/SHA256SUMS"
+          --sources-manifest "$RUNNER_TEMP/sources/manifest.json"
 
       # The bundler signs the installers, Reframe.exe and every unsigned .exe and .dll in the
       # resources with this certificate.
@@ -299,10 +312,10 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          SEMVER: ${{ needs.version.outputs.semver }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: >-
-          npx tauri signer sign --app-version "$SEMVER"
-          "src-tauri/target/release/bundle/nsis/Reframe_${SEMVER}_x64-setup.exe"
+          npx tauri signer sign --app-version "$VERSION"
+          "src-tauri/target/release/bundle/nsis/Reframe_${VERSION}_x64-setup.exe"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -315,18 +328,22 @@ jobs:
 
   docker:
     # One build per platform, each with its own notices, pushed by digest only: the tags are
-    # set once every package has been built.
+    # set once every package has been built. arm64 builds natively, without emulation.
     name: Docker image (linux/${{ matrix.arch }})
     needs: [version, sources]
     strategy:
       matrix:
         include:
           - arch: amd64
+            runner: ubuntu-24.04
+            ffmpeg: linux-x64
             notices: docker-linux-x64
           - arch: arm64
+            runner: ubuntu-24.04-arm
+            ffmpeg: linux-arm64
             notices: docker-linux-arm64
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
@@ -347,27 +364,27 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: sources-sums
-          path: ${{ runner.temp }}/release-sources
+          name: sources
+          path: ${{ runner.temp }}/sources
 
-      - run: uv sync --frozen
       - run: npm ci
         working-directory: frontend
 
+      # The notices take FFmpeg's licence from the platform's pinned build; they refuse any
+      # Python but the image's.
       - name: Write docker/notices/THIRD_PARTY_NOTICES
         env:
+          FFMPEG_PLATFORM: ${{ matrix.ffmpeg }}
           PLATFORM: ${{ matrix.notices }}
           SOURCES_URL: ${{ needs.sources.outputs.url }}
-        run: >-
-          uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py
-          --platform "$PLATFORM" --sources-url "$SOURCES_URL"
-          --sources-sums "$RUNNER_TEMP/release-sources/SHA256SUMS"
-          --out docker/notices/THIRD_PARTY_NOTICES
-
-      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-        if: matrix.arch != 'amd64'
-        with:
-          platforms: ${{ matrix.arch }}
+        run: |
+          uv run --no-project python scripts/fetch-tools.py --platform "$FFMPEG_PLATFORM" \
+            --install-dir "$RUNNER_TEMP/tools/ffmpeg"
+          uv run --python 3.14.8 --with pip-licenses==5.5.5 python scripts/third-party-notices.py \
+            --platform "$PLATFORM" --tools "$RUNNER_TEMP/tools" \
+            --sources-url "$SOURCES_URL" --sources-sums "$RUNNER_TEMP/sources/SHA256SUMS" \
+            --sources-manifest "$RUNNER_TEMP/sources/manifest.json" \
+            --out docker/notices/THIRD_PARTY_NOTICES
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -418,22 +435,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
 
-      # A pre-release gets its version tag only, never "latest".
       - name: Tag the multi-platform image
         env:
           VERSION: ${{ needs.version.outputs.version }}
-          PRERELEASE: ${{ needs.version.outputs.prerelease }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/reframe"
-          tags=(--tag "$image:$VERSION")
-          if [ "$PRERELEASE" = false ]; then
-            tags+=(--tag "$image:latest")
-          fi
           sources=()
           for digest in "$RUNNER_TEMP"/digests/*; do
             sources+=("$image@sha256:${digest##*/}")
           done
-          docker buildx imagetools create "${tags[@]}" \
+          docker buildx imagetools create --tag "$image:$VERSION" --tag "$image:latest" \
             --annotation "index:org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             "${sources[@]}"
           docker buildx imagetools inspect "$image:$VERSION"
@@ -449,8 +460,6 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.version.outputs.version }}
-      SEMVER: ${{ needs.version.outputs.semver }}
-      PRERELEASE: ${{ needs.version.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -468,17 +477,17 @@ jobs:
           path: dist/windows
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: sources-sums
-          path: dist/sources
+          name: sources
+          path: ${{ runner.temp }}/sources
 
-      # Linux has no entry yet: the AppImage and .deb update is not checked.
+      # Windows only: the AppImage and .deb update path is not verified yet.
       - name: Write latest.json
         run: |
           uv run --no-project python scripts/release-notes.py "$VERSION" > "$RUNNER_TEMP/changes.md"
           uv run --no-project python scripts/updater-manifest.py \
-            --version "$SEMVER" --notes "$RUNNER_TEMP/changes.md" \
+            --version "$VERSION" --notes "$RUNNER_TEMP/changes.md" \
             --base-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME" \
-            --out dist/latest.json "dist/windows/nsis/Reframe_${SEMVER}_x64-setup.exe"
+            --out dist/latest.json "dist/windows/nsis/Reframe_${VERSION}_x64-setup.exe"
 
       - name: Write the release notes
         env:
@@ -499,7 +508,7 @@ jobs:
             echo "SHA-256 of each archive:"
             echo
             echo '```'
-            cat dist/sources/SHA256SUMS
+            cat "$RUNNER_TEMP/sources/SHA256SUMS"
             echo '```'
           } > "$RUNNER_TEMP/notes.md"
           cat "$RUNNER_TEMP/notes.md"
@@ -510,8 +519,4 @@ jobs:
           gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
             --title "Reframe $VERSION" --notes-file "$RUNNER_TEMP/notes.md" \
             dist/linux/* dist/windows/nsis/* dist/windows/msi/* dist/latest.json
-          if [ "$PRERELEASE" = true ]; then
-            gh release edit "$GITHUB_REF_NAME" --draft=false --prerelease --latest=false
-          else
-            gh release edit "$GITHUB_REF_NAME" --draft=false --latest
-          fi
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
