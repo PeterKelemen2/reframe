@@ -157,5 +157,27 @@
     "language": "Language",
     "languageHelp": "The language of the user interface.",
     "languageMissing": "{language} (not available)"
+  },
+  "diagnostics": {
+    "title": "Diagnostics",
+    "logLevel": "Log level",
+    "logLevelHelp": "How much Reframe writes to its app log. Detailed makes the log grow fastest. A change applies at once.",
+    "level": {
+      "error": "Errors only",
+      "warning": "Warnings and errors",
+      "info": "Normal",
+      "debug": "Detailed (debug)"
+    },
+    "logsFolder": "Logs folder",
+    "logsFolderHelp": "Holds the app log (reframe.log), a log for each job and, in the desktop app, sidecar.log.",
+    "logsFolderLoading": "Reading…",
+    "logsFolderFailed": "The logs folder could not be read: {reason}",
+    "copy": "Copy diagnostics",
+    "copyHelp": "Copies a report for a bug report: the app version, the system, the tools, the encoders and the settings. It holds no password or token.",
+    "reading": "Reading the diagnostics…",
+    "copied": "Diagnostics copied to the clipboard.",
+    "copyFailed": "The clipboard refused the diagnostics. Select the report below and copy it.",
+    "readFailed": "The diagnostics could not be read: {reason}",
+    "report": "Diagnostics report"
   }
 }
