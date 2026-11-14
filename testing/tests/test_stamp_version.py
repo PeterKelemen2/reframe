@@ -177,6 +177,9 @@ def test_the_semver_spelling(version: str, semver: str) -> None:
         "1.1.0+local",
         "v1.1.0",
         "",
+        "1.1.0\n",
+        "\u0661.1.0",
+        "1.1.0rc\u0663",
     ],
 )
 def test_set_refuses_a_version_it_cannot_spell_in_order_and_writes_nothing(
