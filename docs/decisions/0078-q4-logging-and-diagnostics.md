@@ -90,7 +90,66 @@ Owner questions (built with the default; easy to change):
 
 ## Task P: the app log and the diagnostics report (Python)
 
-(Filled by P.)
+Built (2026-11-14, Linux):
+
+- **`reframe/applog.py`**: `install(folder, level, *, max_bytes, backup_count)` returns an
+  `AppLog` (or `None` when the file cannot be opened). The server's lifespan installs it right
+  after `Reframe.create` and closes it after `reframe.close()`; `app.state.app_log` holds it.
+  One `RotatingFileHandler` (5 MiB, 3 old files, UTF-8) is reached through two small
+  forwarders: one on the root logger and one on the `uvicorn` logger, because uvicorn's log
+  config sets `propagate: false` on `uvicorn` (checked in `uvicorn.config.LOGGING_CONFIG`), so
+  `uvicorn.error` never reaches the root logger in a real server. The handler's filter takes
+  `reframe*`, `reframe_server*` and `uvicorn.error` from the setting's level, every other
+  logger from `max(WARNING, setting)` (at `error`, a library's warning is left out too, as for
+  Reframe's own warnings), and never `uvicorn.access`.
+- **Stderr stays as it was** (item 3). Three details make that true: (1) to let DEBUG records
+  through, the level of Reframe's loggers is lowered, never raised above the level it had, so
+  at `error` their warnings still reach stderr; (2) a handler on the root logger stops Python
+  from using `logging.lastResort` (stderr, WARNING and up, used only when a record finds no
+  handler), so when the root logger had no handler, `lastResort` itself is added while the log
+  is installed; (3) `reframe-server`'s uvicorn config pins its stderr handler to INFO, so a
+  `uvicorn.error` lowered to DEBUG for the file does not print DEBUG lines.
+- **Closing** removes every handler it added and puts each logger level back; `set_level`
+  after `close` does nothing. A test runs an app at `debug` and compares the logging state
+  before and after.
+- **A failed write** (item 5): the handler's `handleError` prints one stderr line
+  (`reframe: the app log … cannot be written (…); the server runs without it`) and turns the
+  handler off; Python's default prints a traceback per record. A file that cannot be opened:
+  one line, `install` returns `None`, the server serves.
+- **The level** (item 4): `Reframe.create(..., on_log_level=callback)` (a keyword-only
+  parameter with a default). `_settings_changed` calls it with the new level when
+  `diagnostics.log_level` changes, before `settings.update` returns, so `PUT /api/settings`
+  answers after the file has the new level. Not a public `Reframe.on_log_level(...)` method:
+  a new public facade member must be reached by a route or listed in 06's "Not exposed" table
+  (`test_facade_coverage.py`), and `Reframe.create` is already listed there.
+- **The report** (item 6): `reframe/diagnostics.py` `build_report(...)` and the facade's
+  `Reframe.diagnostics(*, server=None)`. That method waits for a running tool discovery
+  (`tools.status()`), reads `capabilities.snapshot` without waiting, and builds the text in a
+  thread. The route adds `Mode` and `Login` (`config.auth_mode`) and returns `logs_dir` with
+  `~`. Parts in a fixed order: the head (version, mode, login, OS, Python), Tools (each tool:
+  status, origin, path, version, release, build flags, libraries, reason), Encoders (sorted by
+  id: state, reason, detail; "detection running" and "from the cache" when true), Settings
+  (`a.b.c = <JSON>` for the declared fields only, walked from `model_fields`, so an unknown
+  field at any depth is left out), Logs (the folder, `reframe.log` and `.1`–`.3`,
+  `sidecar.log`, `sidecar.log.1`, `server.log` with sizes when they exist, and the number of
+  job logs).
+- **`~`** is applied to the whole text, not only to path fields: FFmpeg's build flags often
+  hold `--prefix=/home/<user>/…` or `-I/home/<user>/…`. A match must end at a separator, a
+  quote, a space or the end, and a longer path that only contains the home path
+  (`/srv/home/ann`) is left alone. On Windows the match ignores case and takes `\`, `/` and the
+  doubled `\\` of JSON text; a home at a drive root or `/` changes nothing.
+- **No subprocess for the OS line**: `platform.platform()` runs `uname -p` (checked with a
+  spy on `subprocess.check_output`, Python 3.14), and `platform.uname()` on Windows can fall
+  back to `cmd /c ver`. The report uses `os.uname()` and `/etc/os-release` on POSIX and
+  `sys.getwindowsversion()` with `platform.win32_edition()` (the registry) on Windows.
+- **Secrets in the existing log calls** (item 4 of the brief): none logs the token, the
+  password or a session cookie. `uvicorn.error` logs the WebSocket path with its query string
+  at INFO, but `WS /api/events` takes its token in the first message, not in the URL. The
+  signatures of the media URLs appear only in the access log, which is never written.
+- **Not built:** the report does not list the build's filters (`filter_failures`, such as
+  libplacebo). Item 6 does not name them.
+- **Windows:** the Windows code paths of the report (`_os`, `%USERPROFILE%`) are unit-tested
+  on Linux with a fake home; they run on Windows only in the Windows phase (0053).
 
 ## Task U: the Diagnostics section (frontend)
 

@@ -163,6 +163,18 @@ def test_stderr_shows_what_it_showed_without_the_log(
     assert messages(folder) == ["debug for the file only", "a warning for both"]
 
 
+def test_stderr_keeps_the_warnings_when_the_file_takes_errors_only(
+    folder: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(logging.getLogger(), "handlers", [])
+    app_log = applog.install(folder, "error")
+    assert app_log is not None
+    logging.getLogger("reframe.test").warning("a warning for stderr")
+    app_log.close()
+    assert "a warning for stderr" in capsys.readouterr().err
+    assert messages(folder) == []
+
+
 def test_a_file_that_cannot_be_opened_gives_one_stderr_line(
     folder: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -173,6 +173,14 @@ def test_desktop_server_prints_the_ready_line_and_answers_health(
     assert "Application shutdown complete" in err
     assert _out == "", "only the ready line may go to stdout"
     assert token not in err
+    log = (tmp_path / "data" / "logs" / "reframe.log").read_text(encoding="utf-8")
+    records = [json.loads(line) for line in log.splitlines()]
+    assert ("uvicorn.error", "Application startup complete.") in [
+        (record["logger"], record["message"]) for record in records
+    ]
+    assert token not in log
+    assert "/api/health" not in log, "the access log stays out of reframe.log"
+    assert '{"time"' not in err, "stderr stays plain text"
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="checked on Linux only (decision 0053)")
