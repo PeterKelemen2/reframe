@@ -140,6 +140,9 @@ whose mouse rests over the list gets the same. `LanguagePicker.vue` now takes th
 from a `mousemove` only when the pointer's client point differs from the previous one seen since
 the picker opened (the first one only records it); a click still chooses at once. Unit test:
 "keeps the active option of the keys under a pointer that does not move, follows one that does".
+(Replaced in the fix round: review R1 found the same cause in PrimeVue's own lists and a gap
+in this local fix, so one app-wide filter now stops these moves and the picker's local fix is
+removed; see "Fix round — FA".)
 
 **A — the gate's pictures in CSS pixels (gate fixed, found by W1).** `Desktop Safari` has
 `deviceScaleFactor` 2 (Chromium and Firefox 1). With `scale: 'css'` WebKit gives a picture in
