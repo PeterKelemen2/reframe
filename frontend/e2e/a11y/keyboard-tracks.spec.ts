@@ -77,6 +77,8 @@ test('the language picker reopens on the chosen language, and its list takes no 
     return id === null ? null : page.locator(`[id="${id}"]`).getAttribute('data-tag')
   }
   await expect.poll(active).toBe('fr')
+  // PrimeVue's Dialog focuses its `[autofocus]` when its enter transition ends: Tab after it.
+  await expect(page.locator('.language-picker-dialog')).not.toHaveClass(/p-dialog-enter/)
 
   // Tab goes round the search and the dialog's Close button: the list is driven from the search.
   const close = page.locator('.language-picker-dialog').getByRole('button', { name: 'Close' })

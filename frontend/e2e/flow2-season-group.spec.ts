@@ -93,7 +93,8 @@ test('a season folder: edit the group, check the matrix, queue the group', async
   const group = tree.locator(`[data-group="${GROUP}"]`)
   await expect(tree.locator('[aria-level="1"]')).toHaveCount(1)
   await expect(group.locator('[data-field="count"]')).toHaveText('12 files')
-  const members = group.locator('[aria-level="2"]')
+  // The tree is flat: the members follow their group's row, and this is the only group.
+  const members = tree.locator('[aria-level="2"]')
   await expect(members.locator('.source-item__label')).toHaveText(EPISODES)
   await expect(members.and(page.locator('[data-match="near"]'))).toHaveCount(2)
   const e05 = members.filter({ hasText: 'E05' })

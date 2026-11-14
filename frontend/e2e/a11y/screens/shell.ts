@@ -150,6 +150,26 @@ export const screens: Screen[] = [
       await expect(page.locator('.preset-name-dialog')).toBeVisible()
     },
   },
+  {
+    // The status bar and the editor in the error state, the whole page walked.
+    id: 'status-error',
+    area: 'shell',
+    async setup(page) {
+      await openTab(page, 'multitrack.mkv', 'Tags')
+      await choosePreset(page, UNAVAILABLE_PRESET)
+      await expect(page.locator('.validation-summary__part--error')).toBeVisible()
+    },
+  },
+  {
+    // The settings page with its navigation, every section walked in one go.
+    id: 'settings',
+    area: 'shell',
+    async setup(page) {
+      await openApp(page)
+      await goTo(page, 'Settings')
+      await expect(page.locator('[data-section-link="tools"]')).toBeVisible()
+    },
+  },
   ...SETTINGS_SECTIONS.map((section): Screen => ({
     id: `settings-${section}`,
     area: 'shell',
