@@ -144,21 +144,26 @@ function chooseChapter(edge: Edge, value: unknown): void {
 
 const drop = (click: MouseEvent) => click.stopPropagation()
 
+// The click of a press comes in the same task as its release, if it comes at all.
+function dropTheClick(): void {
+  window.addEventListener('click', drop, { capture: true, once: true })
+  setTimeout(() => window.removeEventListener('click', drop, { capture: true }))
+}
+
+// A release the page never got (a context menu or another window took it) must not drop the
+// click of the next press.
+const forgetTheRelease = () =>
+  window.removeEventListener('mouseup', dropTheClick, { capture: true })
+
 /**
  * A chapter list chooses on the press and leaves before the release, so the browser sends the
  * click to an element under both, which the popover would take for a click outside. The list
- * needs no click: the click of a press in it is dropped.
+ * needs no click: the click of a press of the main button in it is dropped.
  */
-function pressInList(): void {
-  // The click of a press comes in the same task as its release.
-  window.addEventListener(
-    'mouseup',
-    () => {
-      window.addEventListener('click', drop, { capture: true, once: true })
-      setTimeout(() => window.removeEventListener('click', drop, { capture: true }))
-    },
-    { capture: true, once: true },
-  )
+function pressInList(press: MouseEvent): void {
+  if (press.button !== 0) return
+  window.addEventListener('mouseup', dropTheClick, { capture: true, once: true })
+  window.addEventListener('mousedown', forgetTheRelease, { capture: true, once: true })
 }
 
 /** What a time or frame field shows for the range as it is. */

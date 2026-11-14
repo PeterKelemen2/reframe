@@ -124,6 +124,23 @@ async function afterTheList(): Promise<Element> {
   return document.body
 }
 
+function mouse(target: Element, events: string[], pressed = 0): void {
+  for (const name of events) {
+    target.dispatchEvent(new MouseEvent(name, { bubbles: true, cancelable: true, button: pressed }))
+  }
+}
+
+/** A person's click on a button outside the popover, a task later; the clicks the button got. */
+async function clickOutside(): Promise<number> {
+  const outside = document.body.appendChild(document.createElement('button'))
+  let clicks = 0
+  outside.addEventListener('click', () => (clicks += 1))
+  await new Promise((resolve) => setTimeout(resolve))
+  mouse(outside, ['mousedown', 'mouseup', 'click'])
+  await flushPromises()
+  return clicks
+}
+
 function escape(target: Element | null): void {
   target?.dispatchEvent(
     new KeyboardEvent('keydown', {
@@ -356,10 +373,42 @@ describe('the chapter selects', () => {
     editor.setRange({ kind: 'chapters', start: 2, end: 3 })
     await openPopover()
     await pick('range.start', '1 · Opening · 0:00:00', afterTheList)
-    document.body.click()
+    expect(await clickOutside()).toBe(1)
     await gone('.range-popover')
     expect(button().getAttribute('aria-expanded')).toBe('false')
   })
+
+  it('still close the popover on a click outside after a press in a list with no click (its scrollbar)', async () => {
+    await mountSelector()
+    await openPopover()
+    await mode('chapters')
+    el('[data-path="range.start"] .p-select').click()
+    await flushPromises()
+    mouse(el('.p-select-list-container'), ['mousedown', 'mouseup'])
+    expect(await clickOutside()).toBe(1)
+    await gone('.range-popover')
+    expect(button().getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it.each([
+    ['right', 2],
+    ['main', 0],
+  ])(
+    'still close the popover on a click outside after a %s press in a list whose release the page never got',
+    async (_name, pressed) => {
+      await mountSelector()
+      await openPopover()
+      await mode('chapters')
+      el('[data-path="range.start"] .p-select').click()
+      await flushPromises()
+      // A native context menu, or another window, takes the release.
+      mouse(el('.p-select-option'), ['mousedown'], pressed)
+      await gone('.p-select-option')
+      expect(await clickOutside()).toBe(1)
+      await gone('.range-popover')
+      expect(button().getAttribute('aria-expanded')).toBe('false')
+    },
+  )
 })
 
 describe('the seconds fields', () => {
