@@ -86,6 +86,14 @@ the certificate secrets are set; an arm64 FFmpeg pin; no PyPI for v1.
    procedure (`docs/release.md`) lists the steps and the secrets.
 8. **No PyPI wheel for v1.** The core's Python API is not promised as stable.
 
+9. **The owner's answers to the wave-1 questions (2026-11-14).** The version stays
+   `0.1.0.dev0` until the owner sets the first release's number. **No pre-releases**: a
+   pre-release SemVer cannot build the MSI (Tauri's WiX version needs a numeric pre-release) and
+   dpkg sorts `1.1.0-rc.1` after `1.1.0` (task V), so the workflow refuses a pre-release tag.
+   `latest.json` lists Windows only; the Linux AppImage/deb entries are added once the Linux
+   update path is checked (0072 "Task W"). Each artefact's notices list **only the part of the
+   sources release its platform bundles** (task N). RFC 3161 timestamps for Windows signing.
+
 ## Consequences
 
 - Nothing in this step can run on GitHub before a push: the workflow is checked with
