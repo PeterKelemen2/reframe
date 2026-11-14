@@ -365,6 +365,29 @@ test('a ring over a picture is judged by its pixels', async ({ page }) => {
   expect(light(await focusFindings(page, WHOLE))).toEqual(['no-indicator #on'])
 })
 
+/** `onPicture`'s page with a rounded stop on a half CSS pixel, and its focus style. */
+function onHalfPixel(focus: string): string {
+  return `${onPicture('#000')} #on { left: 100.5px; top: 40.5px; border-radius: 4px }
+    #on:focus-visible { ${focus} }`
+}
+
+test.describe('on a screen with two device pixels to the CSS pixel', () => {
+  test.use({ deviceScaleFactor: 2 })
+
+  test('a ring on a half CSS pixel is judged as painted', async ({ page }) => {
+    const canvas = `<canvas id="picture" width="300" height="120"></canvas><button id="on">On it</button>`
+    const draw = `const g = document.getElementById('picture').getContext('2d'); g.fillStyle = '#777'; g.fillRect(0, 0, 300, 120)`
+    // Crisp in device pixels; WebKit's picture in CSS pixels blends it into a 2.5:1 grey.
+    await made(page, onHalfPixel('outline-width: 1px'), canvas, draw)
+    expect(await focusFindings(page, WHOLE)).toEqual([])
+    await made(page, onHalfPixel('outline: 1px solid #555'), canvas, draw)
+    expect(light(await focusFindings(page, WHOLE))).toEqual(['indicator-contrast #on'])
+    // A line under the stop: four device pixels to each CSS pixel of it.
+    await made(page, onHalfPixel('outline: none; box-shadow: 0 2px 0 #000'), canvas, draw)
+    expect(light(await focusFindings(page, WHOLE))).toEqual(['indicator-contrast #on'])
+  })
+})
+
 test('an overlay that lets the pointer through still hides a stop', async ({ page }) => {
   const cover = '<div class="cover"></div>'
   const css = '.cover { position: fixed; inset: 0; background: #fff; pointer-events: none }'
@@ -372,6 +395,21 @@ test('an overlay that lets the pointer through still hides a stop', async ({ pag
   expect(light(await focusFindings(page, WHOLE))).toContain('obscured #one')
   await made(page, `${css} .cover { inset: auto; width: 0; height: 0 }`, TWO_BUTTONS + cover)
   expect(await focusFindings(page, WHOLE)).toEqual([])
+})
+
+/** A script that brings `.late` into view when `#one` gets the focus, called through `when`. */
+function revealLate(when: string): string {
+  return `document.getElementById('one').addEventListener('focus', () => ${when}(() => document.querySelector('.late').style.top = '24px'))`
+}
+
+test('a stop that comes into view at the next rendering update is not hidden', async ({ page }) => {
+  // As WebKit reveals a focused field: one frame after the Tab, not in it.
+  const css = '.late { position: fixed; left: 24px; top: 200vh }'
+  const late = '<div class="late"><button id="one">One</button></div>'
+  await made(page, css, late, revealLate('requestAnimationFrame'))
+  expect(await focusFindings(page, WHOLE)).toEqual([])
+  await made(page, css, late, revealLate('((f) => setTimeout(f, 500))'))
+  expect(light(await focusFindings(page, WHOLE))).toContain('obscured #one')
 })
 
 test('a stop that keeps the focus on Tab is a trap', async ({ page }) => {
