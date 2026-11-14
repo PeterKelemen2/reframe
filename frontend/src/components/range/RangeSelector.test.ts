@@ -97,7 +97,12 @@ async function gone(selector: string): Promise<void> {
   await vi.waitFor(() => expect(document.querySelector(selector)).toBeNull())
 }
 
-async function pick(path: string, label: string): Promise<void> {
+/** A press on the option, then the release on what `releaseOn` gives (the option by default). */
+async function pick(
+  path: string,
+  label: string,
+  releaseOn?: () => Promise<Element>,
+): Promise<void> {
   await gone('.p-select-option')
   el(`[data-path="${path}"] .p-select`).click()
   await flushPromises()
@@ -107,6 +112,16 @@ async function pick(path: string, label: string): Promise<void> {
   if (option === undefined) throw new Error(`no option ${label}`)
   option.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
   await flushPromises()
+  const release = (await releaseOn?.()) ?? option
+  release.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+  release.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  await flushPromises()
+}
+
+/** Where a slow release lands: the list has gone, and the click goes to the body. */
+async function afterTheList(): Promise<Element> {
+  await gone('.p-select-option')
+  return document.body
 }
 
 function escape(target: Element | null): void {
@@ -323,6 +338,27 @@ describe('the chapter selects', () => {
     expect(editor.job?.range).toEqual({ kind: 'chapters', start: 1, end: 1 })
     await pick('range.end', '3 · Part Two · 0:00:02.500')
     expect(editor.job?.range).toEqual({ kind: 'chapters', start: 1, end: 3 })
+  })
+
+  it('keep the popover open when the release after a pick lands outside the gone list', async () => {
+    const { editor } = await mountSelector()
+    editor.setRange({ kind: 'chapters', start: 2, end: 3 })
+    await openPopover()
+    await pick('range.start', '1 · Opening · 0:00:00', afterTheList)
+    await pick('range.end', '4 · Credits · 0:00:04', afterTheList)
+    expect(editor.job?.range).toEqual({ kind: 'chapters', start: 1, end: 4 })
+    expect(button().getAttribute('aria-expanded')).toBe('true')
+    expect(document.querySelector('.range-popover')).not.toBeNull()
+  })
+
+  it('still close the popover on a click outside after a pick', async () => {
+    const { editor } = await mountSelector()
+    editor.setRange({ kind: 'chapters', start: 2, end: 3 })
+    await openPopover()
+    await pick('range.start', '1 · Opening · 0:00:00', afterTheList)
+    document.body.click()
+    await gone('.range-popover')
+    expect(button().getAttribute('aria-expanded')).toBe('false')
   })
 })
 
