@@ -11,7 +11,9 @@ permissions:
   contents: read
 
 concurrency:
-  # Two tags with the same pins would both try to create the same sources release.
+  # One release at a time: a draft found under a release's tag is then an interrupted run's, and
+  # scripts/release-workflow.py deletes it. A newer tag's run cancels a pending one
+  # (docs/release.md).
   group: release
   cancel-in-progress: false
 
@@ -24,11 +26,12 @@ env:
 
 jobs:
   version:
-    name: Version and secrets
+    name: Version, secrets and visibility
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ steps.preflight.outputs.version }}
+      latest: ${{ steps.preflight.outputs.latest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,36 +39,36 @@ jobs:
 
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
-      # Only final versions: the MSI cannot carry a SemVer pre-release, and dpkg orders
-      # 1.1.0-rc.1 after 1.1.0. A final version is spelled the same in PEP 440 and SemVer.
-      - name: The tag is v and the version that every version field carries
-        id: version
+      # Before anything is built or published. Only whether each secret is set reaches the
+      # script, not its value.
+      - name: The tag, the version, the secrets and the repository's visibility
+        id: preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY_SET: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          RELEASE_GPG_PRIVATE_KEY_SET: ${{ secrets.RELEASE_GPG_PRIVATE_KEY != '' }}
+          WINDOWS_CERTIFICATE_SET: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
+          WINDOWS_CERTIFICATE_PASSWORD_SET: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD != '' }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
         run: |
           version=$(uv run --no-project python scripts/stamp-version.py --check)
-          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
-            echo "::error::The tag $GITHUB_REF_NAME is not v$version, the stamped version"
-            exit 1
-          fi
-          if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::$version is a pre-release: only X.Y.Z versions are released (docs/release.md)"
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          uv run --no-project python scripts/release-workflow.py preflight \
+            --tag "$GITHUB_REF_NAME" --version "$version" --repo "$GITHUB_REPOSITORY"
 
       - name: CHANGELOG.md has a section for the version
         env:
-          VERSION: ${{ steps.version.outputs.version }}
+          VERSION: ${{ steps.preflight.outputs.version }}
         run: uv run --no-project python scripts/release-notes.py "$VERSION" > /dev/null
 
-      # Checked before anything is published: without the key no update can be installed.
-      - name: The updater's signing key is set
+      # The release job's signing, on a file of the checkout: a wrong passphrase or a key other
+      # than the one docs/release.md publishes stops the run here.
+      - name: The release key signs SHA256SUMS, checked with the key in docs/release.md
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "::error::The secret TAURI_SIGNING_PRIVATE_KEY is not set (docs/release.md)"
-            exit 1
-          fi
+          RELEASE_GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
+          RELEASE_GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
+        run: >-
+          uv run --no-project python scripts/release-workflow.py sums
+          --out-dir "$RUNNER_TEMP/signing-check" CHANGELOG.md
 
   sources:
     name: Sources release
@@ -79,7 +82,6 @@ jobs:
       url: ${{ steps.manifest.outputs.url }}
     env:
       GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -102,17 +104,17 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$tag" >> "$GITHUB_OUTPUT"
 
+      # Found only when published with every file of the manifest. A draft of it (an
+      # interrupted upload) is deleted; a published but incomplete one stops the run.
       - name: Look for the sources release
         id: existing
         env:
           TAG: ${{ steps.manifest.outputs.tag }}
-        run: |
-          if gh release view "$TAG" > /dev/null; then
-            gh release download "$TAG" --pattern SHA256SUMS --dir "$RUNNER_TEMP/sources"
-            echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "found=false" >> "$GITHUB_OUTPUT"
-          fi
+        run: >-
+          uv run --no-project python scripts/release-workflow.py sources-find
+          --repo "$GITHUB_REPOSITORY" --tag "$TAG"
+          --manifest "$RUNNER_TEMP/sources/manifest.json"
+          --sums-out "$RUNNER_TEMP/sources/SHA256SUMS"
 
       # BtbN's download commands need the tools of its Ubuntu 26.04 base image.
       - name: Fetch and check one archive per manifest entry
@@ -127,17 +129,16 @@ jobs:
           du -sh "$RUNNER_TEMP/sources/files"
           df -h "$RUNNER_TEMP"
 
-      # Never "latest" (the updater reads the latest release), and no v in its tag (a v* tag
-      # starts this workflow).
+      # A draft until every archive is up, then published, never as "latest" (the updater reads
+      # the latest release); no v in its tag (a v* tag starts this workflow).
       - name: Make the sources release
         if: steps.existing.outputs.found == 'false'
         env:
           TAG: ${{ steps.manifest.outputs.tag }}
         run: >-
-          gh release create "$TAG" --latest=false --target "$GITHUB_SHA"
-          --title "Sources $TAG"
-          --notes "The source code of the third-party programs and libraries that Reframe's packages bundle: one archive per entry of manifest.json, and their SHA256SUMS. Each Reframe release names the sources release it was built with."
-          "$RUNNER_TEMP/sources/manifest.json" "$RUNNER_TEMP/sources/files"/*
+          uv run --no-project python scripts/release-workflow.py sources-publish
+          --repo "$GITHUB_REPOSITORY" --tag "$TAG" --target "$GITHUB_SHA"
+          --manifest "$RUNNER_TEMP/sources/manifest.json" --files "$RUNNER_TEMP/sources/files"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -435,16 +436,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
 
+      # latest only for the highest version: a patch of an older line leaves it where it is.
       - name: Tag the multi-platform image
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          LATEST: ${{ needs.version.outputs.latest }}
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/reframe"
+          tags=(--tag "$image:$VERSION")
+          if [ "$LATEST" = true ]; then
+            tags+=(--tag "$image:latest")
+          fi
           sources=()
           for digest in "$RUNNER_TEMP"/digests/*; do
             sources+=("$image@sha256:${digest##*/}")
           done
-          docker buildx imagetools create --tag "$image:$VERSION" --tag "$image:latest" \
+          docker buildx imagetools create "${tags[@]}" \
             --annotation "index:org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             "${sources[@]}"
           docker buildx imagetools inspect "$image:$VERSION"
@@ -458,7 +465,6 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
       VERSION: ${{ needs.version.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -493,30 +499,29 @@ jobs:
         env:
           SIGNED: ${{ needs.windows.outputs.signed }}
           SOURCES_URL: ${{ needs.sources.outputs.url }}
-        run: |
-          {
-            cat "$RUNNER_TEMP/changes.md"
-            echo
-            if [ "$SIGNED" != true ]; then
-              echo "**The Windows installers are not code-signed.** Windows SmartScreen warns before it starts them."
-              echo
-            fi
-            echo "### Source code"
-            echo
-            echo "The source code of the third-party programs and libraries in these packages: $SOURCES_URL"
-            echo
-            echo "SHA-256 of each archive:"
-            echo
-            echo '```'
-            cat "$RUNNER_TEMP/sources/SHA256SUMS"
-            echo '```'
-          } > "$RUNNER_TEMP/notes.md"
-          cat "$RUNNER_TEMP/notes.md"
+        run: >-
+          uv run --no-project python scripts/release-workflow.py notes
+          --changes "$RUNNER_TEMP/changes.md" --signed "$SIGNED"
+          --check-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/release.md#check-a-download"
+          --sources-url "$SOURCES_URL" --sources-sums "$RUNNER_TEMP/sources/SHA256SUMS"
+          --out "$RUNNER_TEMP/notes.md"
+
+      # The Linux packages' signature: users check each download against this file.
+      - name: SHA256SUMS of every file, signed with the release key
+        env:
+          RELEASE_GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
+          RELEASE_GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
+        run: >-
+          uv run --no-project python scripts/release-workflow.py sums --out-dir dist/sums
+          dist/linux/* dist/windows/nsis/* dist/windows/msi/* dist/latest.json
 
       # A draft until every file is up, so the updater never sees a release without latest.json.
+      # A leftover draft of the tag is deleted first; a published release is never replaced.
       - name: Publish the release
-        run: |
-          gh release create "$GITHUB_REF_NAME" --verify-tag --draft \
-            --title "Reframe $VERSION" --notes-file "$RUNNER_TEMP/notes.md" \
-            dist/linux/* dist/windows/nsis/* dist/windows/msi/* dist/latest.json
-          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+        env:
+          LATEST: ${{ needs.version.outputs.latest }}
+        run: >-
+          uv run --no-project python scripts/release-workflow.py publish
+          --repo "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --verify-tag --latest "$LATEST"
+          --title "Reframe $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+          dist/linux/* dist/windows/nsis/* dist/windows/msi/* dist/latest.json dist/sums/*
