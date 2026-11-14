@@ -198,6 +198,19 @@ async function pixelFindings(
   return found
 }
 
+/** Resolves once the page has run a rendering update (layout, scroll, paint). */
+async function renderingUpdate(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const frame = Reflect.get(globalThis, 'requestAnimationFrame') as (
+          callback: () => void,
+        ) => number
+        frame(() => frame(() => resolve()))
+      }),
+  )
+}
+
 /** Moves the focus inside the stop's widget with an arrow key and back; judges the item met. */
 async function arrowFindings(page: Page, screen: Screen, arrow: string): Promise<Finding[]> {
   let used = arrow
@@ -233,6 +246,8 @@ export async function focusFindings(page: Page, screen: Screen): Promise<Finding
   for (;;) {
     await page.keyboard.press('Tab')
     await call(page, 'leaveRegion', start)
+    // WebKit scrolls the new stop into view at its next rendering update, not on the Tab.
+    await renderingUpdate(page)
     let step = await call(page, 'walkStep')
     if (step.settle) {
       await page.waitForTimeout(SETTLE_MS)
