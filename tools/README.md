@@ -7,6 +7,7 @@ Pinned third-party tool builds. Plan: [02 §Bundled FFmpeg](../docs/plan/02-arch
 |------|---------|
 | `ffmpeg.toml` | The FFmpeg build that ships (`default`) and a second build for the CI job that tests the path override (`override-test`). For each platform: URL, SHA-256, size, archive layout. Also the exact version string, licence and the source commits (GPL source obligations). |
 | `bundled-tools.toml` | The MKVToolNix (`mkvpropedit.exe`) and MediaInfo CLI builds that the Windows package ships (Linux packages use the distro's), and the libva source that the Linux layout builds into FFmpeg's `lib/`: URL, SHA-256, size, archive layout, the files kept, licence and source links. |
+| `static-builds.toml` | Bundled binaries that are static builds (the AppImage runtime, the Windows `mkvpropedit.exe`): the tree each was built from and every library it links (URL, SHA-256, licence), for the sources release and the notices; and the runtime file that `desktop/packaging/linux/appimage-runtime.sh` hands to the bundler (decision 0079, "Fix round — FS"). |
 
 ## Lay out the bundled tools of a package
 

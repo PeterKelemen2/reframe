@@ -24,6 +24,12 @@ What the artefacts bundle, from the pins and the package builds of 0072:
 | libva 2.24.1 | MIT | Linux packages | `tools/bundled-tools.toml` |
 | WebKitGTK, GTK and the other libraries linuxdeploy copies from Ubuntu 22.04 | mostly LGPL-2.1+ | AppImage | none: the versions are whatever the build image's apt gives |
 
+(Q-5's review found two parts this table missed: the Windows `mkvpropedit.exe` is an MXE static
+build with Qt, GNU MP and others linked in, and the AppImage runtime statically links libfuse,
+squashfuse, musl, zstd and zlib. Both are pinned with their sources in `tools/static-builds.toml`:
+[0079](0079-q5-release-process.md) Decision item 10 and "Fix round — FS". The build image's apt
+is now pinned to an archive snapshot.)
+
 The owner chose between three ways (2026-11-13):
 
 1. **Attach the source archives to every app release.** Simple to show, but each release
