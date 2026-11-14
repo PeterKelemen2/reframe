@@ -65,7 +65,52 @@ None: the plan already asks for WebKit. Firefox staying is an addition, not a ch
 
 ## Task W1: the picture area (A, D)
 
-(Filled by W1.)
+Both causes come from one difference: Playwright's `Desktop Safari` profile has
+`deviceScaleFactor: 2`, and `Desktop Chrome` and `Desktop Firefox` have 1. WebKit at
+`deviceScaleFactor: 1` passes flow 4 and the gate's thumbnail check without a change.
+
+**D (flow 4): the test read a 2× canvas as 1×, and the app squeezed the canvas.** The
+magnifier sizes its canvases at `devicePixelRatio` (`prepareCanvas`), so in WebKit the top
+strip is 896 × 192 canvas pixels for 448 × 96 CSS pixels. Flow 4 took one canvas pixel per CSS
+pixel: it read 192 rows as 96 and found `tinted×20 other×74 line×4 other×94`. The pixels were
+not smoothed (`line×4` is the 2 CSS px line at ratio 2). Chromium and Firefox at
+`deviceScaleFactor: 2` failed flow 4 in the same way. Flow 4 now reads the strips at the page's
+ratio (`tinted×94 line×4 kept×94` in WebKit).
+
+While checking, a real defect showed in every browser: PrimeVue's base style sets
+`box-sizing: border-box` on every element, so the strip canvas's 1 px border was inside its CSS
+size. A 448 × 96 canvas was shown in a 446 × 94 box, and the browser resampled the zoomed
+pixels and the crop line (rows that mix two source rows in a device-scale screenshot). The canvas
+is `content-box` now: the screenshot shows 4 px blocks (8 device px in WebKit) and a 2 px line
+(4 device px) with no mixed rows. Flow 4 fails when a canvas's pixels are not its CSS box times
+the ratio.
+
+Mutations (flow 4): `border-box` back on the canvas fails in Chromium
+(`448×96 canvas in a 446×94 box at ×1`) and WebKit (`896×192 … at ×2`);
+`imageSmoothingEnabled = true` fails in WebKit
+(`tinted×47 other×26 tinted×5 other×16 line×4 other×94`).
+
+**A (the thumbnail's ring): the gate measures WebKit wrongly; the ring is complete.** The gate
+takes its focused and unfocused pictures with `page.screenshot({ scale: 'css' })`. Chromium and
+Firefox draw that picture at CSS scale. WebKit takes device pixels and scales them down. The
+thumbnail's top is at y = 463.31, so its 2 px outline (offset 2 px) covers device rows 919–922,
+which is CSS rows 459.5–461.5. Scaled down, that is one full row and two half rows, and the half
+rows do not reach 3:1. The gate also leaves out the pixels near the next thumbnail (the stop that
+has the focus then), which removes the ring's right side. The count is 195 of 218. In a
+device-scale screenshot of WebKit, the ring is a solid 4 device px band on every side (2166
+device px at 3:1). Chromium and Firefox at `deviceScaleFactor: 2` pass, because their CSS-scale
+picture is drawn at CSS scale. No app change: the ring that a Safari user sees is complete.
+
+The fix belongs to the gate (W2's files, given to the lead as a diff): take the pictures at
+`scale: 'device'` and count in device pixels, with the need multiplied by the ratio squared. With
+that diff, the four picture screens passed in WebKit twice, and the gate's thumbnail findings left
+`toast`, `status-error` and `group` (only B is left on them). The picture area passed in
+Chromium and Firefox (at ratio 1 the count is the same). With the diff, the gate still finds a
+low-contrast ring (`#c8c8c8`: 0 of 871 px) and a ring clipped by `overflow: hidden` on the
+strip (864 of 871 px) in WebKit. The other way is `deviceScaleFactor: 1` for the `webkit`
+project. That stops testing at the ratio that Safari users have, so it is not recommended.
+
+`known/picture.ts` stays empty.
 
 ## Task W2: focus and the tracks area (B, C)
 
