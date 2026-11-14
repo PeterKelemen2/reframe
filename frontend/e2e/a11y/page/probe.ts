@@ -912,7 +912,7 @@ export function installProbe(): void {
 
   /**
    * Judges a stop by its pictures: the pixels around it that changed by 3:1 when it took the
-   * focus must add up to a 1 px line round it. The stop that has the focus now is left out of
+   * focus must add up to a 1 CSS px line round it. The stop that has the focus now is left out of
    * the comparison: its own indicator is not this one's.
    */
   async function comparePixels(
@@ -926,16 +926,23 @@ export function installProbe(): void {
     const now = document.activeElement
     const skip = now !== null && now !== element && now !== document.body ? rectOf(now) : null
     const { box } = focused.place
+    // Device pixels, as painted: scaled down to CSS pixels, a ring on a half CSS pixel would be
+    // blended into the rows next to it.
+    const scale = one.width / focused.place.clip.width
+    const columns = Math.ceil((box.width + 2 * SHOT_MARGIN) * scale)
+    const rows = Math.ceil((box.height + 2 * SHOT_MARGIN) * scale)
     let strong = 0
     let changed = 0
-    for (let dy = -SHOT_MARGIN; dy < box.height + SHOT_MARGIN; dy += 1) {
-      for (let dx = -SHOT_MARGIN; dx < box.width + SHOT_MARGIN; dx += 1) {
-        const fx = Math.round(box.x + dx - focused.place.clip.x)
-        const fy = Math.round(box.y + dy - focused.place.clip.y)
+    for (let row = 0; row < rows; row += 1) {
+      const dy = row / scale - SHOT_MARGIN
+      for (let column = 0; column < columns; column += 1) {
+        const dx = column / scale - SHOT_MARGIN
+        const fx = Math.round((box.x + dx - focused.place.clip.x) * scale)
+        const fy = Math.round((box.y + dy - focused.place.clip.y) * scale)
         const pageX = unfocused.place.box.x + dx
         const pageY = unfocused.place.box.y + dy
-        const ux = Math.round(pageX - unfocused.place.clip.x)
-        const uy = Math.round(pageY - unfocused.place.clip.y)
+        const ux = Math.round((pageX - unfocused.place.clip.x) * scale)
+        const uy = Math.round((pageY - unfocused.place.clip.y) * scale)
         if (fx < 0 || fy < 0 || fx >= one.width || fy >= one.height) continue
         if (ux < 0 || uy < 0 || ux >= other.width || uy >= other.height) continue
         if (
@@ -958,7 +965,8 @@ export function installProbe(): void {
       }
     }
     const { seen } = focused.place
-    const need = Math.round(2 * (seen.width + seen.height))
+    // A 1 CSS px line round the visible part, counted in device pixels.
+    const need = Math.round(2 * (seen.width + seen.height) * scale * scale)
     const target = describe(element)
     if (changed === 0) return { rule: 'no-indicator', target, detail: 'pixels' }
     if (strong < need) {

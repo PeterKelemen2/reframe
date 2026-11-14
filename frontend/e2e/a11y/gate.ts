@@ -168,7 +168,7 @@ async function pictures(page: Page, shot: number): Promise<Pictures> {
     await call(page, 'setTheme', theme)
     const place = await call(page, 'shotPlace', shot)
     if (place === null) continue
-    const png = await page.screenshot({ clip: place.clip, scale: 'css', caret: 'hide' })
+    const png = await page.screenshot({ clip: place.clip, scale: 'device', caret: 'hide' })
     taken[theme] = { png: png.toString('base64'), place }
   }
   await call(page, 'setTheme', null)
