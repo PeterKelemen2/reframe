@@ -124,14 +124,22 @@ const $$ = (selector: string) => [...document.querySelectorAll<HTMLElement>(sele
 const item = (id: string) => $(`[data-key="source:${id}"]`) as HTMLElement
 const groupItem = () => $('[data-key="group:g1"]') as HTMLElement
 const text = (element: Element | null) => element?.textContent?.replace(/\s+/g, ' ').trim()
+/** A tree item's level and its place among its siblings. */
+const place = (row: HTMLElement) =>
+  ['aria-level', 'aria-posinset', 'aria-setsize'].map((name) => row.getAttribute(name))
 
-/** Text as a screen reader computes it: `aria-label` replaces content, hidden parts drop out. */
+const INLINE = new Set(['A', 'B', 'EM', 'I', 'SMALL', 'SPAN', 'STRONG'])
+
+/**
+ * Text as axe computes a name: `aria-label` replaces content, hidden parts drop out, and only
+ * block elements are set apart, so two spans with no space between them run together.
+ */
 function spoken(node: Node): string {
   if (node instanceof Element) {
     if (node.getAttribute('aria-hidden') === 'true') return ''
     const label = node.getAttribute('aria-label')
-    if (label !== null) return label
-    return [...node.childNodes].map(spoken).join(' ')
+    const content = label ?? [...node.childNodes].map(spoken).join('')
+    return INLINE.has(node.tagName) ? content : ` ${content} `
   }
   return node.nodeType === Node.TEXT_NODE ? (node.textContent ?? '') : ''
 }
@@ -221,11 +229,25 @@ describe('the sources panel', () => {
     ])
   })
 
-  it('names a group by its name and its lines, without its buttons or members', async () => {
+  it('puts the members after their group as tree items of the next level, not inside it', async () => {
     await mountPanel(editing)
-    expect(referenced(groupItem(), 'aria-labelledby')).toBe(
-      'Show S01 Editing 3 files standard match 1 near match',
-    )
+    // Inside it, a group's name and visible text would hold every member's.
+    expect(groupItem().querySelector('[role="treeitem"]')).toBeNull()
+    const rows = $$('[role="tree"] > [role="treeitem"]')
+    expect(rows.map((row) => row.dataset.key)).toEqual([
+      'source:movie.mkv',
+      'group:g1',
+      'source:Show.S01E01.mkv',
+      'source:Show.S01E02.mkv',
+      'source:Show.S01E05.mkv',
+    ])
+    expect(rows.map(place)).toEqual([
+      ['1', '1', '2'],
+      ['1', '2', '2'],
+      ['2', '1', '3'],
+      ['2', '2', '3'],
+      ['2', '3', '3'],
+    ])
     expect($('.sources-panel__group-name')?.title).toBe('Show S01')
   })
 
@@ -493,6 +515,12 @@ describe('a batch group in the sources panel', () => {
     const { select, showFile } = await mountPanel(editing)
     expect(groupItem().getAttribute('aria-current')).toBe('true')
     expect(text(groupItem().querySelector('[data-field="editing"]'))).toBe('Editing')
+    // The group's mark runs down its members, which follow it in the tree, not the loose file.
+    expect($$('.sources-panel__member--edited').map((row) => row.dataset.key)).toEqual([
+      'source:Show.S01E01.mkv',
+      'source:Show.S01E02.mkv',
+      'source:Show.S01E05.mkv',
+    ])
     item('Show.S01E05.mkv').click()
     await flushPromises()
     item('Show.S01E02.mkv').focus()

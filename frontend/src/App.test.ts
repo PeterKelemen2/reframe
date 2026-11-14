@@ -93,6 +93,17 @@ describe('the app shell', () => {
     await visit('workspace')
   })
 
+  it("puts the focus on the Queue view's heading when the status bar's link leads there", async () => {
+    const { host, router } = await mountApp('ready')
+    const link = host.querySelector<HTMLAnchorElement>('.status-bar__queue') as HTMLAnchorElement
+    link.focus()
+    link.click()
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('queue'))
+    await flushPromises()
+    expect(document.activeElement?.textContent).toBe('Queue')
+    expect(document.activeElement?.closest('[data-view="queue"]')).not.toBeNull()
+  })
+
   it('shows the when-done countdown with its Cancel above every view, and cancels it', async () => {
     const { host, router } = await mountApp('ready')
     const cancelPower = vi.fn<() => Promise<void>>(async () => {

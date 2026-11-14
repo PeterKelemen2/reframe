@@ -123,7 +123,7 @@
     "dragColumn": "Drag to reorder",
     "drag": "Drag to reorder",
     "number": "#",
-    "rule": "Rule",
+    "rule": "Rule {n}",
     "language": "Language",
     "channels": "Source channels",
     "codec": "Codec",

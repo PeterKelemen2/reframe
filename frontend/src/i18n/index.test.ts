@@ -18,6 +18,7 @@ describe('the app i18n', () => {
     expect(t(PLURAL_N, 0)).toBe('no changed options')
     expect(t(PLURAL_COUNT, { count: 2500 }, 2500)).toBe('2,500 tracks selected')
     expect(t(PLURAL_COUNT, {}, 1000)).toBe('1,000 tracks selected')
+    expect(t(PLURAL_N, { other: 'x' }, 1234)).toBe('1,234 changed options')
     expect(t(PLURAL_N, { n: 1234 })).toBe('1,234 changed options')
     expect(t(PLURAL_N, { n: 1 })).toBe('1 changed option')
   })

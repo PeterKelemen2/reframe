@@ -90,7 +90,12 @@ const chips = computed(() => filterChips(editor.job?.filters, system.definitions
               :class="{ 'summary-chip--off': chip.value === null }"
               :data-filter="chip.id"
             >
-              {{ chip.label }}: {{ chip.value ?? t('summary.picture.off') }}
+              {{
+                t('summary.picture.filter', {
+                  label: chip.label,
+                  value: chip.value ?? t('summary.picture.off'),
+                })
+              }}
             </span>
           </SummaryLink>
         </li>

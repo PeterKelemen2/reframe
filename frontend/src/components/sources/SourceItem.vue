@@ -40,7 +40,10 @@ const near = computed(() => props.member?.match === 'near')
             :label="near ? t('sources.group.near') : t('sources.group.exact')"
             :data-match="member.match"
           />
+          <!-- Words apart in the row's name, which is built from these spans. -->
+          {{ ' ' }}
           <span class="source-item__label">{{ label }}</span>
+          {{ ' ' }}
           <span v-if="label !== name" class="source-item__file" :title="entry.path">{{
             name
           }}</span>

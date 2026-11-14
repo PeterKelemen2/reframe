@@ -67,8 +67,8 @@ const inGroup = computed(() => editor.target?.kind === 'group')
 const description = computed(() =>
   [
     editor.rangeOverridden ? t('base.field.overridden') : null,
-    ...bySeverity(issues.value).map(
-      (issue) => `${severityLabel(issue.severity)}: ${issue.message}`,
+    ...bySeverity(issues.value).map((issue) =>
+      t('range.issue', { severity: severityLabel(issue.severity), message: issue.message }),
     ),
   ]
     .filter((part) => part !== null)

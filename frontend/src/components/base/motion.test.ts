@@ -30,11 +30,15 @@ describe('installReducedMotionScrolling', () => {
     const { view, prototype, calls } = fakeWindow()
     installReducedMotionScrolling(view)
     prototype.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    prototype.scroll({ left: 4, behavior: 'smooth' })
     prototype.scrollTo({ top: 10, behavior: 'smooth' })
+    prototype.scrollBy({ top: 20, behavior: 'smooth' })
     prototype.scrollBy(0, 5)
     expect(calls).toEqual([
       ['scrollIntoView', { block: 'nearest', behavior: 'auto' }],
+      ['scroll', { left: 4, behavior: 'auto' }],
       ['scrollTo', { top: 10, behavior: 'auto' }],
+      ['scrollBy', { top: 20, behavior: 'auto' }],
       ['scrollBy', 0, 5],
     ])
   })

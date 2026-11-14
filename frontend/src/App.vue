@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { RouterView, useRoute } from 'vue-router'
+import { RouterView, useRoute, useRouter } from 'vue-router'
 
 import { desktopBackend } from '@/api/boot'
 import DefaultsDialog from '@/components/defaults/DefaultsDialog.vue'
@@ -13,6 +13,7 @@ import NavRail from '@/components/shell/NavRail.vue'
 import PrivateQueueBanner from '@/components/shell/PrivateQueueBanner.vue'
 import QuitDialog from '@/components/shell/QuitDialog.vue'
 import ReconnectOverlay from '@/components/shell/ReconnectOverlay.vue'
+import { refocusAfterNavigation } from '@/components/shell/focus'
 import ShellToasts from '@/components/shell/ShellToasts.vue'
 import FileBrowserDialog from '@/components/sources/FileBrowserDialog.vue'
 import { useInPlaceReload } from '@/components/summary/useInPlaceReload'
@@ -34,6 +35,7 @@ useTheme()
 useShortcuts()
 useInPlaceReload()
 useOpenPaths()
+onUnmounted(refocusAfterNavigation(useRouter()))
 const quit = useQuitFlow()
 
 /** The desktop app's server restarts under a running app (before the first start: the boot screen). */

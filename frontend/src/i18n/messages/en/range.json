@@ -4,6 +4,7 @@
   "buttonNoLength": "Range: {range}",
   "length": "Length: {length}",
   "lengthUnknown": "The length is not known.",
+  "issue": "{severity}: {message}",
   "label": {
     "full": "Whole source",
     "chapter": "Chapter {number}",

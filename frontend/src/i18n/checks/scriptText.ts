@@ -121,16 +121,22 @@ function literals(node: ts.Expression): string[] {
   return []
 }
 
-/** The `x.toFixed(…)` calls in `node`: each writes a period whatever the locale. */
+/**
+ * The calls in `node` that write a number without the app's locale: `toFixed` and `toPrecision`
+ * always write a period, `toLocaleString()` takes the browser's locale.
+ */
 function fixedNumbers(node: ts.Node): ts.CallExpression[] {
   const found: ts.CallExpression[] = []
   const visit = (child: ts.Node): void => {
-    if (
-      ts.isCallExpression(child) &&
-      ts.isPropertyAccessExpression(child.expression) &&
-      child.expression.name.text === 'toFixed'
-    ) {
-      found.push(child)
+    if (ts.isCallExpression(child) && ts.isPropertyAccessExpression(child.expression)) {
+      const method = child.expression.name.text
+      if (
+        method === 'toFixed' ||
+        method === 'toPrecision' ||
+        (method === 'toLocaleString' && child.arguments.length === 0)
+      ) {
+        found.push(child)
+      }
     }
     ts.forEachChild(child, visit)
   }
@@ -156,6 +162,15 @@ function shownNumbers(node: ts.Node, interpolation: boolean): ts.CallExpression[
     }
   }
   return []
+}
+
+/**
+ * Punctuation that sets two values apart in a fixed order (`a: b`, `a – b`), which a message
+ * should hold. ` · ` between facts and `×` in a size are kept as data separators.
+ */
+function joinsByPunctuation(between: string): boolean {
+  const text = between.trim()
+  return text !== '' && !/[\p{L}\p{N}]/u.test(text) && text !== '·' && text !== '×'
 }
 
 /** The translated pieces of `node` and whether it joins them with text in a fixed order. */
@@ -305,6 +320,36 @@ function codeOf(source: string, file: string): Code[] {
 }
 
 /**
+ * Values shown side by side in a template in a fixed order: `{{ a }}: {{ b }}`, or a translation
+ * next to a value that is not one (`{{ t('x.rule') }} {{ n }}`). Two translations side by side
+ * are taken as whole sentences.
+ */
+function templateJoins(nodes: readonly TemplateChildNode[], found: ScriptText[], file: string) {
+  for (const node of nodes) {
+    if (node.type !== NodeTypes.ELEMENT) continue
+    const children = node.children
+    for (const [index, between] of children.entries()) {
+      const before = children[index - 1]
+      const after = children[index + 1]
+      if (between.type !== NodeTypes.TEXT || before === undefined || after === undefined) continue
+      if (before.type !== NodeTypes.INTERPOLATION || after.type !== NodeTypes.INTERPOLATION)
+        continue
+      const translated = [before, after].filter((side) =>
+        /(^|[^\w$.])\$?t\(/.test(side.content.loc.source),
+      ).length
+      if (
+        joinsByPunctuation(between.content) ||
+        (between.content.trim() === '' && translated === 1)
+      ) {
+        const text = `${before.loc.source}${between.content}${after.loc.source}`
+        found.push({ file, line: before.loc.start.line, where: 'joined', text })
+      }
+    }
+    templateJoins(children, found, file)
+  }
+}
+
+/**
  * The lines of PrimeVue `InputNumber`s without a `locale`: they write numbers the browser's way,
  * not the app's (`:locale="locale"` from `useI18n()`).
  */
@@ -328,9 +373,9 @@ function numberInputsWithoutLocale(nodes: readonly TemplateChildNode[], found: n
  * Text in the code of `file` (a `.ts` file, or a single-file component's scripts and bound
  * template expressions) that a user would read or hear untranslated: a string literal with a
  * letter as the value of a visible key (`summary: 'Saved'`, `:pt="{ root: { 'aria-label': … } }"`),
- * of a visible attribute set in code, in `alert()`; text joined from translated pieces; and
- * a number written with `toFixed` where it becomes text (`n()` or `Intl` follow the locale), and
- * an `InputNumber` without the app's locale.
+ * of a visible attribute set in code, in `alert()`; text joined from translated pieces, and
+ * values a template joins in a fixed order; a number written without the app's locale where it
+ * becomes text (`n()` or `Intl` with `locale` follow it); and an `InputNumber` without it.
  */
 export function findScriptText(source: string, file: string): ScriptText[] {
   const found: ScriptText[] = []
@@ -345,6 +390,7 @@ export function findScriptText(source: string, file: string): ScriptText[] {
     const lines: number[] = []
     if (ast) numberInputsWithoutLocale(ast.children, lines)
     for (const line of lines) found.push({ file, line, where: 'InputNumber', text: 'no :locale' })
+    if (ast) templateJoins(ast.children, found, file)
   }
   return found
 }

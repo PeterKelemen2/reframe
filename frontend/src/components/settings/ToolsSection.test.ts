@@ -233,6 +233,28 @@ describe('the Tools section', () => {
     })
   })
 
+  it('names each row’s field and buttons by its tool, so that no two of them share a name', async () => {
+    const bundled = { bundled: true, origin: 'settings' as const }
+    const { wrapper, row } = await mountTools(
+      systemInfo(
+        { mode: 'desktop' },
+        { ffmpeg: { ...bundled, path: '/usr/bin/ffmpeg' }, mediainfo: { origin: 'settings' } },
+      ),
+      { ffmpeg: '/usr/bin/ffmpeg', mediainfo: '/opt/mediainfo' },
+    )
+    const name = (selector: string) => row('ffmpeg').find(selector).attributes('aria-label')
+    expect(name('[data-field="override"]')).toBe('Path override for ffmpeg')
+    expect(name('[data-action="test"]')).toBe('Test ffmpeg')
+    expect(name('[data-action="use-bundled"]')).toBe('Use bundled ffmpeg')
+    expect(row('mediainfo').find('[data-action="remove"]').attributes('aria-label')).toBe(
+      'Remove override for mediainfo',
+    )
+    const names = wrapper
+      .findAll('.tool-row input, .tool-row button')
+      .map((control) => control.attributes('aria-label') ?? control.text())
+    expect(new Set(names).size).toBe(names.length)
+  })
+
   describe('Use bundled, with a bundled build', () => {
     const bundledFfmpeg = { bundled: true, origin: 'bundled' as const }
 
