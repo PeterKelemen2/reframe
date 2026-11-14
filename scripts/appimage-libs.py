@@ -277,7 +277,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"wrote {args.out} ({len(data['packages'])} packages)")
             return 0
         if args.command == "check-runtime":
-            if not runtime_matches(args.appimage.read_bytes(), args.runtime.read_bytes()):
+            runtime = args.runtime.read_bytes()
+            with args.appimage.open("rb") as appimage:
+                head = appimage.read(len(runtime))
+            if not runtime_matches(head, runtime):
                 _print([f"{args.appimage} does not start with the runtime {args.runtime}"])
                 return 1
             print(f"{args.appimage} starts with the runtime {args.runtime}")
