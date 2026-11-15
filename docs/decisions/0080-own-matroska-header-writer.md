@@ -137,7 +137,89 @@ Until task I merges, a `header_edit` step still runs mkvpropedit. Tasks and cont
 
 ### Built: H (the writer)
 
-*Placeholder.*
+`reframe.metadata.header.apply_header_edit` (the contract of wave 0, unchanged), with
+`metadata/ebml.py` (EBML encoding, a strict child parser, `CRC-32`) and `metadata/layout.py`
+(where `SeekHead`, `Info` and `Tracks` are). Both use the reader of `probe/matroska.py` (its
+`_Reader`, `_header`, `_read` and the `MAX_*` limits, read when they are used); that file is not
+changed. The facts the design rests on, and the refusals with what mkvpropedit does, are in
+`testdata/README.md` "Matroska header writer".
+
+1. **What changes.** In the n-th `TrackEntry` of a type: `Language` (ASCII) and `LanguageIETF`
+   (UTF-8) as a pair, `Name` (set or removed), the six flags (1-byte values). In `Info`: `Title`
+   (`None` or an empty title removes it). An element the entry already has with the same value
+   is not written; a flag that is absent and has the asked value (its default) stays absent;
+   a duplicated element becomes one. Other children are copied byte for byte, new ones go at
+   the end of their parent, a `CRC-32` of a changed `TrackEntry`, `Tracks`, `Info` or
+   `SeekHead` is calculated again. When nothing changes, nothing is written (`written`, and the
+   file need not be writable).
+2. **Where it goes.** An element that fits in its place and the `Void` elements after it is
+   written there; the rest of the place becomes a `Void` (only its header is written). A
+   1-byte gap cannot be a `Void`: the size field is one byte wider instead. An element that
+   does not fit moves to the end of the segment. A `Tracks` or `Info` behind the clusters is
+   written in place only when it is the only element that changes; otherwise it moves again,
+   so that the switch stays one write (item 3). The cost: a file grows by the moved copies on
+   such an edit (up to 68 KB after three edits on a real file with 17 tracks).
+3. **Write order** (each step is followed by `fsync`):
+   1. Only when something moves and the file has leftovers of a stopped edit after the segment
+      (copies of `Tracks`, `Info`, `SeekHead` or a `Void`, the last one perhaps cut short): the
+      file is truncated to the end of the segment.
+   2. Only when something moves: the new copies are written after the end of the segment, and
+      with them a copy of each `SeekHead` behind the clusters that lists a moved element. No
+      reader looks there: ffprobe, `mkvmerge -J` and Reframe's reader read the old values.
+   3. **The switch, one write**: the segment size, the first `SeekHead` (moved entries, a new
+      entry when none listed the element), a second `SeekHead` before the clusters, every
+      element written in place, and each old place before the clusters turned into a `Void`.
+      The bytes between them are written again as they are. After this write all three readers
+      read the new values.
+   4. Each old place behind the clusters (a moved `Tracks`, `Info` or `SeekHead`) becomes a
+      `Void`. Before this write nothing points to them.
+
+   Why one write: ffprobe and Reframe's reader take the `Tracks` they meet first; `mkvmerge -J`
+   takes the one the `SeekHead` names. A state where the two differ is read as old by one tool
+   and new by the other (and mkvpropedit's order, the old place first, leaves no `Tracks` at
+   all). Before any write, the planner reads every state the steps pass through (the file plus
+   the planned writes, in memory) with Reframe's reader and refuses (`header.unsafe_layout`)
+   unless each reads all old or all new and the last all new. The fault tests stop the writer
+   after each write, and in the middle of the copies, and read every file left with ffprobe,
+   `mkvmerge -J` and Reframe's reader.
+
+   What is not covered: the switch is one `write()` call, but it is not atomic on the disk. It
+   runs from the segment size (or the first element written in place) to the end of the last
+   changed element before the clusters: on the sampled real files it starts in the first 4 KB
+   and is 0.1 to 36 KB long. A power cut while the kernel writes those pages back, or a kill
+   while a switch of more than one page is copied into the page cache, can tear it. The window
+   is microseconds for a kill and the `fsync` time for a power cut; mkvpropedit has the same
+   window over its several writes.
+4. **Results.** `refused` (the file byte for byte unchanged, also its modification time):
+   `header.unreadable` (not Matroska, damaged, a `CRC-32` that does not match, beyond the
+   `MAX_*` limits), `header.too_large` (a `SeekHead` over `MAX_SEEK_HEAD`), `header.duplicate`,
+   `header.seek_head`, `header.no_info`, `header.no_such_track`, `header.invalid_value` (a NUL,
+   or a `Language` that is not ASCII), `header.unknown_size`, `header.no_room`,
+   `header.trailing_data`, `header.truncated` (the last four only when an element must move),
+   `header.unsafe_layout`. `failed`: `header.io_error` for every OS error, also one before the
+   first write (the file cannot be opened for writing): the reason then says "It is
+   unchanged.", after a write "The file holds either the old or the new values.";
+   `header.changed` when the file's size, modification time or inode changed between the read
+   and the write (nothing written).
+5. **Choices that differ from mkvpropedit** (it edits these files; Reframe refuses): a segment
+   of unknown size, a file with no `SeekHead` or no room for a longer one, data after the
+   segment and a truncated file, each only when an element must move; a `CRC-32` that does not
+   match (mkvpropedit writes a `CRC-32` over the damaged bytes); two `Info` or `Tracks`
+   elements. In the 32 real MKV files sampled, only one growing edit on one file was refused
+   (`header.no_room`: `Info` right after the `SeekHead`).
+6. **Corpus deviation.** mkvmerge 103 writes no `CRC-32`, and no sampled mkvmerge file has one.
+   The corpus file "mkvmerge-written with `CRC-32`" is an mkvmerge file into which the test
+   puts `CRC-32` elements; FFmpeg-written files have them in every level-1 element.
+
+For task I and the reviewers:
+
+- `apply_header_edit` is blocking and has no cancel point: the runner lets it finish. It took
+  1 to 45 ms on the fixtures and on real files (most of it the check of every state). The
+  largest read is bounded by `MAX_READ` (36 MB); in practice the `Tracks` and `Info` elements,
+  the `SeekHead` and the switch's span (tens of KB).
+- The file is opened twice: read only to plan, then for writing, after a check that it is the
+  same file with the same size and modification time.
+- Tests replace `header._FileIO` to stop the writer after a given write.
 
 ### Built: I (the plan step, runner and validation)
 

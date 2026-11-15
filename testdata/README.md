@@ -1826,6 +1826,90 @@ may be damaged" with the file intact (killed before the write, or after it), non
 (before RB-3: 22 of 200). A real `asyncio.run` stopped by two SIGINTs while the edit waits at
 a gate: the shutdown cancels every task and so kills mkvpropedit; the stored job says so.
 
+### Matroska header writer
+
+Checked on 2026-11-15 with MKVToolNix **103.0** (`mkvmerge`, `mkvinfo`, `mkvpropedit`) and the
+pinned FFmpeg n9.0.2 (BtbN), for Reframe's own writer (`reframe.metadata.header`, decision
+[0080](../docs/decisions/0080-own-matroska-header-writer.md)). The tests are in
+`packages/reframe/tests/metadata/header/`; the corpus is made at test time (`corpus.py`).
+
+**`CRC-32`.** FFmpeg's Matroska muxer puts a `CRC-32` element (`0xBF`, 4 bytes) first in every
+level-1 element: `SeekHead`, `Info`, `Tracks`, `Tags`, `Cues` and each `Cluster`. The value is
+zlib's CRC-32 of the bytes after the `CRC-32` element to the end of its parent, stored
+little-endian. `mkvinfo -v -z` does not list them (`Seek head size 71 data size 66` holds 60
+bytes of `Seek` entries and the 6 bytes of the `CRC-32`). mkvmerge 103 writes none and has no
+option for them, so the corpus file "mkvmerge-written with `CRC-32`" is an mkvmerge file into
+which the test puts `CRC-32` elements (`SeekHead`, `Info`, `Tracks`, each `TrackEntry`);
+`mkvmerge -J` and ffprobe read it as before. mkvpropedit keeps a `CRC-32` that is there and
+calculates it again.
+
+**Layouts.** FFmpeg: `SeekHead`, `Void` (90 bytes), `Info`, `Tracks`, `Tags`, the clusters,
+`Cues`; nothing after `Tracks` that can take a longer `Tracks`, so most edits that add bytes
+move it. `SeekPosition` has the shortest width (1 to 3 bytes). mkvmerge: `SeekHead`, `Void`
+(about 4 KB), `Info`, `Tracks`, `Void` (about 1 KB), the attachments and chapters, the
+clusters, `Cues`, `Tags`. After an edit that moves `Tracks` and shortens `Info`, mkvpropedit
+leaves a first `SeekHead` with one entry, which points to a second `SeekHead` behind the
+clusters with the entries for `Info`, `Tracks`, `Tags` and `Cues`. When the writer moves an
+element that a `SeekHead` behind the clusters lists, it moves that `SeekHead` too.
+
+**What the readers read in the states between two writes** (`multitrack.mkv`, a `Tracks` copy
+with one changed name; ffprobe `-show_streams`, `mkvmerge -J`, `read_matroska`):
+
+| State | ffprobe | `mkvmerge -J` | Reframe's reader |
+|---|---|---|---|
+| a `Tracks` or a `Void` after the end of the segment | old | old | old |
+| the segment grown over a second `Tracks` at the end; `SeekHead` → old | old | old | old |
+| the same, `SeekHead` → new | **old** | **new** | **old** |
+| old `Tracks` turned into a `Void`, `SeekHead` → new | new | new | new |
+| old `Tracks` turned into a `Void`, `SeekHead` → old place | no streams | 0 tracks | error |
+| `SeekHead` → a `Tracks` after the end of the segment | old | **new** | old |
+
+ffprobe and Reframe's reader take the `Tracks` they meet first in file order; `mkvmerge -J`
+takes the one the `SeekHead` names. So the `SeekHead` entry and the old place must change in
+the same write. The writer writes the moved copies after the end of the segment first, then
+one write changes the segment size, the `SeekHead` and every old place before the clusters;
+a moved element's old copy behind the clusters becomes a `Void` after that. The fault tests
+stop the writer after each write (and in the middle of the write of the copies) on FFmpeg,
+mkvmerge and mkvpropedit-edited files: every file left reads all old or all new in ffprobe,
+`mkvmerge -J` and Reframe's reader. A copy cut short after the segment is truncated by the next
+edit.
+
+**Refusals.** The writer refuses these files and leaves them byte for byte unchanged; mkvpropedit
+103 on the same file:
+
+| File | Writer | mkvpropedit |
+|---|---|---|
+| a `Seek` for `Tracks` to `2^64 - 1` before the real one | `header.seek_head` | refuses (exit 2, "no corresponding level 1 element") |
+| other `SeekHead` entries that disagree, or point to no such element | `header.seek_head` | not tried |
+| two `Info` elements before the clusters (two `Tracks`: the same code) | `header.duplicate` | edits |
+| a `CRC-32` that does not match | `header.unreadable` | edits, and writes a `CRC-32` that matches the damaged bytes |
+| a child that runs past its parent, an element of unknown size before the clusters | `header.unreadable` | not tried |
+| beyond the reader's `MAX_*` limits, or a `SeekHead` with more than `MAX_CHILDREN` entries | `header.unreadable`, `header.too_large` | not tried |
+| a title for a file with no `Info` | `header.no_info` | refuses (exit 2) |
+| a track number the file does not have | `header.no_such_track` | refuses (exit 2) |
+| an element must move, and: the segment has an unknown size | `header.unknown_size` | edits |
+| … no `SeekHead`, or no room for the longer `SeekHead` | `header.no_room` | edits (writes a new `SeekHead`) |
+| … unknown data after the segment | `header.trailing_data` | edits |
+| … the file is shorter than its segment | `header.truncated` | edits |
+
+The same files with an edit that fits in place are edited. A refusal is data
+(`HeaderEditResult`), never an exception; an OS error is `failed` (`header.io_error`, the reason
+says whether the file was changed).
+
+**Real files** (read only; the files themselves are not named here). A dry run of the planner on
+the 32 sampled MKV files on the share (mkvmerge v6.8 to v102, HandBrake 0.10 to 1.10, FFmpeg,
+one unknown muxer): no refusal for a small edit (a language pair, a flag, a short title); one
+refusal for an edit that grows `Tracks` and `Info`: the unknown-muxer file has `Info` right after
+its `SeekHead` (`header.no_room`; mkvpropedit edits that layout, checked on a copy made like it
+from `multitrack.mkv`). Every `CRC-32` in the sample matched; none of the mkvmerge files has
+one. On local copies of five files (mkvmerge v15 and v86, two HandBrake 1.7.3, one FFmpeg with
+`CRC-32`), three edits in a row (a small edit; 6000-character name and a 3000-character title;
+a shorter name and no title) by the writer and by mkvpropedit: `mkvmerge -J` and ffprobe read
+the same, every stream is kept, every `CRC-32` matches. The writer took 2 to 45 ms per edit
+(with its own check of every state). Its files grow more than mkvpropedit's (up to 68 KB after
+the three edits): a `Tracks` behind the clusters that changes with the title is moved again
+instead of written over. The fault stops on copies of two of them read all old.
+
 ### Advanced encoder options (C-6, complete option sets)
 
 Checked on 2026-10-15 with FFmpeg n9.0.2 (Arch `/usr/bin/ffmpeg`: x264 core 165, x265 4.3,
