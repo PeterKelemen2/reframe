@@ -289,12 +289,10 @@ def test_metadata_edit_plan_needs_no_output_path() -> None:
 
 
 def test_an_mkv_output_gets_the_fixup_without_any_mkvtoolnix() -> None:
-    """``tools()`` has no mkvpropedit: the BCP 47 tag is still written after the mux."""
     src = recorded("multitrack.mkv")
     job = draft(src, video={"encoder": "libx264"})
     job.audio[0].metadata = TrackMetadata(language="pt-BR", original=True)
     plan = build_plan(job, src, caps(), tools(), shell="posix")
-    assert tools().mkvpropedit.status is ToolStatus.MISSING
     assert [s.kind for s in plan.steps] == ["encode", "header_edit", "finalize"]
     fixup = plan.steps[1]
     assert fixup.description == "Write the BCP 47 languages (Matroska LanguageIETF)"

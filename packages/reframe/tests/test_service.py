@@ -79,7 +79,7 @@ def drain(subscription: Subscription) -> list[Event]:
 
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """No tool overrides, user folders in ``tmp_path``, MediaInfo off (deterministic)."""
+    """No tool overrides, user folders in ``tmp_path``."""
     for var in ENV_VARS.values():
         monkeypatch.delenv(var, raising=False)
     for name in ("config", "data", "cache"):
@@ -419,7 +419,7 @@ async def test_rescan_publishes_tools_changed(fake: ft.FakeTools) -> None:
         assert second.ffprobe.path == first.ffprobe.path
         versions = await app.tools.versions()
         assert versions["ffprobe"] == "n9.0.2-17-g2a571b6068-20260930"  # the fake's version
-        assert set(versions) == {"ffmpeg", "ffprobe", "mkvpropedit", "mediainfo"}
+        assert set(versions) == {"ffmpeg", "ffprobe"}
         received = drain(events)
         # The first discovery may have ended before the subscription.
         assert 1 <= len(received) <= 2

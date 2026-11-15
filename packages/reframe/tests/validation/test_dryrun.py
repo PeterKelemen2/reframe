@@ -323,8 +323,6 @@ def _tools(status: ToolStatus, path: Path | None = None) -> ToolSet:
     return ToolSet(
         ffmpeg=info("ffmpeg"),
         ffprobe=info("ffprobe"),
-        mkvpropedit=info("mkvpropedit"),
-        mediainfo=info("mediainfo"),
     )
 
 

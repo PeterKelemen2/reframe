@@ -34,12 +34,7 @@ CACHE_DIR_ENV = "REFRAME_CACHE_DIR"
 APP_NAME = "Reframe" if sys.platform == "win32" else "reframe"
 
 #: Sub-folder of a ``tools`` root for each tool.
-BUNDLED_SUBDIRS: Mapping[str, str] = {
-    "ffmpeg": "ffmpeg",
-    "ffprobe": "ffmpeg",
-    "mkvpropedit": "mkvtoolnix",
-    "mediainfo": "mediainfo",
-}
+BUNDLED_SUBDIRS: Mapping[str, str] = {"ffmpeg": "ffmpeg", "ffprobe": "ffmpeg"}
 
 _LINUX_ROOTS = (Path("/usr/lib/reframe/tools"), Path("/opt/reframe/tools"))
 

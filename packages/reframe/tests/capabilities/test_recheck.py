@@ -32,7 +32,6 @@ def cli_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_tools: ft.Fake
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
     monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
-    monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(tmp_path / "no-mkvpropedit"))
     return tmp_path / "cache" / "capabilities"
 
 

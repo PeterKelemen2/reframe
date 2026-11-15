@@ -31,7 +31,7 @@ NUL_MESSAGE = (
 
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """No tool overrides, user folders in ``tmp_path``, MediaInfo off (deterministic)."""
+    """No tool overrides, user folders in ``tmp_path``."""
     for var in ENV_VARS.values():
         monkeypatch.delenv(var, raising=False)
     for name in ("config", "data", "cache"):

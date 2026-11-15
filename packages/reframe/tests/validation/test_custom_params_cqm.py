@@ -78,8 +78,6 @@ def _found_tools() -> ToolSet:
     return ToolSet(
         ffmpeg=info("ffmpeg"),
         ffprobe=info("ffprobe"),
-        mkvpropedit=info("mkvpropedit"),
-        mediainfo=info("mediainfo"),
     )
 
 

@@ -197,10 +197,7 @@ def _tool_set() -> ToolSet:
     from reframe.models import ToolInfo, ToolStatus
 
     return ToolSet(
-        **{
-            name: ToolInfo(name=name, status=ToolStatus.MISSING)
-            for name in ("ffmpeg", "ffprobe", "mkvpropedit", "mediainfo")
-        }
+        **{name: ToolInfo(name=name, status=ToolStatus.MISSING) for name in ("ffmpeg", "ffprobe")}
     )
 
 

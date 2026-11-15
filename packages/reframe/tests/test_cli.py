@@ -185,7 +185,7 @@ def cache_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
 def fake_env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_tools: ft.FakeTools
 ) -> ft.FakeTools:
-    """The fake ffmpeg and ffprobe, MediaInfo off, and private folders."""
+    """The fake ffmpeg and ffprobe, and private folders."""
     for var in ENV_VARS.values():
         monkeypatch.delenv(var, raising=False)
     for name in ("config", "data", "cache"):
@@ -766,7 +766,7 @@ def test_render_edge_cases() -> None:
         cover_art=[AttachedPicture(index=2, codec="png")],
         data=[DataStream(index=3, codec_tag="tmcd", title="Timecode")],
         chapters=[Chapter(index=i, start=float(i), end=float(i + 1)) for i in range(55)],
-        warnings=["MediaInfo could not read the file: boom"],
+        warnings=["The Matroska reader could not read the file: boom"],
         probed_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     buffer = io.StringIO()
@@ -783,7 +783,7 @@ def test_render_edge_cases() -> None:
     assert "Chapters (55)" in out
     assert "55  0:00:54.000" not in out
     assert "… and 5 more" in out
-    assert "Warnings (1)\n  MediaInfo could not read the file: boom" in out
+    assert "Warnings (1)\n  The Matroska reader could not read the file: boom" in out
     assert "Bitrate    —" in out
     assert "Probed by" not in out
 
