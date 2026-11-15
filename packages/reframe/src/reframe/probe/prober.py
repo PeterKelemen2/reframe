@@ -400,8 +400,9 @@ async def _sample(
         return await _race(work, cancel, SAMPLE_TIMEOUT)
     except TimeoutError:
         log.info("%s: the clusters were not sampled within %g s", file, SAMPLE_TIMEOUT)
-    except OSError as exc:
-        log.info("%s: the clusters could not be sampled: %s", file, exc)
+    except (OSError, ArithmeticError, ValueError) as exc:
+        # A damaged file can hold values the arithmetic cannot take: the rates stay unknown.
+        log.info("%s: the clusters could not be sampled: %r", file, exc)
     finally:
         stop.set()
     return None

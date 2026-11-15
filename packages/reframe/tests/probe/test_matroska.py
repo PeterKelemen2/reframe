@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import struct
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -146,6 +147,32 @@ def test_unknown_size_segment_and_tracks_after_a_seek_head(tmp_path: Path) -> No
 def test_damaged_files_raise_matroska_error(tmp_path: Path, data: bytes, message: str) -> None:
     with pytest.raises(MatroskaError, match=message):
         read_matroska(write(tmp_path, data))
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        element(0x1549A966, element(0x2AD7B1, b"\x01" + b"\0" * 129)),  # TimestampScale
+        element(0x1549A966, element(0x2AD7B1, b"\0" * 8 + b"\x01")),
+        tracks(element(0xAE, element(0xD7, b"\0" * 8 + b"\x01") + uint(0x83, 1))),
+    ],
+    ids=["scale-of-130-bytes", "scale-of-9-bytes", "track-number-of-9-bytes"],
+)
+def test_an_unsigned_integer_over_eight_bytes_is_damaged(tmp_path: Path, entry: bytes) -> None:
+    data = header() + element(0x18538067, entry + tracks(track(1, 1)))
+    with pytest.raises(MatroskaError, match="over 8 bytes"):
+        read_matroska(write(tmp_path, data))
+
+
+def test_a_duration_too_large_for_a_float_is_none(tmp_path: Path) -> None:
+    scale = element(0x2AD7B1, (1 << 63).to_bytes(8, "big"))
+    duration = element(0x4489, struct.pack(">d", 1e300))
+    data = header() + element(
+        0x18538067, element(0x1549A966, scale + duration) + tracks(track(1, 1))
+    )
+    found = read_matroska(write(tmp_path, data))
+    assert found.timestamp_scale == 1 << 63
+    assert found.duration is None
 
 
 def test_webm_doc_type_and_large_element_limit(

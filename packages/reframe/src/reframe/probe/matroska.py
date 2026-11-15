@@ -9,6 +9,7 @@ limits, raises :class:`MatroskaError`.
 from __future__ import annotations
 
 import itertools
+import math
 import os
 import struct
 from collections.abc import Iterator
@@ -224,6 +225,8 @@ def _children(data: bytes, budget: _Budget, what: str) -> list[tuple[int, bytes]
 
 
 def _uint(data: bytes) -> int:
+    if len(data) > 8:
+        raise MatroskaError(f"an unsigned integer of {len(data)} bytes, over 8 bytes")
     return int.from_bytes(data, "big") if data else 0
 
 
@@ -296,8 +299,10 @@ def _info(info: MatroskaFile, payload: bytes, budget: _Budget) -> None:
             info.timestamp_scale = _uint(data)
         elif element_id == _DURATION:
             ticks = _float(data)
-    if ticks is not None and ticks > 0 and ticks != float("inf"):
-        info.duration = ticks * info.timestamp_scale / 1e9
+    if ticks is not None and ticks > 0:
+        duration = ticks * info.timestamp_scale / 1e9
+        if math.isfinite(duration):
+            info.duration = duration
 
 
 def _seek_entries(payload: bytes, budget: _Budget, room: int) -> dict[int, int]:

@@ -31,6 +31,7 @@ from reframe.probe import (
     sampling,
 )
 from reframe.probe import prober as prober_mod
+from reframe.probe.folder import probe_folder
 from reframe.probe.matroska import MatroskaFile, MatroskaTrack, read_matroska
 from reframe.probe.sampling import ClusterSample, estimate_bitrates, sample_clusters
 from reframe.tools import CancelToken
@@ -547,3 +548,53 @@ async def test_a_sample_that_cannot_read_the_file_leaves_the_rates_unknown(
     source = await _fake_prober(fake_tools, probe).probe(path, use_cache=False)
     assert isinstance(source, MediaSource), source
     assert source.audio[0].bitrate == BitrateInfo()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("error", [OverflowError, ZeroDivisionError, ValueError])
+async def test_an_error_in_the_sample_leaves_the_rates_unknown(
+    fake_tools: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: type
+) -> None:
+    def fail(path: Path, info: MatroskaFile, **kw: Any) -> None:
+        raise error("a value the arithmetic cannot take")
+
+    monkeypatch.setattr(sampling, "sample_clusters", fail)
+    path, probe = _two_audio_file(tmp_path)
+    source = await _fake_prober(fake_tools, probe).probe(path, use_cache=False)
+    assert isinstance(source, MediaSource), source
+    assert [a.bitrate for a in source.audio] == [BitrateInfo(), BitrateInfo()]
+    assert source.video[0].bitrate == BitrateInfo()
+
+
+def _huge_timestamp_scale_file(tmp_path: Path, name: str = "huge.mkv") -> Path:
+    """A ``TimestampScale`` of 130 bytes and no ``Duration``: a float of the cluster spans
+    overflows."""
+    clusters = [cluster(i * 1000, [(1, 50_000), (2, 8_000)]) for i in range(4)]
+    return write(tmp_path, mkv(clusters, scale=1 << (8 * 130 - 1)), name)
+
+
+@pytest.mark.anyio
+async def test_a_huge_timestamp_scale_keeps_the_rates_unknown(
+    fake_tools: ft.FakeTools, tmp_path: Path
+) -> None:
+    path = _huge_timestamp_scale_file(tmp_path)
+    probe = _probe_json(tmp_path, path, _video(0), _audio(1), duration=4.0)
+    source = await _fake_prober(fake_tools, probe).probe(path, use_cache=False)
+    assert isinstance(source, MediaSource), source
+    assert [source.video[0].bitrate, source.audio[0].bitrate] == [BitrateInfo(), BitrateInfo()]
+
+
+@pytest.mark.anyio
+async def test_a_huge_timestamp_scale_does_not_fail_the_folder(
+    fake_tools: ft.FakeTools, tmp_path: Path
+) -> None:
+    folder = tmp_path / "season"
+    folder.mkdir()
+    damaged = _huge_timestamp_scale_file(folder, "e01.mkv")
+    good = write(folder, mkv([cluster(i * 1000, [(1, 50_000), (2, 8_000)]) for i in range(4)]),
+                 "e02.mkv")  # fmt: skip
+    probe = _probe_json(tmp_path, good, _video(0), _audio(1), duration=4.0)
+    result = await probe_folder(_fake_prober(fake_tools, probe), folder)
+    assert result.errors == []
+    assert [s.ref.path.name for s in result.sources] == [damaged.name, good.name]
+    assert result.sources[1].audio[0].bitrate.source is BitrateSource.ESTIMATED
