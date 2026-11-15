@@ -162,6 +162,10 @@ def _media_source_1_to_2(data: dict[str, Any]) -> dict[str, Any]:
     and no ``mediainfo``: a ``mediainfo`` bit rate becomes ``estimated``, because both are a
     value that the probe did not read from the stream or measure.
 
+    Reframe keeps media sources only in the probe cache, which probes a file again instead of
+    migrating an entry of another parser; this migration serves any other reader of the
+    document.
+
     Down-level note: Reframe before version 2 reports a newer media source document
     (``UnsupportedSchemaVersion``). Its probe cache ignores entries of this version (their
     parser fingerprint differs) and probes the file again.
