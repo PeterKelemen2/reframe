@@ -13,7 +13,7 @@ import { formatList } from '@/components/shell/format'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 
-import { familyOf, installHint, resetOps, setByEnvironment, type ToolInfo, toolTone } from './tools'
+import { resetOps, setByEnvironment, TOOL_NAMES, type ToolInfo, toolTone } from './tools'
 import { useBundledTools } from './useBundledTools'
 import { readPointer, useSetting } from './useSetting'
 
@@ -50,16 +50,16 @@ const shown = computed(() => (byEnvironment.value ? (props.tool.path ?? '') : dr
 const bundled = useBundledTools()
 const bundledIssues = shallowRef<ValidationIssue[]>([])
 /**
- * With a bundled build the reset is *Use bundled*, for the whole family: an ffprobe path left
+ * With a bundled build the reset is *Use bundled*, for both tools: an ffprobe path left
  * behind would still win over the bundled ffprobe.
  */
 const canUseBundled = computed(
   () => props.tool.bundled && !byEnvironment.value && saved.value !== null,
 )
-/** The other tools of the family whose Settings paths *Use bundled* removes too. */
+/** The other tool, when *Use bundled* removes its Settings path too. */
 const alsoReset = computed(() =>
   canUseBundled.value
-    ? familyOf(props.tool.name).filter(
+    ? TOOL_NAMES.filter(
         (name) => name !== props.tool.name && resetOps([name], settings.settings?.tools).length > 0,
       )
     : [],
@@ -102,16 +102,12 @@ function originText(tool: ToolInfo): string {
       return t('settings.tools.origin.bundled')
     case 'path':
       return t('settings.tools.origin.path')
-    case 'installed':
-      return t('settings.tools.origin.installed')
     default:
       return t('settings.tools.origin.none')
   }
 }
 const originLabel = computed(() => originText(props.tool))
-const reason = computed(
-  () => installHint(props.tool, system.info?.platform, t) ?? props.tool.reason ?? null,
-)
+const reason = computed(() => props.tool.reason ?? null)
 
 const note = computed(() => {
   const variable = props.tool.env_var ?? ''

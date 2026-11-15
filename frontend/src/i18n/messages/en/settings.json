@@ -43,14 +43,7 @@
       "settings": "Path in the settings",
       "bundled": "Bundled with Reframe",
       "path": "System PATH",
-      "installed": "Where its installer put it",
       "none": "Not found anywhere"
-    },
-    "install": {
-      "mkvpropedit": "mkvpropedit is part of MKVToolNix, which Reframe needs to edit MKV files in place and to write BCP 47 languages. Install your distribution's mkvtoolnix package, then choose Check again.",
-      "mkvpropeditWindows": "mkvpropedit is part of MKVToolNix, which Reframe needs to edit MKV files in place and to write BCP 47 languages. Install MKVToolNix from mkvtoolnix.download, then choose Check again.",
-      "mediainfo": "MediaInfo adds track details that FFprobe lacks. Install your distribution's mediainfo package, then choose Check again.",
-      "mediainfoWindows": "MediaInfo adds track details that FFprobe lacks. Install the MediaInfo command-line program from mediaarea.net, then choose Check again."
     }
   },
   "encoders": {

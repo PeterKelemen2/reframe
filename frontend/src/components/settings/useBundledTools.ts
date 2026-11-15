@@ -7,7 +7,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 import { useTasksStore } from '@/stores/tasks'
 
-import { bundledFfmpegDamaged, FFMPEG_FAMILY, familyOf, resetOps, type ToolName } from './tools'
+import { bundledFfmpegDamaged, resetOps, TOOL_NAMES, type ToolName } from './tools'
 import { refusalIssues } from './useSetting'
 
 /** The API client has shown the problem as a toast. */
@@ -22,7 +22,7 @@ async function quietly(action: () => Promise<void>): Promise<boolean> {
 }
 
 /**
- * *Use bundled* for a tool's family: removes the Settings paths that win over the bundled
+ * *Use bundled*: removes the Settings paths of both tools that win over the bundled
  * build, then finds the tools again. Without a bundled FFmpeg it first downloads the pinned
  * build, which then counts as bundled.
  */
@@ -43,7 +43,7 @@ export function useBundledTools() {
   const canDownload = computed(() => {
     const set = system.info?.tools
     if (set === undefined) return false
-    if (!FFMPEG_FAMILY.some((name) => set[name].bundled)) return true
+    if (!TOOL_NAMES.some((name) => set[name].bundled)) return true
     return system.info?.mode === 'web' && bundledFfmpegDamaged(set)
   })
 
@@ -67,10 +67,9 @@ export function useBundledTools() {
 
   /** What the server refused, at `tools`; empty when nothing was refused. */
   async function use(name: ToolName): Promise<ValidationIssue[]> {
-    const fetchFirst =
-      !system.info?.tools[name].bundled || (FFMPEG_FAMILY.includes(name) && canDownload.value)
+    const fetchFirst = !system.info?.tools[name].bundled || canDownload.value
     if (fetchFirst && !(await download())) return []
-    const ops = resetOps(familyOf(name), settings.settings?.tools)
+    const ops = resetOps(TOOL_NAMES, settings.settings?.tools)
     if (ops.length === 0) return []
     try {
       await settings.update(ops)

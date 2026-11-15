@@ -13,7 +13,7 @@
     "pass1": "Pass 1 of 2",
     "pass2": "Pass 2 of 2",
     "encode": "Encoding",
-    "headerEdit": "Writing tags",
+    "headerEdit": "Writing the MKV header",
     "finalize": "Finishing",
     "of": "step {n} of {count}",
     "withKind": "{kind} · {step}"
@@ -28,7 +28,7 @@
     "videoCopy": "Video copied",
     "metadataEdit": "Metadata edit",
     "inPlace": "Source, edited in place",
-    "inPlaceTip": "mkvpropedit changes {path} itself: no new file is written."
+    "inPlaceTip": "Reframe writes the changes into {path} itself: no new file is written."
   },
   "columns": {
     "drag": "Drag to reorder",

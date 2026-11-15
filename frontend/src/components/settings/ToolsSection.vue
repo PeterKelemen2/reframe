@@ -12,7 +12,7 @@ import { useSystemStore } from '@/stores/system'
 
 import RefusalList from './RefusalList.vue'
 import ToolRow from './ToolRow.vue'
-import { FFMPEG_FAMILY, setByEnvironment, TOOL_NAMES, type ToolInfo } from './tools'
+import { setByEnvironment, TOOL_NAMES, type ToolInfo } from './tools'
 import { useBundledTools } from './useBundledTools'
 import { useSettingsLocked } from './useSetting'
 
@@ -31,7 +31,7 @@ const checking = ref(false)
 /** The environment sets both: a bundled build would not be used. */
 const bundledUseless = computed(() => {
   const set = system.info?.tools
-  return set !== undefined && FFMPEG_FAMILY.every((name) => setByEnvironment(set[name]))
+  return set !== undefined && TOOL_NAMES.every((name) => setByEnvironment(set[name]))
 })
 const bundledIssues = shallowRef<ValidationIssue[]>([])
 

@@ -1,26 +1,15 @@
-import type { useI18n } from 'vue-i18n'
-
 import type { JsonPatchOp, Schemas } from '@/api/types'
 import type { StatusTone } from '@/components/base/types'
 
 export type ToolInfo = Schemas['ToolInfo']
 export type ToolName = ToolInfo['name']
 
-export const TOOL_NAMES: readonly ToolName[] = ['ffmpeg', 'ffprobe', 'mkvpropedit', 'mediainfo']
-
-/** The tools that *Use bundled FFmpeg* downloads. */
-export const FFMPEG_FAMILY: readonly ToolName[] = ['ffmpeg', 'ffprobe']
-
-/** The tools that one bundled build provides: FFmpeg's two, else the tool alone. */
-export function familyOf(name: ToolName): readonly ToolName[] {
-  return FFMPEG_FAMILY.includes(name) ? FFMPEG_FAMILY : [name]
-}
+/** The tools Reframe runs. One bundled FFmpeg build provides both. */
+export const TOOL_NAMES: readonly ToolName[] = ['ffmpeg', 'ffprobe']
 
 /** The bundled FFmpeg is in use and one of its two tools fails: a file is gone or damaged. */
 export function bundledFfmpegDamaged(set: Record<ToolName, ToolInfo>): boolean {
-  return FFMPEG_FAMILY.some(
-    (name) => set[name].origin === 'bundled' && set[name].status !== 'found',
-  )
+  return TOOL_NAMES.some((name) => set[name].origin === 'bundled' && set[name].status !== 'found')
 }
 
 /** Removes the Settings paths of `names` that are set: each would win over a bundled build. */
@@ -41,36 +30,7 @@ export function setByEnvironment(tool: ToolInfo): boolean {
   return tool.origin === 'env' && !tool.next_to_ffmpeg
 }
 
+/** Both tools are required: Reframe cannot read or encode without either. */
 export function toolTone(tool: ToolInfo): StatusTone {
-  if (tool.status === 'found') return 'ok'
-  // MKVToolNix and MediaInfo are optional: without them some features are off.
-  return FFMPEG_FAMILY.includes(tool.name) ? 'error' : 'warn'
-}
-
-type Translate = ReturnType<typeof useI18n>['t']
-
-/**
- * What to install, for an optional tool that is found nowhere: no package bundles mkvpropedit,
- * and the Linux packages bundle no MediaInfo. `null` for any other state. `platform` is the
- * server's `sys.platform`.
- */
-export function installHint(
-  tool: ToolInfo,
-  platform: string | undefined,
-  t: Translate,
-): string | null {
-  if (tool.status !== 'missing' || (tool.origin ?? null) !== null) return null
-  const windows = platform === 'win32'
-  switch (tool.name) {
-    case 'mkvpropedit':
-      return windows
-        ? t('settings.tools.install.mkvpropeditWindows')
-        : t('settings.tools.install.mkvpropedit')
-    case 'mediainfo':
-      return windows
-        ? t('settings.tools.install.mediainfoWindows')
-        : t('settings.tools.install.mediainfo')
-    default:
-      return null
-  }
+  return tool.status === 'found' ? 'ok' : 'error'
 }

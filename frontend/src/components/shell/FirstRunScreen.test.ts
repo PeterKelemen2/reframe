@@ -38,8 +38,6 @@ function info(
     tools: {
       ffmpeg: tool('ffmpeg', ffmpeg),
       ffprobe: tool('ffprobe', ffprobe),
-      mkvpropedit: tool('mkvpropedit', {}),
-      mediainfo: tool('mediainfo', {}),
     },
   } as SystemInfo
 }
@@ -249,12 +247,15 @@ describe('the first-run screen', () => {
   })
 
   describe("the desktop app's first start", () => {
-    it('lists every tool, offers Continue only once FFmpeg works, and Continue is remembered', async () => {
+    it('lists FFmpeg and FFprobe, offers Continue only once FFmpeg works, and Continue is remembered', async () => {
       Object.assign(platform, { kind: 'desktop' })
       const { wrapper, system } = await mountFirstRun(
         info({ status: 'missing', origin: 'bundled', reason: 'gone' }, {}),
       )
-      expect(toolRow('mediainfo')).not.toBeNull()
+      const rows = [...document.querySelectorAll<HTMLElement>('[data-tool]')].map(
+        (row) => row.dataset.tool,
+      )
+      expect(rows).toEqual(['ffmpeg', 'ffprobe'])
       expect(wrapper.find('.first-run__continue').exists()).toBe(false)
 
       system.info = info(
@@ -274,23 +275,6 @@ describe('the first-run screen', () => {
 
       await wrapper.find('.first-run__continue').trigger('click')
       expect(localStorage.getItem(FIRST_RUN_KEY)).toBe('true')
-    })
-
-    it('tells a Windows user without MKVToolNix what to install', async () => {
-      Object.assign(platform, { kind: 'desktop' })
-      const windows: SystemInfo = {
-        ...info({ origin: 'bundled', version: '9.0.2' }, { origin: 'bundled' }),
-        platform: 'win32',
-      }
-      windows.tools.mkvpropedit = tool('mkvpropedit', {
-        status: 'missing',
-        origin: null,
-        reason: 'mkvpropedit was not found.',
-      })
-      await mountFirstRun(windows)
-      const reason = toolRow('mkvpropedit')?.querySelector('[data-field="reason"]')?.textContent
-      expect(reason).toContain('Install MKVToolNix from mkvtoolnix.download')
-      expect(reason).not.toContain('mkvpropedit was not found.')
     })
   })
 

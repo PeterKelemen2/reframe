@@ -235,7 +235,23 @@ audio within 9.86 % (FLAC) of the block scan.
 
 ### Built: U (the track table)
 
-*Placeholder.*
+- **The cell** of an `estimated` rate (`TrackTable.vue`): `≈ 2,140 kb/s` (the message
+  `tracks.units.kbpsEstimated`), **Measure** next to it on the same line (the existing bit-rate
+  scan, the same button as for an unknown rate), and under it "estimated from one sample" /
+  "estimated from N samples" (vue-i18n plural from `bitrate.samples`). Measure is on the value's
+  line, not the label's: beside the longer label it fell outside the table's scroll width.
+- An `estimated` rate without `samples` (a cached document migrated from `mediainfo`) says only
+  "estimated". The details row shows `≈ value · Estimated from a sample of the file's
+  clusters`. A measured, `stream` or `stats_tag` rate offers no Measure, as before.
+- Checked headless against the real server: `dts-hd-ma.mkv` shows "≈ 2,140 kb/s, Measure,
+  estimated from one sample"; Measure replaces it with "2,140 kb/s measured" and announces it.
+- The real server now estimates rates the frontend's server tests expected as `unknown`: the
+  scans tests now start from `estimated` (`dts-hd-ma` 1 sample, `commentary` 32 samples; the
+  commentary role comes from the estimate, so a measure no longer changes it), and the audio
+  defaults preview offers no Measure for the DTS-HD MA track (`measure` is set only for an
+  unknown rate in `batch/audio_rules.py`).
+- Settings → Tools and the first-run screen list ffmpeg and ffprobe only (`TOOL_NAMES`); the
+  MediaInfo install hints are gone.
 
 ### The real-file check
 

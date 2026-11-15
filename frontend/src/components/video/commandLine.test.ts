@@ -51,6 +51,54 @@ describe('tokenize', () => {
   })
 })
 
+describe('a header edit line', () => {
+  // `edit_line` of an in-place edit, POSIX quoting.
+  const LINE =
+    "header_edit '/media/My Show.mkv' audio 1: language=hun language_ietf=hu name='Magyar 5.1' default=0 original=1 audio 3: delete_name title='Show – S01E02'"
+
+  it('is the step, its file, then the tracks with their fields and values, and no program', () => {
+    const tokens = tokenize(LINE)
+    expect(tokens.map((token) => token.text).join('')).toBe(LINE)
+    expect(tokens.filter((token) => token.kind !== 'space')).toEqual([
+      { text: 'header_edit', kind: 'step' },
+      { text: "'/media/My Show.mkv'", kind: 'path' },
+      { text: 'audio', kind: 'track' },
+      { text: '1:', kind: 'track' },
+      { text: 'language=', kind: 'option' },
+      { text: 'hun', kind: 'value' },
+      { text: 'language_ietf=', kind: 'option' },
+      { text: 'hu', kind: 'value' },
+      { text: 'name=', kind: 'option' },
+      { text: "'Magyar 5.1'", kind: 'value' },
+      { text: 'default=', kind: 'option' },
+      { text: '0', kind: 'value' },
+      { text: 'original=', kind: 'option' },
+      { text: '1', kind: 'value' },
+      { text: 'audio', kind: 'track' },
+      { text: '3:', kind: 'track' },
+      { text: 'delete_name', kind: 'option' },
+      { text: 'title=', kind: 'option' },
+      { text: "'Show – S01E02'", kind: 'value' },
+    ])
+  })
+
+  it('ends at the next step, whose program is a program again', () => {
+    const tokens = tokenize('header_edit "D:\\o\\a.part.mkv" video 1: delete_title && move /Y a b')
+    expect(tokens.filter((token) => token.kind !== 'space')).toEqual([
+      { text: 'header_edit', kind: 'step' },
+      { text: '"D:\\o\\a.part.mkv"', kind: 'path' },
+      { text: 'video', kind: 'track' },
+      { text: '1:', kind: 'track' },
+      { text: 'delete_title', kind: 'option' },
+      { text: '&&', kind: 'operator' },
+      { text: 'move', kind: 'program' },
+      { text: '/Y', kind: 'path' },
+      { text: 'a', kind: 'path' },
+      { text: 'b', kind: 'path' },
+    ])
+  })
+})
+
 describe('stepLines', () => {
   it('puts each step on its own line, the operator at the end of the line before', () => {
     const lines = stepLines(tokenize('ffmpeg -i /a -f null - && ffmpeg -i /a /b && mv /b /c'))

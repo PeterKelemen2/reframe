@@ -390,7 +390,7 @@ describe('an output audio track', () => {
     const { wrapper } = await mountTab()
     useValidationStore().issues = [
       issue('container.codec_unsupported', 'audio[1].encoder', 'error'),
-      issue('metadata.language_tag_lost', 'audio[1].metadata.language', 'warning'),
+      issue('metadata.language_invalid', 'audio[1].metadata.language', 'warning'),
       issue('audio.elsewhere', 'audio[1]', 'warning'),
     ]
     await nextTick()
@@ -401,11 +401,11 @@ describe('an output audio track', () => {
     expect(field.classes()).toContain('rf-field--error')
     expect(field.text()).toContain('container.codec_unsupported at audio[1].encoder')
     const language = second.find('.rf-field[data-path="audio[1].metadata.language"]')
-    expect(language.text()).toContain('metadata.language_tag_lost')
+    expect(language.text()).toContain('metadata.language_invalid')
     const listed = second.find('.track-row__issues').text()
     expect(listed).toContain('audio.elsewhere')
     expect(listed).not.toContain('container.codec_unsupported')
-    expect(listed).not.toContain('metadata.language_tag_lost')
+    expect(listed).not.toContain('metadata.language_invalid')
   })
 
   it('is where a link to the track lands', async () => {

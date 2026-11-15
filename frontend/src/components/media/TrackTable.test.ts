@@ -164,6 +164,13 @@ function measuredBitrate(stream: AudioStream): AudioStream {
   return { ...stream, bitrate: { value: 2_140_063, source: 'measured' } }
 }
 
+function estimated(samples: number | null): AudioStream {
+  return {
+    ...(probedSource('dts-hd-ma').audio![0] as AudioStream),
+    bitrate: { value: 1_509_400, source: 'estimated', samples },
+  }
+}
+
 const pgsStreams = () => probedSource('pgs').subtitles as SubtitleStream[]
 
 const button = (wrapper: VueWrapper, name: string) =>
@@ -329,6 +336,34 @@ describe('the scans in the source tables', () => {
     const audio = probedSource('dts-hd-ma').audio!
     const { wrapper } = mountScans('audio', [measuredBitrate(audio[0]!)])
     expect(cells(wrapper, 0)[6]).toBe('2,140 kb/s measured')
+  })
+
+  describe('an estimated bitrate', () => {
+    it('says it is an estimate, from how many samples, and offers Measure for the exact value', async () => {
+      const { wrapper, measureBitrate } = mountScans('audio', [estimated(12)])
+      expect(cells(wrapper, 0)[6]).toBe('≈ 1,509 kb/s Measure estimated from 12 samples')
+      await button(wrapper, 'Measure the bitrate of track 1')!.trigger('click')
+      expect(measureBitrate).toHaveBeenCalledExactlyOnceWith('src', 1)
+      await wrapper.find('.track-table__toggle').trigger('click')
+      expect(detail(wrapper, 'Bitrate')).toBe(
+        "≈ 1,509 kb/s · Estimated from a sample of the file's clusters",
+      )
+    })
+
+    it('counts one sample in the singular', () => {
+      const { wrapper } = mountScans('audio', [estimated(1)])
+      expect(cells(wrapper, 0)[6]).toBe('≈ 1,509 kb/s Measure estimated from one sample')
+    })
+
+    it('says only "estimated" when the probe gave no count', () => {
+      const { wrapper } = mountScans('audio', [estimated(null)])
+      expect(cells(wrapper, 0)[6]).toBe('≈ 1,509 kb/s Measure estimated')
+    })
+
+    it('offers no Measure once the bitrate is measured', () => {
+      const { wrapper } = mountScans('audio', [measuredBitrate(estimated(12))])
+      expect(wrapper.findAll('[data-scan="bitrate"]')).toEqual([])
+    })
   })
 
   const loud = { path: '/m.mkv', stream_index: 1, integrated: -22.47, true_peak: -20, lra: 2.2 }

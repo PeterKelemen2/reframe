@@ -20,6 +20,14 @@ describe('the step of a running job', () => {
     )
   })
 
+  // Before the next test, whose merged message the shared English messages keep.
+  it('names the header edit, alone in place or after an encode', () => {
+    expect(stepText(progress({ step_kind: 'header_edit' }), t)).toBe('Writing the MKV header')
+    expect(stepText(progress({ step_kind: 'header_edit', step: 1, step_count: 3 }), t)).toBe(
+      'Writing the MKV header · step 2 of 3',
+    )
+  })
+
   it('joins the kind and the step with one message, which a translation may reorder', () => {
     const i18n = createAppI18n()
     i18n.global.mergeLocaleMessage('en', { queue: { step: { withKind: '{step}: {kind}' } } })
