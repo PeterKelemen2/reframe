@@ -277,6 +277,53 @@ def test_search_every_name_in_every_locale() -> None:
     assert _search_differences(_locale_names())[:20] == []
 
 
+@functools.cache
+def _case_maps_to_ascii() -> dict[str, str]:
+    """Every non-ASCII character with an ASCII letter in its lower, upper, title or casefold
+    form, mapped to the ASCII text it stands in for (the Kelvin sign: ``k``, the ligature
+    U+FB01: ``fi``)."""
+    found: dict[str, str] = {}
+    for code in range(0x80, sys.maxunicode + 1):
+        char = chr(code)
+        for form in (char.lower(), char.upper(), char.title(), char.casefold()):
+            ascii_part = "".join(ch for ch in form if ch.isascii() and ch.isalpha())
+            if form != char and ascii_part:
+                found[char] = ascii_part.lower()
+                break
+    return found
+
+
+def _case_mapped_inputs() -> list[str]:
+    """Codes and names of the picker list, each letter run that one of
+    :func:`_case_maps_to_ascii` stands in for replaced by it."""
+    words: set[str] = {"Ko", "Ka", "UOK", "Kore", "en-K", "sk-SK", "ko-KR", "it-IT"}
+    for e in oracle.language_list():
+        for value in (e.tag, e.iso639_1, e.iso639_2b, e.iso639_3, e.english_name, e.native_name):
+            if value:
+                words |= {value, value.upper(), value.capitalize()}
+    inputs: set[str] = set()
+    for char, text in _case_maps_to_ascii().items():
+        for word in words:
+            for form in {text, text.upper(), text.capitalize()}:
+                start = word.find(form)
+                while start != -1:
+                    inputs.add(word[:start] + char + word[start + len(form) :])
+                    start = word.find(form, start + 1)
+    return sorted(inputs)
+
+
+def test_the_kelvin_sign_is_not_a_k() -> None:
+    assert _case_maps_to_ascii()["\u212a"] == "k"
+    assert languages.normalize("\u212ao") == oracle.normalize("\u212ao") == "fuj"
+    assert languages.normalize("UO\u212a") is oracle.normalize("UO\u212a") is None
+
+
+def test_characters_whose_case_forms_are_ascii() -> None:
+    inputs = _case_mapped_inputs()
+    assert _differences(inputs, TAG_FUNCTIONS)[:20] == []
+    assert _search_differences(inputs)[:20] == []
+
+
 def _match_tags() -> list[str | None]:
     listed = [e.tag for e in oracle.language_list()]
     extra = ["cmn", "yue", "zh-Hans-CN", "de-DE-1901", "de-1901", "pt_br", "por", "garbage!"]

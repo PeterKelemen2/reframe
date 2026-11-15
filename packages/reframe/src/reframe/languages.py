@@ -476,8 +476,10 @@ def _code_language(text: str) -> _Tag | None:
 @functools.lru_cache(maxsize=4096)
 def _normalize_code(text: str) -> str | None:
     """Canonical tag for code-shaped input only (no name lookup), or ``None``."""
-    code = text.strip().replace("_", "-").lower()
-    if "-" not in code and code not in OVERRIDES and _TAG_SHAPE.fullmatch(code):
+    raw = text.strip().replace("_", "-")
+    code = raw.lower()
+    # The shape is checked before lowering: the Kelvin sign lowers to an ASCII "k".
+    if "-" not in code and code not in OVERRIDES and _TAG_SHAPE.fullmatch(raw):
         core = _core()
         if code in core.canonical:
             return core.canonical[code]
