@@ -101,7 +101,72 @@ match (a prefix of at least 4 characters, which today turns `achenés` into `yif
 
 ### Built: L (the table)
 
-*Placeholder.*
+**The files.** `scripts/gen-language-data.py` writes three gzipped JSON files (sorted keys, gzip
+`mtime` 0) into `reframe/definitions/data/`. `--check` compares the JSON inside the files, so
+another zlib build cannot fail it; the script does not write a file whose JSON is the same.
+Built from `langcodes` 3.5.1, `language_data` 1.4.0 (CLDR 40), registry `File-Date` 2021-08-06:
+
+| File | Holds | Read | JSON | gzipped |
+|------|-------|------|------|---------|
+| `language-core.json.gz` | registry subtags by type (ranges expanded) with `Deprecated`, `Preferred-Value`, `Suppress-Script`, `Macrolanguage`; the grandfathered tags; langcodes' alias tables (language, territory, CLDR macrolanguage); ISO 639 alpha-3 /T and /B; the canonical tag of each language subtag and alias (where it is not the subtag); English names of languages, scripts and regions; the native names of the canonical tags of all registry language subtags and of the picker list | first use | 260,761 B | 107,907 B |
+| `language-locale-names.json.gz` | names of scripts and regions in every locale, language names in the locales that can name them in an autonym, CLDR's likely subtags, matching distances and display separators | native name of a tag outside the core's list (`de-AT`) | 2,134,453 B | 657,624 B |
+| `language-search.json.gz` | language_data's two name tables (English names; names in every locale), each name with the tag that `find` gives | a name that is not in the picker list (`allemand`, `német`) | 1,447,875 B | 527,230 B |
+| Total | | | 3.84 MB | 1.29 MB |
+
+The definitions loader reads its TOML files by name, so it does not see these files. The wheel
+ships them (checked with `uv build`). Load times on the AMD desktop: core 5–8 ms, then
+`language_list()` 4 ms (before: `langcodes` import 17 ms + 64 ms); locale names 25–28 ms; name
+tables 29–33 ms. `reframe.languages` reads them with `gzip`, `json` and `importlib.resources`.
+
+**The code.** `reframe.languages` keeps every public name and signature. It holds its own port
+of the langcodes algorithms that the results depend on: the BCP 47 parser (with its quirks:
+any three-character subtag after the language counts as an extlang, at most three), the
+alias normalisation, the validity check, `simplify_script`, `prefer_macrolanguage`, alpha-3,
+`display_name` (variants are not named), and for the autonym of other tags CLDR's likely
+subtags, the matching distance and `closest_match`. The name search is the trie lookup as a
+dict: the exact key, else the longest prefix of at least 4 characters, English table first.
+
+**Plan text that is not exactly today's result.** The English names compose as
+`Language (detail, detail)`, but only the script and region (langcodes does not name variants:
+`de-1901` is "German"). Only `und` with a detail composes as "Unknown language (…)";
+`mul-US` is "Multiple languages (United States)" today and stays so (0082's check counted the
+other three because its compose rule used the "Undetermined" override for every one).
+
+**Equivalence test** (`tests/languages/test_equivalence.py`, skipped without the libraries;
+the oracle `tests/languages/oracle.py` is the library-based module as it was). Corpus, fast part:
+14,066 registry inputs (every registry subtag alone, upper-case forms, every extlang with its
+prefixes, every grandfathered and redundant tag, every variant with its prefixes, deprecated
+scripts, regions and variants on four languages, every key of the language and territory alias
+tables, 98 odd inputs), the 418 listed base languages with 34 regions and 20 scripts (22,572
+tags), the 38,345 names of the listed languages in every CLDR locale and 30,676 forms of them
+with words added or letters cut (the prefix match: `achenés` → `yif`), 3,302 picker queries and
+959 locale names for `search`, 65,416 `matches` / `same_language` pairs, hypothesis on any
+input. Slow part: the listed languages with every region and script (215,688 tags), every
+registry language with 3 regions and 2 scripts (41,070), every key of both name tables with the
+added and cut forms (195,201), `search` for all 38,345 locale names. Functions: `normalize`,
+`validate`, `english_name`, `native_name`, `to_matroska_legacy`, `to_mp4`, `to_matroska_ietf`,
+`base_language`, `short_code`, `entry`, `language_list`, `search`, `matches`, `same_language`.
+No difference. Time on the AMD desktop: fast part 19 s, slow part about 130 s; CI runs both
+(it does not deselect `slow`).
+
+**Ties.** Because the tables are langcodes' own, every tie keeps langcodes' resolution (its
+`AMBIGUOUS_PREFERENCES`, the English table first, a code before a name). The 84 names of a
+registry language that resolve to another language or to none (`Geji` → `gyz`, not `gji`;
+`Serbian (Montenegro)` → `sr`; `Pulaar` → `ff`; `Akan` → `ak` for `fat` and `tw`; `中文` → `zh`
+for `cmn`; names with digits or a leading `'` → none) are pinned in
+`tests/languages/test_ties.py`, which runs without the libraries.
+
+**Without the libraries.** `tests/languages/test_without_libraries.py` blocks the three imports
+in a child Python and runs every kind of call. By hand: a venv with only the wheel built by
+`uv build` and its runtime dependencies (`reframe[cli]`; no `langcodes`, `language-data`,
+`marisa-trie`): `import reframe`, `reframe probe`, `reframe plan --json` (a draft) and
+`reframe batch --dry-run` on the fixtures, `search("német")`, `normalize("Ungarisch")`,
+`native_name("de-AT")` all work, and none of the three modules is loaded.
+
+**Licences (for P).** The search table holds the names of language_data's Wiktionary code list
+(`wiktionary/codes-en.csv`, CC BY-SA) beside CLDR and IANA names; `languages.py` is a port of
+langcodes code (MIT). Whether the notices keep langcodes' and language_data's MIT texts and add
+Wiktionary's terms is P's and the lead's call.
 
 ### Built: P (the notices and the frozen sidecar)
 
