@@ -1700,7 +1700,7 @@ export interface components {
         AppSettings: {
             /**
              * Schema Version
-             * @default 1
+             * @default 2
              */
             schema_version: number;
             tools?: components["schemas"]["ToolPaths"];
@@ -2478,6 +2478,11 @@ export interface components {
             value?: number | null;
             /** @default unknown */
             source: components["schemas"]["BitrateSource"];
+            /**
+             * Samples
+             * @description ``estimated`` only: the number of clusters the estimate was made from.
+             */
+            samples?: number | null;
         };
         /** BitrateLimits */
         BitrateLimits: {
@@ -2525,7 +2530,7 @@ export interface components {
          * @description Where a bit rate came from.
          * @enum {string}
          */
-        BitrateSource: "stream" | "stats_tag" | "mediainfo" | "measured" | "unknown";
+        BitrateSource: "stream" | "stats_tag" | "estimated" | "measured" | "unknown";
         /** CacheCleared */
         CacheCleared: {
             /**
@@ -4395,6 +4400,22 @@ export interface components {
             source: "stream" | "frame";
         };
         /**
+         * HeaderEdit
+         * @description The Matroska header changes of one ``header_edit`` step, written into ``path`` in
+         *     place (``reframe.metadata.header``).
+         */
+        HeaderEdit: {
+            /**
+             * Path
+             * Format: path
+             * @description The file to edit: the source of a ``metadata_edit`` job, else the ``.part`` file.
+             */
+            path: string;
+            /** Tracks */
+            tracks?: components["schemas"]["TrackHeaderEdit"][];
+            info?: components["schemas"]["InfoHeaderEdit"] | null;
+        };
+        /**
          * Health
          * @description This server run.
          */
@@ -4473,6 +4494,17 @@ export interface components {
              * @description ``""`` when the file gives no name.
              */
             name: string;
+        };
+        /**
+         * InfoHeaderEdit
+         * @description The change to the segment ``Info``.
+         */
+        InfoHeaderEdit: {
+            /**
+             * Title
+             * @description The new ``Title``; ``None`` removes it.
+             */
+            title: string | null;
         };
         /**
          * JobDraft
@@ -4640,7 +4672,7 @@ export interface components {
              */
             step_count: number;
             /** Step Kind */
-            step_kind?: ("analyse" | "pass1" | "pass2" | "encode" | "mkvpropedit" | "finalize") | null;
+            step_kind?: ("analyse" | "pass1" | "pass2" | "encode" | "header_edit" | "finalize") | null;
         };
         /** JobProgressEvent */
         JobProgressEvent: {
@@ -4941,7 +4973,7 @@ export interface components {
         MediaSource: {
             /**
              * Schema Version
-             * @default 1
+             * @default 2
              */
             schema_version: number;
             ref: components["schemas"]["SourceRef"];
@@ -5611,12 +5643,13 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "analyse" | "pass1" | "pass2" | "encode" | "mkvpropedit" | "finalize";
+            kind: "analyse" | "pass1" | "pass2" | "encode" | "header_edit" | "finalize";
             /**
              * Tool
-             * @description ``None`` for ``finalize`` (rename ``.part`` → final name, done in Python).
+             * @description ``None`` for ``finalize`` (rename ``.part`` → final name, done in Python) and
+             *     ``header_edit`` (Reframe's own Matroska writer).
              */
-            tool: ("ffmpeg" | "ffprobe" | "mkvpropedit") | null;
+            tool: ("ffmpeg" | "ffprobe") | null;
             /**
              * Argv
              * @description Arguments **after** the program (the runner prepends the discovered tool path).
@@ -5635,6 +5668,8 @@ export interface components {
             description: string;
             /** Measures */
             measures?: components["schemas"]["Measurement"][];
+            /** @description The edits of a ``header_edit`` step, and only of one. */
+            header_edit?: components["schemas"]["HeaderEdit"] | null;
         };
         /** PowerCancel */
         PowerCancel: {
@@ -6998,10 +7033,6 @@ export interface components {
             ffmpeg?: string | null;
             /** Ffprobe */
             ffprobe?: string | null;
-            /** Mkvpropedit */
-            mkvpropedit?: string | null;
-            /** Mediainfo */
-            mediainfo?: string | null;
         };
         /**
          * ToolSet
@@ -7232,6 +7263,50 @@ export interface components {
              * @default false
              */
             original: boolean;
+        };
+        /**
+         * TrackHeaderEdit
+         * @description The changes to one Matroska ``TrackEntry``. A field left at its default is kept.
+         */
+        TrackHeaderEdit: {
+            /**
+             * Track Type
+             * @enum {string}
+             */
+            track_type: "video" | "audio" | "subtitle";
+            /**
+             * Number
+             * @description 1-based: the n-th track of ``track_type`` in ``TrackEntry`` order.
+             */
+            number: number;
+            /**
+             * Language
+             * @description ISO 639-2/B for ``Language``. Set together with ``language_ietf``: both are written.
+             */
+            language?: string | null;
+            /**
+             * Language Ietf
+             * @description BCP 47 for ``LanguageIETF``.
+             */
+            language_ietf?: string | null;
+            /**
+             * Name
+             * @description A new track name (not empty).
+             */
+            name?: string | null;
+            /**
+             * Delete Name
+             * @description Remove the ``Name`` element.
+             * @default false
+             */
+            delete_name: boolean;
+            /**
+             * Flags
+             * @description The flags to write, in the order of ``HeaderFlag``.
+             */
+            flags?: {
+                [key: string]: boolean;
+            };
         };
         /**
          * TrackMatch

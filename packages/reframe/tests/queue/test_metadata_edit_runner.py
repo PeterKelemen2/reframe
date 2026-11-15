@@ -54,8 +54,9 @@ def test_a_plan_that_edits_only_its_source_is_accepted(copy: Path) -> None:
         lambda p, d: setattr(p, "output_final", d / "Other.mkv"),
         lambda p, d: setattr(p.steps[0], "tool", "ffmpeg"),
         lambda p, d: setattr(p.steps[0], "kind", "encode"),
-        lambda p, d: p.steps[0].argv.__setitem__(0, str(d / "Other.mkv")),
-        lambda p, d: setattr(p.steps[0], "argv", []),
+        lambda p, d: setattr(p.steps[0].header_edit, "path", d / "Other.mkv"),
+        lambda p, d: setattr(p.steps[0], "header_edit", None),
+        lambda p, d: setattr(p.steps[0], "argv", ["x"]),
     ],
 )
 def test_anything_else_is_refused(copy: Path, change: Callable[[EncodePlan, Path], None]) -> None:

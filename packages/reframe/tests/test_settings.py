@@ -15,7 +15,7 @@ from reframe import settings as settings_module
 from reframe.events import EventBus, Subscription
 from reframe.models import AppSettings, AppWarningEvent, Event
 from reframe.models import migrations as migrations_module
-from reframe.models.migrations import MigrationRegistry
+from reframe.models.migrations import MigrationRegistry, current_version
 from reframe.settings import (
     REPLACE_ATTEMPTS,
     JsonDocumentFile,
@@ -473,7 +473,7 @@ def test_the_store_writes_the_current_schema_version(tmp_path: Path) -> None:
     store = SettingsStore(tmp_path)
     assert store.write(AppSettings.model_validate({"schema_version": 7})) is None
     saved = json.loads((tmp_path / "settings.json").read_text("utf-8"))
-    assert saved["schema_version"] == 1
+    assert saved["schema_version"] == current_version("settings")
     again = SettingsStore(tmp_path)
     again.load()
     assert again.problems == []

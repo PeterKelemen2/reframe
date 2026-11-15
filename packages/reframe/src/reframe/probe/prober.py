@@ -412,7 +412,7 @@ def _apply_mediainfo(
                     f"file's {source.container.bitrate}; not used."
                 )
             elif value is not None:
-                stream.bitrate = BitrateInfo(value=value, source=BitrateSource.MEDIAINFO)
+                stream.bitrate = BitrateInfo(value=value, source=BitrateSource.ESTIMATED)
     tracks: list[VideoStream | AudioStream | SubtitleStream] = [*rated, *source.subtitles]
     for track in tracks:
         language = info.languages.get((track.kind, track.index))

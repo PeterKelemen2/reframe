@@ -30,6 +30,7 @@ from reframe.models import (
     SubtitleOutputTrack,
     TagSettings,
     TimeRange,
+    TrackHeaderEdit,
     TrackMetadata,
 )
 
@@ -235,9 +236,10 @@ def test_metadata_edit_plan_edits_the_source() -> None:
     assert plan.files == []
     assert plan.temp_files == []
     [step] = plan.steps
-    assert step.kind == "mkvpropedit"
-    assert step.tool == "mkvpropedit"
-    assert step.argv[0] == str(src.ref.path)
+    assert step.kind == "header_edit"
+    assert step.tool is None
+    assert step.header_edit is not None
+    assert step.header_edit.path == src.ref.path
     assert step.description == "Edit the metadata of 1 track of multitrack.mkv in place"
     assert plan.display.startswith(f"mkvpropedit {src.ref.path} --edit track:a1")
 
@@ -269,15 +271,18 @@ def test_fixup_step_with_flags_has_both_in_its_description(monkeypatch: pytest.M
     job = draft(src, video={"encoder": "libx264"})
     job.audio[0].metadata = TrackMetadata(language="pt-BR", original=True)
     plan = build_plan(job, src, caps(), tools(), definitions=defs)
-    fixup = next(s for s in plan.steps if s.kind == "mkvpropedit")
+    fixup = next(s for s in plan.steps if s.kind == "header_edit")
     assert fixup.description == (
         "Write the BCP 47 languages (Matroska LanguageIETF) and the track flags FFmpeg cannot write"
     )
-    assert fixup.argv[1:] == [
-        "--edit", "track:a1", "--set", "language=por", "--set", "language-ietf=pt-BR",
-        "--set", "flag-original=1",
+    assert fixup.header_edit is not None
+    assert fixup.header_edit.tracks == [
+        TrackHeaderEdit(
+            track_type="audio", number=1, language="por", language_ietf="pt-BR",
+            flags={"original": True},
+        )
     ]  # fmt: skip
     job.audio[0].metadata = TrackMetadata(original=True)
     plan = build_plan(job, src, caps(), tools(), definitions=defs)
-    fixup = next(s for s in plan.steps if s.kind == "mkvpropedit")
+    fixup = next(s for s in plan.steps if s.kind == "header_edit")
     assert fixup.description == "Write the track flags FFmpeg cannot write"

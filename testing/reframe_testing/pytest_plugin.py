@@ -21,6 +21,7 @@ import pytest
 from reframe_testing import media
 from reframe_testing.fake_tools import FakeTools, make_fake_tools
 from reframe_testing.folders_guard import guard_reframe_folders  # noqa: F401 - autouse fixture
+from reframe_testing.mkvtoolnix import mkvtoolnix_problem
 
 if TYPE_CHECKING:
     from reframe.platform.power import Win32Libraries
@@ -129,6 +130,10 @@ def fixture_media_path(name: str) -> Path:
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item: pytest.Item) -> None:
+    if item.get_closest_marker("needs_mkvtoolnix") is not None:
+        missing = mkvtoolnix_problem()
+        if missing is not None:
+            pytest.skip(missing)
     if item.get_closest_marker("needs_ffmpeg") is None:
         return
     problem = _session_problem(item.config)

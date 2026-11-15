@@ -661,3 +661,129 @@ and GTK hook, and the Windows-only parts. Before the first release the owner mak
 (its public block into `docs/release.md`), sets the secrets, makes the repository public and
 sets the first version (`docs/release.md`). Final checks, each run alone: ruff, format, both mypy runs, actionlint 1.7.12, pytest 8190 passed (five chunks), unit 2177, server 107, build:web, e2e 315 passed twice (12.5 min, three browsers). Rest of M10: the release checklist; S-6's
 NVIDIA/Intel checks wait for such a host.
+
+## C-18 / C-19 / C-20: own header writer, probe without MediaInfo, language table (2026-11-15)
+
+The spec is [05 §C-18, §C-19, §C-20](plan/05-core.md#c-18-matroska-header-writer) and the
+decisions [0080](decisions/0080-own-matroska-header-writer.md),
+[0081](decisions/0081-probe-without-mediainfo.md) and
+[0082](decisions/0082-own-language-data-table.md). Same rules as above ("Rules for every
+agent"), with these decisions in place of 0072, conventional commits with the step as scope
+(`feat(C-18): …`), and every agent `model: "opus"`, `effort: "high"` (the owner's choice for this
+run, reviewers included), a fresh agent, `isolation: "worktree"` on `m10-hardening`
+(`git merge --ff-only m10-hardening` first). Each task fills its own section of its decision
+record ("Built: <task>"). Nothing is pushed.
+
+### Safety (binding for every agent)
+
+- The files under `/mnt/smb` are the owner's media and are **read-only** for this work. Never
+  run the header writer, mkvpropedit or any write against them. Copy a file into your own
+  scratch folder first (`/mnt/Data/reframe-build/c18-<task>/` for files over 1 GB; remove the
+  copies when done); a read-only check may read the share directly.
+- The header writer writes into existing files. A refusal leaves the file byte for byte
+  unchanged; crash safety is proved by fault-injection tests that stop the writer after each
+  write.
+- Recorded probes or test data made from the owner's files carry no file name, title or tag
+  that identifies the file: replace them with neutral values.
+
+### Wave 0 (the lead, done)
+
+- `models/plan.py`: step kind `header_edit` replaces `mkvpropedit`; `PlanStep.tool` is
+  `"ffmpeg" | "ffprobe" | None`; `PlanStep.header_edit: HeaderEdit | None` (set exactly on a
+  `header_edit` step, which has no tool and no `argv`); `HeaderEdit` (`path`, `tracks:
+  list[TrackHeaderEdit]`, `info: InfoHeaderEdit | None`), `TrackHeaderEdit` (`track_type`
+  `video | audio | subtitle`, `number` (1-based, n-th of the type in `TrackEntry` order),
+  `language` + `language_ietf` (both or neither), `name`, `delete_name`, `flags:
+  dict[HeaderFlag, bool]`), `InfoHeaderEdit` (`title: str | None`, `None` removes it).
+- `models/media.py`: `BitrateSource.ESTIMATED = "estimated"` replaces `mediainfo`;
+  `BitrateInfo.samples: PositiveInt | None` (the number of clusters an estimate was made from,
+  only for `estimated`, so the UI can say "estimated from N samples"); `MediaSource`
+  `schema_version` 2.
+- `models/settings.py`: `ToolPaths` has no `mkvpropedit` and no `mediainfo`; `AppSettings`
+  `schema_version` 2.
+- `models/migrations.py`: the first two registered migrations, each with its down-level note:
+  `settings` 1 → 2 (drops `tools.mkvpropedit`, `tools.mediainfo`), `media_source` 1 → 2
+  (`mediainfo` → `estimated`). Two bumps, because they are two document kinds; `job_settings`
+  and the presets do not change. Plans are derived data (the queue store plans again).
+- **Interim, until I merges**: a `header_edit` step still runs mkvpropedit:
+  `command/mkvpropedit.py` gained `header_edit()` (edits → `HeaderEdit`) and
+  `header_edit_args()` (`HeaderEdit` → mkvpropedit argv); the runner, `preview/clip.py`, the
+  command preview and `queue/verify.py` use them. Until E merges, MediaInfo's rates are labelled
+  `estimated`.
+- Stub: `reframe/metadata/header.py` (the writer's contract below, `NotImplementedError`).
+- `needs_mkvtoolnix` marker (skips without `mkvmerge`, `mkvinfo` and `mkvpropedit` on `PATH`)
+  and `reframe_testing.mkvtoolnix.mkvtoolnix_tool(name)`.
+- `frontend/src/api/schema.d.ts` regenerated; the frontend's bit-rate source and step-kind
+  labels follow the renames (texts are U's).
+
+### Contracts (binding; only keyword-only parameters with defaults may be added)
+
+**The writer (H builds it; I and the runner use it)** — `reframe.metadata.header`:
+
+```python
+HeaderEditStatus = Literal["written", "refused", "failed"]
+
+@dataclass(frozen=True, slots=True)
+class HeaderEditResult:
+    status: HeaderEditStatus
+    code: str | None = None      # "header.<reason>" for refused and failed
+    reason: str | None = None    # one sentence for the user
+    @property
+    def ok(self) -> bool: ...    # status == "written"
+
+def apply_header_edit(edit: HeaderEdit) -> HeaderEditResult: ...
+```
+
+- Blocking; the caller runs it in a worker thread. It never raises for a file it cannot edit
+  (`refused`: nothing written, the file byte-identical) or an OS error (`failed`: an error after
+  the first write; the file holds all the old or all the new values). Programming errors may
+  raise.
+- An edit that the file already has is `written` (no byte need change). A track number beyond
+  the file's tracks of that type is `refused`.
+- It reads only through the bounded reader limits (`probe/matroska.py` `MAX_*`). H may import
+  any name of `probe/matroska.py`, including its private helpers, but does not edit that file
+  (E owns it); E keeps every existing name and signature there.
+
+**The sampler (E)** — internal to `probe/`; the contract is the result: a stream's
+`bitrate` is `BitrateInfo(value=…, source="estimated", samples=n)`; a file that cannot be
+sampled keeps `unknown` and adds no exception. `Prober(..., use_mediainfo=…)` and
+`probe(..., use_mediainfo=…)` lose that parameter; the probe cache's key changes
+(`PARSER_VERSION` and `_PARSER_MODULES`).
+
+**The language table (L)** — `reframe.languages` keeps every public name, signature and result
+(the equivalence test fixes them). The data file is read with the standard library only.
+
+### Tasks and waves
+
+| Wave | Task | Step | What | Owns |
+|------|------|------|------|------|
+| 1 | H | C-18 bullets 1–4 | the writer: in place, `Void` reuse, move to the end with the old place a `Void`, `SeekHead` and segment size, `CRC-32`; refusals as data; crash-safe write order; property, oracle (`needs_mkvtoolnix`) and fault-injection tests; the fixture corpus (FFmpeg-written, mkvmerge-written with `CRC-32`, reordered tracks with attachments, 6000-character names) made at test time; refusals found on real-file copies | `reframe/metadata/header.py` and new `reframe/metadata/*.py` modules (not `metadata/__init__.py`), `packages/reframe/tests/metadata/header/**` (new), `testdata/README.md` (a new subsection "Matroska header writer" in "Verified tool behaviour") |
+| 1 | I | C-18 bullets 5–6 (core part), Done when 5 | the plan step and its use: the pure edit computation (`command/mkvpropedit.py` replaced by `command/header.py`), the builder (fix-up always for MKV, the preview line lists the edits: track, field, value), the runner (in-process writer in a worker thread, let finish on cancel and close, the in-place time limit), `preview/clip.py`, `queue/verify.py`, validation (`tool.mkvpropedit_missing` and the BCP 47 silent loss go), definitions (`mkvpropedit` property names and `mkvpropedit_flags`), every text that names mkvpropedit in the core; tests against a fake writer first, the real ones after H merges (the lead says when) | `command/{builder,mkvpropedit,header,metadata,jobtype,__init__}.py`, `queue/{runner,verify,service,watchdog}.py`, `preview/clip.py`, `validation/{tools,metadata,container,inplace}.py`, `definitions/{models,lint}.py`, `definitions/data/containers.toml`, `models/job.py` (docstrings), their tests (`tests/{command,queue,validation,preview,definitions}/**`, `tests/metadata/test_{metadata_edit_real,metadata_unusual_files,remux_job}.py`, `tests/jobs/**` where they name the step) |
+| 1 | E | C-19 bullets 1–4 | `ContentEncodings` in the reader and the stale-tag fix; the sampled estimate (`TimestampScale`, 32 clusters 2 %–98 %, the next cluster's timestamp, 256 KB windows, 64 MB cluster cap, `MAX_*`, time limit, cancel); VFR without MediaInfo; BCP 47 for non-MKV through `reframe.languages`; `probe/mediainfo.py` and its tests deleted, `use_mediainfo` gone; an exact block-scan oracle for tests; recorded probes of the two mkvmerge 15 / 93 files (anonymised) | `probe/**`, `packages/reframe/tests/probe/**`, `testdata/probes/**`, `testing/reframe_testing/blockscan.py` (new), `testdata/README.md` (a new subsection "Sampled bit rates") |
+| 1 | L | C-20 | `scripts/gen-language-data.py` with `--check`; the data file(s) in `reframe/definitions/data/` (a core part and lazy parts); `languages.py` on the table; the equivalence test; `langcodes`, `language_data`, `marisa-trie` to the dev group; the CI `--check` step | `languages.py`, `scripts/gen-language-data.py`, `reframe/definitions/data/language*` (new), `packages/reframe/tests/test_languages.py`, `packages/reframe/tests/languages/**` (new), `packages/reframe/pyproject.toml` (`dependencies` only), the root `pyproject.toml` (`dev` group only), `uv.lock`, `.github/workflows/ci.yml` (the `--check` step only) |
+| 2 | P | C-18 bullet 6, C-19 bullet 5, C-20 bullet 4 | mkvpropedit and MediaInfo leave the product: discovery, `ToolName`, `ToolSet`, `ToolsStatus`, `reframe tools status`, the env overrides, the Windows MKVToolNix folder search, the server's system routes; the `[mediainfo]` extra; the PyInstaller spec and hidden imports; `tools/bundled-tools.toml`, `scripts/bundle-tools.py`, deb/rpm `Recommends`, the Docker image; the notices and `tools/licence-texts.toml` (CLDR and IANA terms in; MediaInfoLib, MKVToolNix and the langcodes entries out); CI's apt `mkvtoolnix` for `needs_mkvtoolnix`; `schema.d.ts` | `reframe/tools/**`, `models/tools.py`, `paths.py`, `cli.py`, `diagnostics.py`, `reframe-server/**`, `testing/reframe_testing/{capabilities,server}.py`, the packaging, notices and workflow files, `pyproject.toml` files and `uv.lock`, `desktop/sidecar/**`, `docker/**`, `tools/**`, `scripts/{bundle-tools,sources-manifest,third-party-notices,windows-setup}.*`, `frontend/src/api/schema.d.ts`, their tests |
+| 2 | U | C-19 bullet 3 (UI), C-18 (UI) | the track table's `≈` and "estimated from N samples" next to **Measure**; no mkvpropedit or MediaInfo rows in Settings → Tools and the first-run screen; the `header_edit` step label; every text that names mkvpropedit or MediaInfo | `frontend/**` except `schema.d.ts` |
+| 3 | R1, R2 | review | R1: C-18 file safety (writer, runner, crash states). R2: C-19, C-20 and the removal | — |
+| lead | | | breakdown, decision records, plan, status, merges, one mutation per task, real-file checks, final checks | `docs/**`, `CLAUDE.md`, anything not listed |
+
+### Done when (word for word in each brief)
+
+The task's lines of 05 §C-18, §C-19 and §C-20 "Done when", the contracts above, tests that fail
+on the defect a user would see, ruff, format, both mypy runs and the touched tests green.
+
+### Machines, ports and scratch folders
+
+The pinned FFmpeg bin folder:
+`/home/peti/Programming/reframe/.tools/ffmpeg/default-linux-x64/ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-shared-9.0/bin`.
+Test media: `mkdir -p testdata/media && cp -a /home/peti/Programming/reframe/testdata/media/. testdata/media/`.
+MKVToolNix 103 is on `PATH` (`/usr/bin`); MediaInfo is not installed. Each agent has the
+scratch folder `<session scratchpad>/task-<x>/`. Ports: U `REFRAME_E2E_PORT=8720` (only U runs
+`npm run test:server` and e2e in wave 2); the lead 876x. The evidence of the 0081 / 0082 checks
+(`real-files.txt`, `real.json` with each stream's exact rate, `sample_scan.py`, `mi_check.py`,
+`lang_check.py`) is in `<session scratchpad>/evidence/`.
+
+### C-18 / C-19 / C-20 progress
+
+| Date | What |
+|------|------|
+| 2026-11-15 | Wave 0 committed. Wave 1 (H, I, E, L) launched. |

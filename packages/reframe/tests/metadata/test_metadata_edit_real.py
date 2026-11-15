@@ -233,7 +233,7 @@ async def test_post_mux_fixup_writes_bcp47_and_is_checked_before_the_rename(env:
         plan = await app.jobs.plan(job)
         assert not isinstance(plan, list), plan
         assert plan.job_type == "remux"
-        assert [s.kind for s in plan.steps] == ["encode", "mkvpropedit", "finalize"]
+        assert [s.kind for s in plan.steps] == ["encode", "header_edit", "finalize"]
         ended = await run(app, job)
         assert ended.state is JobState.DONE, ended.error
         out = await reprobe(app, env.tmp / "out" / "Fixed.mkv")

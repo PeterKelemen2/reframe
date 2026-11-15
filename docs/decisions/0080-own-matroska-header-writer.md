@@ -123,3 +123,34 @@ What mkvpropedit costs today:
 - `09-quality-and-release.md`: the MKVToolNix licensing row.
 - `README.md`: the encoding backend at a glance.
 - [0034](0034-metadata-edit-in-place.md): its status line points here.
+
+## Built
+
+### Wave 0 (the lead, 2026-11-15)
+
+The plan step kind `header_edit` with its `HeaderEdit` model, `PlanStep.tool` without
+`mkvpropedit`, the settings field `tools.mkvpropedit` removed (`settings` schema 2, migration
+and down-level note in `models/migrations.py`), the writer's contract
+(`reframe.metadata.header.apply_header_edit`) as a stub, and the `needs_mkvtoolnix` marker.
+Until task I merges, a `header_edit` step still runs mkvpropedit. Tasks and contracts:
+[m10-breakdown.md](../m10-breakdown.md) "C-18 / C-19 / C-20".
+
+### Built: H (the writer)
+
+*Placeholder.*
+
+### Built: I (the plan step, runner and validation)
+
+*Placeholder.*
+
+### Built: P (mkvpropedit leaves the product)
+
+*Placeholder.*
+
+### Built: U (the UI)
+
+*Placeholder.*
+
+## Review
+
+*Placeholder.*

@@ -43,8 +43,6 @@ class ToolPaths(DocumentModel):
 
     ffmpeg: Path | None = None
     ffprobe: Path | None = None
-    mkvpropedit: Path | None = None
-    mediainfo: Path | None = None
 
 
 class EncoderSettings(DocumentModel):
@@ -102,7 +100,7 @@ class DiagnosticsSettings(DocumentModel):
 class AppSettings(DocumentModel):
     """``<config>/settings.json``."""
 
-    schema_version: PositiveInt = 1
+    schema_version: PositiveInt = 2
     tools: ToolPaths = Field(default_factory=ToolPaths)
     encoders: EncoderSettings = Field(default_factory=EncoderSettings)
     output: OutputDefaults = Field(default_factory=OutputDefaults)

@@ -23,6 +23,7 @@ from reframe.models import (
     ToolSet,
     ToolStatus,
 )
+from reframe.models.migrations import current_version
 from reframe.remote.owner import server_log
 
 HOME = "/home/ann"
@@ -134,7 +135,7 @@ def test_the_settings_have_their_known_fields_only(tmp_path: Path) -> None:
     assert "s3cr3t" not in text
     assert '  diagnostics.log_level = "debug"' in lines
     assert '  output.naming.output_folder = "~/Videos"' in lines
-    assert "  schema_version = 1" in lines
+    assert f"  schema_version = {current_version('settings')}" in lines
 
 
 def _fields(model: type[BaseModel], prefix: str = "") -> list[str]:

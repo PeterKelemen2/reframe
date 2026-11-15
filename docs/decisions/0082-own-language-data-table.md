@@ -96,3 +96,21 @@ match (a prefix of at least 4 characters, which today turns `achenés` into `yif
 - `07-desktop-app.md`: the PyInstaller hidden-imports note (langcodes data).
 - `08-roadmap.md`: C-20 in M10.
 - `09-quality-and-release.md`: the licensing table (CLDR and IANA data).
+
+## Built
+
+### Built: L (the table)
+
+*Placeholder.*
+
+### Built: P (the notices and the frozen sidecar)
+
+*Placeholder.*
+
+### The real-file check
+
+*Placeholder.*
+
+## Review
+
+*Placeholder.*

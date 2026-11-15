@@ -25,6 +25,7 @@ from reframe.models import (
     ToolStatus,
     ValidationIssue,
 )
+from reframe.models.migrations import current_version
 from reframe.probe import mediainfo
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
@@ -213,10 +214,12 @@ async def test_schema_version_cannot_be_changed(config: Path, change: Any) -> No
         assert issue.code == "settings.schema_version"
         assert issue.path == "schema_version"
         assert not result.saved
-        assert app.settings.get().schema_version == 1
+        assert app.settings.get().schema_version == current_version("settings")
         assert app.settings.get().queue.parallel_jobs == 1
         assert (config / "settings.json").read_bytes() == before
-        same = await app.settings.update([{"op": "replace", "path": "/schema_version", "value": 1}])
+        same = await app.settings.update(
+            [{"op": "replace", "path": "/schema_version", "value": current_version("settings")}]
+        )
         assert same.ok
         assert same.changes == []
     async with await Reframe.create() as again:
@@ -307,7 +310,7 @@ async def test_tools_and_encoders_changed_together_rescan_both(config: Path) -> 
         app.tools.rescan = tools_rescan  # type: ignore[method-assign,assignment]
         app.capabilities.rescan = capabilities_rescan  # type: ignore[method-assign,assignment]
         new = app.settings.get()
-        new.tools.mkvpropedit = Path("/opt/mkvtoolnix/mkvpropedit")
+        new.tools.ffprobe = Path("/opt/ffmpeg/ffprobe")
         new.encoders.hardware_tests = False
         await app.settings.update(new)
         await until(lambda: len(order) == 2)

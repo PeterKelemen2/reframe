@@ -164,6 +164,11 @@ def plan_defaults(plan: EncodePlan, source: MediaSource) -> dict[str, list[int]]
             for number, stream in enumerate(streams, 1):
                 flags[(kind, number)] = stream.disposition.default
     for step in plan.steps:
+        if step.header_edit is not None:
+            for edit in step.header_edit.tracks:
+                if "default" in edit.flags:
+                    flags[(edit.track_type[0], edit.number)] = edit.flags["default"]
+            continue
         argv = [str(a) for a in step.argv]
         selector: tuple[str, int] | None = None
         for arg, value in itertools.pairwise(argv):

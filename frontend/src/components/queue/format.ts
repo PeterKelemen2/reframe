@@ -44,8 +44,8 @@ export function stepText(progress: JobProgress, t: Translate): string | null {
         return t('queue.step.pass2')
       case 'encode':
         return t('queue.step.encode')
-      case 'mkvpropedit':
-        return t('queue.step.mkvpropedit')
+      case 'header_edit':
+        return t('queue.step.headerEdit')
       case 'finalize':
         return t('queue.step.finalize')
       case null:

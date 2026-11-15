@@ -67,7 +67,7 @@
         '$ref': '#/$defs/QueueSettings',
       }),
       'schema_version': dict({
-        'default': 1,
+        'default': 2,
         'minimum': 1,
         'title': 'Schema Version',
         'type': 'integer',
@@ -1401,6 +1401,20 @@
       (a rule treats an unknown bit rate as above every maximum).
     ''',
     'properties': dict({
+      'samples': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '``estimated`` only: the number of clusters the estimate was made from.',
+        'title': 'Samples',
+      }),
       'source': dict({
         '$ref': '#/$defs/BitrateSource',
         'default': 'unknown',
@@ -1495,7 +1509,7 @@
     'enum': list([
       'stream',
       'stats_tag',
-      'mediainfo',
+      'estimated',
       'measured',
       'unknown',
     ]),
@@ -2842,9 +2856,12 @@
   dict({
     '$defs': list([
       'ArgTemplate',
+      'HeaderEdit',
+      'InfoHeaderEdit',
       'Measurement',
       'PlanFile',
       'PlanStep',
+      'TrackHeaderEdit',
       'ValueRef',
     ]),
     'additionalProperties': False,
@@ -4107,6 +4124,77 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[HeaderEdit]
+  dict({
+    '$defs': list([
+      'InfoHeaderEdit',
+      'TrackHeaderEdit',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      The Matroska header changes of one ``header_edit`` step, written into ``path`` in
+      place (``reframe.metadata.header``).
+    ''',
+    'properties': dict({
+      'info': dict({
+        'anyOf': list([
+          dict({
+            '$ref': '#/$defs/InfoHeaderEdit',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+      }),
+      'path': dict({
+        'description': 'The file to edit: the source of a ``metadata_edit`` job, else the ``.part`` file.',
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+      'tracks': dict({
+        'items': dict({
+          '$ref': '#/$defs/TrackHeaderEdit',
+        }),
+        'title': 'Tracks',
+        'type': 'array',
+      }),
+    }),
+    'required': list([
+      'path',
+    ]),
+    'title': 'HeaderEdit',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[HeaderFlag]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'default',
+      'forced',
+      'commentary',
+      'hearing_impaired',
+      'visual_impaired',
+      'original',
+    ]),
+    'type': 'string',
+  })
+# ---
+# name: test_json_schema_snapshot[HeaderTrackType]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'video',
+      'audio',
+      'subtitle',
+    ]),
+    'type': 'string',
+  })
+# ---
 # name: test_json_schema_snapshot[ImportedChapter]
   dict({
     '$defs': list([
@@ -4138,6 +4226,33 @@
       'name',
     ]),
     'title': 'ImportedChapter',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[InfoHeaderEdit]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'The change to the segment ``Info``.',
+    'properties': dict({
+      'title': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'description': 'The new ``Title``; ``None`` removes it.',
+        'title': 'Title',
+      }),
+    }),
+    'required': list([
+      'title',
+    ]),
+    'title': 'InfoHeaderEdit',
     'type': 'object',
   })
 # ---
@@ -4495,7 +4610,7 @@
               'pass1',
               'pass2',
               'encode',
-              'mkvpropedit',
+              'header_edit',
               'finalize',
             ]),
             'type': 'string',
@@ -5460,7 +5575,7 @@
         '$ref': '#/$defs/SourceRef',
       }),
       'schema_version': dict({
-        'default': 1,
+        'default': 2,
         'minimum': 1,
         'title': 'Schema Version',
         'type': 'integer',
@@ -6740,7 +6855,10 @@
   dict({
     '$defs': list([
       'ArgTemplate',
+      'HeaderEdit',
+      'InfoHeaderEdit',
       'Measurement',
+      'TrackHeaderEdit',
       'ValueRef',
     ]),
     'additionalProperties': False,
@@ -6766,13 +6884,25 @@
         'title': 'Description',
         'type': 'string',
       }),
+      'header_edit': dict({
+        'anyOf': list([
+          dict({
+            '$ref': '#/$defs/HeaderEdit',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The edits of a ``header_edit`` step, and only of one.',
+      }),
       'kind': dict({
         'enum': list([
           'analyse',
           'pass1',
           'pass2',
           'encode',
-          'mkvpropedit',
+          'header_edit',
           'finalize',
         ]),
         'title': 'Kind',
@@ -6798,7 +6928,6 @@
             'enum': list([
               'ffmpeg',
               'ffprobe',
-              'mkvpropedit',
             ]),
             'type': 'string',
           }),
@@ -6806,7 +6935,10 @@
             'type': 'null',
           }),
         ]),
-        'description': '``None`` for ``finalize`` (rename ``.part`` → final name, done in Python).',
+        'description': '''
+          ``None`` for ``finalize`` (rename ``.part`` → final name, done in Python) and
+          ``header_edit`` (Reframe's own Matroska writer).
+        ''',
         'title': 'Tool',
       }),
     }),
@@ -7352,6 +7484,8 @@
       'Fix',
       'FrameRange',
       'FullRange',
+      'HeaderEdit',
+      'InfoHeaderEdit',
       'JobNaming',
       'JobProgress',
       'JobSettings',
@@ -7374,6 +7508,7 @@
       'TestOp',
       'TimeRange',
       'TrackFlags',
+      'TrackHeaderEdit',
       'TrackMetadata',
       'ValidationIssue',
       'ValueRef',
@@ -8430,7 +8565,7 @@
       'pass1',
       'pass2',
       'encode',
-      'mkvpropedit',
+      'header_edit',
       'finalize',
     ]),
     'type': 'string',
@@ -9894,32 +10029,6 @@
         'default': None,
         'title': 'Ffprobe',
       }),
-      'mediainfo': dict({
-        'anyOf': list([
-          dict({
-            'format': 'path',
-            'type': 'string',
-          }),
-          dict({
-            'type': 'null',
-          }),
-        ]),
-        'default': None,
-        'title': 'Mediainfo',
-      }),
-      'mkvpropedit': dict({
-        'anyOf': list([
-          dict({
-            'format': 'path',
-            'type': 'string',
-          }),
-          dict({
-            'type': 'null',
-          }),
-        ]),
-        'default': None,
-        'title': 'Mkvpropedit',
-      }),
     }),
     'title': 'ToolPaths',
     'type': 'object',
@@ -10401,6 +10510,100 @@
       }),
     }),
     'title': 'TrackFlags',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[TrackHeaderEdit]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'The changes to one Matroska ``TrackEntry``. A field left at its default is kept.',
+    'properties': dict({
+      'delete_name': dict({
+        'default': False,
+        'description': 'Remove the ``Name`` element.',
+        'title': 'Delete Name',
+        'type': 'boolean',
+      }),
+      'flags': dict({
+        'additionalProperties': dict({
+          'type': 'boolean',
+        }),
+        'description': 'The flags to write, in the order of ``HeaderFlag``.',
+        'propertyNames': dict({
+          'enum': list([
+            'default',
+            'forced',
+            'commentary',
+            'hearing_impaired',
+            'visual_impaired',
+            'original',
+          ]),
+        }),
+        'title': 'Flags',
+        'type': 'object',
+      }),
+      'language': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'ISO 639-2/B for ``Language``. Set together with ``language_ietf``: both are written.',
+        'title': 'Language',
+      }),
+      'language_ietf': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'BCP 47 for ``LanguageIETF``.',
+        'title': 'Language Ietf',
+      }),
+      'name': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'A new track name (not empty).',
+        'title': 'Name',
+      }),
+      'number': dict({
+        'description': '1-based: the n-th track of ``track_type`` in ``TrackEntry`` order.',
+        'minimum': 1,
+        'title': 'Number',
+        'type': 'integer',
+      }),
+      'track_type': dict({
+        'enum': list([
+          'video',
+          'audio',
+          'subtitle',
+        ]),
+        'title': 'Track Type',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'track_type',
+      'number',
+    ]),
+    'title': 'TrackHeaderEdit',
     'type': 'object',
   })
 # ---

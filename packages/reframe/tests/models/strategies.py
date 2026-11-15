@@ -28,7 +28,10 @@ from reframe.models import (
     BatchResolution,
     BitrateInfo,
     BitrateSource,
+    HeaderEdit,
+    PlanStep,
     Resolution,
+    TrackHeaderEdit,
 )
 
 Strategy = st.SearchStrategy[Any]
@@ -225,14 +228,73 @@ def _bitrates() -> Strategy:
     known = st.builds(
         BitrateInfo,
         value=st.integers(0, 10**9),
-        source=st.sampled_from([s for s in BitrateSource if s is not BitrateSource.UNKNOWN]),
+        source=st.sampled_from(
+            [s for s in BitrateSource if s not in (BitrateSource.UNKNOWN, BitrateSource.ESTIMATED)]
+        ),
     )
-    return st.one_of(st.just(BitrateInfo()), known)
+    estimated = st.builds(
+        BitrateInfo,
+        value=st.integers(0, 10**9),
+        source=st.just(BitrateSource.ESTIMATED),
+        samples=st.none() | st.integers(1, 64),
+    )
+    return st.one_of(st.just(BitrateInfo()), known, estimated)
+
+
+def _track_header_edit(
+    kind: str, number: int, language: str | None, name: str | None, flags: dict[str, bool]
+) -> TrackHeaderEdit:
+    return TrackHeaderEdit.model_validate(
+        {
+            "track_type": kind,
+            "number": number,
+            "language": language,
+            "language_ietf": language,
+            "name": name or None,
+            "delete_name": name == "",
+            "flags": flags,
+        }
+    )
+
+
+def _track_header_edits() -> Strategy:
+    flag = st.sampled_from(
+        ["default", "forced", "commentary", "hearing_impaired", "visual_impaired", "original"]
+    )
+    return st.builds(
+        _track_header_edit,
+        st.sampled_from(["video", "audio", "subtitle"]),
+        st.integers(1, 9),
+        st.none() | _SAFE_TEXT.filter(bool),
+        st.none() | _SAFE_TEXT,
+        st.dictionaries(flag, st.booleans(), max_size=3),
+    )
+
+
+def _plan_steps() -> Strategy:
+    header = st.builds(
+        PlanStep,
+        kind=st.just("header_edit"),
+        tool=st.none(),
+        header_edit=st.deferred(lambda: model_strategy(HeaderEdit)),
+        description=_SAFE_TEXT,
+    )
+    other = st.builds(
+        PlanStep,
+        kind=st.sampled_from(["analyse", "pass1", "pass2", "encode", "finalize"]),
+        tool=st.sampled_from(["ffmpeg", "ffprobe", None]),
+        argv=st.lists(_SAFE_TEXT, max_size=3),
+        progress_weight=st.floats(0, 10),
+        description=_SAFE_TEXT,
+    )
+    return header | other
 
 
 #: Whole-model strategies for models with cross-field validators.
 MODEL_OVERRIDES: dict[type[BaseModel], Callable[[], Strategy]] = {
     BitrateInfo: _bitrates,
+    TrackHeaderEdit: _track_header_edits,
+    PlanStep: _plan_steps,
 }
 
 _CACHE: dict[type[BaseModel], Strategy] = {}

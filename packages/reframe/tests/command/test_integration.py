@@ -832,7 +832,7 @@ async def test_bcp47_language_goes_through_mkvpropedit(
     job = draft(src, output=tmp_path / "ietf.mkv", video=FAST_X264, subtitles=False)
     job.audio[1].metadata = TrackMetadata(language="pt-BR")
     plan = plan_for(job, src)
-    assert [s.kind for s in plan.steps] == ["encode", "mkvpropedit", "finalize"]
+    assert [s.kind for s in plan.steps] == ["encode", "header_edit", "finalize"]
     run_plan(plan, tool_paths)
     assert mkvmerge_languages(mkvmerge, tmp_path / "ietf.mkv")[2] == ("por", "pt-BR")
     out = await probe(prober, tmp_path / "ietf.mkv")

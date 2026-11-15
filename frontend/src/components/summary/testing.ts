@@ -263,7 +263,7 @@ const HDR10 = {
         source: 'stream',
       },
       closed_captions: false,
-      bitrate: { value: 189391, source: 'mediainfo' },
+      bitrate: { value: 189391, source: 'estimated' },
       disposition: {},
     },
   ],

@@ -17,11 +17,13 @@ from reframe.models import (
     EncoderStatus,
     ExternalSubtitle,
     FrameRange,
+    HeaderEdit,
     JobSettings,
     MediaSource,
     PlanStep,
     SubtitleOutputTrack,
     TimeRange,
+    TrackHeaderEdit,
     TrackMetadata,
     resolve_argv,
 )
@@ -160,9 +162,9 @@ def test_two_pass_with_loudnorm_steps_and_weights() -> None:
     job.audio[0].loudness = "ebu_r128"
     job.audio[1].metadata = TrackMetadata(language="pt-BR")
     plan = plan_of(job, src)
-    assert [s.kind for s in plan.steps] == ["analyse", "pass1", "pass2", "mkvpropedit", "finalize"]
+    assert [s.kind for s in plan.steps] == ["analyse", "pass1", "pass2", "header_edit", "finalize"]
     assert [s.progress_weight for s in plan.steps] == [
-        STEP_WEIGHTS[k] for k in ("analyse", "pass1", "pass2", "mkvpropedit", "finalize")
+        STEP_WEIGHTS[k] for k in ("analyse", "pass1", "pass2", "header_edit", "finalize")
     ]
     analyse, pass1, pass2, edit, final = plan.steps
     assert analyse.measures[0].id == "a0"
@@ -173,11 +175,13 @@ def test_two_pass_with_loudnorm_steps_and_weights() -> None:
     values["a0.target_offset"] = "0.5"
     resolved = resolve_argv(pass2.argv, values)
     assert any("measured_I=-20.0" in arg for arg in resolved)
-    assert edit.tool == "mkvpropedit"
-    assert argv(edit) == [
-        str(plan.output_tmp), "--edit", "track:a2",
-        "--set", "language=por", "--set", "language-ietf=pt-BR",
-    ]  # fmt: skip
+    assert edit.tool is None
+    assert edit.header_edit == HeaderEdit(
+        path=plan.output_tmp,
+        tracks=[
+            TrackHeaderEdit(track_type="audio", number=2, language="por", language_ietf="pt-BR")
+        ],
+    )
     assert final.tool is None
     assert final.description == "Rename multitrack.part.mkv to multitrack.mkv"
     assert "<a0.input_i>" in plan.display
@@ -189,12 +193,13 @@ def test_no_mkvpropedit_step_without_the_tool_or_for_webm() -> None:
     src = recorded("multitrack.mkv")
     job = draft(src)
     job.audio[0].metadata = TrackMetadata(language="pt-BR")
-    assert "mkvpropedit" not in [
+    assert "header_edit" in [s.kind for s in plan_of(job, src).steps]
+    assert "header_edit" not in [
         s.kind for s in plan_of(job, src, tools=tools(mkvpropedit=False)).steps
     ]
     webm = draft(src, container="webm", audio_encoder="libopus", video={"encoder": "libsvtav1"})
     webm.audio[0].metadata = TrackMetadata(language="pt-BR")
-    assert "mkvpropedit" not in [s.kind for s in plan_of(webm, src).steps]
+    assert "header_edit" not in [s.kind for s in plan_of(webm, src).steps]
 
 
 def test_strict_is_written_once() -> None:

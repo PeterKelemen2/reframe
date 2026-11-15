@@ -231,8 +231,8 @@ function bitrateSource(source: Schemas['BitrateSource']): string {
       return t('tracks.source.bitrateFrom.stream')
     case 'stats_tag':
       return t('tracks.source.bitrateFrom.statsTag')
-    case 'mediainfo':
-      return t('tracks.source.bitrateFrom.mediainfo')
+    case 'estimated':
+      return t('tracks.source.bitrateFrom.estimated')
     case 'measured':
       return t('tracks.source.bitrateFrom.measured')
   }
@@ -245,8 +245,8 @@ function bitrateHelp(source: Schemas['BitrateSource'] | undefined): string {
       return t('tracks.source.bitrateHelp.stream')
     case 'stats_tag':
       return t('tracks.source.bitrateHelp.statsTag')
-    case 'mediainfo':
-      return t('tracks.source.bitrateHelp.mediainfo')
+    case 'estimated':
+      return t('tracks.source.bitrateHelp.estimated')
     case 'measured':
       return t('tracks.source.bitrateHelp.measured')
   }

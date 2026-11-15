@@ -60,7 +60,7 @@ function entryOf(id: string): MediaSource {
 describe('the scans against a real server', () => {
   it('measures the DTS-HD MA track, and the source read again holds it as measured', async () => {
     const { id } = await opened('dts-hd-ma.mkv')
-    expect(entryOf(id).audio?.[0]?.bitrate).toEqual({ value: null, source: 'unknown' })
+    expect(entryOf(id).audio?.[0]?.bitrate).toEqual({ value: null, source: 'unknown', samples: null })
     const scans = useScansStore()
     await scans.measureBitrate(id, 1)
     const bitrate = entryOf(id).audio?.[0]?.bitrate
@@ -105,7 +105,7 @@ describe('the scans against a real server', () => {
   it('cancels a measurement quietly and leaves the track as it was; a later one changes its role', async () => {
     const { id } = await opened('commentary.mkv')
     const before = entryOf(id).audio?.[1]
-    expect(before?.bitrate).toEqual({ value: null, source: 'unknown' })
+    expect(before?.bitrate).toEqual({ value: null, source: 'unknown', samples: null })
     expect(before?.roles?.map((role) => [role.role, role.evidence])).toEqual([
       ['main', 'heuristic'],
     ])

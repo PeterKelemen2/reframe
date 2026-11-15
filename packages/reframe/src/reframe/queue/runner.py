@@ -22,6 +22,7 @@ from typing import Literal, Protocol
 import psutil
 
 from reframe.command import PlanError, build_plan
+from reframe.command.mkvpropedit import header_edit_args
 from reframe.command.quoting import Shell, command_line, default_shell
 from reframe.definitions import Definitions
 from reframe.events import EventBus
@@ -31,10 +32,10 @@ from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.media import MediaSource
 from reframe.models.naming import NamingOptions
-from reframe.models.plan import EncodePlan, PlanStep, resolve_argv
+from reframe.models.plan import EncodePlan, PlanArg, PlanStep, resolve_argv
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.settings import AppSettings, CollisionPolicy
-from reframe.models.tools import ToolInfo, ToolSet, ToolStatus
+from reframe.models.tools import ToolInfo, ToolName, ToolSet, ToolStatus
 from reframe.probe import ProbeError, matroska
 from reframe.queue import files, loudnorm
 from reframe.queue.clock import Clock
@@ -68,9 +69,17 @@ _WHAT = {
     "pass1": "Pass 1",
     "pass2": "Pass 2",
     "encode": "The encode",
-    "mkvpropedit": "mkvpropedit",
+    "header_edit": "mkvpropedit",
     "finalize": "Finalizing",
 }
+
+
+def _program(step: PlanStep) -> tuple[ToolName, list[PlanArg]]:
+    """The tool and the arguments that run ``step`` (not ``finalize``)."""
+    if step.header_edit is not None:
+        return "mkvpropedit", list(header_edit_args(step.header_edit))
+    assert step.tool is not None
+    return step.tool, step.argv
 
 
 class ToolsSource(Protocol):
@@ -381,20 +390,21 @@ class JobRunner:
         for index, step in enumerate(plan.steps):
             await self._wait_resumed(active)
             self._publish(job, tracker.start_step(index))
-            if step.tool is None:
+            if step.kind == "finalize":
                 joblog.note(f"Step {index + 1}/{count} ({step.kind}): {step.description}")
                 return await self._finalize(job, active, joblog, prepared, tracker)
-            info = prepared.tools.get(step.tool)
+            tool, step_argv = _program(step)
+            info = prepared.tools.get(tool)
             what = _WHAT[step.kind]
             if not _usable(info):
                 reason = f": {info.reason}" if info.reason else ""
                 return Outcome(
                     JobState.FAILED,
-                    error=f"{what} needs {step.tool}, which is not available{reason}",
+                    error=f"{what} needs {tool}, which is not available{reason}",
                     plan=plan,
                 )
             try:
-                argv = resolve_argv(step.argv, values)
+                argv = resolve_argv(step_argv, values)
             except KeyError as exc:
                 return Outcome(
                     JobState.FAILED,
@@ -770,7 +780,7 @@ class JobRunner:
                         error=f"Editing in place needs mkvpropedit, which is not available{reason}",
                         plan=plan,
                     )
-                argv = resolve_argv(step.argv, {})
+                argv = resolve_argv(_program(step)[1], {})
                 result, stderr = await self._run_step(
                     job, active, joblog, step, f"Step {index + 1}/{count}", info, argv,
                     in_place=source,
@@ -909,11 +919,11 @@ def _in_place_refusal(
     nothing is removed."""
     targets = [plan.output_tmp, plan.output_final]
     steps_ok = all(
-        step.kind == "mkvpropedit"
-        and step.tool == "mkvpropedit"
-        and bool(step.argv)
-        and isinstance(step.argv[0], str)
-        and files.same_file(Path(step.argv[0]), source)
+        step.kind == "header_edit"
+        and step.tool is None
+        and not step.argv
+        and step.header_edit is not None
+        and files.same_file(step.header_edit.path, source)
         for step in plan.steps
     )
     if (
@@ -996,13 +1006,14 @@ def _source_issue(error: ProbeError) -> ValidationIssue:
 
 def _failure(step: PlanStep, result: RunResult, stderr: Sequence[str]) -> str:
     what = _WHAT[step.kind]
+    tool = _program(step)[0]
     if result.error is not None:
-        return f"{what} could not start {step.tool}: {result.error}"
+        return f"{what} could not start {tool}: {result.error}"
     crash = crashed(result.returncode)
     reason = stderr_reason(stderr, last_line=not crash)
     status = exit_text(result.returncode)
     if crash:
-        head = f"{step.tool} crashed during {what.lower()} ({status})"
+        head = f"{tool} crashed during {what.lower()} ({status})"
     else:
         head = f"{what} failed ({status})"
     return f"{head}: {reason}" if reason else f"{head}."

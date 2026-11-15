@@ -107,23 +107,12 @@ def _streams(
 
 
 def planned_title(plan: EncodePlan) -> tuple[bool, str | None]:
-    """``(set, title)``: whether the plan's mkvpropedit steps set the segment title
-    (``--edit info --set title=…`` or ``--delete title``), and to what."""
+    """``(set, title)``: whether the plan's header edits set the segment title, and to what
+    (``None``: removed)."""
     found: tuple[bool, str | None] = (False, None)
     for step in plan.steps:
-        if step.kind != "mkvpropedit":
-            continue
-        argv = [a for a in step.argv if isinstance(a, str)]
-        in_info = False
-        for i, arg in enumerate(argv):
-            if arg == "--edit":
-                in_info = i + 1 < len(argv) and argv[i + 1] == "info"
-            elif in_info and i + 1 < len(argv):
-                value = argv[i + 1]
-                if arg == "--set" and value.startswith("title="):
-                    found = (True, value.removeprefix("title=") or None)
-                elif arg == "--delete" and value == "title":
-                    found = (True, None)
+        if step.header_edit is not None and step.header_edit.info is not None:
+            found = (True, step.header_edit.info.title or None)
     return found
 
 
@@ -223,7 +212,7 @@ def check_output(
                 problems.append(f"{kind} track {number}: language {want} expected, {got} found")
     if plan is not None:
         in_place = plan.job_type == "metadata_edit"
-        fixup = not in_place and any(step.kind == "mkvpropedit" for step in plan.steps)
+        fixup = not in_place and any(step.kind == "header_edit" for step in plan.steps)
         if in_place or fixup:
             problems += metadata_problems(
                 job, source, output, container, definitions, in_place=in_place, fixup=fixup,

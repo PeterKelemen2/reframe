@@ -11,12 +11,15 @@ from reframe.models import (
     AudioOutputTrack,
     EncodePlan,
     ExternalSubtitle,
+    HeaderEdit,
+    InfoHeaderEdit,
     JobSettings,
     MediaSource,
     OutputSettings,
     PlanStep,
     SourceRef,
     SubtitleOutputTrack,
+    TrackHeaderEdit,
     TrackMetadata,
 )
 from reframe.queue.verify import check_output, expected_streams, planned_title
@@ -116,7 +119,7 @@ def test_fixup_checks_ietf_only_where_it_was_written() -> None:
     )  # fmt: skip
     job.video.metadata = TrackMetadata(default=True)
     plan = plan_of(job, source)
-    assert [s.kind for s in plan.steps] == ["encode", "mkvpropedit", "finalize"]
+    assert [s.kind for s in plan.steps] == ["encode", "header_edit", "finalize"]
     output = source.model_copy(deep=True)
     output.subtitles = []
     output.audio[0].language = "por"
@@ -155,16 +158,17 @@ def test_expected_titles_of_external_and_burned_subtitles() -> None:
 
 
 def test_planned_title() -> None:
-    def plan(*argv: str) -> EncodePlan:
-        step = PlanStep(kind="mkvpropedit", tool="mkvpropedit", argv=["/f.mkv", *argv])
+    def plan(edit: HeaderEdit) -> EncodePlan:
+        step = PlanStep(kind="header_edit", tool=None, header_edit=edit)
         other = PlanStep(kind="encode", tool="ffmpeg", argv=["--edit", "info"])
         return EncodePlan(
             job_type="metadata_edit", steps=[other, step], output_tmp=Path("/f.mkv"),
             output_final=Path("/f.mkv"), expected_duration=0, display="",
         )  # fmt: skip
 
-    assert planned_title(plan("--edit", "track:a1", "--set", "title=x")) == (False, None)
-    assert planned_title(plan("--edit", "info", "--set", "title=T")) == (True, "T")
-    assert planned_title(plan("--edit", "info", "--delete", "title")) == (True, None)
-    assert planned_title(plan("--edit", "info", "--set", "date=1")) == (False, None)
-    assert planned_title(plan("--edit", "info")) == (False, None)
+    track = TrackHeaderEdit(track_type="audio", number=1, name="x")
+    assert planned_title(plan(HeaderEdit(path=Path("/f.mkv"), tracks=[track]))) == (False, None)
+    titled = HeaderEdit(path=Path("/f.mkv"), info=InfoHeaderEdit(title="T"))
+    assert planned_title(plan(titled)) == (True, "T")
+    removed = HeaderEdit(path=Path("/f.mkv"), info=InfoHeaderEdit(title=None))
+    assert planned_title(plan(removed)) == (True, None)

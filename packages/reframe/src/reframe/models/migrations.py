@@ -136,6 +136,47 @@ for _kind, _model in DOCUMENT_MODELS.items():
     REGISTRY.add_kind(_kind, int(_model.model_fields["schema_version"].default))
 
 
+@REGISTRY.register("settings", from_version=1)
+def _settings_1_to_2(data: dict[str, Any]) -> dict[str, Any]:
+    """Settings 2 has no ``tools.mkvpropedit`` and no ``tools.mediainfo``: Reframe writes the
+    Matroska headers itself and probes without MediaInfo, so both paths are dropped.
+
+    Down-level note: Reframe before version 2 finds a newer settings file, uses the default
+    settings and leaves the file unchanged (``settings.newer_version``). Its tool discovery
+    then finds mkvpropedit and MediaInfo on ``PATH`` or as bundled builds, as with no path set.
+    """
+    tools = data.get("tools")
+    if isinstance(tools, dict):
+        tools.pop("mkvpropedit", None)
+        tools.pop("mediainfo", None)
+    return data
+
+
+#: The stream lists of a ``MediaSource`` whose entries have a ``bitrate``.
+_BITRATE_STREAMS = ("video", "audio")
+
+
+@REGISTRY.register("media_source", from_version=1)
+def _media_source_1_to_2(data: dict[str, Any]) -> dict[str, Any]:
+    """Media source 2 has the bit-rate source ``estimated`` (a sample of Matroska clusters)
+    and no ``mediainfo``: a ``mediainfo`` bit rate becomes ``estimated``, because both are a
+    value that the probe did not read from the stream or measure.
+
+    Down-level note: Reframe before version 2 reports a newer media source document
+    (``UnsupportedSchemaVersion``). Its probe cache ignores entries of this version (their
+    parser fingerprint differs) and probes the file again.
+    """
+    for key in _BITRATE_STREAMS:
+        streams = data.get(key)
+        if not isinstance(streams, list):
+            continue
+        for stream in streams:
+            bitrate = stream.get("bitrate") if isinstance(stream, dict) else None
+            if isinstance(bitrate, dict) and bitrate.get("source") == "mediainfo":
+                bitrate["source"] = "estimated"
+    return data
+
+
 def register_migration(kind: str, from_version: int) -> Callable[[Migration], Migration]:
     """Register a migration of ``kind`` from ``from_version`` (see the module doc)."""
     return REGISTRY.register(kind, from_version)

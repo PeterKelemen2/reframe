@@ -19,6 +19,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from reframe.command import PlanError, build_plan
+from reframe.command.mkvpropedit import header_edit_args
 from reframe.definitions import Definitions
 from reframe.mediatask import MediaTaskContext, TaskFailed, require_source, require_tool
 from reframe.models import (
@@ -28,11 +29,12 @@ from reframe.models import (
     Measurement,
     MediaSource,
     TimeRange,
+    ToolName,
     ToolSet,
     ToolStatus,
 )
 from reframe.models.issues import Severity, ValidationIssue
-from reframe.models.plan import resolve_argv
+from reframe.models.plan import PlanArg, resolve_argv
 from reframe.models.preview import PreviewClip
 from reframe.preview.cache import PreviewCache, digest, megabytes, source_fingerprint
 from reframe.preview.common import failure_text, sample_duration, tool_identity
@@ -218,16 +220,22 @@ async def _run_plan(tctx: TaskContext, plan: EncodePlan, tools: ToolSet) -> None
         await _file_call("The plan files cannot be written", write_plan_files, plan.files)
         for index, step in enumerate(plan.steps):
             tctx.progress(tracker.start_step(index).percent, step.description)
-            if step.tool is None:  # finalize
+            if step.kind == "finalize":
                 await _file_call(
                     "The clip cannot be renamed", os.replace, plan.output_tmp, plan.output_final
                 )
                 continue
-            info = tools.get(step.tool)
+            if step.header_edit is not None:
+                tool: ToolName = "mkvpropedit"
+                step_argv: list[PlanArg] = list(header_edit_args(step.header_edit))
+            else:
+                assert step.tool is not None
+                tool, step_argv = step.tool, step.argv
+            info = tools.get(tool)
             if info.status is not ToolStatus.FOUND or info.path is None:
-                raise TaskFailed(f"{step.description} needs {step.tool}, which is not available.")
+                raise TaskFailed(f"{step.description} needs {tool}, which is not available.")
             try:
-                argv = resolve_argv(step.argv, values)
+                argv = resolve_argv(step_argv, values)
             except KeyError as exc:
                 raise TaskFailed(
                     f"{step.description}: the value {exc.args[0]} is missing."

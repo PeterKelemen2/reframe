@@ -31,8 +31,9 @@ from reframe.command.mkvpropedit import (
     FixupTrack,
     InfoEdit,
     TrackEdit,
-    edit_args,
     fixup_edits,
+    header_edit,
+    header_edit_args,
     in_place_edits,
 )
 from reframe.command.quoting import Shell, command_line, default_shell, quote_posix, quote_windows
@@ -91,7 +92,7 @@ STEP_WEIGHTS: dict[StepKind, float] = {
     "pass1": 0.4,
     "pass2": 0.6,
     "encode": 1.0,
-    "mkvpropedit": 0.01,
+    "header_edit": 0.01,
     "finalize": 0.0,
 }
 _NULL_OUTPUT = ("-f", "null", "-")
@@ -522,8 +523,8 @@ def _fixup_step(
     if any(e.flags for e in edits):
         what.append("the track flags FFmpeg cannot write")
     return PlanStep(
-        kind="mkvpropedit", tool="mkvpropedit", argv=[str(tmp), *edit_args(edits)],
-        progress_weight=STEP_WEIGHTS["mkvpropedit"], description="Write " + " and ".join(what),
+        kind="header_edit", tool=None, header_edit=header_edit(tmp, edits),
+        progress_weight=STEP_WEIGHTS["header_edit"], description="Write " + " and ".join(what),
     )  # fmt: skip
 
 
@@ -563,8 +564,8 @@ def _in_place_plan(
     if edits:
         steps.append(
             PlanStep(
-                kind="mkvpropedit", tool="mkvpropedit", argv=[str(target), *edit_args(edits)],
-                progress_weight=STEP_WEIGHTS["mkvpropedit"],
+                kind="header_edit", tool=None, header_edit=header_edit(target, edits),
+                progress_weight=STEP_WEIGHTS["header_edit"],
                 description=f"Edit {_describe_edits(edits)} of {target.name} "
                 "in place",
             )
@@ -645,6 +646,10 @@ def _display(steps: list[PlanStep], tools: ToolSet, tmp: Path, final: Path, shel
     lines: list[str] = []
     quote = quote_posix if shell == "posix" else quote_windows
     for step in steps:
+        if step.header_edit is not None:
+            argv = header_edit_args(step.header_edit)
+            lines.append(command_line(_program(tools, "mkvpropedit"), argv, shell))
+            continue
         if step.tool is None:
             mover = "mv -f --" if shell == "posix" else "move /Y"
             lines.append(f"{mover} {quote(str(tmp))} {quote(str(final))}")

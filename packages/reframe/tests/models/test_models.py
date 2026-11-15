@@ -144,8 +144,7 @@ def test_media_source_keeps_unknown_fields() -> None:
 def test_every_persisted_model_has_schema_version() -> None:
     for kind, model in DOCUMENT_MODELS.items():
         assert issubclass(model, DocumentModel), kind
-        assert model.model_fields["schema_version"].default == 1
-        assert current_version(kind) == 1
+        assert model.model_fields["schema_version"].default == current_version(kind)
 
 
 def test_a_newer_servers_endpoint_file_is_read_and_its_token_never_printed() -> None:
@@ -245,7 +244,7 @@ def test_migration_errors() -> None:
 
 
 def test_module_level_migrate() -> None:
-    assert migrate("settings", {}) == {"schema_version": 1}
+    assert migrate("settings", {}) == {"schema_version": 2}
     settings = load_document("settings", {"queue": {"parallel_jobs": 2}})
     assert isinstance(settings, AppSettings)
     assert settings.queue.parallel_jobs == 2
@@ -443,3 +442,51 @@ def test_capability_snapshot_lookups() -> None:
     assert snapshot.has_filter("zscale") is True
     assert snapshot.has_filter("libplacebo") is False
     assert CapabilitySnapshot().has_filter("zscale") is None
+
+
+def test_settings_2_drops_the_mkvpropedit_and_mediainfo_paths_only() -> None:
+    old: dict[str, Any] = {
+        "tools": {"ffmpeg": "/opt/ff/ffmpeg", "mkvpropedit": "/usr/bin/mkvpropedit",
+                  "mediainfo": "/usr/bin/mediainfo", "future": 1},
+        "queue": {"parallel_jobs": 3},
+    }  # fmt: skip
+    migrated = migrate("settings", old)
+    assert migrated == {
+        "schema_version": 2,
+        "tools": {"ffmpeg": "/opt/ff/ffmpeg", "future": 1},
+        "queue": {"parallel_jobs": 3},
+    }
+    assert "mkvpropedit" in old["tools"]  # the input is not changed
+    settings = load_document("settings", old)
+    assert isinstance(settings, AppSettings)
+    assert settings.model_dump(mode="json")["tools"] == {
+        "ffmpeg": "/opt/ff/ffmpeg", "ffprobe": None, "future": 1,
+    }  # fmt: skip
+
+
+def test_settings_2_takes_a_file_without_tools() -> None:
+    assert migrate("settings", {"tools": None}) == {"schema_version": 2, "tools": None}
+
+
+def test_media_source_2_turns_mediainfo_bit_rates_into_estimated() -> None:
+    old = {
+        "ref": {"path": "/m/a.mkv"},
+        "video": [{"index": 0, "bitrate": {"value": 4_000_000, "source": "mediainfo"}}],
+        "audio": [
+            {"index": 1, "bitrate": {"value": 640_000, "source": "stats_tag"}},
+            {"index": 2, "bitrate": {"value": 192_000, "source": "mediainfo"}},
+            {"index": 3, "bitrate": "odd"},
+        ],
+        "subtitles": "odd",
+    }
+    migrated = migrate("media_source", old)
+    assert migrated["schema_version"] == 2
+    assert [s["bitrate"] for s in migrated["video"]] == [
+        {"value": 4_000_000, "source": "estimated"}
+    ]
+    assert [s["bitrate"] for s in migrated["audio"]] == [
+        {"value": 640_000, "source": "stats_tag"},
+        {"value": 192_000, "source": "estimated"},
+        "odd",
+    ]
+    assert migrated["subtitles"] == "odd"

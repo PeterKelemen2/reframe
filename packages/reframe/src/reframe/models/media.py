@@ -149,7 +149,8 @@ class BitrateSource(StrEnum):
     """ffprobe stream ``bit_rate``."""
     STATS_TAG = "stats_tag"
     """Matroska statistics tags (``BPS``, ``NUMBER_OF_BYTES`` / ``DURATION``)."""
-    MEDIAINFO = "mediainfo"
+    ESTIMATED = "estimated"
+    """Matroska and WebM: estimated from a sample of clusters (``BitrateInfo.samples``)."""
     MEASURED = "measured"
     """A packet-size scan."""
     UNKNOWN = "unknown"
@@ -162,11 +163,15 @@ class BitrateInfo(DocumentModel):
     value: NonNegativeInt | None = None
     """Bits per second."""
     source: BitrateSource = BitrateSource.UNKNOWN
+    samples: PositiveInt | None = None
+    """``estimated`` only: the number of clusters the estimate was made from."""
 
     @model_validator(mode="after")
     def _value_matches_source(self) -> BitrateInfo:
         if (self.value is None) != (self.source is BitrateSource.UNKNOWN):
             raise ValueError("value must be None exactly when source is 'unknown'")
+        if self.samples is not None and self.source is not BitrateSource.ESTIMATED:
+            raise ValueError("samples is set only for an estimated bit rate")
         return self
 
 
@@ -417,7 +422,7 @@ class MediaSource(DocumentModel):
     Streams are read across all programs.
     """
 
-    schema_version: PositiveInt = 1
+    schema_version: PositiveInt = 2
     ref: SourceRef
     container: ContainerInfo = Field(default_factory=ContainerInfo)
     video: list[VideoStream] = Field(default_factory=list)

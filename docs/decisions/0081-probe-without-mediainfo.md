@@ -149,3 +149,32 @@ stream.
 - `07-desktop-app.md`: the bundled-tools table and D-7's notes.
 - `08-roadmap.md`: C-19 in M10.
 - `09-quality-and-release.md`: the MediaInfo licensing row.
+
+## Built
+
+### Wave 0 (the lead, 2026-11-15)
+
+`BitrateSource.estimated` replaces `mediainfo`; `BitrateInfo.samples` (the number of clusters
+an estimate was made from, so the UI says "estimated from N samples" and not always 32: a short
+file has fewer clusters); `media_source` schema 2 with the migration `mediainfo` → `estimated`;
+`tools.mediainfo` removed from the settings (`settings` schema 2).
+
+### Built: E (the probe)
+
+*Placeholder.*
+
+### Built: P (MediaInfo leaves the product)
+
+*Placeholder.*
+
+### Built: U (the track table)
+
+*Placeholder.*
+
+### The real-file check
+
+*Placeholder.*
+
+## Review
+
+*Placeholder.*

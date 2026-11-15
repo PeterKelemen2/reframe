@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from reframe.command.mkvpropedit import header_edit_args
 from reframe.definitions import load_definitions
 from reframe.models import (
     AudioAction,
@@ -183,10 +184,14 @@ def run_plan(plan: EncodePlan, tool_paths: dict[str, str], *, cleanup: bool = Tr
         f.path.write_text(f.content, encoding="utf-8", newline="\n")
     try:
         for step in plan.steps:
-            if step.tool is None:
+            if step.kind == "finalize":
                 plan.output_tmp.replace(plan.output_final)
                 continue
-            argv = [tool_paths[step.tool], *resolve_argv(step.argv, result.measured)]
+            if step.header_edit is not None:
+                argv = [tool_paths["mkvpropedit"], *header_edit_args(step.header_edit)]
+            else:
+                assert step.tool is not None
+                argv = [tool_paths[step.tool], *resolve_argv(step.argv, result.measured)]
             proc = subprocess.run(argv, capture_output=True, text=True, timeout=300, check=False)
             result.stderr.append(proc.stderr)
             assert proc.returncode == 0, f"{step.kind} failed ({proc.returncode}):\n{proc.stderr}"

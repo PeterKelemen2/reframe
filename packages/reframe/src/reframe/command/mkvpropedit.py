@@ -9,13 +9,22 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
 from reframe import languages
 from reframe.command.metadata import needs_ietf
 from reframe.definitions import ContainerDef, Definitions
 from reframe.definitions.models import TRACK_FLAGS, TrackFlag
-from reframe.models import Disposition, JobSettings, MediaSource, TrackMetadata
+from reframe.models import (
+    Disposition,
+    HeaderEdit,
+    InfoHeaderEdit,
+    JobSettings,
+    MediaSource,
+    TrackHeaderEdit,
+    TrackMetadata,
+)
 
 __all__ = [
     "FixupTrack",
@@ -25,10 +34,15 @@ __all__ = [
     "edit_args",
     "fixup_edits",
     "flag_value",
+    "header_edit",
+    "header_edit_args",
     "in_place_edits",
     "language_pair",
     "track_selector",
 ]
+
+_TRACK_TYPES = {"v": "video", "a": "audio", "s": "subtitle"}
+_TYPE_LETTERS = {name: letter for letter, name in _TRACK_TYPES.items()}
 
 StreamType = Literal["v", "a", "s"]
 
@@ -223,3 +237,54 @@ def fixup_edits(
         if not edit.empty:
             edits.append(edit)
     return edits
+
+
+def _flag_property(flag: str) -> str:
+    """mkvpropedit's property name of a track flag: ``hearing_impaired`` →
+    ``flag-hearing-impaired``."""
+    return "flag-" + flag.replace("_", "-")
+
+
+def header_edit(path: Path, edits: Sequence[TrackEdit | InfoEdit]) -> HeaderEdit:
+    """The plan's form of ``edits`` on ``path`` (empty track edits are left out)."""
+    properties = {_flag_property(flag): flag for flag in TRACK_FLAGS}
+    tracks: list[TrackHeaderEdit] = []
+    info: InfoHeaderEdit | None = None
+    for edit in edits:
+        if isinstance(edit, InfoEdit):
+            info = InfoHeaderEdit(title=edit.title)
+            continue
+        if edit.empty:
+            continue
+        letter, number = edit.selector.removeprefix("track:")[0], edit.selector[7:]
+        tracks.append(
+            TrackHeaderEdit(
+                track_type=_TRACK_TYPES[letter],  # type: ignore[arg-type]
+                number=int(number),
+                language=edit.language[0] if edit.language else None,
+                language_ietf=edit.language[1] if edit.language else None,
+                name=edit.name,
+                delete_name=edit.delete_name,
+                flags={properties[prop]: value for prop, value in edit.flags},
+            )
+        )
+    return HeaderEdit(path=path, tracks=tracks, info=info)
+
+
+def header_edit_args(edit: HeaderEdit) -> list[str]:
+    """The mkvpropedit command line (after the program) that makes ``edit``."""
+    edits: list[TrackEdit | InfoEdit] = [
+        TrackEdit(
+            track_selector(_TYPE_LETTERS[track.track_type], track.number),  # type: ignore[arg-type]
+            (track.language, track.language_ietf)
+            if track.language is not None and track.language_ietf is not None
+            else None,
+            track.name,
+            track.delete_name,
+            tuple((_flag_property(flag), value) for flag, value in track.flags.items()),
+        )
+        for track in edit.tracks
+    ]
+    if edit.info is not None:
+        edits.append(InfoEdit(edit.info.title))
+    return [str(edit.path), *edit_args(edits)]

@@ -304,8 +304,8 @@ def test_apply_mediainfo_fills_bitrates_languages_vfr_and_redoes_roles() -> None
     assert source.audio[1].roles[0].role is TrackRole.MAIN  # unknown bit rate: no heuristic
     undecided = {0}
     prober._apply_mediainfo(source, info, undecided)
-    assert source.video[0].bitrate == BitrateInfo(value=9, source=BitrateSource.MEDIAINFO)
-    assert source.audio[0].bitrate == BitrateInfo(value=1_509_000, source=BitrateSource.MEDIAINFO)
+    assert source.video[0].bitrate == BitrateInfo(value=9, source=BitrateSource.ESTIMATED)
+    assert source.audio[0].bitrate == BitrateInfo(value=1_509_000, source=BitrateSource.ESTIMATED)
     assert source.audio[2].bitrate.source is BitrateSource.STREAM
     assert [(r.role, r.evidence) for r in source.audio[1].roles] == [
         (TrackRole.COMMENTARY, RoleEvidence.HEURISTIC)

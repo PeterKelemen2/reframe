@@ -220,7 +220,7 @@ TIMES = "\N{MULTIPLICATION SIGN}"
 _BITRATE_SOURCE = {
     BitrateSource.STREAM: "stream",
     BitrateSource.STATS_TAG: "stats tag",
-    BitrateSource.MEDIAINFO: "MediaInfo",
+    BitrateSource.ESTIMATED: "estimated",
     BitrateSource.MEASURED: "measured",
     BitrateSource.UNKNOWN: "unknown",
 }

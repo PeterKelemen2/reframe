@@ -102,6 +102,7 @@ markers = [
     "slow: long-running test (seconds, not milliseconds)",
     "needs_ffmpeg: needs a real ffmpeg/ffprobe (and the generated fixtures in testdata/media)",
     "needs_gpu: needs a real GPU encoder; never run in CI",
+    "needs_mkvtoolnix: uses mkvmerge, mkvinfo and mkvpropedit as a test oracle (skipped without them)",
     "benchmark: performance budget check; runs in the non-blocking CI benchmark job",
 ]
 filterwarnings = ["error"]
