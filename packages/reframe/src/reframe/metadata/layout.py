@@ -1,8 +1,8 @@
 """Where the Matroska header elements of a file are, for the header writer.
 
 Reads through the bounded reader of ``reframe.probe.matroska`` (its ``MAX_*`` limits). A file
-whose layout the writer cannot trust raises :class:`LayoutError` with a code; damage found by
-the EBML parser raises :class:`MatroskaError`.
+whose layout the writer cannot trust raises :class:`Refusal`; damage found by the EBML parser
+raises :class:`MatroskaError`.
 """
 
 from __future__ import annotations
@@ -26,15 +26,15 @@ from reframe.probe.matroska import (
     _uint,
 )
 
-__all__ = ["Element", "Layout", "LayoutError", "SeekHead", "read_layout"]
+__all__ = ["Element", "Layout", "Refusal", "SeekHead", "read_layout"]
 
 _VOID = 0xEC
 _EBML_MAX_SIZE_LENGTH = 0x42F3
 
 
-class LayoutError(Exception):
-    """The writer must not edit this file: ``code`` is the ``header.<reason>`` of the
-    refusal."""
+class Refusal(Exception):
+    """The writer must not edit this file: ``code`` is ``header.<reason>``, ``reason`` one
+    sentence for the user."""
 
     def __init__(self, code: str, reason: str) -> None:
         super().__init__(reason)
@@ -128,7 +128,7 @@ def _max_size_width(reader: _Reader) -> int:
 
 def _seek_head(reader: _Reader, element: Element) -> SeekHead:
     if element.size > matroska.MAX_SEEK_HEAD:
-        raise LayoutError("header.too_large", "The file's SeekHead is too large to edit safely.")
+        raise Refusal("header.too_large", "The file's SeekHead is too large to edit safely.")
     payload = reader.read(element.pos + element.header, element.size)
     crc, seeks = split_crc(payload, children(payload, reader.budget, "a SeekHead"))
     targets: list[tuple[int | None, int | None]] = []
@@ -159,7 +159,7 @@ def _element_at(reader: _Reader, pos: int, limit: int, element_id: int) -> Eleme
 def read_layout(reader: _Reader) -> Layout:
     """The layout of the file behind ``reader``.
 
-    :raises LayoutError: a layout the writer must not edit.
+    :raises Refusal: a layout the writer must not edit.
     :raises MatroskaError: not Matroska, damaged, or beyond the reader's limits.
     """
     _, pos = _doc_type(reader)
@@ -190,7 +190,7 @@ def read_layout(reader: _Reader) -> Layout:
     def only(element_id: int, what: str) -> Element | None:
         found = [e for e in front if e.id == element_id]
         if len(found) > 1:
-            raise LayoutError("header.duplicate", f"The file has more than one {what} element.")
+            raise Refusal("header.duplicate", f"The file has more than one {what} element.")
         return found[0] if found else None
 
     front_tracks = only(_TRACKS, "Tracks")
@@ -205,7 +205,7 @@ def read_layout(reader: _Reader) -> Layout:
                 continue
             linked = _element_at(reader, layout_base + position, limit, _SEEK_HEAD)
             if linked is None:
-                raise LayoutError(
+                raise Refusal(
                     "header.seek_head", "A SeekHead entry of the file points to no SeekHead."
                 )
             if linked.pos not in seen:
@@ -225,12 +225,10 @@ def read_layout(reader: _Reader) -> Layout:
             for target, position in head.targets
         )
         if malformed or len(positions) > 1:
-            raise LayoutError(
-                "header.seek_head", f"The file's SeekHead entries for {what} disagree."
-            )
+            raise Refusal("header.seek_head", f"The file's SeekHead entries for {what} disagree.")
         if in_front is not None:
             if positions and positions != {in_front.pos}:
-                raise LayoutError(
+                raise Refusal(
                     "header.seek_head",
                     f"A SeekHead entry for {what} points away from the {what} element.",
                 )
@@ -239,7 +237,7 @@ def read_layout(reader: _Reader) -> Layout:
             return None
         found = _element_at(reader, positions.pop(), limit, element_id)
         if found is None or (front and found.pos < front[-1].end):
-            raise LayoutError(
+            raise Refusal(
                 "header.seek_head", f"The SeekHead entry for {what} points to no {what} element."
             )
         return found

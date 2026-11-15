@@ -32,6 +32,9 @@ def header_corpus(
     top = corpus.segment(data).top
     assert all(data[t.data] == corpus.CRC for t in top[:4] if t.id != corpus.VOID)
     assert corpus.crc_problems(with_crc) == []
+    plain = folder / "mkvmerge-plain.mkv"
+    assert corpus.mkvmerge_view(with_crc) == corpus.mkvmerge_view(plain)
+    assert corpus.ffprobe_view(with_crc) == corpus.ffprobe_view(plain)
     return {
         "ffmpeg-multitrack": multitrack,
         "ffmpeg-text-subs": fixture_media("text-subs"),

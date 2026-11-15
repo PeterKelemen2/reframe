@@ -27,7 +27,7 @@ from reframe.metadata.ebml import (
     split_crc,
     void,
 )
-from reframe.metadata.layout import Element, Layout, LayoutError, SeekHead, read_layout
+from reframe.metadata.layout import Element, Layout, Refusal, SeekHead, read_layout
 from reframe.models.plan import HeaderEdit, HeaderFlag, TrackHeaderEdit
 from reframe.probe import matroska
 from reframe.probe.matroska import (
@@ -89,13 +89,6 @@ class HeaderEditResult:
         return self.status == "written"
 
 
-class _Refused(Exception):
-    def __init__(self, code: str, reason: str) -> None:
-        super().__init__(reason)
-        self.code = code
-        self.reason = reason
-
-
 @dataclass(frozen=True, slots=True)
 class _Write:
     pos: int
@@ -137,11 +130,11 @@ class _FileIO:
 
 def _text(value: str, *, ascii_only: bool = False) -> bytes:
     if "\0" in value:
-        raise _Refused("header.invalid_value", "A text value contains a NUL character.")
+        raise Refusal("header.invalid_value", "A text value contains a NUL character.")
     try:
         return value.encode("ascii" if ascii_only else "utf-8")
     except UnicodeEncodeError:
-        raise _Refused(
+        raise Refusal(
             "header.invalid_value", f"The language code {value!r} is not plain ASCII."
         ) from None
 
@@ -226,7 +219,7 @@ def _new_tracks(raw: bytes, edits: Sequence[TrackHeaderEdit], budget: _Budget) -
     for edit in edits:
         indexes = by_kind[edit.track_type]
         if edit.number > len(indexes):
-            raise _Refused(
+            raise Refusal(
                 "header.no_such_track",
                 f"The file has no {edit.track_type} track number {edit.number}.",
             )
@@ -341,7 +334,7 @@ def _plan(reader: _Reader, layout: Layout, edit: HeaderEdit) -> list[_Step]:
     if edit.info is not None:
         if layout.info is None:
             if edit.info.title:
-                raise _Refused("header.no_info", "The file has no segment information.")
+                raise Refusal("header.no_info", "The file has no segment information.")
         else:
             info_raw = reader.read(layout.info.pos, layout.info.header + layout.info.size)
             new_info = _new_info(info_raw, edit.info.title, budget)
@@ -375,22 +368,22 @@ def _move(
     """The steps before the commit, and the commit's patches, for elements that move to the
     end of the segment. A ``SeekHead`` after the clusters that lists one of them moves too."""
     if layout.segment_size is None:
-        raise _Refused(
+        raise Refusal(
             "header.unknown_size",
             "The file's segment has an unknown size, so a grown header cannot be moved.",
         )
     end = layout.base + layout.segment_size
     if end > layout.size:
-        raise _Refused("header.truncated", "The file is shorter than its segment says.")
+        raise Refusal("header.truncated", "The file is shorter than its segment says.")
     first = layout.seek_head
     if first is None:
-        raise _Refused(
+        raise Refusal(
             "header.no_room", "The file has no SeekHead, so a grown header cannot be moved."
         )
     steps: list[_Step] = []
     if end < layout.size:
         if not _leftovers(reader, end):
-            raise _Refused("header.trailing_data", "The file has unknown data after its segment.")
+            raise Refusal("header.trailing_data", "The file has unknown data after its segment.")
         steps.append(_Truncate(end))
 
     relocated: dict[int, int] = {}
@@ -426,7 +419,7 @@ def _move(
 
     size = layout.segment_size + (pos - end)
     if size > max_size(layout.size_width):
-        raise _Refused("header.no_room", "The file's segment size field is too short.")
+        raise Refusal("header.no_room", "The file's segment size field is too short.")
     patches.append(_Write(layout.size_pos, encode_size(size, layout.size_width)))
     new_first = _new_seek_head(first, layout.base, relocated, added)
     if new_first is not None:
@@ -442,7 +435,7 @@ def _fit_patch(layout: Layout, reader: _Reader, element: Element, new: bytes) ->
     slot_end = layout.slot_end(element, reader)
     fitted = _fit(new, slot_end - element.pos, layout.max_size_width)
     if fitted is None:
-        raise _Refused("header.no_room", "The file's SeekHead has no room for the new entry.")
+        raise Refusal("header.no_room", "The file's SeekHead has no room for the new entry.")
     return _Write(element.pos, fitted)
 
 
@@ -530,7 +523,7 @@ def _check(
     for count in range(1, len(steps) + 1):
         state = _read_state(handle, size, steps[:count])
         if state != new and (count == len(steps) or state != old):
-            raise _Refused(
+            raise Refusal(
                 "header.unsafe_layout",
                 "The file's header is laid out in a way Reframe cannot edit safely.",
             )
@@ -543,10 +536,8 @@ def _prepare(handle: BinaryIO, edit: HeaderEdit) -> list[_Step]:
         reader = _Reader(handle, size)
         layout = read_layout(reader)
         steps = _plan(reader, layout, edit)
-    except LayoutError as exc:
-        raise _Refused(exc.code, exc.reason) from exc
     except (MatroskaError, ValueError, OverflowError) as exc:
-        raise _Refused(
+        raise Refusal(
             "header.unreadable", f"The file's Matroska header cannot be edited safely ({exc})."
         ) from exc
     if steps:
@@ -568,7 +559,7 @@ def apply_header_edit(edit: HeaderEdit) -> HeaderEditResult:
         with open(edit.path, "rb") as handle:
             identity = _identity(handle)
             steps = _prepare(handle, edit)
-    except _Refused as exc:
+    except Refusal as exc:
         return HeaderEditResult("refused", exc.code, exc.reason)
     except OSError as exc:
         return _failed(f"The file could not be read ({exc}). It is unchanged.")
