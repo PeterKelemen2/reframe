@@ -177,7 +177,7 @@ validation error from the dry run.
 
 ## M10 — Hardening and v1.0 release
 
-| Steps | `Q-1.4` (the Windows testing phase), `C-18` (Reframe's own Matroska header writer, [decision 0080](../decisions/0080-own-matroska-header-writer.md); before the release checklist), `C-19` (the probe without MediaInfo, [decision 0081](../decisions/0081-probe-without-mediainfo.md); before the release checklist), `C-20` (a generated language table, [decision 0082](../decisions/0082-own-language-data-table.md); before the release checklist), `S-6`, `D-7`, `D-8`, `D-9`, `F-19` (the Range selector, [decision 0074](../decisions/0074-range-selector-in-m10.md); before F-16), `F-16`, `F-17` (all five flows in Chromium and WebKit), `Q-3`, `Q-4`, `Q-5` |
+| Steps | `Q-1.4` (the Windows testing phase), `C-18` (Reframe's own Matroska header writer, [decision 0080](../decisions/0080-own-matroska-header-writer.md); before the release checklist), `C-19` (the probe without MediaInfo, [decision 0081](../decisions/0081-probe-without-mediainfo.md); before the release checklist), `C-20` (a generated language table, [decision 0082](../decisions/0082-own-language-data-table.md); before the release checklist), `S-6`, `D-7`, `D-8`, `D-9`, `F-19` (the Range selector, [decision 0074](../decisions/0074-range-selector-in-m10.md); before F-16), `F-16`, `F-17` (all five flows in Chromium and WebKit), `Q-3`, `Q-4`, `Q-5`, `Q-6` (simplification of the core and the server, [decision 0083](../decisions/0083-simplification-step-before-v1.md); Tier A steps before the release checklist) |
 |-------|---|
 
 `S-6` is built early, on the branch `server-complete`
@@ -201,8 +201,17 @@ A failure is fixed in the phase or recorded as a known limit in `docs/status.md`
 that changes the desktop shell gets a new decision record that supersedes 0001. The release
 checklist below is done only after this phase.
 
+### Simplification
+
+After the Windows testing phase and C-18 to C-20, and before the release checklist: the Tier A
+steps of [Q-6](09-quality-and-release.md#q-6-simplification) (`Q-6.1` to `Q-6.10`). The Tier B
+steps (`Q-6.11` to `Q-6.19`) follow if there is time; a Tier B step that is not done moves to
+after v1 and does not block the release
+([decision 0083](../decisions/0083-simplification-step-before-v1.md)).
+
 ### Release checklist
 
+- [ ] The Tier A steps of `Q-6` are done.
 - [ ] Every "Must-have for v1" item in [01-scope.md](01-scope.md#must-have-for-v1) is checked off
       against its demo.
 - [ ] Docker image published. The compose example works with VAAPI, and with NVENC when an
