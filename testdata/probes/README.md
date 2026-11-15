@@ -22,6 +22,32 @@ uv run pytest packages/reframe/tests/probe/test_snapshots.py --snapshot-update  
 | `index.json` | For each recorded probe: file name, description, the exact FFmpeg / mkvpropedit commands, `synthesised`, and **every edit** (stream, field, old value, new value, why) |
 | `confirmed_strings.json` | Byte search: every ffprobe string that `reframe.probe` matches on, and the files of the pinned build and of this machine's FFmpeg that contain it |
 | `record_probes.py` | The script |
+| `real/<name>.json`, `real/<name>.tracks.mkv` | Two real mkvmerge files, anonymised (below): ffprobe's JSON and a Matroska file of the track headers only. The snapshot tests parse the JSON with those headers, as the prober does |
+| `real/record_real.py` | The script for them |
+
+## Real files: `real/`
+
+Recorded on 2026-11-15 from two of the owner's files (read only) with the pinned ffprobe and
+`real/record_real.py`. They are the two mkvmerge files of decision 0081 whose tracks'
+`NUMBER_OF_BYTES` add up to more than the file, because mkvmerge counts its zlib-compressed PGS
+tracks before compression (`testdata/README.md`, "Sampled bit rates").
+
+| Name | Writing application | Layout |
+|------|---------------------|--------|
+| `mkvmerge15-episode-pgs` | mkvmerge v15.0.0 | HEVC Main 10 1080p; 2 × AAC 2.0; 2 × PGS (compressed); 24 min |
+| `mkvmerge93-remux-pgs` | mkvmerge v93.0 | H.264 High 1080p; AC-3 5.1, DTS-HD MA 5.1, AC-3 5.1; SRT; PGS (compressed); 100 min |
+
+Anonymised: `format.filename` is the name above; every `title`, `comment`, `description`,
+`filename` and `handler_name` tag is removed; `creation_time` and
+`_STATISTICS_WRITING_DATE_UTC` are a neutral date; chapter IDs are 1, 2, … and chapter titles
+`Chapter NN`. The `.tracks.mkv` holds the EBML header, a Segment of unknown size, `Info` with
+`TimestampScale`, `Duration`, `MuxingApp` and `WritingApp` only, and `Tracks` with the
+elements the probe reads (no `Name`, no `CodecPrivate`; the track UIDs are 1, 2, …). The numbers
+(sizes, durations, statistics tags) are the real ones.
+
+```sh
+uv run python testdata/probes/real/record_real.py --ffprobe "$BIN/ffprobe" NAME FILE
+```
 
 The JSON is written with `json.dumps(indent=4)` (ffprobe's own layout differs only in
 whitespace). File names are anonymised: each file is generated under a neutral name and probed

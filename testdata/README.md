@@ -180,6 +180,104 @@ stream|index=2|bit_rate=N/A|tag:language=eng|tag:title=English Stereo|tag:ENCODE
 
 (In `-of json` output a missing bit rate is a missing `bit_rate` key, not `"N/A"`.)
 
+### Sampled bit rates (C-19)
+
+Checked on 2026-11-15 with ffprobe n9.0.2 (pinned build), MKVToolNix 103.0 and Reframe's own
+sample (`reframe.probe.sampling`, decision 0081). The exact value is the block scan of
+`testing/reframe_testing/blockscan.py` (every `SimpleBlock` and `Block`, payload bytes without
+the track number, timestamp and flags; lacing headers count, as in mkvmerge's
+`NUMBER_OF_BYTES`) over the stream's duration (ffprobe's `duration`, else its `DURATION` tag,
+else the file's). The tests that keep this true are `packages/reframe/tests/probe/test_sampling.py`
+(synthetic files) and `test_sampling_media.py` (fixtures, generated files, the recorded probes).
+
+What the tools do:
+
+- **mkvmerge zlib-compresses PGS tracks** (`ContentEncodings` → `ContentEncoding` →
+  `ContentCompression`, algorithm 0) and counts their `NUMBER_OF_BYTES` before compression. Six
+  of the 19 mkvmerge files of the corpus (v6.8.0 to v93.0) have such tracks; in two of them
+  (v15.0.0 and v93.0) the tracks' `NUMBER_OF_BYTES` add up to more than the file (550,630,437 >
+  548,171,435 and 29,943,201,280 > 29,929,897,720) although the video tag equals the block scan
+  to 1 bit/s. ffprobe does not show `ContentEncodings`. `mkvmerge --compression 4:zlib` writes
+  it, and `mkvmerge -J` lists `content_encoding_algorithms` for such a track only.
+- **Cluster sizes.** Each generated fixture (2 to 5 s) has one to three clusters. In the
+  corpus the median sampled cluster per file is 0.3 to 1.7 MB (0.2 to 2.7 s) in mkvmerge's
+  files and 0.4 to 5.1 MB (1.1 to 5 s) in HandBrake's, so a 256 KB window holds a cluster
+  start for some offsets only: the files gave 1 to 12 sampled clusters out of 32 offsets
+  (HandBrake 1 to 4). `BitrateInfo.samples` is the number actually read, not 32.
+- **TimestampScale**: every file of the corpus has 1,000,000 (1 ms).
+  `mkvmerge --timestamp-scale 100000` writes 100,000; the sample of such a file (20 s of MPEG-2
+  and AAC, remuxed with `--cluster-length 400ms`) is within 0.2 % (video) and 1.6 % (audio) of
+  the block scan.
+- A segment no larger than the windows together (32 × 256 KB) is read whole: every fixture is,
+  so its estimates are the exact bytes over the segment's `Duration` (the last cluster ends at
+  `Duration`). A file whose windows find no cluster is read cluster by cluster from the first
+  one, at most 32.
+- No usable cluster (only unknown-size clusters, damaged clusters, a cluster over 64 MB, a
+  `TimestampScale` of 0) gives no sample: the rates stay `unknown`, without a warning or an
+  exception.
+
+The fixtures (every Matroska recipe of `reframe_testing.media`; error against the block scan):
+
+| Fixture | Estimated streams (error) | Other streams |
+|---------|---------------------------|---------------|
+| `multitrack`, `season/*` | H.264 −0.52 %, AAC 0.00 %, AAC 0.00 % | AC-3: ffprobe |
+| `text-subs` | H.264 −0.52 %, AAC 0.00 % | |
+| `chapters` | H.264 −0.42 %, AAC 0.00 % | |
+| `dts-hd-ma` | H.264 0.00 %, DTS 0.00 % | 2 × AC-3: ffprobe |
+| `anime-s01/*`, `anime-s02/*` | H.264 −0.25 %, TrueHD −0.25 %, DTS 0.00 % (E11: 0.00 %) | AC-3 (E05): ffprobe |
+| `anamorphic`, `letterbox`, `interlaced`, `vfr-mkv`, `pgs`, `vobsub` | H.264 0.00 % | |
+| `hdr10`, `hdr10-4k` | HEVC 0.00 % | |
+
+The −0.52 % and −0.25 % are the difference between the stream's `DURATION` tag and the
+segment's `Duration`, not missing bytes.
+
+The real-file corpus: the 31 Matroska files of decision 0081's check, on the owner's shares
+(read only; no file names here). Before the change 34 of their streams had no rate without
+MediaInfo; now every video and audio stream has one. "stats tag": mkvmerge's statistics tags;
+"ffprobe": the stream's `bit_rate`; "est.": the sample, with its error against the block scan.
+Clusters, bytes read and time are the sample's own, over SMB (a stream that has a rate is not
+sampled by the probe; the sample was run anyway to measure it).
+
+| # | Writing application | Size | Streams | Clusters | Read | Time |
+|---|---|---|---|---|---|---|
+| 1 | HandBrake 1.7.3 | 0.2 GB | HEVC est. −0.00 %; AAC est. +3.71 %; AAC est. −0.14 % | 4 | 12.1 MB | 0.76 s |
+| 2 | HandBrake 1.7.3 | 0.3 GB | HEVC est. +0.25 %; AAC est. −0.78 %; AAC est. −0.21 % | 3 | 13.3 MB | 0.88 s |
+| 3 | HandBrake 0.10.0 | 2.0 GB | H.264 est. +0.08 %; AC-3 ffprobe | 4 | 10.4 MB | 0.73 s |
+| 4 | HandBrake 0.10.0 | 2.0 GB | H.264 est. +0.08 %; AC-3 ffprobe | 5 | 14.3 MB | 0.81 s |
+| 5 | HandBrake 0.10.0 | 2.0 GB | H.264 est. +0.08 %; AC-3 ffprobe | 4 | 13.4 MB | 0.80 s |
+| 6 | HandBrake 1.10.2 | 4.6 GB | HEVC est. +0.33 %; AAC est. +0.12 %; AAC est. −0.50 % | 3 | 16.1 MB | 0.94 s |
+| 7 | HandBrake 1.9.2 | 5.0 GB | HEVC est. −0.46 %; 2 × AC-3 ffprobe | 3 | 17.3 MB | 1.08 s |
+| 8 | HandBrake 1.8.2 | 7.0 GB | HEVC est. −0.01 %; 2 × AC-3 ffprobe | 1 | 13.7 MB | 1.01 s |
+| 9 | HandBrake 1.8.2 | 7.3 GB | HEVC est. +0.35 %; AAC est. −0.44 %; AAC est. −0.07 % | 2 | 16.6 MB | 1.20 s |
+| 10 | HandBrake 1.10.2 | 10.5 GB | HEVC est. +0.84 %; AAC est. +0.99 %; AAC est. −0.00 % | 2 | 11.2 MB | 0.89 s |
+| 11 | Lavf61.7.100 | 1.9 GB | H.264 est. +0.12 %; AAC est. −0.01 % | 9 | 17.4 MB | 1.02 s |
+| 12 | mkvmerge v15.0.0 | 0.5 GB | HEVC, 2 × AAC: stats tag (2 compressed PGS) | 4 | 12.1 MB | 0.74 s |
+| 13–17 | mkvmerge v86.0 (5 files) | 1.5 GB each | H.264, AAC: stats tag | 5–12 | 13.6–24.4 MB | 0.92–1.33 s |
+| 18 | mkvmerge v86.0 | 2.4 GB | HEVC stats tag; E-AC-3 ffprobe | 11 | 19.3 MB | 1.02 s |
+| 19 | mkvmerge v97.0 | 3.1 GB | HEVC stats tag; 3 × E-AC-3 ffprobe | 7 | 18.4 MB | 0.91 s |
+| 20 | mkvmerge v32.0.0 | 3.5 GB | HEVC, AAC: stats tag | 7 | 17.4 MB | 1.13 s |
+| 21 | mkvmerge v27.0.0 | 4.1 GB | H.264, 2 × DTS: stats tag | 6 | 12.0 MB | 0.82 s |
+| 22 | mkvmerge v88.0 | 4.9 GB | H.264 stats tag; E-AC-3 ffprobe | 9 | 16.7 MB | 0.89 s |
+| 23 | mkvmerge v95.0 | 7.2 GB | HEVC stats tag; 2 × E-AC-3 ffprobe | 7 | 17.9 MB | 0.92 s |
+| 24 | mkvmerge v82.0 | 9.0 GB | H.264 stats tag; E-AC-3 ffprobe | 9 | 20.9 MB | 1.01 s |
+| 25 | mkvmerge v6.8.0 | 13.5 GB | H.264 stats tag; AC-3, DTS, AC-3 ffprobe | 5 | 16.2 MB | 1.02 s |
+| 26 | mkvmerge v97.0.7 | 14.7 GB | HEVC stats tag; 2 × E-AC-3 ffprobe | 4 | 12.0 MB | 0.82 s |
+| 27 | mkvmerge v6.8.0 | 25.1 GB | H.264 est. +1.44 %; AC-3 ffprobe; FLAC est. −9.86 % | 8 | 20.2 MB | 0.97 s |
+| 28 | mkvmerge v102.0.4 | 28.5 GB | HEVC stats tag; 2 × E-AC-3 ffprobe | 5 | 14.5 MB | 0.94 s |
+| 29 | mkvmerge v93.0 | 29.9 GB | H.264 stats tag; AC-3 ffprobe; DTS stats tag; AC-3 ffprobe (1 compressed PGS) | 7 | 16.4 MB | 0.84 s |
+| 30 | mkvmerge v74.0.0 | 43.4 GB | HEVC stats tag; E-AC-3 ffprobe; TrueHD stats tag; E-AC-3 ffprobe | 3 | 13.4 MB | 0.87 s |
+| 31 | no writing application | 9.1 GB | H.264 stats tag; E-AC-3 ffprobe | 10 | 21.0 MB | 0.94 s |
+
+- Estimated video: 12 streams, median error 0.18 %, worst 1.44 % (plan: within 3 %).
+- Estimated audio: 12 streams, median 0.33 %, worst 9.86 % (FLAC; plan: within 12 %). The audio
+  error left is the audio's own variation over the few seconds sampled.
+- The sample read a median of 16.2 MB (at most 24.4 MB) in a median of 0.94 s (at most 1.33 s)
+  per file over SMB.
+- Rows 12 and 29 are the two files whose tags were called stale before: they keep their
+  statistics tags now. Their anonymised probes are `testdata/probes/real/` (ffprobe's JSON and
+  the Matroska track headers, `record_real.py`).
+- MP4 (the corpus's two files): ffprobe gives every stream's rate; nothing is sampled.
+
 ### HDR10 with libx265: one pass gives SEI only; `-color_trc` is not enough
 
 `-color_primaries` / `-color_trc` as output options did not reach the file when the frames

@@ -1,7 +1,8 @@
 """Snapshots of the parsed ``MediaSource`` for every recorded ffprobe JSON.
 
 The fixtures under ``testdata/probes/fixtures/`` were probed with the pinned build, so the
-snapshots do not depend on the FFmpeg that runs the tests.
+snapshots do not depend on the FFmpeg that runs the tests. A probe recorded with its track
+headers (``<name>.tracks.mkv``) is parsed with them, as the prober does.
 """
 
 from __future__ import annotations
@@ -15,6 +16,8 @@ from syrupy.assertion import SnapshotAssertion
 
 from reframe.models import MediaSource, SourceFingerprint
 from reframe.probe import parse_ffprobe
+
+from .conftest import recorded_tracks
 
 PROBES = Path(__file__).resolve().parents[4] / "testdata" / "probes"
 NOT_PROBES = {"index.json", "confirmed_strings.json"}
@@ -55,6 +58,7 @@ def _parse(rel: str) -> MediaSource:
         Path("/media", *_media_name(rel, data).split("/")),
         frames=frames,
         fingerprint=SourceFingerprint(size=0, mtime=0.0),
+        matroska=recorded_tracks(path),
     )
 
 

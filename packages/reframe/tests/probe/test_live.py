@@ -23,7 +23,7 @@ from reframe.models import (
     RoleEvidence,
     TrackRole,
 )
-from reframe.probe import FolderProbeResult, ProbeCache, Prober, mediainfo, probe_folder
+from reframe.probe import FolderProbeResult, ProbeCache, Prober, probe_folder
 from reframe.tools import discover_tools
 
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
@@ -155,7 +155,7 @@ async def test_season_folder(prober: Prober, fixture_media: Media) -> None:
 async def test_probe_budgets(prober: Prober, fixture_media: Media, tmp_path: Path) -> None:
     """One local file < 500 ms; a 24-file folder < 5 s (cold, no cache)."""
     single = fixture_media("multitrack")
-    await probe(prober, single)  # warm up (MediaInfo library load, page cache)
+    await probe(prober, single)  # warm up (page cache)
     started = time.perf_counter()
     await probe(prober, single)
     one = time.perf_counter() - started
@@ -201,7 +201,7 @@ def _tool(name: str) -> str:
 async def test_mkvmerge_vfr_without_stats_is_found_by_packet_sampling(
     prober: Prober, fixture_media: Media, tmp_path: Path
 ) -> None:
-    """Without statistics tags and without MediaInfo the prober samples packet timestamps."""
+    """Without statistics tags the prober samples packet timestamps."""
     out = tmp_path / "vfr-mkvmerge.mkv"
     _run(
         [
@@ -214,8 +214,7 @@ async def test_mkvmerge_vfr_without_stats_is_found_by_packet_sampling(
         ],
         check=True,
     )
-    no_mediainfo = Prober(prober.tool, use_mediainfo=False)
-    video = (await probe(no_mediainfo, out)).video[0]
+    video = (await probe(prober, out)).video[0]
     assert video.frame_rate == video.avg_frame_rate  # ffprobe alone says CFR
     assert video.vfr
     cfr = tmp_path / "cfr-mkvmerge.mkv"
@@ -230,32 +229,7 @@ async def test_mkvmerge_vfr_without_stats_is_found_by_packet_sampling(
         ],
         check=True,
     )
-    assert not (await probe(no_mediainfo, cfr)).video[0].vfr
-
-
-async def test_language_ietf_from_mediainfo(
-    prober: Prober, fixture_media: Media, tmp_path: Path
-) -> None:
-    if not mediainfo.mediainfo_available():
-        pytest.skip("needs the MediaInfo library (pymediainfo)")
-    copy = tmp_path / "pt.mkv"
-    shutil.copyfile(fixture_media("multitrack"), copy)
-    _run(
-        [
-            _tool("mkvpropedit"),
-            "--quiet",
-            str(copy),
-            "--edit",
-            "track:a2",
-            "--set",
-            "language=pt-BR",
-        ],
-        check=True,
-    )
-    source = await probe(prober, copy)
-    audio = source.audio[1]
-    assert audio.language == "por"  # what ffprobe shows
-    assert audio.language_ietf == "pt-BR"  # the LanguageIETF element, from MediaInfo
+    assert not (await probe(prober, cfr)).video[0].vfr
 
 
 async def test_stale_statistics_after_an_ffmpeg_reencode(

@@ -101,7 +101,7 @@ class FakeProber(Prober):
     """Records how many probes run at once; ``*.bad.mkv`` fail."""
 
     def __init__(self, delay: float = 0.02) -> None:
-        super().__init__(ProbeTool("ffprobe"), use_mediainfo=False)
+        super().__init__(ProbeTool("ffprobe"))
         self.delay = delay
         self.running = 0
         self.max_running = 0
@@ -214,7 +214,7 @@ async def test_folder_task_events(tmp_path: Path) -> None:
 
 
 def _fake_prober(fake: ft.FakeTools) -> Prober:
-    return Prober(ProbeTool(str(fake.ffprobe), version="n-fake"), use_mediainfo=False)
+    return Prober(ProbeTool(str(fake.ffprobe), version="n-fake"))
 
 
 async def test_folder_task_with_fake_ffprobe(fake_tools: ft.FakeTools, tmp_path: Path) -> None:
