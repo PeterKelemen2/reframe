@@ -18,7 +18,7 @@
                     │ command builder · validation · preview · presets · batch · queue · metadata     │
                     └───────────┬─────────────────────────────────────────────────────────────────────┘
                                 │ subprocess (asyncio)
-                      ffprobe · ffmpeg · mkvpropedit (optional) · mediainfo (optional)
+                      ffprobe · ffmpeg · mediainfo (optional)
 ```
 
 The core is the product. The server is a thin transport layer. The frontend is the only UI
@@ -82,9 +82,11 @@ reframe/
 - `ffmpeg` encodes. It also extracts preview frames, runs crop detection and renders preview
   clips.
 - `ffmpeg -progress pipe:1 -nostats` reports progress in a machine-readable format.
-- `mkvpropedit` (optional) edits Matroska metadata in place, with no remux. Reframe uses it when
-  the user changes only track names, languages or flags. It also sets fields that FFmpeg's
-  Matroska muxer cannot write (for example BCP 47 `LanguageIETF`).
+- Reframe's own Matroska header writer (core, no subprocess) edits Matroska metadata in place,
+  with no remux, when the user changes only track names, languages or flags. It also writes
+  what FFmpeg's Matroska muxer cannot (BCP 47 `LanguageIETF`). It replaces `mkvpropedit`;
+  MKVToolNix is a development tool only, used by tests as an oracle
+  ([decision 0080](../decisions/0080-own-matroska-header-writer.md), step C-18).
 - `mediainfo` (optional, through `pymediainfo`) adds detail when FFprobe has none (for
   example the bitrate of lossless audio in files without statistics tags).
 
@@ -113,8 +115,8 @@ build behaves the same.
   the distro's `ffmpeg` package),
   `/opt/reframe/tools/ffmpeg/` (Docker), `<data dir>/tools/ffmpeg/` (`reframe tools fetch`, and
   CI). The bundled MediaInfo (Windows) goes to `tools/mediainfo/` next to it; no package bundles
-  MKVToolNix ([decision 0079](../decisions/0079-q5-release-process.md) item 11), though discovery
-  still searches `tools/mkvtoolnix/`. Each folder holds the binaries in `bin/` or directly. `REFRAME_CONFIG_DIR`,
+  MKVToolNix ([decision 0079](../decisions/0079-q5-release-process.md) item 11), and since C-18
+  Reframe does not run it ([decision 0080](../decisions/0080-own-matroska-header-writer.md)). Each folder holds the binaries in `bin/` or directly. `REFRAME_CONFIG_DIR`,
   `REFRAME_DATA_DIR` and `REFRAME_CACHE_DIR` override the platform folders
   ([decision 0005](../decisions/0005-tool-discovery-details.md)).
 
@@ -122,11 +124,10 @@ build behaves the same.
 
 | # | Source | Typical use |
 |---|--------|-------------|
-| 1 | Environment variable: `REFRAME_FFMPEG`, `REFRAME_FFPROBE` (also `REFRAME_MKVPROPEDIT`, `REFRAME_MEDIAINFO`) | Docker, scripts, CI. Settings shows the value read-only, with a note that the environment sets it |
+| 1 | Environment variable: `REFRAME_FFMPEG`, `REFRAME_FFPROBE` (also `REFRAME_MEDIAINFO`) | Docker, scripts, CI. Settings shows the value read-only, with a note that the environment sets it |
 | 2 | Path in **Settings → Tools** | Desktop users with their own FFmpeg build |
 | 3 | Bundled build | Default |
 | 4 | `PATH` | Only when no bundled build exists (for example when running from source) |
-| 5 | Windows, mkvpropedit only: MKVToolNix's install folder (its installer's `App Paths` entry, else `%ProgramFiles%\MKVToolNix`) | MKVToolNix installed with its installer, which does not add itself to `PATH` ([decision 0079](../decisions/0079-q5-release-process.md) "Fix round — FL") |
 
 - If only `ffmpeg` is overridden, Reframe looks for `ffprobe` next to it first, so pointing
   to a custom build folder is enough.

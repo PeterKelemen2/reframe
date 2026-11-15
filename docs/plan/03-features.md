@@ -530,8 +530,9 @@ block:
 | Visual impaired | Toggle | FlagVisualImpaired |
 | Original language | Toggle | FlagOriginal |
 
-Flags that the installed FFmpeg cannot write go through a `mkvpropedit` step after muxing.
-If `mkvpropedit` is missing, a warning explains which flags will be lost.
+FFmpeg writes the language, the name and all six flags. `LanguageIETF`, which FFmpeg never
+writes, is added after muxing by Reframe's own Matroska header writer, so nothing else needs to
+be installed ([decision 0080](../decisions/0080-own-matroska-header-writer.md)).
 
 **Language picker** (like mkvtoolnix):
 
@@ -804,7 +805,7 @@ These cover the "I only want to fix languages and flags" case, without re-encodi
 | Condition | Job type | Speed |
 |-----------|----------|-------|
 | Video passthrough + all audio and subtitle tracks copied | **Remux** (FFmpeg `-c copy`) | Disk speed |
-| Source is MKV, track set and order unchanged, only metadata changed, "Edit in place" chosen | **Metadata edit** (`mkvpropedit`) | Seconds |
+| Source is MKV, track set and order unchanged, only metadata changed, "Edit in place" chosen | **Metadata edit** (Reframe's Matroska header writer) | Seconds |
 
 The Summary tab shows which job type you will get, and why.
 
@@ -814,7 +815,7 @@ The Summary tab shows which job type you will get, and why.
 
 | Section | Contents |
 |---------|----------|
-| Tools | ffmpeg, ffprobe, mkvpropedit, mediainfo. Each shows its version and where it comes from (bundled, settings, environment). A path override field, **Test** and **Use bundled** buttons. Overrides from environment variables are read-only |
+| Tools | ffmpeg, ffprobe, mediainfo. Each shows its version and where it comes from (bundled, settings, environment). A path override field, **Test** and **Use bundled** buttons. Overrides from environment variables are read-only |
 | Encoders | Table of all known encoders: status, reason, last check time. **Re-scan** button. Hardware test encodes on / off. VAAPI device (automatic, or one `/dev/dri/renderD*` node; [decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)) |
 | Output | Default folder, [naming](#output-naming) templates and options, default container, collision behaviour, partial file behaviour |
 | Languages | Favourite languages. Preferred audio and subtitle languages (used by preset rules) |

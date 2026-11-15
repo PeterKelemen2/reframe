@@ -116,11 +116,11 @@ this:
 Every desktop package bundles the pinned FFmpeg from `tools/ffmpeg.toml`
 ([02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg)).
 
-| Platform | FFmpeg | mkvpropedit / mediainfo |
+| Platform | FFmpeg | mediainfo |
 |----------|--------|-------------------------|
-| Windows | Bundled in `resources/tools/ffmpeg/` | Bundled MediaInfo CLI. MKVToolNix is not bundled ([decision 0079](../decisions/0079-q5-release-process.md) item 11): the user installs it, and discovery finds its install folder |
+| Windows | Bundled in `resources/tools/ffmpeg/` | Bundled MediaInfo CLI |
 | Linux AppImage | Bundled inside the AppImage | System packages, if installed |
-| Linux .deb / .rpm | Bundled in `/usr/lib/Reframe/tools/ffmpeg/`. No dependency on the distro `ffmpeg` package | `Recommends: mkvtoolnix, mediainfo` |
+| Linux .deb / .rpm | Bundled in `/usr/lib/Reframe/tools/ffmpeg/`. No dependency on the distro `ffmpeg` package | `Recommends: mediainfo` |
 
 **Override**: Settings → Tools has a path field for each tool, a **Test** button and a **Use
 bundled** reset. Environment variables (`REFRAME_FFMPEG`, …) take precedence and show as
@@ -229,9 +229,10 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md)).
 - [x] Settings → Tools: a path override per tool, **Test**, **Use bundled**, env overrides shown
       read-only. The first-run check runs before the main UI. On Linux; the Windows row of the
-      bundled MediaInfo is checked with D-8's installer (a missing mkvpropedit says to install
-      MKVToolNix: [decision 0079](../decisions/0079-q5-release-process.md) "Fix round — FL")
-      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) "Task U").
+      bundled MediaInfo is checked with D-8's installer
+      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) "Task U"). Since
+      C-18 there is no mkvpropedit row and no MKVToolNix text
+      ([decision 0080](../decisions/0080-own-matroska-header-writer.md)).
 
 ### D-8 Packaging, signing, updates
 - [x] Windows: NSIS installer (per-user, no admin rights), WebView2 bootstrapper, optional MSI.

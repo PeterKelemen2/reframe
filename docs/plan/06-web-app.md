@@ -297,7 +297,8 @@ start-up (exit 2)
   2. `tools` stage downloads the pinned FFmpeg from `tools/ffmpeg.toml` and checks its
      SHA-256 ([02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg)).
   3. Runtime stage: Debian slim + uv-installed `reframe-server`, the bundled FFmpeg in
-     `/opt/reframe/tools/ffmpeg/`, `mkvtoolnix`, `mediainfo`, and the GPU user-space drivers
+     `/opt/reframe/tools/ffmpeg/`, `mediainfo` (no `mkvtoolnix` since C-18,
+     [decision 0080](../decisions/0080-own-matroska-header-writer.md)), and the GPU user-space drivers
      that FFmpeg loads at runtime (Intel media driver, Mesa VA drivers, oneVPL GPU runtime; the
      Dockerfile pins the exact packages). Runs as a non-root user (`PUID`/`PGID` env).
   4. Volumes: `/config`, `/data` (queue DB, logs, cache), `/media` (read), `/output` (write).

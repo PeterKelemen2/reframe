@@ -39,7 +39,7 @@ packages/reframe/src/reframe/
 ├── queue/                 # store (SQLite), runner, progress parser, when-done
 ├── batch/                 # descriptors, fingerprint, rules, resolve
 ├── naming/                # name source, release-name parsing, templates, safe file names
-├── metadata/              # remux + mkvpropedit
+├── metadata/              # remux, Matroska header writer (C-18)
 ├── platform/              # sleep inhibit, power actions, child-process safety
 ├── service.py             # facade wiring
 └── cli.py
@@ -77,11 +77,13 @@ async def run_streaming(argv, *, on_stdout_line, on_stderr_line, cancel, timeout
       ([decision 0005](../decisions/0005-tool-discovery-details.md)). FFmpeg then dies if
       Reframe dies.
 - [ ] Windows: `CREATE_NO_WINDOW`, so no console window flashes.
-- [ ] Discovery for each tool (`ffmpeg`, `ffprobe`, `mkvpropedit`, `mediainfo`) in the order
+- [ ] Discovery for each tool (`ffmpeg`, `ffprobe`, `mediainfo`) in the order
       from [02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg): environment variable →
-      Settings path → bundled directory → `PATH` (only without a bundled build) → on Windows,
-      MKVToolNix's install folder for mkvpropedit. Record which source won
-      (`ToolInfo.origin = env | settings | bundled | path | installed`) so the UI can show it.
+      Settings path → bundled directory → `PATH` (only without a bundled build). Record which
+      source won (`ToolInfo.origin = env | settings | bundled | path`) so the UI can show it.
+      mkvpropedit, and with it the `installed` origin (MKVToolNix's install folder on
+      Windows), leaves discovery with C-18
+      ([decision 0080](../decisions/0080-own-matroska-header-writer.md)).
 - [ ] `ffprobe` next to an overridden `ffmpeg` is preferred over the bundled `ffprobe`.
 - [ ] A broken override gives a `broken`/`missing` status with a reason and a "Use bundled"
       fix. It never falls back to the bundled build without telling the user.
@@ -91,7 +93,7 @@ async def run_streaming(argv, *, on_stdout_line, on_stderr_line, cancel, timeout
       the bundled libva's built-in path is the same list, [0002](../decisions/0002-bundled-ffmpeg.md)
       "Follow-up: Fedora with RPM Fusion's VA drivers"). Keep this only if `D-7` shows that it
       is needed.
-- [ ] Parse versions (`ffmpeg -version`, `mkvpropedit --version`). Set a minimum FFmpeg version
+- [ ] Parse versions (`ffmpeg -version`). Set a minimum FFmpeg version
       (7.0). Record build flags (`--enable-libx265`, …) for diagnostics.
 - [ ] `ToolStatus` per tool: `found | missing | too_old | broken`, plus a reason.
 
@@ -321,7 +323,7 @@ A pure function: `build_plan(job, source, caps, tools) -> EncodePlan`.
 ```python
 class EncodePlan(BaseModel):
     job_type: Literal["encode", "remux", "metadata_edit"]
-    steps: list[PlanStep]        # analyse (loudnorm measure) | pass1 | pass2 | encode | mkvpropedit | finalize
+    steps: list[PlanStep]        # analyse (loudnorm measure) | pass1 | pass2 | encode | header_edit | finalize
     output_tmp: Path             # <name>.part.<ext>
     output_final: Path
     expected_duration: float     # range-adjusted, for progress
@@ -371,8 +373,8 @@ class EncodePlan(BaseModel):
       tracks are copied, so the fonts are kept.
 - [ ] **Metadata**: `-metadata:s:<type>:N language=… title=…`, `-disposition:<type>:N
       default+forced+comment+hearing_impaired+visual_impaired+original` (every flag, `0` for
-      none). Flags the muxer cannot write, and Matroska `LanguageIETF`, go to an
-      `mkvpropedit` step.
+      none). Matroska `LanguageIETF`, which FFmpeg never writes, goes to a `header_edit` step
+      (C-18; FFmpeg writes all six flags, [0034](../decisions/0034-metadata-edit-in-place.md)).
 - [ ] **Chapters**: `-map_chapters 0|-1`, or a generated FFMETADATA file for renamed or
       generated chapters, and for the source's chapters when the range starts or ends on a
       chapter edge (FFmpeg's copy keeps an empty chapter there; 0013 "Follow-up (M2 wave
@@ -390,7 +392,8 @@ the stream layout, languages, titles and flags.
 `validate(job, source, caps, tools, fs) -> list[ValidationIssue]`. The rules are small
 functions in a registry, grouped by area.
 
-- [ ] Tools: ffmpeg missing or too old. mkvpropedit is needed but missing.
+- [ ] Tools: ffmpeg missing or too old. (mkvpropedit is not needed since C-18,
+      [0080](../decisions/0080-own-matroska-header-writer.md).)
 - [ ] Encoder: unknown, checking, unavailable (with a fix to the closest one), 10-bit not
       supported, option not supported by this build.
 - [ ] Container: codec not allowed (with fixes: convert, switch container, drop the track),
@@ -417,7 +420,7 @@ functions in a registry, grouped by area.
       the 2-pass statistics files, through links: decision 0027 item 5), name collision, not
       enough free disk space (estimate in bitrate mode and for video passthrough), a manual
       name that breaks C-16's file-name rules.
-- [ ] Silent losses: a BCP 47 language without mkvpropedit, gain / DRC / loudness on a copied
+- [ ] Silent losses: gain / DRC / loudness on a copied
       passthru track, an x265 level too small for the output
       ([0014](../decisions/0014-validation-rules-and-severities.md) "Follow-up (M2 review)").
 - [ ] Range is outside the duration.
@@ -487,8 +490,8 @@ cancelling a scan stops its FFmpeg process within 1 s.
 - [ ] Pause and resume: psutil `suspend()` / `resume()` on the process tree.
 - [ ] Cancel: kill the tree and remove the `.part` file.
 - [ ] Time limits: none for an encode; a sleep-aware stall watchdog for FFmpeg steps (no
-      progress, no output and no CPU use for 10 minutes) and a 5-minute limit for short steps
-      (`mkvpropedit`) (0016).
+      progress, no output and no CPU use for 10 minutes) and a 5-minute limit for other short tool steps
+      (0016). The in-process `header_edit` step (C-18) is let finish once it writes.
 - [ ] Success: re-probe the `.part` output and check its layout (number and type of streams,
       languages) **before** the rename, so a bad output never takes the final name; then rename
       `.part` → final name (collision policy; with `ask` the job fails with the issue and the
@@ -500,8 +503,8 @@ cancelling a scan stops its FFmpeg process within 1 s.
       that is not kept ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)).
       No file that a job writes or removes may
       be the source ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)),
-      except the source of a `metadata_edit` job, which only mkvpropedit edits and nothing
-      removes ([decision 0034](../decisions/0034-metadata-edit-in-place.md)).
+      except the source of a `metadata_edit` job, which only the `header_edit` step (C-18)
+      edits and nothing removes ([decision 0034](../decisions/0034-metadata-edit-in-place.md)).
 - [ ] When-done actions through `platform/`. Sleep inhibit while any job runs.
 
 Done when: an integration test queues 3 fixture jobs (parallel = 2) and covers pause, resume,
@@ -542,9 +545,11 @@ and a table test reproduces the example in
 ## C-13 Metadata edit and remux
 
 - [ ] Job type detection (`encode`, `remux`, `metadata_edit`) with a reason string.
-- [ ] `mkvpropedit` builder:
-      `--edit track:a1 --set language=ger --set language-ietf=de --set name="…" --set flag-default=1 --set flag-commentary=1`.
-- [ ] Post-mux fix-up step for flags and IETF tags that FFmpeg did not write.
+- [ ] The edits of a `metadata_edit` job: per track, the language pair (`ger` + `de`), the
+      name and the flags that differ from the probed source, and the segment title. C-18's
+      writer applies them; it replaces the `mkvpropedit` builder
+      ([decision 0080](../decisions/0080-own-matroska-header-writer.md)).
+- [ ] Post-mux fix-up step for the `LanguageIETF` that FFmpeg does not write (C-18's writer).
 - [ ] After every metadata change, re-probe the file to check the result.
 
 Done when: changing only languages and flags on an MKV fixture runs as `metadata_edit`, takes
@@ -553,7 +558,8 @@ Done when: changing only languages and flags on an MKV fixture runs as `metadata
 What can change in place (track languages, names, flags, the container title), the exact
 exception to decision 0027, the fix-up (only `LanguageIETF`: FFmpeg writes all six flags), and
 how the BCP 47 value is read back without MediaInfo (Reframe's own Matroska track reader):
-[decision 0034](../decisions/0034-metadata-edit-in-place.md).
+[decision 0034](../decisions/0034-metadata-edit-in-place.md). Since C-18 the writer is Reframe's
+own too ([decision 0080](../decisions/0080-own-matroska-header-writer.md)).
 
 ## C-14 Platform services
 
@@ -719,3 +725,49 @@ waiting job of the command (checked with a whole-queue read, so a stop that came
 the command's own start does not count), `encode` and `batch` print one line, "The queue was
 stopped by another front end: …", and go on waiting. Ctrl+C cancels the jobs; a later Start
 runs them.
+
+## C-18 Matroska header writer
+
+Reframe's own code writes the Matroska header changes that mkvpropedit wrote before
+([decision 0080](../decisions/0080-own-matroska-header-writer.md)). MKVToolNix is a development
+tool only: tests use it as an oracle, and no product code runs it. Milestone M10.
+
+- [ ] A writer in `metadata/` that shares the EBML parsing and the `MAX_*` limits of
+      `probe/matroska.py` and runs in-process (a worker thread). It edits, in each
+      `TrackEntry`, `Language`, `LanguageIETF`, `Name` and the six flags (`FlagDefault`,
+      `FlagForced`, `FlagCommentary`, `FlagHearingImpaired`, `FlagVisualImpaired`,
+      `FlagOriginal`), and in `Info`, `Title`. Tracks are picked as the n-th track of a type
+      in `TrackEntry` order. Both language elements are always written (ISO 639-2/B and
+      BCP 47).
+- [ ] An element that still fits in its place and the `Void` after it is written there. One
+      that does not fit moves to the end of the segment: the old place becomes a `Void`, and
+      the `SeekHead` entry and the segment size are updated. A `CRC-32` child of a changed
+      element is calculated again.
+- [ ] A file the writer cannot edit safely is refused with a reason (a failed step, not an
+      exception), and the file is unchanged. Record each such case, found on real files, in
+      `testdata/README.md`.
+- [ ] Crash safety: every state that a crash or a kill can leave is a file that ffprobe and
+      `mkvmerge -J` open with all the old values or all the new ones. Once the writer starts
+      to write, a cancel or `close()` lets it finish.
+- [ ] The plan step kind `header_edit` (was `mkvpropedit`) for the `metadata_edit` job (C-13)
+      and the `LanguageIETF` fix-up (C-7). Its line in the command preview lists the edits
+      (track, field, value).
+- [ ] mkvpropedit leaves the product: discovery, `ToolName`, `ToolsStatus`, `reframe tools
+      status`, Settings → Tools, the first-run check, `REFRAME_MKVPROPEDIT`, the Windows
+      install-folder search, `tool.mkvpropedit_missing`, the BCP 47 silent loss, and the
+      settings field `tools.mkvpropedit` (`schema_version` bump, migration, down-level note).
+      Packaging and notices follow in D-8, S-6 and Q-5.
+
+Done when:
+
+1. Property tests: an EBML element that the writer encodes reads back the same through
+   `probe/matroska.py`.
+2. Oracle tests (`needs_mkvtoolnix`): on the fixture corpus (FFmpeg-written files,
+   mkvmerge-written files with `CRC-32` elements, reordered tracks with attachments, 6000-character
+   names that move `Tracks`), the same edit done by mkvpropedit and by the writer reads back the
+   same in `mkvmerge -J`, and ffprobe still reads every stream.
+3. Fault-injection tests stop the writer after each write; every file left opens in ffprobe
+   and `mkvmerge -J` with all the old or all the new values.
+4. Every refused case leaves the file byte for byte unchanged.
+5. C-13's "Done when" passes with the writer, and no product code path starts an MKVToolNix
+   program.

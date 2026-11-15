@@ -23,7 +23,7 @@ This folder holds the plan. Each file covers one part. What is already built is 
 
 | Topic | Decision | Where |
 |-------|----------|-------|
-| Encoding backend | FFmpeg/FFprobe as subprocesses. MKVToolNix (`mkvpropedit`) is optional, for metadata-only edits | [02](02-architecture.md#encoding-backend) |
+| Encoding backend | FFmpeg/FFprobe as subprocesses. Metadata-only edits of MKV files use Reframe's own Matroska header writer; MKVToolNix is a development tool only ([0080](../decisions/0080-own-matroska-header-writer.md)) | [02](02-architecture.md#encoding-backend) |
 | FFmpeg distribution | The same pinned build is bundled in every artefact (Docker, Linux, Windows). The path to each tool can be overridden (env var or Settings) | [02](02-architecture.md#bundled-ffmpeg) |
 | Core | One Python package, `reframe`. It has no UI or web imports, is async, and uses Pydantic v2 models | [05](05-core.md) |
 | Web | FastAPI + WebSocket events, Vue 3 + TypeScript + Vite + Pinia + PrimeVue | [06](06-web-app.md) |
