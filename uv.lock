@@ -17,6 +17,8 @@ dev = [
     { name = "anyio", specifier = ">=4.15.1" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "hypothesis", specifier = ">=6.169.0" },
+    { name = "langcodes", specifier = ">=3.5.1" },
+    { name = "language-data", specifier = ">=1.4.0" },
     { name = "mypy", specifier = ">=2.4.0" },
     { name = "pip-audit", specifier = ">=2.10.1" },
     { name = "pyinstaller", specifier = ">=6.22.3" },
@@ -1325,8 +1327,6 @@ name = "reframe"
 source = { editable = "packages/reframe" }
 dependencies = [
     { name = "guessit" },
-    { name = "langcodes" },
-    { name = "language-data" },
     { name = "platformdirs" },
     { name = "psutil" },
     { name = "pydantic" },
@@ -1346,8 +1346,6 @@ mediainfo = [
 requires-dist = [
     { name = "guessit", specifier = ">=4.4.0" },
     { name = "httpx", marker = "extra == 'cli'", specifier = ">=0.28.1" },
-    { name = "langcodes", specifier = ">=3.5.1" },
-    { name = "language-data", specifier = ">=1.4.0" },
     { name = "platformdirs", specifier = ">=4.13.0" },
     { name = "psutil", specifier = ">=7.2.2" },
     { name = "pydantic", specifier = ">=2.14.0" },
