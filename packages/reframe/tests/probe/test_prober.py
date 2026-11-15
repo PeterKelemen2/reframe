@@ -20,7 +20,6 @@ from reframe.probe import (
     ProbeErrorKind,
     Prober,
     ProbeTool,
-    mediainfo,
     probe_argv,
     probe_file,
 )
@@ -71,7 +70,7 @@ def media_file(tmp_path: Path) -> Path:
 
 
 def make_prober(fake: ft.FakeTools, **kw: object) -> Prober:
-    return Prober(ProbeTool(str(fake.ffprobe), version="n-fake"), use_mediainfo=False, **kw)  # type: ignore[arg-type]
+    return Prober(ProbeTool(str(fake.ffprobe), version="n-fake"), **kw)  # type: ignore[arg-type]
 
 
 def ffprobe_procs_alive(fake: ft.FakeTools) -> list[int]:
@@ -284,7 +283,7 @@ async def test_parser_failure_is_an_error_value(
 
 
 async def test_missing_tool(tmp_path: Path, media_file: Path) -> None:
-    result = await probe_file(media_file, tmp_path / "no-ffprobe", use_mediainfo=False)
+    result = await probe_file(media_file, tmp_path / "no-ffprobe")
     assert isinstance(result, ProbeError)
     assert result.kind is ProbeErrorKind.TOOL_FAILED
     assert result.detail is not None
@@ -347,17 +346,8 @@ def test_probe_tool_from_tool_info_and_identity(tmp_path: Path) -> None:
         ProbeTool.of(info.model_copy(update={"path": None}))
 
 
-def test_cache_options_follow_mediainfo(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: True)
-    monkeypatch.setattr(mediainfo, "mediainfo_version", lambda: "pymediainfo 1, libmediainfo 2")
-    reader = {"matroska": MATROSKA_READER}
-    assert Prober("ffprobe").cache_options() == {
-        "mediainfo": "pymediainfo 1, libmediainfo 2",
-        **reader,
-    }
-    assert Prober("ffprobe", use_mediainfo=False).cache_options() == {"mediainfo": False, **reader}
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
-    assert Prober("ffprobe").cache_options() == {"mediainfo": False, **reader}
+def test_cache_options_name_the_reader() -> None:
+    assert Prober("ffprobe").cache_options() == {"matroska": MATROSKA_READER}
 
 
 def _packets_json(tmp_path: Path, steps_ms: list[float]) -> Path:
@@ -377,7 +367,7 @@ def _packets_json(tmp_path: Path, steps_ms: list[float]) -> Path:
 async def test_undecided_matroska_vfr_samples_packets(
     fake_tools: ft.FakeTools, media_file: Path, tmp_path: Path, steps: list[float], vfr: bool
 ) -> None:
-    """A Matroska stream with r = avg and no statistics tags (MediaInfo off): packet sample."""
+    """A Matroska stream with r = avg and no statistics tags : packet sample."""
     fake_tools.set_scenario(
         ft.Scenario(
             [
@@ -431,27 +421,6 @@ async def test_no_decoded_frame_is_a_warning(fake_tools: ft.FakeTools, media_fil
     ]
     frame_call = next(c for c in fake_tools.calls("ffprobe") if "-show_frames" in c)
     assert frame_call[frame_call.index("-read_intervals") + 1] == "%+#5"
-
-
-async def test_mediainfo_gives_language_ietf_and_frame_rate_mode(
-    fake_tools: ft.FakeTools, media_file: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    info = mediainfo.MediaInfoData(
-        languages={("audio", 1): "ja-JP", ("subtitle", 4): "en-US"},
-        frame_rate_modes={("video", 0): "VFR"},
-    )
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: True)
-    monkeypatch.setattr(mediainfo, "mediainfo_version", lambda: "fake 1")
-    monkeypatch.setattr(mediainfo, "read_mediainfo", lambda path: info)
-    fake_tools.set_scenario(ft.Scenario([streams_rule(stdout_file(MULTITRACK))]))
-    prober = Prober(ProbeTool(str(fake_tools.ffprobe)), use_mediainfo=True)
-    source = await prober.probe(media_file)
-    assert isinstance(source, MediaSource)
-    assert (source.audio[0].language, source.audio[0].language_ietf) == ("jpn", "ja-JP")
-    assert source.subtitles[0].language_ietf == "en-US"
-    assert source.audio[1].language_ietf is None
-    assert source.video[0].vfr  # MediaInfo decided: no packet sample
-    assert [c for c in fake_tools.calls("ffprobe") if "packet=pts_time" in c] == []
 
 
 async def test_concurrent_probes_of_one_file_share_one_ffprobe(

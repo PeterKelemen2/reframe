@@ -22,7 +22,6 @@ from reframe import Reframe
 from reframe.events import EventBus
 from reframe.models import Event, TaskInfo, TaskState, ToolInfo, ToolOrigin, ToolSet, ToolStatus
 from reframe.models.events import TaskProgressEvent
-from reframe.probe import mediainfo
 from reframe.tasks import TaskManager
 from reframe.tools import ENV_VARS, CancelToken
 from reframe.tools import fetch as fetch_module
@@ -1064,7 +1063,6 @@ async def test_facade_fetch_makes_the_build_the_bundled_one(
     (origin ``bundled``), also over an ffmpeg on ``PATH``."""
     for var in ENV_VARS.values():
         monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     empty = tmp_path / "empty-path"
     empty.mkdir()
     monkeypatch.setenv("PATH", str(empty))

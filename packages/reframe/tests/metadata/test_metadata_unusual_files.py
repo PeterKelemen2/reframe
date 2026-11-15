@@ -1,5 +1,5 @@
 """Metadata edits of unusual files through the facade, the real queue and the real tools:
-MediaInfo's BCP 47 tags, an invalid ``LanguageIETF``, and a SeekHead position past 2^63."""
+the file's BCP 47 tags, an invalid ``LanguageIETF``, and a SeekHead position past 2^63."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 
 from reframe.models import JobDraft, JobState
-from reframe.probe import mediainfo
 
 from .test_metadata_edit_real import Env, draft_remux, env, mkvmerge, reprobe, run
 
@@ -77,13 +76,8 @@ def with_bad_tag(path: Path, bad: bytes) -> None:
     path.write_bytes(bytes(data))
 
 
-async def test_with_mediainfo_on_the_reprobe_shows_only_the_files_bcp47_tags(
-    env: Env, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Untouched tracks have no ``LanguageIETF``: MediaInfo would derive ``en`` from ``eng``."""
-    if mediainfo._library() is None:
-        pytest.skip("MediaInfo (pymediainfo) is not available")
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: True)  # env switched it off
+async def test_the_reprobe_shows_only_the_files_bcp47_tags(env: Env) -> None:
+    """Untouched tracks have no ``LanguageIETF``: no tag is derived from ``eng``."""
     app = await env.app()
     try:
         job = await draft_remux(app, env.source)

@@ -12,7 +12,6 @@ import pytest
 from typer.testing import CliRunner, Result
 
 from reframe.cli import EXIT_FAILED, EXIT_OK, build_app
-from reframe.probe import mediainfo
 from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
 from reframe_testing.capabilities import detect_rule
@@ -34,7 +33,6 @@ def cli_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_tools: ft.Fake
     monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
     monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
     monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(tmp_path / "no-mkvpropedit"))
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     return tmp_path / "cache" / "capabilities"
 
 

@@ -25,7 +25,6 @@ from reframe.cli import (
     task_error,
 )
 from reframe.models import TaskInfo, TaskState
-from reframe.probe import mediainfo
 from reframe.tools import ENV_VARS
 from reframe.tools import fetch as fetch_module
 from reframe.tools.__main__ import status_lines
@@ -76,7 +75,6 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     empty = tmp_path / "empty-path"
     empty.mkdir()
     monkeypatch.setenv("PATH", str(empty))
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     return tmp_path / "data"
 
 

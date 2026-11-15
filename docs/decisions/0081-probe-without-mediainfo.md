@@ -161,7 +161,44 @@ file has fewer clusters); `media_source` schema 2 with the migration `mediainfo`
 
 ### Built: E (the probe)
 
-*Placeholder.*
+`probe/mediainfo.py` and `use_mediainfo` are gone; nothing in `reframe` imports `pymediainfo`
+(a test runs `import reframe` and a probe with its import blocked). The real-file and fixture
+results are in `testdata/README.md`, "Sampled bit rates": every video and audio stream of the
+31 Matroska files and of every Matroska fixture has a rate; estimated video within 1.44 %,
+audio within 9.86 % (FLAC) of the block scan.
+
+- **Reader** (`probe/matroska.py`): `MatroskaTrack.compressed` (a `ContentEncoding` of type 0,
+  or with `ContentCompression`); `MatroskaFile.timestamp_scale`, `duration` (seconds),
+  `segment`, `segment_size`. Every existing name and signature is kept.
+- **Stale tags**: the reader now runs before ffprobe's output is parsed, and
+  `parse_ffprobe(…, matroska=)` / `vfr_undecided(…, matroska=)` pass the compressed tracks'
+  stream indexes to `check_stats_tags(…, compressed=)`: they leave the `NUMBER_OF_BYTES` sum, and
+  the size check does not apply to their own tags (the `BPS` and `DURATION` checks do).
+- **Sample** (`probe/sampling.py`): as item 3, with these choices the item does not settle:
+  - a segment no larger than the windows together (32 × 256 KB) is read whole, cluster by
+    cluster; a file whose windows find no cluster is read from the first cluster, at most 32.
+    The fixtures are single-cluster files of 2 to 5 s, where no window lands before the cluster
+    and the header share made "the file's rate minus the others" 8 % off (`hdr10.mkv`);
+  - the last cluster ends at the segment's `Duration`; a span outside 0 to 60 s is not used;
+  - when the sample holds every cluster, a single video stream also gets its bytes per sampled
+    second (the exact value); a subtraction at or below zero, or no file rate, falls back to the
+    same;
+  - "every other stream" includes subtitle tracks and tracks ffprobe does not map, at their
+    sampled rate;
+  - a window without a cluster start gives no sample at that offset, as in the check: the real
+    files gave 1 to 12 clusters, not 32. `BitrateInfo.samples` is the number read;
+  - limits: 256 MB read in all (`MAX_SAMPLE_READ`; the clusters read so far are the sample),
+    `MAX_ELEMENTS` per cluster, 30 s (`prober.SAMPLE_TIMEOUT`; after it the rates stay
+    `unknown`, logged, no warning). Cancel and the time limit stop the worker before its next
+    read.
+- **Cache**: `PARSER_VERSION` 2, `sampling.py` in `_PARSER_MODULES` and `mediainfo.py` out,
+  `cache_options()` is `{"matroska": 3}`.
+- **BCP 47** for other containers: `parse_ffprobe` sets `language_ietf` to
+  `languages.normalize` of the ISO 639 code (`und` and codes without a tag: `None`).
+- **Recorded probes**: `testdata/probes/real/` holds the mkvmerge 15 and 93 files of the check,
+  anonymised (`record_real.py`): ffprobe's JSON and a header-only Matroska file. Through the
+  prober both keep their statistics tags (`stats_tag`, video equal to the block scan to 1 bit/s).
+- **Oracle**: `testing/reframe_testing/blockscan.py`, the exact block scan.
 
 ### Built: P (MediaInfo leaves the product)
 

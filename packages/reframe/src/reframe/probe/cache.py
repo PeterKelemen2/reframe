@@ -50,15 +50,15 @@ PRUNE_EVERY = 200
 _STALE_TMP_AGE = 3600.0
 
 #: The modules whose source decides what a probe produces (``matroska.py`` gives the track's
-#: ``language_ietf``).
+#: ``language_ietf``, ``sampling.py`` the estimated bit rates).
 _PARSER_MODULES = (
     "parse.py",
     "names.py",
     "roles.py",
     "hdr.py",
     "bitrate.py",
-    "mediainfo.py",
     "matroska.py",
+    "sampling.py",
     "prober.py",
 )
 

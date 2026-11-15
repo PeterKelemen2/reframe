@@ -69,7 +69,7 @@ async def test_two_bitrate_scans_keep_both_measurements(
     probed = await app.sources.probe(path)
     assert isinstance(probed, MediaSource)
     assert [(a.index, a.bitrate.source) for a in probed.audio[:2]] == [
-        (1, BitrateSource.UNKNOWN),  # DTS-HD MA: no bit rate in the file
+        (1, BitrateSource.ESTIMATED),  # DTS-HD MA: no bit rate in the file, so sampled
         (2, BitrateSource.STREAM),  # AC-3: from the frame headers
     ]
     first = app.sources.bitrate_scan(path, 1)

@@ -32,7 +32,7 @@ from reframe.models import (
     ValidationIssue,
 )
 from reframe.presets import builtin_presets
-from reframe.probe import ProbeError, ProbeErrorKind, mediainfo, parse_ffprobe
+from reframe.probe import ProbeError, ProbeErrorKind, parse_ffprobe
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
@@ -183,7 +183,6 @@ def cli_env(
     monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(tmp_path / "no-mkvpropedit"))
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.delenv("FORCE_COLOR", raising=False)
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     return fake_tools
 
 

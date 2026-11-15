@@ -19,6 +19,7 @@ from typing import Any, Literal, cast
 
 from pydantic import ValidationError
 
+from reframe import languages
 from reframe.models.base import Rational
 from reframe.models.media import (
     AttachedPicture,
@@ -45,9 +46,11 @@ from reframe.probe.bitrate import (
     stream_bitrate,
     tag_value,
 )
+from reframe.probe.matroska import MatroskaFile, TrackKind, tracks_by_kind
 
 __all__ = [
     "PARSER_VERSION",
+    "compressed_streams",
     "layout_hash",
     "main_video_index",
     "main_video_stream",
@@ -59,7 +62,7 @@ __all__ = [
 ]
 
 #: Bump when the parser changes what it produces: the probe cache drops older entries.
-PARSER_VERSION = 1
+PARSER_VERSION = 2
 
 _UNKNOWN = frozenset({"", "unknown", "unspecified", "reserved", "N/A"})
 _LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$")
@@ -166,6 +169,14 @@ def _language(tags: Mapping[str, str], warnings: list[str], index: int) -> str |
         warnings.append(f"Stream {index}: language tag {value!r} is not a language code.")
         return None
     return value
+
+
+def _bcp47(language: str | None) -> str | None:
+    """The BCP 47 tag of an ISO 639 code; ``None`` for ``und`` and for codes without one."""
+    tag = languages.normalize(language)
+    if tag is None or tag == languages.UNDETERMINED or not _LANGUAGE_RE.match(tag):
+        return None
+    return tag if len(tag) <= 64 else None
 
 
 def _disposition(raw: Any) -> Disposition:
@@ -300,7 +311,31 @@ def _vfr_decision(stream: Mapping[str, Any], ctx: _Context) -> bool | None:
     return not (interlaced and _is_ratio(stats_ratio, 0.5, _STATS_VFR_TOLERANCE))
 
 
-def _context(data: Mapping[str, Any], fmt: Mapping[str, Any]) -> _Context:
+def compressed_streams(data: Mapping[str, Any], matroska: MatroskaFile | None) -> set[int]:
+    """The indexes of the streams whose Matroska track has compressed blocks. The n-th video,
+    audio and subtitle track is the n-th stream of that kind (cover art is not a track); when
+    the counts differ, none."""
+    if matroska is None:
+        return set()
+    found: dict[TrackKind, list[int]] = {"video": [], "audio": [], "subtitle": []}
+    for stream in _streams(data):
+        kind = stream.get("codec_type")
+        if kind in ("audio", "subtitle") or (kind == "video" and not _is_cover_art(stream)):
+            found[cast("TrackKind", kind)].append(_int(stream.get("index")) or 0)
+    tracks = tracks_by_kind(matroska)
+    if any(len(indexes) != len(tracks[kind]) for kind, indexes in found.items()):
+        return set()
+    return {
+        index
+        for kind, indexes in found.items()
+        for index, track in zip(indexes, tracks[kind], strict=True)
+        if track.compressed
+    }
+
+
+def _context(
+    data: Mapping[str, Any], fmt: Mapping[str, Any], matroska: MatroskaFile | None = None
+) -> _Context:
     format_name = str(fmt.get("format_name") or "")
     main = main_video_index(data)
     reference: float | None = None
@@ -309,14 +344,16 @@ def _context(data: Mapping[str, Any], fmt: Mapping[str, Any]) -> _Context:
             reference = _float(stream.get("start_time"))
     if reference is None:
         reference = _float(fmt.get("start_time"))
-    return _Context(format_name.startswith("matroska"), check_stats_tags(data), reference)
+    stats = check_stats_tags(data, compressed=compressed_streams(data, matroska))
+    return _Context(format_name.startswith("matroska"), stats, reference)
 
 
-def vfr_undecided(data: Mapping[str, Any]) -> list[int]:
+def vfr_undecided(data: Mapping[str, Any], *, matroska: MatroskaFile | None = None) -> list[int]:
     """Indexes of the video streams whose VFR state ffprobe's output cannot tell (Matroska
-    with a known average frame rate and no usable statistics tags)."""
+    with a known average frame rate and no usable statistics tags). ``matroska``: the file's
+    track headers, as for :func:`parse_ffprobe`."""
     fmt_raw = data.get("format")
-    ctx = _context(data, fmt_raw if isinstance(fmt_raw, Mapping) else {})
+    ctx = _context(data, fmt_raw if isinstance(fmt_raw, Mapping) else {}, matroska)
     undecided: list[int] = []
     for stream in _streams(data):
         if stream.get("codec_type") != "video" or _is_cover_art(stream):
@@ -368,13 +405,15 @@ def _common(
         if start is not None and ctx.reference_start is not None
         else None
     )
+    language = _language(tags, warnings, index)
     return {
         "index": index,
         "type_index": type_index,
         "codec": _text(stream.get("codec_name")),
         "codec_long": _text(stream.get("codec_long_name")),
         "profile": _text(stream.get("profile")),
-        "language": _language(tags, warnings, index),
+        "language": language,
+        "language_ietf": None if ctx.matroska else _bcp47(language),
         "title": _text(tag_value(tags, "title")) or _text(tag_value(tags, "name")),
         "disposition": _disposition(stream.get("disposition")),
         "start_time": start,
@@ -574,11 +613,14 @@ def parse_ffprobe(
     probe_tool: str | None = None,
     probed_at: datetime | None = None,
     warnings: Sequence[str] = (),
+    matroska: MatroskaFile | None = None,
 ) -> MediaSource:
     """Build a :class:`MediaSource` from ffprobe JSON.
 
     :param frames: ``-show_frames`` JSON of the main video stream (first frame), for HDR side
         data when the stream has none.
+    :param matroska: the file's Matroska track headers, if read: a track with compressed
+        blocks is left out of the statistics tags' size check.
     :param warnings: problems found before parsing (for example "the frame side data could not
         be read"); the parser adds its own.
     :raises pydantic.ValidationError: only for output that no ffprobe produces.
@@ -587,7 +629,7 @@ def parse_ffprobe(
     fmt_raw = data.get("format")
     fmt: Mapping[str, Any] = fmt_raw if isinstance(fmt_raw, Mapping) else {}
     container = _container(fmt, path, notes)
-    ctx = _context(data, fmt)
+    ctx = _context(data, fmt, matroska)
     for index, reason in sorted(ctx.stats.stale.items()):
         notes.append(f"Stream {index}: the statistics tags look stale ({reason}); not used.")
     frame = _first_frame(frames)

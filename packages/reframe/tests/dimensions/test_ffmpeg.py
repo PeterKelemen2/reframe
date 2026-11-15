@@ -72,7 +72,7 @@ def stream_info(path: Path) -> dict[str, Any]:
 
 
 async def video_stream(path: Path) -> VideoStream:
-    outcome = await probe_file(path, tools()[1], use_mediainfo=False)
+    outcome = await probe_file(path, tools()[1])
     assert isinstance(outcome, MediaSource), outcome
     return outcome.video[0]
 

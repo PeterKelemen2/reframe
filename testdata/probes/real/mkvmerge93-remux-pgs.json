@@ -1,0 +1,651 @@
+{
+    "programs": [],
+    "streams": [
+        {
+            "index": 0,
+            "codec_name": "h264",
+            "codec_long_name": "H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10",
+            "profile": "High",
+            "codec_type": "video",
+            "codec_tag_string": "[0][0][0][0]",
+            "codec_tag": "0x0000",
+            "mime_codec_string": "avc1.640029",
+            "width": 1920,
+            "height": 1080,
+            "coded_width": 1920,
+            "coded_height": 1080,
+            "has_b_frames": 1,
+            "sample_aspect_ratio": "1:1",
+            "display_aspect_ratio": "16:9",
+            "pix_fmt": "yuv420p",
+            "level": 41,
+            "chroma_location": "left",
+            "field_order": "progressive",
+            "is_avc": "true",
+            "nal_length_size": "4",
+            "r_frame_rate": "24000/1001",
+            "avg_frame_rate": "24000/1001",
+            "time_base": "1/1000",
+            "start_pts": 0,
+            "start_time": "0.000000",
+            "bits_per_raw_sample": "8",
+            "extradata_size": 195,
+            "disposition": {
+                "default": 1,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            },
+            "tags": {
+                "language": "eng",
+                "BPS": "34737365",
+                "DURATION": "01:40:06.042000000",
+                "NUMBER_OF_FRAMES": "144001",
+                "NUMBER_OF_BYTES": "26079259308",
+                "_STATISTICS_WRITING_APP": "mkvmerge v93.0 ('Goblu') 64-bit",
+                "_STATISTICS_WRITING_DATE_UTC": "2020-01-01 00:00:00",
+                "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+            }
+        },
+        {
+            "index": 1,
+            "codec_name": "ac3",
+            "codec_long_name": "ATSC A/52A (AC-3)",
+            "codec_type": "audio",
+            "codec_tag_string": "[0][0][0][0]",
+            "codec_tag": "0x0000",
+            "mime_codec_string": "ac-3",
+            "sample_fmt": "fltp",
+            "sample_rate": "48000",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "bits_per_sample": 0,
+            "initial_padding": 0,
+            "dmix_mode": "0",
+            "ltrt_cmixlev": "0.000000",
+            "ltrt_surmixlev": "0.000000",
+            "loro_cmixlev": "0.000000",
+            "loro_surmixlev": "0.000000",
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/1000",
+            "start_pts": 0,
+            "start_time": "0.000000",
+            "bit_rate": "384000",
+            "disposition": {
+                "default": 1,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            },
+            "tags": {
+                "language": "hun",
+                "BPS": "384000",
+                "DURATION": "01:40:06.208000000",
+                "NUMBER_OF_FRAMES": "187694",
+                "NUMBER_OF_BYTES": "288297984",
+                "_STATISTICS_WRITING_APP": "mkvmerge v93.0 ('Goblu') 64-bit",
+                "_STATISTICS_WRITING_DATE_UTC": "2020-01-01 00:00:00",
+                "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+            }
+        },
+        {
+            "index": 2,
+            "codec_name": "dts",
+            "codec_long_name": "DCA (DTS Coherent Acoustics)",
+            "profile": "DTS-HD MA",
+            "codec_type": "audio",
+            "codec_tag_string": "[0][0][0][0]",
+            "codec_tag": "0x0000",
+            "sample_fmt": "s32p",
+            "sample_rate": "48000",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "bits_per_sample": 0,
+            "initial_padding": 0,
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/1000",
+            "start_pts": 0,
+            "start_time": "0.000000",
+            "bits_per_raw_sample": "24",
+            "disposition": {
+                "default": 0,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            },
+            "tags": {
+                "language": "eng",
+                "BPS": "4083673",
+                "DURATION": "01:40:06.048000000",
+                "NUMBER_OF_FRAMES": "563067",
+                "NUMBER_OF_BYTES": "3065842196",
+                "_STATISTICS_WRITING_APP": "mkvmerge v93.0 ('Goblu') 64-bit",
+                "_STATISTICS_WRITING_DATE_UTC": "2020-01-01 00:00:00",
+                "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+            }
+        },
+        {
+            "index": 3,
+            "codec_name": "ac3",
+            "codec_long_name": "ATSC A/52A (AC-3)",
+            "codec_type": "audio",
+            "codec_tag_string": "[0][0][0][0]",
+            "codec_tag": "0x0000",
+            "mime_codec_string": "ac-3",
+            "sample_fmt": "fltp",
+            "sample_rate": "48000",
+            "channels": 6,
+            "channel_layout": "5.1(side)",
+            "bits_per_sample": 0,
+            "initial_padding": 0,
+            "dmix_mode": "0",
+            "ltrt_cmixlev": "0.000000",
+            "ltrt_surmixlev": "0.000000",
+            "loro_cmixlev": "0.000000",
+            "loro_surmixlev": "0.000000",
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/1000",
+            "start_pts": 0,
+            "start_time": "0.000000",
+            "bit_rate": "640000",
+            "disposition": {
+                "default": 0,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            },
+            "tags": {
+                "language": "eng",
+                "BPS": "640000",
+                "DURATION": "01:40:06.080000000",
+                "NUMBER_OF_FRAMES": "187690",
+                "NUMBER_OF_BYTES": "480486400",
+                "_STATISTICS_WRITING_APP": "mkvmerge v93.0 ('Goblu') 64-bit",
+                "_STATISTICS_WRITING_DATE_UTC": "2020-01-01 00:00:00",
+                "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+            }
+        },
+        {
+            "index": 4,
+            "codec_name": "subrip",
+            "codec_long_name": "SubRip subtitle",
+            "codec_type": "subtitle",
+            "codec_tag_string": "[0][0][0][0]",
+            "codec_tag": "0x0000",
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/1000",
+            "start_pts": 0,
+            "start_time": "0.000000",
+            "duration_ts": 6006208,
+            "duration": "6006.208000",
+            "disposition": {
+                "default": 0,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            },
+            "tags": {
+                "language": "hun",
+                "BPS": "25",
+                "DURATION": "01:39:11.289000000",
+                "NUMBER_OF_FRAMES": "589",
+                "NUMBER_OF_BYTES": "19005",
+                "_STATISTICS_WRITING_APP": "mkvmerge v93.0 ('Goblu') 64-bit",
+                "_STATISTICS_WRITING_DATE_UTC": "2020-01-01 00:00:00",
+                "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+            }
+        },
+        {
+            "index": 5,
+            "codec_name": "hdmv_pgs_subtitle",
+            "codec_long_name": "HDMV Presentation Graphic Stream subtitles",
+            "codec_type": "subtitle",
+            "codec_tag_string": "[0][0][0][0]",
+            "codec_tag": "0x0000",
+            "r_frame_rate": "0/0",
+            "avg_frame_rate": "0/0",
+            "time_base": "1/1000",
+            "start_pts": 0,
+            "start_time": "0.000000",
+            "duration_ts": 6006208,
+            "duration": "6006.208000",
+            "disposition": {
+                "default": 0,
+                "dub": 0,
+                "original": 0,
+                "comment": 0,
+                "lyrics": 0,
+                "karaoke": 0,
+                "forced": 0,
+                "hearing_impaired": 0,
+                "visual_impaired": 0,
+                "clean_effects": 0,
+                "attached_pic": 0,
+                "timed_thumbnails": 0,
+                "non_diegetic": 0,
+                "captions": 0,
+                "descriptions": 0,
+                "metadata": 0,
+                "dependent": 0,
+                "still_image": 0,
+                "multilayer": 0
+            },
+            "tags": {
+                "language": "eng",
+                "BPS": "39096",
+                "DURATION": "01:39:54.697000000",
+                "NUMBER_OF_FRAMES": "2652",
+                "NUMBER_OF_BYTES": "29296387",
+                "_STATISTICS_WRITING_APP": "mkvmerge v93.0 ('Goblu') 64-bit",
+                "_STATISTICS_WRITING_DATE_UTC": "2020-01-01 00:00:00",
+                "_STATISTICS_TAGS": "BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES"
+            }
+        }
+    ],
+    "chapters": [
+        {
+            "id": 1,
+            "time_base": "1/1000000000",
+            "start": 0,
+            "start_time": "0.000000",
+            "end": 334625958333,
+            "end_time": "334.625958",
+            "tags": {
+                "title": "Chapter 01"
+            }
+        },
+        {
+            "id": 2,
+            "time_base": "1/1000000000",
+            "start": 334625958333,
+            "start_time": "334.625958",
+            "end": 508007500000,
+            "end_time": "508.007500",
+            "tags": {
+                "title": "Chapter 02"
+            }
+        },
+        {
+            "id": 3,
+            "time_base": "1/1000000000",
+            "start": 508007500000,
+            "start_time": "508.007500",
+            "end": 651609291666,
+            "end_time": "651.609292",
+            "tags": {
+                "title": "Chapter 03"
+            }
+        },
+        {
+            "id": 4,
+            "time_base": "1/1000000000",
+            "start": 651609291666,
+            "start_time": "651.609292",
+            "end": 802468333333,
+            "end_time": "802.468333",
+            "tags": {
+                "title": "Chapter 04"
+            }
+        },
+        {
+            "id": 5,
+            "time_base": "1/1000000000",
+            "start": 802468333333,
+            "start_time": "802.468333",
+            "end": 928385791666,
+            "end_time": "928.385792",
+            "tags": {
+                "title": "Chapter 05"
+            }
+        },
+        {
+            "id": 6,
+            "time_base": "1/1000000000",
+            "start": 928385791666,
+            "start_time": "928.385792",
+            "end": 1084166416666,
+            "end_time": "1084.166417",
+            "tags": {
+                "title": "Chapter 06"
+            }
+        },
+        {
+            "id": 7,
+            "time_base": "1/1000000000",
+            "start": 1084166416666,
+            "start_time": "1084.166417",
+            "end": 1332956625000,
+            "end_time": "1332.956625",
+            "tags": {
+                "title": "Chapter 07"
+            }
+        },
+        {
+            "id": 8,
+            "time_base": "1/1000000000",
+            "start": 1332956625000,
+            "start_time": "1332.956625",
+            "end": 1513428583333,
+            "end_time": "1513.428583",
+            "tags": {
+                "title": "Chapter 08"
+            }
+        },
+        {
+            "id": 9,
+            "time_base": "1/1000000000",
+            "start": 1513428583333,
+            "start_time": "1513.428583",
+            "end": 1705995958333,
+            "end_time": "1705.995958",
+            "tags": {
+                "title": "Chapter 09"
+            }
+        },
+        {
+            "id": 10,
+            "time_base": "1/1000000000",
+            "start": 1705995958333,
+            "start_time": "1705.995958",
+            "end": 1928051125000,
+            "end_time": "1928.051125",
+            "tags": {
+                "title": "Chapter 10"
+            }
+        },
+        {
+            "id": 11,
+            "time_base": "1/1000000000",
+            "start": 1928051125000,
+            "start_time": "1928.051125",
+            "end": 2104560791666,
+            "end_time": "2104.560792",
+            "tags": {
+                "title": "Chapter 11"
+            }
+        },
+        {
+            "id": 12,
+            "time_base": "1/1000000000",
+            "start": 2104560791666,
+            "start_time": "2104.560792",
+            "end": 2383589541666,
+            "end_time": "2383.589542",
+            "tags": {
+                "title": "Chapter 12"
+            }
+        },
+        {
+            "id": 13,
+            "time_base": "1/1000000000",
+            "start": 2383589541666,
+            "start_time": "2383.589542",
+            "end": 2754001250000,
+            "end_time": "2754.001250",
+            "tags": {
+                "title": "Chapter 13"
+            }
+        },
+        {
+            "id": 14,
+            "time_base": "1/1000000000",
+            "start": 2754001250000,
+            "start_time": "2754.001250",
+            "end": 2930385791666,
+            "end_time": "2930.385792",
+            "tags": {
+                "title": "Chapter 14"
+            }
+        },
+        {
+            "id": 15,
+            "time_base": "1/1000000000",
+            "start": 2930385791666,
+            "start_time": "2930.385792",
+            "end": 3181219708333,
+            "end_time": "3181.219708",
+            "tags": {
+                "title": "Chapter 15"
+            }
+        },
+        {
+            "id": 16,
+            "time_base": "1/1000000000",
+            "start": 3181219708333,
+            "start_time": "3181.219708",
+            "end": 3304259291666,
+            "end_time": "3304.259292",
+            "tags": {
+                "title": "Chapter 16"
+            }
+        },
+        {
+            "id": 17,
+            "time_base": "1/1000000000",
+            "start": 3304259291666,
+            "start_time": "3304.259292",
+            "end": 3562350458333,
+            "end_time": "3562.350458",
+            "tags": {
+                "title": "Chapter 17"
+            }
+        },
+        {
+            "id": 18,
+            "time_base": "1/1000000000",
+            "start": 3562350458333,
+            "start_time": "3562.350458",
+            "end": 3872785583333,
+            "end_time": "3872.785583",
+            "tags": {
+                "title": "Chapter 18"
+            }
+        },
+        {
+            "id": 19,
+            "time_base": "1/1000000000",
+            "start": 3872785583333,
+            "start_time": "3872.785583",
+            "end": 4046834458333,
+            "end_time": "4046.834458",
+            "tags": {
+                "title": "Chapter 19"
+            }
+        },
+        {
+            "id": 20,
+            "time_base": "1/1000000000",
+            "start": 4046834458333,
+            "start_time": "4046.834458",
+            "end": 4437683250000,
+            "end_time": "4437.683250",
+            "tags": {
+                "title": "Chapter 20"
+            }
+        },
+        {
+            "id": 21,
+            "time_base": "1/1000000000",
+            "start": 4437683250000,
+            "start_time": "4437.683250",
+            "end": 4619823541666,
+            "end_time": "4619.823542",
+            "tags": {
+                "title": "Chapter 21"
+            }
+        },
+        {
+            "id": 22,
+            "time_base": "1/1000000000",
+            "start": 4619823541666,
+            "start_time": "4619.823542",
+            "end": 4751955541666,
+            "end_time": "4751.955542",
+            "tags": {
+                "title": "Chapter 22"
+            }
+        },
+        {
+            "id": 23,
+            "time_base": "1/1000000000",
+            "start": 4751955541666,
+            "start_time": "4751.955542",
+            "end": 4957994708333,
+            "end_time": "4957.994708",
+            "tags": {
+                "title": "Chapter 23"
+            }
+        },
+        {
+            "id": 24,
+            "time_base": "1/1000000000",
+            "start": 4957994708333,
+            "start_time": "4957.994708",
+            "end": 5135296833333,
+            "end_time": "5135.296833",
+            "tags": {
+                "title": "Chapter 24"
+            }
+        },
+        {
+            "id": 25,
+            "time_base": "1/1000000000",
+            "start": 5135296833333,
+            "start_time": "5135.296833",
+            "end": 5266511250000,
+            "end_time": "5266.511250",
+            "tags": {
+                "title": "Chapter 25"
+            }
+        },
+        {
+            "id": 26,
+            "time_base": "1/1000000000",
+            "start": 5266511250000,
+            "start_time": "5266.511250",
+            "end": 5375703666666,
+            "end_time": "5375.703667",
+            "tags": {
+                "title": "Chapter 26"
+            }
+        },
+        {
+            "id": 27,
+            "time_base": "1/1000000000",
+            "start": 5375703666666,
+            "start_time": "5375.703667",
+            "end": 5558010791666,
+            "end_time": "5558.010792",
+            "tags": {
+                "title": "Chapter 27"
+            }
+        },
+        {
+            "id": 28,
+            "time_base": "1/1000000000",
+            "start": 5558010791666,
+            "start_time": "5558.010792",
+            "end": 6006041708333,
+            "end_time": "6006.041708",
+            "tags": {
+                "title": "Chapter 28"
+            }
+        }
+    ],
+    "format": {
+        "filename": "mkvmerge93-remux-pgs.mkv",
+        "nb_streams": 6,
+        "nb_programs": 0,
+        "nb_stream_groups": 0,
+        "format_name": "matroska,webm",
+        "format_long_name": "Matroska / WebM",
+        "start_time": "0.000000",
+        "duration": "6006.208000",
+        "size": "29929897720",
+        "bit_rate": "39865283",
+        "probe_score": 100,
+        "tags": {
+            "encoder": "libebml v1.4.5 + libmatroska v1.7.1",
+            "creation_time": "2020-01-01T00:00:00.000000Z"
+        }
+    }
+}

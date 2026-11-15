@@ -21,7 +21,6 @@ import uvicorn
 from fastapi import FastAPI
 from websockets.asyncio.client import ClientConnection, connect
 
-from reframe.probe import mediainfo
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
 from reframe_server.app import create_app
@@ -160,7 +159,6 @@ def make_api_factory(
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
     monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     (tmp_path / "config").mkdir(exist_ok=True)
     (tmp_path / "config" / "settings.json").write_text(
         json.dumps({"encoders": {"hardware_tests": False}, "queue": {"sleep_inhibit": False}}),

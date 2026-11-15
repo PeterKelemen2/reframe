@@ -73,7 +73,6 @@ from reframe.models import (
     VideoStream,
 )
 from reframe.platform import longpath
-from reframe.probe import mediainfo
 from reframe.service import ProbeError, ProbeErrorKind
 from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
@@ -195,7 +194,6 @@ def fake_env(
     monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.delenv("FORCE_COLOR", raising=False)
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     return fake_tools
 
 
@@ -279,7 +277,7 @@ def test_probe_of_a_season_episode_shows_every_track(cache_env: Path, fixture_me
     assert rows["1"][6] == "192 kb/s (stream)"
     assert rows["1"][7] == "[Main]\ndefault"
     assert rows["2"][1:5] == ["eng English", "English Stereo", "AAC-LC", "stereo, 2 ch"]
-    assert rows["2"][6].endswith(("(MediaInfo)", "(unknown)", "(stream)", "(stats tag)"))
+    assert rows["2"][6].endswith("(estimated)")
     assert rows["2"][7] == "(Main?)"
     assert rows["3"][2:4] == ["Director's Commentary", "AAC-LC"]
     assert rows["3"][7] == "[Commentary]\ncommentary"
