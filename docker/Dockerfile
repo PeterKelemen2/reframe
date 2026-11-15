@@ -68,10 +68,10 @@ WORKDIR /src
 COPY .python-version pyproject.toml uv.lock ./
 COPY packages/reframe/pyproject.toml packages/reframe/README.md packages/reframe/
 COPY packages/reframe-server/pyproject.toml packages/reframe-server/README.md packages/reframe-server/
-RUN uv sync --frozen --no-dev --all-packages --extra cli --extra mediainfo --no-install-workspace
+RUN uv sync --frozen --no-dev --all-packages --extra cli --no-install-workspace
 COPY packages/reframe/src packages/reframe/src
 COPY packages/reframe-server/src packages/reframe-server/src
-RUN uv sync --frozen --no-dev --all-packages --extra cli --extra mediainfo --no-editable
+RUN uv sync --frozen --no-dev --all-packages --extra cli --no-editable
 
 FROM ${DEBIAN_IMAGE}
 ARG TARGETARCH
@@ -90,8 +90,6 @@ RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         $gpu \
-        mediainfo=25.04-1 \
-        mkvtoolnix=92.0-1+deb13u1 \
         tini=0.19.0-3+b8 \
     && rm -rf /var/lib/apt/lists/* \
     && sh /tmp/debian-packages.sh /opt/reframe/notices/DEBIAN_PACKAGES \

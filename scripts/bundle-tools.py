@@ -1,9 +1,9 @@
 """Lay out the pinned tools that a desktop package ships (the app's ``tools`` resource folder).
 
-FFmpeg is the ``default`` build of ``tools/ffmpeg.toml``; the Windows layout also gets
-MediaInfo from ``tools/bundled-tools.toml``, and the Linux layout a libva built from its pinned
-source into FFmpeg's ``lib/`` (the libva of older distros lacks functions the build calls). Each
-archive's size and SHA-256 are checked before anything is extracted. A rerun keeps a tool folder
+FFmpeg is the ``default`` build of ``tools/ffmpeg.toml``; the Linux layout also gets a libva
+built from its pinned source (``tools/bundled-tools.toml``) into FFmpeg's ``lib/`` (the libva of
+older distros lacks functions the build calls). Each archive's size and SHA-256 are checked
+before anything is extracted. A rerun keeps a tool folder
 whose files still have the hashes recorded when it was laid out, and the destination holds
 nothing but its ``README.md`` and the platform's tool folders afterwards. On the platform the
 layout is for, tool discovery must then find every bundled tool with its pinned version.
@@ -42,10 +42,7 @@ PLATFORMS = ("linux-x64", "windows-x64")
 README = "README.md"
 WORK_PREFIX = ".bundle-"
 #: Every tool folder this script makes, with the tools that discovery finds in it.
-FOLDER_TOOLS: Mapping[str, tuple[str, ...]] = {
-    "ffmpeg": ("ffmpeg", "ffprobe"),
-    "mediainfo": ("mediainfo",),
-}
+FOLDER_TOOLS: Mapping[str, tuple[str, ...]] = {"ffmpeg": ("ffmpeg", "ffprobe")}
 #: Archive formats of the pins in ``tools/bundled-tools.toml``.
 FORMATS = ("tar.xz", "tar.bz2", "zip")
 #: The libraries of the libva build that FFmpeg loads.
@@ -80,10 +77,8 @@ class Archive:
     sha256: str
     size: int
     format: str
-    root: str | None
-    """The archive's top folder (``None``: none); its contents become the tool folder."""
-    files: tuple[str, ...] | None
-    """The paths (relative to ``root``) to keep; ``None`` keeps everything."""
+    root: str
+    """The archive's top folder; its contents become the tool folder."""
     required: tuple[str, ...]
     """Paths that must be in the laid-out folder: the binaries and the licence file."""
     libraries: tuple[Library, ...] = ()
@@ -141,12 +136,11 @@ def ffmpeg_archive(manifest: Path, platform: str) -> Archive:
         size=pbuild.size,
         format=pbuild.format,
         root=pbuild.root,
-        files=None,
         required=(pbuild.ffmpeg, pbuild.ffprobe, license_file),
     )
 
 
-def _pin(table: Mapping[str, object], where: str) -> tuple[str, str, int, str, str | None]:
+def _pin(table: Mapping[str, object], where: str) -> tuple[str, str, int, str, str]:
     """``(url, sha256, size, format, root)`` of one pinned archive."""
     url = _str(table, "url", where)
     scheme = urllib.parse.urlsplit(url).scheme
@@ -161,54 +155,12 @@ def _pin(table: Mapping[str, object], where: str) -> tuple[str, str, int, str, s
     fmt = _str(table, "format", where)
     if fmt not in FORMATS or not url.endswith("." + fmt):
         raise fetch.FetchError(f"{where}.format: {fmt!r} is not one of {FORMATS} or the URL's")
-    root = table.get("root")
-    if root is not None:
-        root = _rel_path(root, f"{where}.root")
-        if "/" in root:
-            raise fetch.FetchError(f"{where}.root: expected one folder name, got {root!r}")
-    elif fmt != "zip":
-        raise fetch.FetchError(f"{where}.root: a {fmt} archive needs its top folder")
+    if table.get("root") is None:
+        raise fetch.FetchError(f"{where}.root: a source archive needs its top folder")
+    root = _rel_path(table.get("root"), f"{where}.root")
+    if "/" in root:
+        raise fetch.FetchError(f"{where}.root: expected one folder name, got {root!r}")
     return url, sha256, size, fmt, root
-
-
-def _tool_archive(folder: str, tool: Mapping[str, object], platform: str) -> Archive | None:
-    where = f"tools.{folder}"
-    version = _str(tool, "version", where)
-    for key in ("license", "source_url"):
-        _str(tool, key, where)
-    license_file = _rel_path(tool.get("license_file"), f"{where}.license_file")
-    platforms = tool.get("platforms")
-    if not isinstance(platforms, dict) or not platforms:
-        raise fetch.FetchError(f"{where}.platforms: expected a non-empty table")
-    table = platforms.get(platform)
-    if table is None:
-        return None
-    where = f"{where}.platforms.{platform}"
-    if not isinstance(table, dict):
-        raise fetch.FetchError(f"{where}: expected a table")
-    url, sha256, size, fmt, root = _pin(table, where)
-    binary = _rel_path(table.get("binary"), f"{where}.binary")
-    files_value = table.get("files")
-    files: tuple[str, ...] | None = None
-    if files_value is not None:
-        if not isinstance(files_value, list) or not files_value:
-            raise fetch.FetchError(f"{where}.files: expected a non-empty list")
-        files = tuple(_rel_path(f, f"{where}.files") for f in files_value)
-        missing = [p for p in (binary, license_file) if p not in files]
-        if missing:
-            raise fetch.FetchError(f"{where}.files: does not keep {', '.join(missing)}")
-    return Archive(
-        folder=folder,
-        version=version,
-        platform=platform,
-        url=url,
-        sha256=sha256,
-        size=size,
-        format=fmt,
-        root=root,
-        files=files,
-        required=(binary, license_file),
-    )
 
 
 def _load_tools_manifest(manifest: Path) -> dict[str, object]:
@@ -216,24 +168,6 @@ def _load_tools_manifest(manifest: Path) -> dict[str, object]:
     if data.get("schema_version") != 1:
         raise fetch.FetchError(f"{manifest}: schema_version: expected 1")
     return data
-
-
-def tool_archives(manifest: Path, platform: str) -> list[Archive]:
-    """The tool archives (MediaInfo) pinned for ``platform``; none on Linux."""
-    tools = _load_tools_manifest(manifest).get("tools")
-    if not isinstance(tools, dict):
-        raise fetch.FetchError(f"{manifest}: expected a [tools] table")
-    archives = []
-    for folder, table in tools.items():
-        if folder not in FOLDER_TOOLS or folder == "ffmpeg" or not isinstance(table, dict):
-            raise fetch.FetchError(f"{manifest}: unknown tool {folder!r}")
-        try:
-            archive = _tool_archive(folder, table, platform)
-        except fetch.FetchError as e:
-            raise fetch.FetchError(f"{manifest}: {e}") from e
-        if archive is not None:
-            archives.append(archive)
-    return archives
 
 
 def libraries(manifest: Path, platform: str) -> list[Library]:
@@ -255,8 +189,6 @@ def libraries(manifest: Path, platform: str) -> list[Library]:
             _str(lib, key, where)
         license_file = _rel_path(lib.get("license_file"), f"{where}.license_file")
         url, sha256, size, fmt, root = _pin(table, f"{where}.platforms.{platform}")
-        if root is None:
-            raise fetch.FetchError(f"{where}: a source archive needs its top folder")
         found.append(Library(name, version, url, sha256, size, fmt, root, license_file))
     return found
 
@@ -264,9 +196,6 @@ def libraries(manifest: Path, platform: str) -> list[Library]:
 def _is_laid_out(folder: Path, archive: Archive) -> bool:
     marker = fetch.installed_build(folder)
     if marker is None or marker.get("sha256") != archive.sha256:
-        return False
-    kept = None if archive.files is None else list(archive.files)
-    if marker.get("kept") != kept:
         return False
     if marker.get("libraries", {}) != {lib.name: lib.sha256 for lib in archive.libraries}:
         return False
@@ -309,7 +238,7 @@ def _clear_destination(dest: Path, wanted: Sequence[str]) -> None:
         shutil.rmtree(entry)
 
 
-def _fetch(url: str, sha256: str, size: int, fmt: str, root: str | None, into: Path) -> Path:
+def _fetch(url: str, sha256: str, size: int, fmt: str, root: str, into: Path) -> Path:
     """Download, verify and extract one archive into the new folder ``into``; the folder that
     holds its contents (``into/root``)."""
     into.mkdir()
@@ -320,7 +249,7 @@ def _fetch(url: str, sha256: str, size: int, fmt: str, root: str | None, into: P
     _log(f"SHA-256 verified: {sha256}")
     fetch.safe_extract(downloaded, fmt, root, into, CancelToken())
     downloaded.unlink()
-    return into / root if root is not None else into
+    return into / root
 
 
 def _run(argv: list[str]) -> None:
@@ -387,20 +316,9 @@ def _lay_out(archive: Archive, dest: Path) -> None:
     work = Path(tempfile.mkdtemp(prefix=WORK_PREFIX, dir=dest))
     try:
         file_name = posixpath.basename(urllib.parse.urlsplit(archive.url).path)
-        source = _fetch(
+        new = _fetch(
             archive.url, archive.sha256, archive.size, archive.format, archive.root, work / "x"
         )
-        if archive.files is None:
-            new = source
-        else:
-            new = work / "keep"
-            for rel in archive.files:
-                src = source.joinpath(*PurePosixPath(rel).parts)
-                if not src.is_file():
-                    raise fetch.FetchError(f"{file_name} has no {rel}")
-                target = new.joinpath(*PurePosixPath(rel).parts)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                src.replace(target)
         for rel in archive.required:
             if not new.joinpath(*PurePosixPath(rel).parts).is_file():
                 raise fetch.FetchError(f"{file_name} has no {rel}")
@@ -413,7 +331,6 @@ def _lay_out(archive: Archive, dest: Path) -> None:
             "url": archive.url,
             "sha256": archive.sha256,
             "layout": "bundled",
-            "kept": None if archive.files is None else list(archive.files),
             "libraries": {lib.name: lib.sha256 for lib in archive.libraries},
             "files": fetch.tree_digest(new),
         }
@@ -459,8 +376,7 @@ def bundle(
         discovery does not find.
     """
     ffmpeg = ffmpeg_archive(ffmpeg_manifest, platform)
-    ffmpeg = replace(ffmpeg, libraries=tuple(libraries(tools_manifest, platform)))
-    archives = [ffmpeg, *tool_archives(tools_manifest, platform)]
+    archives = [replace(ffmpeg, libraries=tuple(libraries(tools_manifest, platform)))]
     dest.mkdir(parents=True, exist_ok=True)
     _clear_destination(dest, [a.folder for a in archives])
     for archive in archives:

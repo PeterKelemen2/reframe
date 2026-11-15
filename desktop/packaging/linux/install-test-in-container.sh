@@ -23,10 +23,6 @@ case $kind in
         ok "apt-get install $(basename /pkgs/*.deb)"
         apt-get install -y -qq --no-install-recommends desktop-file-utils jq xvfb dbus curl procps > /dev/null
         dpkg-query -W -f '${Package} ${Version}: Depends ${Depends}; Recommends ${Recommends}\n' reframe
-        for recommended in mkvtoolnix mediainfo; do
-            [ "$(dpkg-query -W -f '${Status}' "$recommended" 2> /dev/null)" = "install ok installed" ] \
-                || fail "recommended $recommended not installed"
-        done
         ;;
     rpm)
         dnf install -y -q /pkgs/*.rpm > /tmp/install.log 2>&1 || { cat /tmp/install.log; fail "dnf install"; }
@@ -35,13 +31,9 @@ case $kind in
         rpm -q --qf '%{NAME} %{VERSION}-%{RELEASE}\n' reframe
         rpm -q --requires reframe | sed 's/^/  requires: /'
         rpm -q --recommends reframe | sed 's/^/  recommends: /'
-        for recommended in mkvtoolnix mediainfo; do
-            rpm -q "$recommended" > /dev/null || fail "recommended $recommended not installed"
-        done
         ;;
     *) fail "usage: $0 deb|rpm" ;;
 esac
-ok "mkvtoolnix and mediainfo installed as recommended packages"
 
 # Other packages may bring the distro's libav* (WebKitGTK's GStreamer plugins): only the ffmpeg
 # program itself must not come with Reframe.
@@ -57,6 +49,13 @@ case $kind in
     rpm) rpm -q --requires reframe | grep -q 'ffmpeg\|libav' && fail "Requires names FFmpeg" ;;
 esac
 ok "no ffmpeg package installed, no FFmpeg in the dependencies"
+case $kind in
+    deb) dpkg-query -W -f '${Depends} ${Recommends}\n' reframe | grep -q 'mkvtoolnix\|mediainfo' \
+        && fail "the package still asks for MKVToolNix or MediaInfo" ;;
+    rpm) { rpm -q --requires reframe; rpm -q --recommends reframe; } | grep -q 'mkvtoolnix\|mediainfo' \
+        && fail "the package still asks for MKVToolNix or MediaInfo" ;;
+esac
+ok "no MKVToolNix or MediaInfo in the dependencies"
 
 app=/usr/lib/Reframe
 [ "$(readlink /usr/bin/reframe)" = "$app/sidecar/reframe" ] || fail "/usr/bin/reframe is not the link to $app/sidecar/reframe"
@@ -88,9 +87,8 @@ for tool in ffmpeg ffprobe; do
         || fail "$tool is $origin at $path"
     ok "$tool: bundled at $path ($(jq -r ".$tool.version" "$work/tools.json"))"
 done
-for tool in mkvpropedit mediainfo; do
-    echo "-- $tool: $(jq -c ".$tool | {status, origin, path, reason}" "$work/tools.json")"
-done
+[ "$(jq -c keys "$work/tools.json")" = '["ffmpeg","ffprobe"]' ] \
+    || fail "reframe tools status lists $(jq -c keys "$work/tools.json")"
 
 mkdir "$work/out"
 reframe encode -p very-fast-1080p30 -o "$work/out/multitrack.mkv" /media/multitrack.mkv > "$work/encode.log" 2>&1 \

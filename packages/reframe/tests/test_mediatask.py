@@ -109,8 +109,6 @@ def _toolset(ffmpeg: ToolInfo) -> ToolSet:
     return ToolSet(
         ffmpeg=ffmpeg,
         ffprobe=_info("ffprobe", ToolStatus.FOUND),
-        mkvpropedit=_info("mkvpropedit", ToolStatus.MISSING, "not found"),
-        mediainfo=_info("mediainfo", ToolStatus.MISSING, "not found"),
     )
 
 
@@ -134,8 +132,10 @@ async def test_require_tool(tmp_path: Path) -> None:
     ctx = _context(tmp_path, _toolset(found), sources)
     assert await require_tool(ctx, "ffmpeg") == found
     assert (await require_tool(ctx, "ffprobe")).name == "ffprobe"
-    with pytest.raises(TaskFailed, match="mkvpropedit cannot be used: not found"):
-        await require_tool(ctx, "mkvpropedit")
+    missing = ToolSet(ffmpeg=found, ffprobe=_info("ffprobe", ToolStatus.MISSING, "not found"))
+    ctx = _context(tmp_path, missing, sources)
+    with pytest.raises(TaskFailed, match="ffprobe cannot be used: not found"):
+        await require_tool(ctx, "ffprobe")
     old = _info("ffmpeg", ToolStatus.TOO_OLD)
     ctx = _context(tmp_path, _toolset(old), sources)
     with pytest.raises(TaskFailed, match="ffmpeg cannot be used: too_old"):

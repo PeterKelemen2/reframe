@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-    Sets up a Windows 10/11 machine to build and test Reframe: the CI toolchain, MKVToolNix,
-    MediaInfo and, with -AuthorizedKey, an OpenSSH server for remote work.
+    Sets up a Windows 10/11 machine to build and test Reframe: the CI toolchain, MKVToolNix
+    (the header writer's tests compare with it) and, with -AuthorizedKey, an OpenSSH server for
+    remote work.
 
 .DESCRIPTION
     Run it in an elevated Windows PowerShell 5.1 (or pwsh). Every part checks what is installed
@@ -169,7 +170,7 @@ if ($node -and ((& node --version) -like "v$nodeMajor.*")) {
     Update-SessionPath
 }
 
-Step 'MKVToolNix (mkvpropedit)'
+Step 'MKVToolNix (mkvmerge, mkvinfo and mkvpropedit for the tests)'
 $mkvDir = Join-Path $ToolsDir 'mkvtoolnix'
 [xml]$mkvRelease = (Get-Text 'https://mkvtoolnix.download/latest-release.xml')
 $mkvVersion = $mkvRelease.'mkvtoolnix-releases'.'latest-source'.version
@@ -185,23 +186,6 @@ if ((Test-Path $mkvprop) -and ((& $mkvprop --version) -match "v$([regex]::Escape
     Expand-Into $zip $mkvDir
 }
 Add-PathEntry $mkvDir
-
-Step 'MediaInfo CLI'
-$miDir = Join-Path $ToolsDir 'MediaInfo'
-$page = (Get-Text 'https://mediaarea.net/en/MediaInfo/Download/Windows')
-$miVersion = [regex]::Matches($page, 'MediaInfo_CLI_([\d.]+)_Windows_x64\.zip') |
-    ForEach-Object { $_.Groups[1].Value } | Sort-Object { [version]$_ } -Descending | Select-Object -First 1
-$miExe = Join-Path $miDir 'MediaInfo.exe'
-if ((Test-Path $miExe) -and ((& $miExe --Version | Out-String) -match "v$([regex]::Escape($miVersion))\b")) {
-    Write-Host "present: MediaInfo $miVersion"
-} else {
-    $zipName = "MediaInfo_CLI_${miVersion}_Windows_x64.zip"
-    $zip = Get-File "https://mediaarea.net/download/binary/mediainfo/$miVersion/$zipName" $zipName
-    Expand-Into $zip $miDir
-    # MediaArea publishes no checksums; its binaries are signed.
-    Assert-Signed $miExe
-}
-Add-PathEntry $miDir
 
 if (-not $SkipDesktop) {
     Step 'Visual Studio Build Tools (MSVC and the Windows SDK, for Rust)'
@@ -333,8 +317,7 @@ Update-SessionPath
 # Windows PowerShell turns a native tool's stderr into errors when it is redirected.
 $ErrorActionPreference = 'Continue'
 foreach ($cmd in @('git --version', 'uv --version', "uv python find $pythonVersion", 'node --version',
-        'npm --version', 'rustc --version', 'cargo --version', 'mkvpropedit --version',
-        'mediainfo --Version')) {
+        'npm --version', 'rustc --version', 'cargo --version', 'mkvpropedit --version')) {
     $parts = $cmd -split ' '
     $exe = $parts[0]
     $rest = @($parts | Select-Object -Skip 1)

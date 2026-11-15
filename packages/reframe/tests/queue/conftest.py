@@ -114,7 +114,7 @@ def all_caps(*, state: EncoderState = EncoderState.AVAILABLE) -> CapabilitySnaps
 
 
 def tool_set(ffmpeg: Path) -> ToolSet:
-    """The fake FFmpeg as ffmpeg and ffprobe; no MKVToolNix, which no plan needs."""
+    """The fake FFmpeg as ffmpeg and ffprobe."""
 
     def info(name: Any, path: Path | None) -> ToolInfo:
         return ToolInfo(
@@ -126,8 +126,6 @@ def tool_set(ffmpeg: Path) -> ToolSet:
     return ToolSet(
         ffmpeg=info("ffmpeg", ffmpeg),
         ffprobe=info("ffprobe", ffmpeg),
-        mkvpropedit=info("mkvpropedit", None),
-        mediainfo=info("mediainfo", None),
     )
 
 

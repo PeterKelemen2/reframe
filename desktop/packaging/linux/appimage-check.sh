@@ -1,7 +1,7 @@
 #!/bin/sh
 # Starts an AppImage with private folders, waits until its sidecar publishes server.json, then
-# checks GET /api/system: desktop mode, FFmpeg bundled from inside the AppImage, and which
-# mkvpropedit and mediainfo it found. Stops the app and checks that none of its processes is left.
+# checks GET /api/system: desktop mode and FFmpeg bundled from inside the AppImage. Stops the app
+# and checks that none of its processes is left.
 # Usage: appimage-check.sh APPIMAGE WORK_DIR [SCREENSHOT] [-- APPIMAGE_ARGS…]
 # The caller provides the display (appimage-test.sh: a virtual KWin session, or Xvfb in a
 # container).
@@ -74,9 +74,6 @@ jq -e ".mode == \"desktop\" and .tools.ffmpeg.origin == \"bundled\" and .tools.f
     and .tools.ffmpeg.path == \"$mount/usr/lib/Reframe/tools/ffmpeg/bin/ffmpeg\"" "$work/system.json" > /dev/null \
     || { stop; fail "GET /api/system: $(jq -c '{mode, ffmpeg: .tools.ffmpeg}' "$work/system.json")"; }
 ok "the sidecar $server answers on port $port: mode desktop, ffmpeg bundled at $(jq -r .tools.ffmpeg.path "$work/system.json") ($(jq -r .tools.ffmpeg.version "$work/system.json"))"
-for tool in mkvpropedit mediainfo; do
-    echo "-- $tool: $(jq -c ".tools.$tool | {status, origin, path, reason}" "$work/system.json")"
-done
 tr '\0' '\n' < "/proc/$(jq -r .pid "$REFRAME_DATA_DIR/server.json")/environ" | grep -E '^(LD_|APPDIR|APPIMAGE|PATH=)' | sed 's/^/-- sidecar env: /'
 if [ -n "$screenshot" ]; then
     sleep 3

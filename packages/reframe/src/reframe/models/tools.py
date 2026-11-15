@@ -1,4 +1,4 @@
-"""External tool status: which ffmpeg / ffprobe / mkvpropedit / mediainfo is used.
+"""External tool status: which ffmpeg and ffprobe are used.
 
 Produced by :func:`reframe.tools.discover_tools`. A missing, broken or too old tool is data
 (:class:`ToolStatus` plus a reason and fixes), never an exception.
@@ -18,8 +18,8 @@ from reframe.models.text import DisplayText
 
 __all__ = ["ToolFetchResult", "ToolInfo", "ToolName", "ToolOrigin", "ToolSet", "ToolStatus"]
 
-#: The external tools Reframe uses. ``mkvpropedit`` and ``mediainfo`` are optional.
-ToolName = Literal["ffmpeg", "ffprobe", "mkvpropedit", "mediainfo"]
+#: The external tools Reframe uses.
+ToolName = Literal["ffmpeg", "ffprobe"]
 
 
 class ToolOrigin(StrEnum):
@@ -33,9 +33,6 @@ class ToolOrigin(StrEnum):
     """The pinned build that ships with Reframe (or that ``reframe tools fetch`` installed)."""
     PATH = "path"
     """Found on ``PATH`` (only used when there is no bundled build of the tool)."""
-    INSTALLED = "installed"
-    """Found where the tool's own Windows installer puts it, which is not on ``PATH``
-    (mkvpropedit: MKVToolNix's folder). Searched after ``PATH``."""
 
 
 class ToolStatus(StrEnum):
@@ -93,12 +90,10 @@ class ToolInfo(ReframeModel):
 
 
 class ToolSet(ReframeModel):
-    """The discovery result for all four tools."""
+    """The discovery result for every tool."""
 
     ffmpeg: ToolInfo
     ffprobe: ToolInfo
-    mkvpropedit: ToolInfo
-    mediainfo: ToolInfo
 
     def get(self, name: ToolName) -> ToolInfo:
         info: ToolInfo = getattr(self, name)

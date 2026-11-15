@@ -80,12 +80,10 @@ def tool(name: ToolName, path: str | None) -> ToolInfo:
 
 
 def real_tools() -> ToolSet:
-    """The real FFmpeg and ffprobe; no MKVToolNix, which no plan needs."""
+    """The real FFmpeg and ffprobe."""
     return ToolSet(
         ffmpeg=tool("ffmpeg", media.find_ffmpeg()),
         ffprobe=tool("ffprobe", media.find_ffprobe()),
-        mkvpropedit=tool("mkvpropedit", None),
-        mediainfo=tool("mediainfo", None),
     )
 
 

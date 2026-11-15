@@ -7,11 +7,9 @@ import importlib.util
 import sys
 from pathlib import Path
 from types import ModuleType
-from typing import Any
 
 from reframe.definitions.models import TRACK_FLAGS
 from reframe.metadata import remux_job
-from reframe.models import ToolStatus
 
 
 def _load(name: str) -> ModuleType:
@@ -29,14 +27,8 @@ def _load(name: str) -> ModuleType:
 sc = _load("scenario")
 
 
-def without_mkvtoolnix() -> Any:
-    s = sc.base()
-    s.tools = sc.make_tools(mkvpropedit=sc.tool("mkvpropedit", ToolStatus.MISSING))
-    return s
-
-
 def test_an_in_place_edit_needs_no_mkvtoolnix() -> None:
-    s = without_mkvtoolnix()
+    s = sc.base()
     s.job = remux_job(s.job, s.source, edit_in_place=True)
     s.job.audio[0].metadata.language = "pt-BR"
     s.job.audio[0].metadata.original = True
@@ -44,7 +36,7 @@ def test_an_in_place_edit_needs_no_mkvtoolnix() -> None:
 
 
 def test_a_bcp47_language_and_every_flag_need_no_mkvtoolnix() -> None:
-    s = without_mkvtoolnix()
+    s = sc.base()
     s.job.audio[0].metadata.language = "pt-BR"
     s.source.subtitles[0].language_ietf = "zh-Hant"
     for flag in TRACK_FLAGS:

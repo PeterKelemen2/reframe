@@ -100,15 +100,13 @@ def checking() -> CapabilitySnapshot:
     return snap.model_copy(update={"encoders": encoders})
 
 
-def toolset(*, mkvpropedit: bool = True) -> ToolSet:
-    def info(name: ToolName, found: bool = True) -> ToolInfo:
-        return ToolInfo(name=name, status=ToolStatus.FOUND if found else ToolStatus.MISSING)
+def toolset() -> ToolSet:
+    def info(name: ToolName) -> ToolInfo:
+        return ToolInfo(name=name, status=ToolStatus.FOUND)
 
     return ToolSet(
         ffmpeg=info("ffmpeg"),
         ffprobe=info("ffprobe"),
-        mkvpropedit=info("mkvpropedit", mkvpropedit),
-        mediainfo=info("mediainfo", False),
     )
 
 
@@ -180,7 +178,6 @@ def cli_env(
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
     monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
-    monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(tmp_path / "no-mkvpropedit"))
     monkeypatch.delenv("NO_COLOR", raising=False)
     monkeypatch.delenv("FORCE_COLOR", raising=False)
     return fake_tools

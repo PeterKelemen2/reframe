@@ -3,7 +3,8 @@
 # sources release whose licence is only in their files' headers (sources-fetch.py finds no
 # licence file). scripts/third-party-notices.py takes the text of the first matching name (a
 # glob) and stops when a part has neither; sources-fetch.py stops on such an archive. Find the
-# licence upstream (at the version given) and add it here; `source` says where it was read.
+# licence upstream (at the version given) and add it here; `source` says where it was read. The
+# [data] tables at the end are the notices of the language tables' data, each its own entry.
 
 [npm."rfc6902"]
 version = "5.3.0"
@@ -341,4 +342,153 @@ This library carries the following copyright notice:
     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
     OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
     THE SOFTWARE.
+'''
+
+# The data of Reframe's language tables (reframe/definitions/data/language-*.json.gz), which
+# scripts/gen-language-data.py builds from langcodes and language_data (dev dependencies that no
+# package ships). Every package ships the tables: the notices list each source of their data.
+[data."Unicode CLDR"]
+version = "40"
+license = "Unicode-DFS-2016 (Unicode, Inc. License Agreement - Data Files and Software)"
+url = "https://cldr.unicode.org/"
+source = "https://github.com/unicode-org/cldr/blob/release-40/unicode-license.txt"
+text = '''
+The language, script and region names and the likely-subtag and language matching data in
+Reframe's language tables come from the Unicode Common Locale Data Repository (CLDR), as
+language_data 1.4.0 (CLDR 40) and langcodes 3.5.1 carry it. Reframe has modified the data: it
+is extracted and converted into Reframe's own tables.
+
+UNICODE, INC. LICENSE AGREEMENT - DATA FILES AND SOFTWARE
+
+See Terms of Use for definitions of Unicode Inc.'s
+Data Files and Software.
+
+NOTICE TO USER: Carefully read the following legal agreement.
+BY DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING UNICODE INC.'S
+DATA FILES ("DATA FILES"), AND/OR SOFTWARE ("SOFTWARE"),
+YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+TERMS AND CONDITIONS OF THIS AGREEMENT.
+IF YOU DO NOT AGREE, DO NOT DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE
+THE DATA FILES OR SOFTWARE.
+
+COPYRIGHT AND PERMISSION NOTICE
+
+Copyright © 1991-2021 Unicode, Inc. All rights reserved.
+Distributed under the Terms of Use in https://www.unicode.org/copyright.html.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Unicode data files and any associated documentation
+(the "Data Files") or Unicode software and any associated documentation
+(the "Software") to deal in the Data Files or Software
+without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, and/or sell copies of
+the Data Files or Software, and to permit persons to whom the Data Files
+or Software are furnished to do so, provided that either
+(a) this copyright and permission notice appear with all copies
+of the Data Files or Software, or
+(b) this copyright and permission notice appear in associated
+Documentation.
+
+THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT OF THIRD PARTY RIGHTS.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS
+NOTICE BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL
+DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
+DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THE DATA FILES OR SOFTWARE.
+
+Except as contained in this notice, the name of a copyright holder
+shall not be used in advertising or otherwise to promote the sale,
+use or other dealings in these Data Files or Software without prior
+written authorization of the copyright holder.
+'''
+
+[data."IANA Language Subtag Registry"]
+version = "File-Date 2021-08-06"
+license = "None stated: IANA publishes no licence for the registry"
+url = "https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry"
+source = "https://pypi.org/project/language-data/1.4.0/ (the wheel's language_data/data/language-subtag-registry.txt)"
+text = '''
+The language, script, region and variant subtags of Reframe's language tables, with their
+deprecations, preferred values and macrolanguages, come from the IANA Language Subtag Registry
+(BCP 47, RFC 5646) of File-Date 2021-08-06, the copy in language_data 1.4.0. IANA publishes
+the registry at
+https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry and states
+no licence, copyright or terms of use for it.
+'''
+
+[data."Wiktionary: List of languages"]
+version = "as in language_data 1.4.0 (data/wiktionary/codes-en.csv)"
+license = "CC-BY-SA (Creative Commons Attribution-ShareAlike)"
+url = "https://en.wiktionary.org/wiki/Wiktionary:List_of_languages"
+source = "https://en.wiktionary.org/wiki/Wiktionary:Copyrights (read 2026-11-15)"
+text = '''
+Reframe's language name search (language-search.json.gz) also finds the language names of
+Wiktionary's list of languages, "Wiktionary:List of languages" by the Wiktionary contributors
+(https://en.wiktionary.org/wiki/Wiktionary:List_of_languages; its page history names them),
+from the copy that language_data 1.4.0 carries. Reframe has modified the list: it takes the
+codes and names only, folds the names for search and merges them with the CLDR and IANA names.
+
+Wiktionary's text is licensed under the Creative Commons Attribution-ShareAlike licence and the
+GNU Free Documentation License (https://en.wiktionary.org/wiki/Wiktionary:Copyrights; today
+CC BY-SA 4.0 International, https://creativecommons.org/licenses/by-sa/4.0/). The names that
+Reframe's search table takes from the list are under that licence.
+'''
+
+[data."langcodes"]
+version = "3.5.1"
+license = "MIT"
+url = "https://github.com/georgkrause/langcodes"
+source = "https://pypi.org/project/langcodes/3.5.1/ (the wheel's langcodes-3.5.1.dist-info/licenses/LICENSE.txt)"
+text = '''
+Reframe's reframe.languages module ports langcodes' algorithms (tag parsing and normalisation,
+name composition, language matching), and its tables hold langcodes' alias and matching data.
+
+Copyright (C) 2021 Robyn Speer (rspeer@arborelia.net)
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+'''
+
+[data."language_data"]
+version = "1.4.0"
+license = "MIT"
+url = "https://github.com/georgkrause/language_data"
+source = "https://pypi.org/project/language-data/1.4.0/ (the wheel's language_data-1.4.0.dist-info/licenses/LICENSE)"
+text = '''
+Reframe's language tables are built from language_data's curated name data and lists.
+
+Copyright 2024 Robyn Speer
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 '''

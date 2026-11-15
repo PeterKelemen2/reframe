@@ -6,9 +6,9 @@ Pinned third-party tool builds. Plan: [02 §Bundled FFmpeg](../docs/plan/02-arch
 | File | Content |
 |------|---------|
 | `ffmpeg.toml` | The FFmpeg build that ships (`default`) and a second build for the CI job that tests the path override (`override-test`). For each platform: URL, SHA-256, size, archive layout. Also the exact version string, licence and the source commits (GPL source obligations). |
-| `bundled-tools.toml` | The MediaInfo CLI build that the Windows package ships (Linux packages use the distro's), and the libva source that the Linux layout builds into FFmpeg's `lib/`: URL, SHA-256, size, archive layout, the files kept, licence and source links. No package bundles MKVToolNix (decision 0079, item 11): users install it. |
+| `bundled-tools.toml` | The libva source that the Linux layout builds into FFmpeg's `lib/`: URL, SHA-256, size, archive layout, licence and source links. No package bundles or needs MKVToolNix or MediaInfo: Reframe writes Matroska headers and probes files itself (decisions 0080, 0081). |
 | `static-builds.toml` | Bundled binaries that are static builds (the AppImage runtime): the tree each was built from and every library it links (URL, SHA-256, licence), for the sources release and the notices; and the runtime file that `desktop/packaging/linux/appimage-runtime.sh` hands to the bundler (decision 0079, "Fix round — FS"). |
-| `licence-texts.toml` | Licence texts that the notices cannot find by themselves: npm and PyPI packages that ship no licence file, and sources whose licence is only in their files' headers (`scripts/sources-fetch.py` finds no licence file in them). Each with the version and the place it was read; the notices and the fetch stop on a part that has neither (decision 0079, "Fix round — FL"). |
+| `licence-texts.toml` | Licence texts that the notices cannot find by themselves: npm and PyPI packages that ship no licence file, and sources whose licence is only in their files' headers (`scripts/sources-fetch.py` finds no licence file in them). Each with the version and the place it was read; the notices and the fetch stop on a part that has neither (decision 0079, "Fix round — FL"). Its `[data]` tables are the notices of the language tables' data (CLDR, the IANA registry, Wiktionary's names, langcodes and language_data; decision 0082): update them with the libraries that `scripts/gen-language-data.py` builds the tables from. |
 
 ## Lay out the bundled tools of a package
 
@@ -16,10 +16,10 @@ Pinned third-party tool builds. Plan: [02 §Bundled FFmpeg](../docs/plan/02-arch
 uv run python scripts/bundle-tools.py --platform linux-x64     # or windows-x64
 ```
 
-The script puts the `default` FFmpeg build (and, for `windows-x64`, MediaInfo) into
-`desktop/src-tauri/resources/tools/` (`--dest DIR` for another folder): `ffmpeg/` and
-`mediainfo/`, each with its licence file (decision 0005's layout); it removes a tool folder
-that an earlier layout made for a tool that is no longer pinned. It checks each
+The script puts the `default` FFmpeg build into `desktop/src-tauri/resources/tools/`
+(`--dest DIR` for another folder): `ffmpeg/` with its licence file (decision 0005's layout); it
+removes a tool folder that an earlier layout made for a tool that is no longer pinned (such as
+`mediainfo/` or `mkvtoolnix/`). It checks each
 archive's size and SHA-256 before it extracts anything, keeps a folder whose files still match
 on a rerun, removes another platform's folders, and refuses to touch a destination that holds
 files it did not make. On the platform it lays out, it then runs tool discovery and checks that
@@ -86,17 +86,6 @@ FFmpeg (`ffmpeg.toml`):
 6. Run `uv run python scripts/fetch-tools.py` for both builds, and `uv run pytest`.
    The CI caches of `.tools/` and `testdata/media/` are keyed on this file, so they refresh.
 
-MediaInfo (`bundled-tools.toml`):
-
-1. Find the newest release: <https://mediaarea.net/download/binary/mediainfo/>
-   (`MediaInfo_CLI_<version>_Windows_x64.zip`).
-2. Download the archive and compute the SHA-256 yourself. MediaArea publishes no checksum:
-   download it a second time on another day (or another machine) and compare.
-3. Update `version` (what `mediainfo --Version` prints), the URLs, `sha256`, `size`, `root` and
-   `files` (the binary, what it loads, the licence files), and the source links.
-4. Run `uv run python scripts/bundle-tools.py --platform windows-x64` (on Windows it also checks
-   the versions through tool discovery).
-
 ## Licence
 
 FFmpeg: the builds use `--enable-gpl --enable-version3`: **GPL-3.0-or-later**. Each archive contains
@@ -108,6 +97,4 @@ BtbN build scripts at `build_scripts_commit`, which pin the source of every depe
 libva (Linux layout) is MIT (`COPYING`, shipped as `ffmpeg/LICENSE-libva.txt`); its source is
 the release tarball the pin names.
 
-MKVToolNix is not bundled: its Windows build links OpenSSL (Apache-2.0) into the
-GPL-2.0-only MKVToolNix (decision 0079, item 11). MediaInfo is BSD-2-Clause (`LICENSE`; `License.html` lists the third-party libraries built into it). The
-bundle leaves out `LIBCURL.DLL`: MediaInfo needs it only to read URLs.
+No package bundles MKVToolNix or MediaInfo (decisions 0080, 0081).

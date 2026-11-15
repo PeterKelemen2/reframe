@@ -92,20 +92,14 @@ def caps(
 
 
 def tools(*, paths: dict[ToolName, Path] | None = None) -> ToolSet:
-    """FFmpeg and ffprobe; no MKVToolNix and no MediaInfo, which no plan needs."""
+    """FFmpeg and ffprobe, both found."""
 
-    def info(name: ToolName, found: bool = True) -> ToolInfo:
-        return ToolInfo(
-            name=name,
-            status=ToolStatus.FOUND if found else ToolStatus.MISSING,
-            path=(paths or {}).get(name),
-        )
+    def info(name: ToolName) -> ToolInfo:
+        return ToolInfo(name=name, status=ToolStatus.FOUND, path=(paths or {}).get(name))
 
     return ToolSet(
         ffmpeg=info("ffmpeg"),
         ffprobe=info("ffprobe"),
-        mkvpropedit=info("mkvpropedit", False),
-        mediainfo=info("mediainfo", False),
     )
 
 

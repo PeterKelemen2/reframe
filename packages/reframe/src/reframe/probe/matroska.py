@@ -339,7 +339,14 @@ class _Reader:
         count = min(count, self.size - pos)
         self.budget.read(count)
         self.handle.seek(pos)
-        return self.handle.read(count)
+        chunks: list[bytes] = []
+        while count > 0:
+            chunk = self.handle.read(count)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            count -= len(chunk)
+        return b"".join(chunks)
 
     def header(self, pos: int) -> tuple[int, int | None, int]:
         self.budget.element()
@@ -375,7 +382,9 @@ def read_matroska(path: str | os.PathLike[str]) -> MatroskaFile:
         ``MAX_*`` limits).
     :raises OSError: the file cannot be read.
     """
-    with open(Path(path), "rb") as handle:
+    # Unbuffered: a network share's large block size would make every header read after a
+    # seek fetch a whole buffer.
+    with open(Path(path), "rb", buffering=0) as handle:
         reader = _Reader(handle, os.fstat(handle.fileno()).st_size)
         try:
             return _read(reader)

@@ -28,15 +28,6 @@ SOURCES = (ROOT / "packages" / "reframe" / "src", ROOT / "packages" / "reframe-s
 PROGRAMS = frozenset({"mkvpropedit", "mkvmerge", "mkvinfo", "mkvextract"})
 _WORD = re.compile(r"[A-Za-z0-9_.-]+")
 
-#: Modules that still name mkvpropedit until it leaves tool discovery, the tools status model,
-#: the bundled-tool folders and the CLI's ``tools`` command (a later step of the same change).
-#: They run nothing: the discovery only checks ``--version``.
-PENDING = (
-    "reframe/tools/",
-    "reframe/models/tools.py",
-    "reframe/paths.py",
-    "reframe/cli.py",
-)
 #: Constants that name a program and start nothing.
 ALLOWED = {
     # The settings migration removes the old ``tools.mkvpropedit`` path.
@@ -100,7 +91,6 @@ def test_no_product_module_names_an_mkvtoolnix_program() -> None:
     found = [
         f"{name}:{line}: {text!r}"
         for name, path in product_modules()
-        if not name.startswith(PENDING)
         for line, text in program_names(path.read_text(encoding="utf-8"))
         if (name, text) not in ALLOWED
     ]

@@ -258,7 +258,7 @@ SIDECAR_INDEX = {
         "/usr/share/gdb/auto-load/usr/lib/x86_64-linux-gnu/libstdc++.so.6.0.30-gdb.py",
     ],
     "python3-docs": ["/usr/share/doc/python3/base_library.zip"],
-    "libmediainfo0v5": ["/usr/lib/x86_64-linux-gnu/libmediainfo.so.0"],
+    "libyaml-0-2": ["/usr/lib/x86_64-linux-gnu/libyaml-0.so.2"],
     "libva2": ["/usr/lib/x86_64-linux-gnu/libva.so.2"],
 }
 
@@ -274,7 +274,7 @@ def test_the_sidecars_system_libraries_map_to_their_packages(tmp_path: Path) -> 
             f"{internal}/libpython3.14.so.1.0",
             f"{internal}/base_library.zip",
             # A wheel's own copy and the bundled tools' libraries are not the image's.
-            f"{internal}/pymediainfo/libmediainfo.so.0",
+            f"{internal}/yaml/libyaml-0.so.2",
             "usr/lib/Reframe/tools/ffmpeg/lib/libva.so.2",
         ],
     )

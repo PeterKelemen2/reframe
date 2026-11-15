@@ -10,7 +10,7 @@ reframe-server = { workspace = true }
 
 [dependency-groups]
 dev = [
-    "reframe[cli,mediainfo]",
+    "reframe[cli]",
     "reframe-server",
     "anyio>=4.15.1",
     "hypothesis>=6.169.0",

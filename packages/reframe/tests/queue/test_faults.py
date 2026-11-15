@@ -17,7 +17,6 @@ from reframe.models import (
     JobState,
     QueueJob,
     Severity,
-    ToolStatus,
     TrackHeaderEdit,
 )
 from reframe.probe import ProbeError, ProbeErrorKind
@@ -254,7 +253,6 @@ def written_as_portuguese(h: Harness) -> None:
 
 async def test_the_fixup_writes_the_part_file_without_any_mkvtoolnix(harness: Harness) -> None:
     h = harness
-    assert h.tools.tools.mkvpropedit.status is not ToolStatus.FOUND
     job = ietf_job(h)
     part = h.plan(job).output_tmp
     written_as_portuguese(h)

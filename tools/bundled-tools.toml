@@ -1,43 +1,10 @@
-# The pinned MediaInfo build that the Windows desktop package bundles, and the libva source that
-# the Linux layout builds.
+# The libva source that the Linux layout builds.
 #
-# `scripts/bundle-tools.py` downloads each archive, verifies its size and SHA-256 before it
-# extracts anything, and keeps only the files listed in `files` (the binary, what it needs to
-# run, and its licence). Linux packages bundle no MediaInfo: it comes from the distro there
-# (`Recommends: mkvtoolnix, mediainfo`). No package bundles MKVToolNix: its Windows build links
-# OpenSSL (Apache-2.0) into GPL-2.0-only code, so users install it (decision 0079, item 11).
-# See tools/README.md for how to update a pin.
-#
-# Retention (checked 2026-11-12): mediaarea.net/download/binary/mediainfo/ still lists every
-# release since 0.6.1.1.
+# `scripts/bundle-tools.py` downloads each archive and verifies its size and SHA-256 before it
+# extracts anything. No package bundles MKVToolNix or MediaInfo: Reframe writes Matroska
+# headers and probes files itself. See tools/README.md for how to update a pin.
 
 schema_version = 1
-
-[tools.mediainfo]
-description = "MediaInfo CLI 26.10, 64-bit"
-# What `mediainfo --Version` prints after "MediaInfoLib - v".
-version = "26.10"
-release_url = "https://mediaarea.net/en/MediaInfo/Download/Windows"
-# MediaArea publishes no checksum: the SHA-256 is of two downloads made eight days apart
-# (2026-11-04 on the Windows test VM, 2026-11-12 on the build host), which were equal.
-license = "BSD-2-Clause"
-license_file = "LICENSE"
-source_url = "https://mediaarea.net/download/binary/mediainfo/26.10/MediaInfo_CLI_26.10_GNU_FromSource.tar.xz"
-# MediaArea publishes no checksum: the SHA-256 of a download on 2026-11-14.
-source_sha256 = "7785bb75d69efd21b7c0b2c2269164aeb21cea2be6f6b9103ad79743af6fdec7"
-source_repository = "https://github.com/MediaArea/MediaInfo"
-source_tag = "v26.10"
-
-[tools.mediainfo.platforms.windows-x64]
-url = "https://mediaarea.net/download/binary/mediainfo/26.10/MediaInfo_CLI_26.10_Windows_x64.zip"
-sha256 = "4cc94bd272903914c04f4f9a9f53a6c94b5ea6c6454cf738d29fa182c41e8a29"
-size = 4186111
-format = "zip"
-# The archive has no top folder: its files are at the top level.
-binary = "MediaInfo.exe"
-# MediaInfo.exe reads local files without LIBCURL.DLL (it needs it only for URLs).
-# License.html lists the licences of the libraries built into it.
-files = ["MediaInfo.exe", "LICENSE", "License.html"]
 
 # The BtbN Linux build loads the system's libva at run time and calls functions that the libva
 # of Ubuntu 22.04 / 24.04 and Debian 12 lacks (vaMapBuffer2), so the Linux layout ships its own,

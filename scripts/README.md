@@ -21,9 +21,9 @@ Developer helpers. Run them from the repository root.
 
 `scripts/windows-setup.ps1` prepares a Windows 10 or 11 machine (a VM or real hardware) to run
 the CI commands and build the desktop shell. It installs Git for Windows, uv with the Python of
-`.python-version`, Node.js of `frontend/.node-version`, MKVToolNix and MediaInfo CLI (on
-`PATH`, under `C:\Tools`), and unless `-SkipDesktop`, the Visual Studio Build Tools (MSVC and
-the Windows SDK), Rust with rustfmt and clippy, and WebView2. Each part is skipped when it is
+`.python-version`, Node.js of `frontend/.node-version`, MKVToolNix (on `PATH`, under
+`C:\Tools`; the header writer's tests compare with it), and unless `-SkipDesktop`, the Visual
+Studio Build Tools (MSVC and the Windows SDK), Rust with rustfmt and clippy, and WebView2. Each part is skipped when it is
 already there, so the script can be run again. Run it in an elevated PowerShell:
 
 ```powershell

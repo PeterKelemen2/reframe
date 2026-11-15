@@ -76,8 +76,6 @@ def env(
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     monkeypatch.setenv("REFRAME_FFMPEG", ffmpeg)
     monkeypatch.setenv("REFRAME_FFPROBE", ffprobe)
-    # Even an installed MKVToolNix is not found: no product path may need it.
-    monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(tmp_path / "no-mkvtoolnix" / "mkvpropedit"))
     _settings(tmp_path / "config")
     source = tmp_path / "media" / "Show.S01E01.mkv"
     source.parent.mkdir()
