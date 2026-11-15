@@ -24,7 +24,6 @@ from reframe.models import (
     Severity,
     ValidationIssue,
 )
-from reframe.probe import mediainfo
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
 
@@ -320,7 +319,6 @@ def test_batch_never_overwrites_a_file_named_as_an_output_with_the_real_queue(
     for name in ("config", "data", "cache"):
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     monkeypatch.setenv(IN_PROCESS_ENV, "1")  # the in-process real queue
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     write_settings(tmp_path, collision="overwrite")
     folder = tmp_path / "media" / S01
     folder.mkdir(parents=True)

@@ -32,7 +32,7 @@ def probe_sources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[P
         cache_mod.parser_fingerprint.cache_clear()
 
 
-@pytest.mark.parametrize("module", ["matroska.py", "prober.py", "mediainfo.py"])
+@pytest.mark.parametrize("module", ["matroska.py", "prober.py", "sampling.py"])
 def test_a_change_to_a_reader_changes_the_fingerprint(probe_sources: Path, module: str) -> None:
     before = cache_mod.parser_fingerprint()
     with (probe_sources / module).open("a", encoding="utf-8") as handle:

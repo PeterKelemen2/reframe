@@ -69,7 +69,7 @@ async def test_measure_the_bit_rate_of_a_dts_hd_ma_track(
         assert isinstance(probed, MediaSource)
         track = probed.audio[0]
         assert (track.index, track.display_codec, track.lossless) == (1, "DTS-HD MA", True)
-        assert track.bitrate == BitrateInfo()  # no bit rate in the file: "—" and Measure
+        assert track.bitrate.source is BitrateSource.ESTIMATED  # none in the file: Measure
 
         info = app.sources.bitrate_scan(path, 1)
         assert (info.kind, info.state) == ("bitrate_scan", TaskState.QUEUED)

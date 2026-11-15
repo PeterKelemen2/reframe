@@ -38,28 +38,28 @@ def test_default_directory_is_in_the_cache_dir(
 def test_hit_and_miss(tmp_path: Path) -> None:
     cache = ProbeCache(tmp_path)
     assert cache.get(key(), tool=TOOL) is None
-    assert cache.put(key(), source(), tool=TOOL, options={"mediainfo": True})
-    assert cache.get(key(), tool=TOOL, options={"mediainfo": True}) == source()
+    assert cache.put(key(), source(), tool=TOOL, options={"matroska": 3})
+    assert cache.get(key(), tool=TOOL, options={"matroska": 3}) == source()
     # A fresh cache (another process) reads the file.
     fresh = ProbeCache(tmp_path)
-    assert fresh.get(key(), tool=TOOL, options={"mediainfo": True}) == source()
+    assert fresh.get(key(), tool=TOOL, options={"matroska": 3}) == source()
 
 
 @pytest.mark.parametrize(
     ("other_key", "tool", "options"),
     [
-        (key(size=11), TOOL, {"mediainfo": True}),  # the file grew
-        (key(mtime_ns=124), TOOL, {"mediainfo": True}),  # the file was touched
-        (key(path="/m/b.mkv"), TOOL, {"mediainfo": True}),
-        (key(), "ffprobe n8.1.3", {"mediainfo": True}),  # another ffprobe
-        (key(), TOOL, {"mediainfo": False}),  # other options
+        (key(size=11), TOOL, {"matroska": 3}),  # the file grew
+        (key(mtime_ns=124), TOOL, {"matroska": 3}),  # the file was touched
+        (key(path="/m/b.mkv"), TOOL, {"matroska": 3}),
+        (key(), "ffprobe n8.1.3", {"matroska": 3}),  # another ffprobe
+        (key(), TOOL, {"matroska": 2}),  # other options
     ],
 )
 def test_invalidation(
     tmp_path: Path, other_key: CacheKey, tool: str, options: dict[str, bool]
 ) -> None:
     cache = ProbeCache(tmp_path)
-    cache.put(key(), source(), tool=TOOL, options={"mediainfo": True})
+    cache.put(key(), source(), tool=TOOL, options={"matroska": 3})
     assert cache.get(other_key, tool=tool, options=options) is None
     cache.forget_memory()
     assert cache.get(other_key, tool=tool, options=options) is None
@@ -111,13 +111,13 @@ def test_invalid_source_in_entry_is_a_miss(tmp_path: Path) -> None:
 
 def test_entry_layout(tmp_path: Path) -> None:
     cache = ProbeCache(tmp_path)
-    cache.put(key(), source(), tool=TOOL, options={"mediainfo": False})
+    cache.put(key(), source(), tool=TOOL, options={"matroska": 2})
     files = list(tmp_path.iterdir())
     assert files == [cache.entry_path(key())]  # no temporary file left behind
     doc = json.loads(files[0].read_text(encoding="utf-8"))
     assert doc["key"] == {"path": "/m/a.mkv", "size": 10, "mtime_ns": 123}
     assert doc["tool"] == TOOL
-    assert doc["options"] == {"mediainfo": False}
+    assert doc["options"] == {"matroska": 2}
     assert doc["format"] == cache_mod.CACHE_FORMAT
 
 

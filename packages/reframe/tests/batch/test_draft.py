@@ -14,6 +14,8 @@ from reframe.models import (
     AudioDefaults,
     AudioOutputTrack,
     AudioStream,
+    BitrateInfo,
+    BitrateSource,
     JobTemplate,
     MediaSource,
     OutputOptions,
@@ -111,6 +113,13 @@ async def test_multitrack_probed_live(fixture_media: Callable[[str], Path]) -> N
     tools = await discover_tools()
     source = await Prober(tools.ffprobe).probe(fixture_media("multitrack"))
     assert isinstance(source, MediaSource)
+    assert [a.bitrate.source for a in source.audio] == [
+        BitrateSource.STREAM,
+        BitrateSource.ESTIMATED,
+        BitrateSource.ESTIMATED,
+    ]
+    for audio in source.audio[1:]:
+        audio.bitrate = BitrateInfo()  # the recorded JSON is parsed without the sample
     check_multitrack(source)
 
 

@@ -1,4 +1,4 @@
-"""The Matroska track reader, and the prober's ``language_ietf`` without MediaInfo."""
+"""The Matroska track reader, and the prober's ``language_ietf``."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from reframe.models import MediaSource
-from reframe.probe import matroska, mediainfo
+from reframe.probe import matroska
 from reframe.probe.matroska import MatroskaError, read_matroska, tracks_by_kind
 from reframe.probe.prober import Prober, apply_matroska
 
@@ -246,12 +246,11 @@ def test_generated_fixture_and_mkvpropedit_edits(
 
 @pytest.mark.needs_ffmpeg
 @pytest.mark.anyio
-async def test_probe_shows_language_ietf_without_mediainfo(
+async def test_probe_shows_language_ietf(
     fixture_media: Callable[[str], Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     mkvpropedit = _tool("mkvpropedit")
     ffprobe = _tool("ffprobe")
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     copy = tmp_path / "m.mkv"
     shutil.copyfile(fixture_media("multitrack"), copy)
     propedit(

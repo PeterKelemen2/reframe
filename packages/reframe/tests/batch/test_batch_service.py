@@ -24,7 +24,6 @@ from reframe.models import (
     Preset,
     Resolution,
 )
-from reframe.probe import mediainfo
 from reframe.service import Reframe
 from reframe_testing import media
 
@@ -51,7 +50,6 @@ A = _load("anime")
 
 @pytest.fixture
 async def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Reframe]:
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     async with await Reframe.create(
         tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "cache"
     ) as reframe:

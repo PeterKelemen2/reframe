@@ -60,7 +60,7 @@ def tool_paths() -> dict[str, str]:
 
 @pytest.fixture
 def prober(tool_paths: dict[str, str]) -> Prober:
-    return Prober(tool_paths["ffprobe"], use_mediainfo=False)
+    return Prober(tool_paths["ffprobe"])
 
 
 async def probe(prober: Prober, path: Path) -> MediaSource:

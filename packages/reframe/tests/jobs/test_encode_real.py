@@ -18,7 +18,6 @@ import pytest
 
 from reframe.cli import EXIT_INTERRUPTED, EXIT_OK, IN_PROCESS_ENV
 from reframe.models import JobDraft, JobState, MediaSource
-from reframe.probe import mediainfo
 from reframe.service import Reframe
 from reframe_testing import media
 
@@ -38,7 +37,6 @@ def dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Path]:
     found = {name: tmp_path / name for name in ("config", "data", "cache")}
     for name, path in found.items():
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(path))
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     return found
 
 

@@ -12,7 +12,7 @@ import pytest
 
 from reframe.metadata import remux_job
 from reframe.models import JobSettings, MediaSource, SourceRef
-from reframe.probe import matroska, mediainfo, prober
+from reframe.probe import matroska
 from reframe.probe.matroska import MatroskaError, read_matroska
 from reframe.probe.prober import Prober, apply_matroska
 
@@ -223,8 +223,8 @@ def _file(*ietf: str | None) -> matroska.MatroskaFile:
 
 
 def test_matched_tracks_get_the_files_value_or_none() -> None:
-    """MediaInfo said ``ja`` / ``en`` (derived from ``jpn`` / ``eng``); the file has only
-    a2 = pt-BR: the other streams have no BCP 47 tag."""
+    """Tags derived from ``jpn`` / ``eng`` are not the file's; the file has only a2 = pt-BR:
+    the other streams have no BCP 47 tag."""
     source = parse_probe("fixtures/multitrack.mkv")
     for stream, value in zip(
         [*source.video, *source.audio, *source.subtitles],
@@ -237,7 +237,7 @@ def test_matched_tracks_get_the_files_value_or_none() -> None:
     assert source.warnings == []
 
 
-def test_tracks_that_do_not_match_keep_mediainfos_values() -> None:
+def test_tracks_that_do_not_match_change_nothing() -> None:
     source = parse_probe("fixtures/multitrack.mkv")
     source.audio[0].language_ietf = "ja"
     data = _file(None, None, None, None, None, None, None)
@@ -262,18 +262,9 @@ def test_a_value_that_is_not_a_language_tag_is_not_used() -> None:
     JobSettings.model_validate(job.model_dump(mode="json"))
 
 
-def test_mediainfo_languages_that_are_too_long_are_not_used() -> None:
-    source = parse_probe("fixtures/multitrack.mkv")
-    data = mediainfo.MediaInfoData(
-        languages={("audio", 1): "abcdefgh" + "-abcdefgh" * 7, ("audio", 2): "en-GB"}
-    )
-    prober._apply_mediainfo(source, data, set())
-    assert [a.language_ietf for a in source.audio] == [None, "en-GB", None]
-
-
 def test_the_cache_options_name_the_new_reader() -> None:
-    """Entries made with MediaInfo's derived tags and unchecked values are misses."""
-    assert Prober("ffprobe", use_mediainfo=False).cache_options()["matroska"] == 2
+    """Entries made with MediaInfo's rates and tags, or before the sampled rates, are misses."""
+    assert Prober("ffprobe").cache_options()["matroska"] == 3
 
 
 def _copy(fixture_media: Callable[[str], Path], tmp_path: Path, name: str) -> Path:
@@ -317,7 +308,6 @@ async def test_probe_of_a_file_with_a_seek_position_past_2_63(
     a bogus Seek entry in front. ffprobe lists all seven streams; the probe returns them with
     the BCP 47 tag that the reader found through the real entry."""
     mkvpropedit, ffprobe = _tool("mkvpropedit"), _tool("ffprobe")
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     copy = _copy(fixture_media, tmp_path, "hostile.mkv")
     long = "N" * 6000
     names = [arg for n in (1, 2, 3) for arg in ("--edit", f"track:a{n}", "--set", f"name={long}")]
@@ -338,59 +328,41 @@ def _ffprobe_streams(ffprobe: str, path: Path) -> int:
     return len(json.loads(out.stdout)["streams"])
 
 
-def _fake_mediainfo(monkeypatch: pytest.MonkeyPatch, languages: dict[tuple[str, int], str]) -> None:
-    """MediaInfo on, with these ``(kind, index) → language`` results: ``ja`` for jpn and
-    ``en`` for eng."""
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: True)
-    monkeypatch.setattr(mediainfo, "mediainfo_version", lambda: "fake MediaInfo")
-    monkeypatch.setattr(
-        mediainfo, "read_mediainfo", lambda path: mediainfo.MediaInfoData(languages=languages)
-    )
+def _with_mp4_language(source: Path, out: Path, language: str) -> Path:
+    from reframe_testing import media
 
-
-MULTITRACK_MEDIAINFO = {
-    ("audio", 1): "ja",
-    ("audio", 2): "en",
-    ("audio", 3): "en",
-    ("subtitle", 4): "en",
-    ("subtitle", 5): "en",
-    ("subtitle", 6): "en",
-}
+    ffmpeg = media.find_ffmpeg()
+    assert ffmpeg is not None
+    subprocess.run(
+        [ffmpeg, "-v", "error", "-i", str(source), "-c", "copy",
+         "-metadata:s:v:0", f"language={language}", str(out)],
+        check=True,
+    )  # fmt: skip
+    return out
 
 
 @pytest.mark.needs_ffmpeg
 @pytest.mark.anyio
-async def test_probe_with_mediainfo_on_keeps_only_the_files_bcp47_tags(
-    fixture_media: Callable[[str], Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+async def test_bcp47_comes_from_the_track_in_matroska_and_from_the_iso_code_elsewhere(
+    fixture_media: Callable[[str], Path], tmp_path: Path
 ) -> None:
+    """A Matroska track without ``LanguageIETF`` gets no tag derived from its legacy language;
+    an MP4 stream's ISO 639-2 code becomes its BCP 47 tag."""
     mkvpropedit, ffprobe = _tool("mkvpropedit"), _tool("ffprobe")
     copy = _copy(fixture_media, tmp_path, "m.mkv")
     propedit(mkvpropedit, copy, "--edit", "track:a2", "--set", "language=por",
              "--set", "language-ietf=pt-BR")  # fmt: skip
-    _fake_mediainfo(monkeypatch, {**MULTITRACK_MEDIAINFO, ("audio", 2): "pt-BR"})
     source = await Prober(ffprobe).probe(copy, use_cache=False)
     assert isinstance(source, MediaSource), source
     assert _all_ietf(source) == [None, None, "pt-BR", None, None, None, None]
     assert [s.language for s in source.audio] == ["jpn", "por", "eng"]
-    # Another container keeps MediaInfo's value (the reader is for Matroska only).
-    mp4 = fixture_media("vfr")
-    _fake_mediainfo(monkeypatch, {("video", 0): "en-GB"})
+    mp4 = _with_mp4_language(fixture_media("vfr"), tmp_path / "hun.mp4", "hun")
     other = await Prober(ffprobe).probe(mp4, use_cache=False)
     assert isinstance(other, MediaSource), other
-    assert other.video[0].language_ietf == "en-GB"
-
-
-@pytest.mark.needs_ffmpeg
-def test_real_mediainfo_derives_a_bcp47_tag_from_the_legacy_language(
-    fixture_media: Callable[[str], Path],
-) -> None:
-    """multitrack.mkv has no ``LanguageIETF`` (``mkvmerge -J``: none), yet MediaInfo reports
-    ``ja`` / ``en``."""
-    if not mediainfo.mediainfo_available():
-        pytest.skip("MediaInfo (pymediainfo) is not available")
-    data = mediainfo.read_mediainfo(fixture_media("multitrack"))
-    assert data.languages == MULTITRACK_MEDIAINFO
-    assert all(t.language_ietf is None for t in read_matroska(fixture_media("multitrack")).tracks)
+    assert (other.video[0].language, other.video[0].language_ietf) == ("hun", "hu")
+    undetermined = await Prober(ffprobe).probe(fixture_media("vfr"), use_cache=False)
+    assert isinstance(undetermined, MediaSource), undetermined
+    assert (undetermined.video[0].language, undetermined.video[0].language_ietf) == ("und", None)
 
 
 def _with_bad_tag(path: Path, mkvpropedit: str, bad: bytes) -> None:
@@ -419,7 +391,6 @@ async def test_probe_of_an_invalid_language_ietf(
     for that track. The probe drops the value with a warning, and a remux job of the file
     is a valid ``JobSettings``."""
     mkvpropedit, ffprobe = _tool("mkvpropedit"), _tool("ffprobe")
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     copy = _copy(fixture_media, tmp_path, "badtag.mkv")
     _with_bad_tag(copy, mkvpropedit, bad)
     assert read_matroska(copy).tracks[1].language_ietf == bad.decode()

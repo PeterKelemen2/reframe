@@ -1,11 +1,12 @@
-"""Probing one file: ffprobe, the HDR frame fallback, MediaInfo, the Matroska track headers, the
-VFR check and the cache.
+"""Probing one file: ffprobe, the HDR frame fallback, the Matroska track headers, the sampled
+bit rates, the VFR check and the cache.
 
 :class:`Prober` holds the configuration. :func:`probe_file` is the one-call form.
 
 Cancelling (the token or the calling task) stops the probe at once: ffprobe is killed by
-``reframe.tools.run``, and a worker thread (``stat``, MediaInfo, the Matroska reader) is left to
-finish on its own while the probe returns ``ProbeErrorKind.CANCELLED``.
+``reframe.tools.run``, and a worker thread (``stat``, the Matroska reader, the cluster sample) is
+left to finish on its own while the probe returns ``ProbeErrorKind.CANCELLED``; the sample stops
+at its next read.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import threading
 from collections.abc import Awaitable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -26,7 +28,6 @@ from pydantic import TypeAdapter, ValidationError
 from reframe.models.base import LanguageTag
 from reframe.models.media import (
     AudioStream,
-    BitrateInfo,
     BitrateSource,
     MediaSource,
     SourceFingerprint,
@@ -36,7 +37,7 @@ from reframe.models.media import (
 from reframe.models.text import replace_undecodable
 from reframe.models.tools import ToolInfo
 from reframe.platform.longpath import missing_text
-from reframe.probe import matroska, mediainfo, roles
+from reframe.probe import matroska, roles, sampling
 from reframe.probe.cache import CacheKey, ProbeCache
 from reframe.probe.ffprobe import (
     FRAME_PACKETS,
@@ -65,19 +66,20 @@ log = logging.getLogger(__name__)
 __all__ = [
     "MATROSKA_READER",
     "MATROSKA_TIMEOUT",
-    "MEDIAINFO_TIMEOUT",
+    "SAMPLE_TIMEOUT",
     "ProbeOutcome",
     "Prober",
     "apply_matroska",
     "probe_file",
 ]
 
-#: Seconds to wait for MediaInfo (the thread cannot be killed; the probe stops waiting).
-MEDIAINFO_TIMEOUT = 30.0
 #: Seconds to wait for the Matroska track reader (a slow network share).
 MATROSKA_TIMEOUT = 30.0
-#: Bump when the Matroska reader changes what it adds: the probe cache is keyed on this number.
-MATROSKA_READER = 2
+#: Seconds the cluster sample may take; after that the bit rates stay unknown.
+SAMPLE_TIMEOUT = 30.0
+#: Bump when the Matroska reader or the sample changes what they add: the probe cache is keyed
+#: on this number.
+MATROSKA_READER = 3
 
 #: The shape of a ``language_ietf`` value (the model's own type; assignment does not check it).
 _LANGUAGE_TAG: TypeAdapter[str] = TypeAdapter(LanguageTag)
@@ -140,27 +142,18 @@ class Prober:
         ffprobe: ToolInfo | ProbeTool | str | os.PathLike[str],
         *,
         cache: ProbeCache | None = None,
-        use_mediainfo: bool = True,
         timeout: float = PROBE_TIMEOUT,
         frame_timeout: float = FRAME_TIMEOUT,
     ) -> None:
         self.tool = ProbeTool.of(ffprobe)
         self.cache = cache
-        self.use_mediainfo = use_mediainfo
         self.timeout = timeout
         self.frame_timeout = frame_timeout
         self._flights: dict[tuple[CacheKey, bool], _Flight] = {}
 
-    def _mediainfo_on(self) -> bool:
-        return self.use_mediainfo and mediainfo.mediainfo_available()
-
     def cache_options(self) -> dict[str, Any]:
-        """The options that change a probe result (part of the cache entry): the MediaInfo
-        version in use, or ``False``."""
-        return {
-            "mediainfo": mediainfo.mediainfo_version() if self._mediainfo_on() else False,
-            "matroska": MATROSKA_READER,
-        }
+        """The options that change a probe result (part of the cache entry)."""
+        return {"matroska": MATROSKA_READER}
 
     async def probe(
         self,
@@ -269,6 +262,12 @@ class Prober:
         frames = await self._first_frames(data, file, cancel, warnings)
         if isinstance(frames, ProbeError):
             return frames  # cancelled
+        tracks: matroska.MatroskaFile | None = None
+        if _is_matroska(data):
+            read = await _read_matroska(file, cancel)
+            if isinstance(read, _Cancelled):
+                return _cancelled(file)
+            tracks = read
         fingerprint = SourceFingerprint(size=stat.st_size, mtime=stat.st_mtime)
         try:
             source = parse_ffprobe(
@@ -279,6 +278,7 @@ class Prober:
                 probe_tool=self.tool.version,
                 probed_at=datetime.now(UTC),
                 warnings=warnings,
+                matroska=tracks,
             )
         except (ValidationError, ValueError, TypeError) as exc:
             return ProbeError(
@@ -287,19 +287,15 @@ class Prober:
                 "ffprobe's output could not be understood.",
                 str(exc),
             )
-        undecided = set(vfr_undecided(data))
-        if options["mediainfo"]:
-            info = await _read_mediainfo(source, file, cancel)
-            if isinstance(info, _Cancelled):
-                return _cancelled(file)
-            if info is not None:
-                _apply_mediainfo(source, info, undecided)
-        if _is_matroska(source):
-            tracks = await _read_matroska(source, file, cancel)
-            if isinstance(tracks, _Cancelled):
-                return _cancelled(file)
-            if tracks is not None:
-                apply_matroska(source, tracks)
+        undecided = set(vfr_undecided(data, matroska=tracks))
+        if tracks is not None:
+            apply_matroska(source, tracks)
+            if _needs_rates(source):
+                sample = await _sample(file, tracks, cancel)
+                if isinstance(sample, _Cancelled):
+                    return _cancelled(file)
+                if sample is not None and sampling.estimate_bitrates(source, tracks, sample):
+                    roles.assign_audio_roles(source.audio)  # the commentary heuristic uses rates
         for stream in source.video:
             if stream.index in undecided:
                 vfr = await self._vfr_from_packets(file, stream.index, cancel, source.warnings)
@@ -378,63 +374,44 @@ class Prober:
         return bool(vfr_from_timestamps(pts))
 
 
-async def _read_mediainfo(
-    source: MediaSource, file: Path, cancel: CancelToken
-) -> mediainfo.MediaInfoData | _Cancelled | None:
+def _is_matroska(data: dict[str, Any]) -> bool:
+    fmt = data.get("format")
+    name = fmt.get("format_name") if isinstance(fmt, dict) else None
+    return "matroska" in str(name or "").split(",")
+
+
+def _needs_rates(source: MediaSource) -> bool:
+    streams: list[VideoStream | AudioStream] = [*source.video, *source.audio]
+    return any(s.bitrate.source is BitrateSource.UNKNOWN for s in streams)
+
+
+async def _sample(
+    file: Path, tracks: matroska.MatroskaFile, cancel: CancelToken
+) -> sampling.ClusterSample | _Cancelled | None:
+    """A sample of the clusters, or ``None`` when there is none within :data:`SAMPLE_TIMEOUT`.
+    That is not a warning: the rates stay unknown, and Measure finds them."""
+    stop = threading.Event()
+
+    def stopped() -> bool:
+        return stop.is_set() or cancel.cancelled
+
+    work = asyncio.to_thread(sampling.sample_clusters, file, tracks, stop=stopped)
     try:
-        return await _race(
-            asyncio.to_thread(mediainfo.read_mediainfo, file), cancel, MEDIAINFO_TIMEOUT
-        )
+        return await _race(work, cancel, SAMPLE_TIMEOUT)
     except TimeoutError:
-        source.warnings.append(f"MediaInfo did not finish within {MEDIAINFO_TIMEOUT:g} s.")
-    except Exception as exc:  # the library's own errors for a file it cannot read
-        source.warnings.append(f"MediaInfo could not read the file: {exc}")
+        log.info("%s: the clusters were not sampled within %g s", file, SAMPLE_TIMEOUT)
+    except OSError as exc:
+        log.info("%s: the clusters could not be sampled: %s", file, exc)
+    finally:
+        stop.set()
     return None
 
 
-def _apply_mediainfo(
-    source: MediaSource, info: mediainfo.MediaInfoData, undecided: set[int]
-) -> None:
-    """Fill unknown bit rates, ``language_ietf`` and undecided VFR states. ``undecided`` loses
-    the streams that MediaInfo decides. A language that is not a valid language tag is not used.
-
-    MediaInfo reads the Matroska statistics tags too, so it repeats stale ones: a bit rate more
-    than 5 % above the container's bit rate is not used either.
-    """
-    limit = source.container.bitrate * 1.05 if source.container.bitrate else None
-    rated: list[VideoStream | AudioStream] = [*source.video, *source.audio]
-    for stream in rated:
-        if stream.bitrate.source is BitrateSource.UNKNOWN:
-            value = info.bitrates.get((stream.kind, stream.index))
-            if value is not None and limit is not None and value > limit:
-                source.warnings.append(
-                    f"Stream {stream.index}: MediaInfo's bit rate {value} is more than the "
-                    f"file's {source.container.bitrate}; not used."
-                )
-            elif value is not None:
-                stream.bitrate = BitrateInfo(value=value, source=BitrateSource.ESTIMATED)
-    tracks: list[VideoStream | AudioStream | SubtitleStream] = [*rated, *source.subtitles]
-    for track in tracks:
-        language = info.languages.get((track.kind, track.index))
-        if language is not None and _is_language_tag(language):
-            track.language_ietf = language
-    for video in source.video:
-        mode = info.frame_rate_modes.get(("video", video.index))
-        if video.index in undecided and mode is not None:
-            video.vfr = mode == "VFR"
-            undecided.discard(video.index)
-    roles.assign_audio_roles(source.audio)  # the commentary heuristic uses bit rates
-
-
-def _is_matroska(source: MediaSource) -> bool:
-    return "matroska" in (source.container.format_name or "").split(",")
-
-
 async def _read_matroska(
-    source: MediaSource, file: Path, cancel: CancelToken
+    file: Path, cancel: CancelToken
 ) -> matroska.MatroskaFile | _Cancelled | None:
     """The track headers, or ``None`` when they cannot be read. That is not a warning: ffprobe
-    read the file, and only ``language_ietf`` stays unknown."""
+    read the file, and only ``language_ietf`` and the sampled rates stay unknown."""
     try:
         return await _race(
             asyncio.to_thread(matroska.read_matroska, file), cancel, MATROSKA_TIMEOUT
@@ -461,12 +438,11 @@ def _shown(value: str, limit: int = 40) -> str:
 
 def apply_matroska(source: MediaSource, info: matroska.MatroskaFile) -> bool:
     """Set ``language_ietf`` of every stream to its track's ``LanguageIETF`` element, or to
-    ``None`` when the track has none. The file's value is used, never MediaInfo's, which derives
-    a tag from the legacy ``Language`` element. A value that is not a language tag is not used:
-    ``None`` and a warning. The n-th video, audio and subtitle track of the file is the n-th
-    stream of that kind (cover art is an attachment, not a track). When the counts differ
-    nothing is set (MediaInfo's values stay) and a warning says so. ``True`` when the tracks
-    matched."""
+    ``None`` when the track has none (no tag is derived from the legacy ``Language`` element).
+    A value that is not a language tag is not used: ``None`` and a warning. The n-th video,
+    audio and subtitle track of the file is the n-th stream of that kind (cover art is an
+    attachment, not a track). When the counts differ nothing is set and a warning says so.
+    ``True`` when the tracks matched."""
     kinds = matroska.tracks_by_kind(info)
     streams: dict[matroska.TrackKind, list[VideoStream] | list[AudioStream] | list[SubtitleStream]]
     streams = {"video": source.video, "audio": source.audio, "subtitle": source.subtitles}
@@ -496,9 +472,8 @@ async def probe_file(
     *,
     cache: ProbeCache | None = None,
     cancel: CancelToken | None = None,
-    use_mediainfo: bool = True,
     timeout: float = PROBE_TIMEOUT,  # noqa: ASYNC109
 ) -> ProbeOutcome:
     """Probe one file: ``Prober(ffprobe, cache=cache, …).probe(path, cancel=cancel)``."""
-    prober = Prober(ffprobe, cache=cache, use_mediainfo=use_mediainfo, timeout=timeout)
+    prober = Prober(ffprobe, cache=cache, timeout=timeout)
     return await prober.probe(path, cancel=cancel)

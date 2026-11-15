@@ -12,7 +12,6 @@ from typing import Any
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-from langcodes import Language
 
 from reframe import languages
 from reframe.languages import (
@@ -88,7 +87,6 @@ def test_every_iso639_2_code_keeps_its_meaning() -> None:
         assert to_mp4(code) == code
     for b, _, _ in B_T_PAIRS:
         assert to_matroska_legacy(b) == b
-    assert Language.get("tgl").to_tag() == "fil"  # why OVERRIDES exists
 
 
 @pytest.mark.parametrize(

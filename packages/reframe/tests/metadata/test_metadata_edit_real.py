@@ -1,7 +1,7 @@
 """Metadata edits and the post-mux fix-up through the real queue and Reframe's own Matroska
 header writer, on a copy of the ``multitrack`` fixture, with no MKVToolNix program for the
-product to find. MediaInfo is off, so the BCP 47 languages that the re-probe shows come from
-Reframe's own Matroska reader. MKVToolNix is only the oracle (``needs_mkvtoolnix``): the same
+product to find. The BCP 47 languages that the re-probe shows come from Reframe's own
+Matroska reader. MKVToolNix is only the oracle (``needs_mkvtoolnix``): the same
 edit by mkvpropedit reads back the same in ``mkvmerge -J``."""
 
 from __future__ import annotations
@@ -32,7 +32,6 @@ from reframe.models import (
     QueueJob,
     resolve_argv,
 )
-from reframe.probe import mediainfo
 from reframe.probe.matroska import read_matroska
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
@@ -79,7 +78,6 @@ def env(
     monkeypatch.setenv("REFRAME_FFPROBE", ffprobe)
     # Even an installed MKVToolNix is not found: no product path may need it.
     monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(tmp_path / "no-mkvtoolnix" / "mkvpropedit"))
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     _settings(tmp_path / "config")
     source = tmp_path / "media" / "Show.S01E01.mkv"
     source.parent.mkdir()
