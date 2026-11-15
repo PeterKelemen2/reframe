@@ -28,7 +28,7 @@ function tools(extra: Partial<Tools> = {}): Tools {
     ffmpeg: tool('ffmpeg'),
     ffprobe: tool('ffprobe'),
     ...extra,
-  } as Tools
+  }
 }
 
 function info(extra: Partial<SystemInfo> = {}): SystemInfo {

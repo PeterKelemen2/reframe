@@ -93,8 +93,6 @@ function originLabel(tool: ToolInfo): string {
       return t('shell.firstRun.origin.bundled')
     case 'path':
       return t('shell.firstRun.origin.path')
-    case 'installed':
-      return t('shell.firstRun.origin.installed')
     default:
       return t('shell.firstRun.origin.none')
   }

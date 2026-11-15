@@ -43,7 +43,6 @@
       "settings": "Path in the settings",
       "bundled": "Bundled with Reframe",
       "path": "System PATH",
-      "installed": "Where its installer put it",
       "none": "Not found anywhere"
     }
   },

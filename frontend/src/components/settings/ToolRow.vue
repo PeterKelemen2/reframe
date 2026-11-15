@@ -102,8 +102,6 @@ function originText(tool: ToolInfo): string {
       return t('settings.tools.origin.bundled')
     case 'path':
       return t('settings.tools.origin.path')
-    case 'installed':
-      return t('settings.tools.origin.installed')
     default:
       return t('settings.tools.origin.none')
   }

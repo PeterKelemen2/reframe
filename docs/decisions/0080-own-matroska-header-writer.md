@@ -340,7 +340,9 @@ For task I and the reviewers:
    bundled build provides, so the FFmpeg-family split (`FFMPEG_FAMILY`, `familyOf`), the install
    hints (`installHint`, `settings.tools.install.*`) and the "optional tool" warning tone are
    gone: a tool that is not found is an error. The first start lists the same two tools as
-   every other start. The activity line of `tools.changed` lists the two.
+   every other start. The activity line of `tools.changed` lists the two. With P's
+   `ToolOrigin` (no `installed`), the origin label "Where its installer put it" is gone from
+   both screens and their messages.
 3. **Validation**: `tool.mkvpropedit_missing` and `metadata.language_tag_lost` had no handling
    of their own in the frontend, only test fixtures (now `container.flag_unsupported` and
    `metadata.language_invalid`). `inPlaceIssues` keeps the `inplace.*` issues only: the "any
