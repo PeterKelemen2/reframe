@@ -60,7 +60,12 @@ function entryOf(id: string): MediaSource {
 describe('the scans against a real server', () => {
   it('measures the DTS-HD MA track, and the source read again holds it as measured', async () => {
     const { id } = await opened('dts-hd-ma.mkv')
-    expect(entryOf(id).audio?.[0]?.bitrate).toEqual({ value: null, source: 'unknown', samples: null })
+    // The file has no rate: the probe samples its clusters (one cluster in this short file).
+    expect(entryOf(id).audio?.[0]?.bitrate).toEqual({
+      value: 2_139_528,
+      source: 'estimated',
+      samples: 1,
+    })
     const scans = useScansStore()
     await scans.measureBitrate(id, 1)
     const bitrate = entryOf(id).audio?.[0]?.bitrate
@@ -102,12 +107,13 @@ describe('the scans against a real server', () => {
     expect(scans.loudness[`${id}:1`]).toEqual(measured)
   })
 
-  it('cancels a measurement quietly and leaves the track as it was; a later one changes its role', async () => {
+  it('cancels a measurement quietly and leaves the track as it was; a later one replaces the estimate', async () => {
     const { id } = await opened('commentary.mkv')
     const before = entryOf(id).audio?.[1]
-    expect(before?.bitrate).toEqual({ value: null, source: 'unknown', samples: null })
+    expect(before?.bitrate).toMatchObject({ source: 'estimated', samples: 32 })
+    // A 2.0 track under 192 kb/s after a 5.1 track in its language is marked as commentary.
     expect(before?.roles?.map((role) => [role.role, role.evidence])).toEqual([
-      ['main', 'heuristic'],
+      ['commentary', 'heuristic'],
     ])
 
     const scans = useScansStore()
@@ -121,10 +127,8 @@ describe('the scans against a real server', () => {
 
     await scans.measureBitrate(id, 1)
     const after = entryOf(id).audio?.[1]
-    expect(after?.bitrate?.source).toBe('measured')
-    // A 2.0 track under 192 kb/s after a 5.1 track in its language is marked as commentary.
-    expect(after?.roles?.map((role) => [role.role, role.evidence])).toEqual([
-      ['commentary', 'heuristic'],
-    ])
+    expect(after?.bitrate).toMatchObject({ source: 'measured' })
+    expect(after?.bitrate?.samples ?? null).toBeNull()
+    expect(after?.roles).toEqual(before?.roles)
   })
 })

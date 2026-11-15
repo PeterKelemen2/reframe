@@ -225,18 +225,35 @@ function flagLabel(flag: ShownFlag): string {
   return flag
 }
 
-function bitrateSource(source: Schemas['BitrateSource']): string {
+type Bitrate = Schemas['BitrateInfo']
+
+function bitrateSource({ source, samples }: Bitrate): string {
   switch (source) {
     case 'stream':
       return t('tracks.source.bitrateFrom.stream')
     case 'stats_tag':
       return t('tracks.source.bitrateFrom.statsTag')
     case 'estimated':
-      return t('tracks.source.bitrateFrom.estimated')
+      // A probe cache entry from before the sampler has no count.
+      return samples
+        ? t('tracks.source.bitrateFrom.estimatedFrom', samples)
+        : t('tracks.source.bitrateFrom.estimated')
     case 'measured':
       return t('tracks.source.bitrateFrom.measured')
   }
   return t('tracks.source.bitrateFrom.unknown')
+}
+
+function kbps(bitrate: Bitrate): string {
+  const value = kbpsText(bitrate.value ?? 0, locale.value)
+  return bitrate.source === 'estimated'
+    ? t('tracks.units.kbpsEstimated', { value })
+    : t('tracks.units.kbps', { value })
+}
+
+/** No rate, or only an estimate: a scan measures the exact one. */
+function measurable(stream: AudioStream): boolean {
+  return !stream.bitrate?.value || stream.bitrate.source === 'estimated'
 }
 
 function bitrateHelp(source: Schemas['BitrateSource'] | undefined): string {
@@ -360,23 +377,19 @@ function tagsOf(stream: SourceStream): [string, string][] {
               <td>{{ channelsText(stream) ?? '—' }}</td>
               <td class="track-table__nowrap">{{ rateDepth(stream) ?? '—' }}</td>
               <td class="track-table__bitrate" :data-source="stream.bitrate?.source ?? 'unknown'">
-                <template v-if="stream.bitrate?.value">
-                  <span v-tooltip.top="bitrateHelp(stream.bitrate!.source)">
-                    {{
-                      t('tracks.units.kbps', { value: kbpsText(stream.bitrate!.value!, locale) })
-                    }}
+                <span class="track-table__value">
+                  <span
+                    v-if="stream.bitrate?.value"
+                    v-tooltip.top="bitrateHelp(stream.bitrate!.source)"
+                  >
+                    {{ kbps(stream.bitrate!) }}
                   </span>
-                  <span class="track-table__muted">
-                    {{ bitrateSource(stream.bitrate!.source) }}
-                  </span>
-                </template>
-                <span v-else class="track-table__unknown">
-                  <span v-tooltip.top="bitrateHelp(undefined)">
+                  <span v-else v-tooltip.top="bitrateHelp(undefined)">
                     <span aria-hidden="true">—</span>
                     <span class="rf-sr-only">{{ t('tracks.source.bitrateFrom.unknown') }}</span>
                   </span>
                   <ScanControl
-                    v-if="scanSource !== null"
+                    v-if="scanSource !== null && measurable(stream)"
                     :run="runOf('bitrate', stream)"
                     :label="t('media.scan.measure')"
                     :start-label="t('media.scan.measureBitrate', { n: trackNumber(stream) })"
@@ -389,13 +402,16 @@ function tagsOf(stream: SourceStream): [string, string][] {
                     @leave="focusRow(stream)"
                   />
                 </span>
+                <span v-if="stream.bitrate?.value" class="track-table__muted">
+                  {{ bitrateSource(stream.bitrate!) }}
+                </span>
               </td>
             </template>
             <template v-else>
               <td><CodecLabel :stream="stream" /></td>
               <td>{{ typeLabel(stream) }}</td>
               <td class="track-table__events">
-                <span class="track-table__unknown">
+                <span class="track-table__value">
                   <span v-tooltip.top="eventsHelp(stream)">{{
                     count(stream.event_count) ?? '—'
                   }}</span>
@@ -482,9 +498,7 @@ function tagsOf(stream: SourceStream): [string, string][] {
                   />
                   <KeyValue :label="t('tracks.details.bitrate')">
                     <template v-if="stream.bitrate?.value">
-                      {{
-                        t('tracks.units.kbps', { value: kbpsText(stream.bitrate!.value!, locale) })
-                      }}
+                      {{ kbps(stream.bitrate!) }}
                       ·
                     </template>
                     {{ bitrateHelp(stream.bitrate?.source) }}
@@ -714,7 +728,7 @@ tbody + tbody .track-table__row td {
   display: block;
 }
 
-.track-table__table .track-table__unknown {
+.track-table__table .track-table__value {
   display: inline-flex;
   align-items: center;
   gap: var(--rf-space-2);

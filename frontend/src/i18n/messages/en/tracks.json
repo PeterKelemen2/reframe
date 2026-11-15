@@ -3,6 +3,7 @@
   "noJob": "No job is open.",
   "units": {
     "kbps": "{value} kb/s",
+    "kbpsEstimated": "≈ {value} kb/s",
     "khz": "{value} kHz",
     "bits": "{bits}-bit",
     "rateDepth": "{rate} / {bits}-bit",
@@ -48,6 +49,7 @@
       "stream": "stream",
       "statsTag": "statistics tags",
       "estimated": "estimated",
+      "estimatedFrom": "estimated from one sample | estimated from {n} samples",
       "measured": "measured",
       "unknown": "Unknown"
     },
