@@ -1,6 +1,6 @@
 # 0080 — Reframe's own Matroska header writer replaces mkvpropedit
 
-- Status: accepted
+- Status: accepted; built 2026-11-15 on `m10-hardening` (C-18 done on Linux)
 - Date: 2026-11-15
 - Steps: C-18 (new); also C-1, C-7, C-8, C-11, C-13, D-7, D-8, S-6, F-15, Q-5
 - Supersedes: the tool of [0034](0034-metadata-edit-in-place.md) (mkvpropedit); what can be
@@ -430,4 +430,54 @@ Known limits:
 
 ## Review
 
-*Placeholder.*
+### Integration fixes (the lead, 2026-11-15)
+
+- **Every move refused after the probe task merged** (9aede14): task E gave the reader's
+  `MatroskaFile` the segment's position and size, and the writer's self-check compares a
+  file's states by equality, so a move (which grows the segment) read as neither old nor new
+  and was refused as `header.unsafe_layout`. Both fields are positions, not values:
+  `compare=False`. H's own tests failed on the merged tree and pass since.
+- **Reads on a network share** (aed9545): the reader opened files buffered, and on a CIFS
+  mount (`st_blksize` 1 MiB) every small header read after a seek fetched a whole MiB. It
+  reads unbuffered now; the writer's planning shares the reader.
+- **The restored job's error** (5b9b1ec): after a crash it no longer promises old or new
+  values without exception; a power cut during a switch longer than one page can tear it.
+
+### Review R1 (2026-11-15, file safety; Opus 5.5 High, from a scratch copy of 2370c95)
+
+No blocker; two majors and three smaller findings, the majors reproduced by the lead on the
+main checkout. Fixed by task FW (merge d23e70a; its section "Review fixes (FW, 2026-11-15)"
+under "Built: I" has the details), each with a test that failed before the fix:
+
+| Finding | Severity | Fix |
+|---|---|---|
+| An OS error part-way through the switch write (ENOSPC on btrfs, EIO) left a mixed or unreadable header, and the result said "old or new" | major | each write carries the bytes it replaces; a failed write or fsync is put back and read back; the result's new `file_state` (`unchanged`, `old`, `new`, `damaged`) says what the file holds; a `damaged` in-place header keeps its old bytes in `<data>/logs/<job id>.header-at-<offset>.bin`; 16 MB of free space is required before the first write (`header.no_space`) |
+| A cancel or `close()` while the writer waited for a worker of the shared executor did not stop it: the cancelled job's source was written later | major | the writer runs in its own thread with a start/prevent handshake under one lock: a stop before it starts writes nothing and ends the job at once (queue and preview) |
+| `DocTypeVersion` not raised when Matroska v4 elements are added (mkvpropedit raises it) | minor | raised as mkvpropedit 103 does, from the specification's `minver` table, with the EBML header's `CRC-32` |
+| The job error said both "It is unchanged" and "holds either the old or the new values" | minor | the text follows `file_state` |
+| Leftovers of a stopped edit stayed when the next edit fits in place | nit | truncated before the switch |
+
+The lead's mutation on the fix round (the write-back skipped) failed 9 fault tests.
+
+**Known limits** (also in FW's section): two Reframe processes can edit one file at once (no OS
+file lock); a power cut or kill during a switch longer than one page can still tear it; a
+write-back on a full copy-on-write file system can fail for the same reason as the write
+(then `damaged` with the saved bytes); ENOSPC was shown by fault injection only.
+
+### Plan changes made with the build
+
+- 05 §C-18 "Done when" 2: mkvmerge 103 writes no `CRC-32`, so the corpus adds `CRC-32`
+  elements to an mkvmerge file (task H).
+- 05 §C-11: an in-process step cannot be suspended (a pause shows at once, the write ends,
+  nothing after it starts until resume); it has no time limit and is let finish once it
+  starts, and a stop before it starts writes nothing (task I, review R1).
+- The flag fix-up is gone: FFmpeg writes all six flags into Matroska, so the fix-up step
+  writes only `Language` and `LanguageIETF` (task I).
+
+### Owner questions (defaults kept)
+
+- When an element must move, the writer refuses some layouts that mkvpropedit edits
+  (unknown-size segment, no room in the `SeekHead`, data after the segment, a damaged
+  `CRC-32`, two `Info` or `Tracks`); mkvpropedit's fallback for a full `SeekHead` (a stub in
+  front, the full one at the end) is not built. One of 31 sampled real files refuses a growing
+  edit (`header.no_room`). Default: refuse, unchanged.

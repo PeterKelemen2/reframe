@@ -1,6 +1,6 @@
 # 0081 — The probe works without MediaInfo
 
-- Status: accepted
+- Status: accepted; built 2026-11-15 on `m10-hardening` (C-19 done on Linux)
 - Date: 2026-11-15
 - Steps: C-19 (new); also C-1, C-3, D-7, D-8, S-6, F-10, F-15, Q-5
 
@@ -291,10 +291,63 @@ streams (R2's `mkvmerge-nostats.mkv`: first video −4.4 %).
 - Settings → Tools and the first-run screen list ffmpeg and ffprobe only (`TOOL_NAMES`); the
   MediaInfo install hints are gone.
 
-### The real-file check
+### The real-file check (the lead, 2026-11-15, read-only)
 
-*Placeholder.*
+The final tree (after the review fixes) probed the 33 files of the check above (31 MKV,
+2 MP4) on the SMB shares with the pinned ffprobe, no cache, and each estimated rate was
+compared with the exact block-scan rate recorded by the check. The script opens files only
+for reading.
+
+| | Result | Target |
+|---|---|---|
+| Video and audio streams with a rate | 88 of 88; the 34 that had none: 24 `estimated`, 10 `stats_tag` | 34 / 34 |
+| Estimated video (12 streams) | median 0.18 %, worst 1.43 % | within 2.1 % (0081), 3 % (05 §C-19) |
+| Estimated audio (12 streams) | median 0.33 %, worst 9.86 % (FLAC) | within 12 % |
+| The mkvmerge 15 and 93 files | every tagged stream `stats_tag` | keep their tags |
+| Clusters sampled per file | 1 to 9 | — |
+| Read by the whole probe of a sampled file (`/proc/self/io` `rchar`) | median 17.7 MB, max 38.4 MB; 0.38 s median, 0.76 s max | about 16 MB |
+
+The first run of this check found that the sampler and the header reader opened files
+buffered: on the CIFS mount (`st_blksize` 1 MiB) each small header read after a seek fetched
+a whole MiB, so a sampled file cost 38 MB from the network for the 14 MB the sampler used
+(its own counter showed 14 MB). Fixed in aed9545 (unbuffered reads, a test that emulates the
+share's buffer); the sampler alone then read 14.0 MB median, 0.27 s.
 
 ## Review
 
-*Placeholder.*
+### Review R2 (2026-11-15; Opus 5.5 High, from a scratch copy of 2370c95)
+
+No blocker; three majors, two minors, four nits. The lead reproduced the three majors on the
+main checkout. Fixed by task FE (merge e5a4cc6; its "Review fixes (FE)" subsections under
+"Built: E" and in 0082 have the details), each with a test that failed before the fix:
+
+| Finding | Severity | Outcome |
+|---|---|---|
+| A `TimestampScale` longer than 8 bytes passed the reader, made the sampler raise `OverflowError` out of `probe_file`, and one such file failed a whole folder probe | major | an unsigned integer over 8 bytes is damaged (as libavformat rejects it); the prober also catches arithmetic and value errors; the rates stay `unknown` |
+| Attachments (fonts, cover art) counted as video in "the file's rate minus the others": +26.8 % on a 60 s file with a 4 MB attachment | major | the reader sums the sizes of the elements that hold no blocks (from the `SeekHead`: attachments, chapters, tags, cues) and the estimate leaves them out: +0.16 % |
+| Few samples on strongly variable audio: a synthetic FLAC near-silent for 30 s, then noise, was −30 % (and its video +9 %) | major | **not changed**, a known limit: a sample at all 32 offsets would read 32 whole clusters, hundreds of MB per remux over a share. The real-file corpus stays within the targets; the UI marks the value as an estimate and offers Measure. Owner question below |
+| A sample that timed out was cached as `unknown` | minor | a sample or header read that timed out or failed with an OS error is not cached |
+| Batch audio rules and the commentary heuristic take an estimate as exact (the rule preview offers Measure only for an unknown rate) | minor | not changed; owner question below |
+| The Kelvin sign (U+212A) in a language code | nit | fixed in `reframe.languages` (0082) |
+| Nothing runs the `media_source` migration | nit | the migration's docstring says so (bd9e9e0) |
+| The probe cache's fingerprint did not cover `languages.py` and the tables | nit | it does |
+| A docstring named mkvpropedit | nit | reworded |
+
+The lead's mutation on the fix round (the non-stream bytes not subtracted) failed 3 tests.
+
+### Plan changes made with the build
+
+05 §C-19's sampled-estimate bullet says what was built (task E, review R2): the clusters that
+start in 32 windows (so 1 to 12 samples on real files, not 32; `BitrateInfo.samples` holds the
+real count and the UI shows it), a small segment read whole, the bytes of attachments, cues
+and tags left out of the file's rate, 256 MB of reads at most, a sample that timed out not
+cached.
+
+### Owner questions (defaults kept)
+
+- Few samples on variable audio (R2 #3): keep the window sampler (default), or sample through
+  the `Cues` (more clusters, much more reading on a network share)?
+- Should a batch audio rule treat an estimated rate as unknown (and offer Measure in its
+  preview) instead of using it (R2 #5, task U)? Default: use it, as decided above.
+- With two or more video streams without a rate (bytes per sampled second each), one
+  mkvmerge remux with 2 s clusters was −4.4 %, outside 3 %; no such real file was seen.

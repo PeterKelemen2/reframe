@@ -787,3 +787,14 @@ scratch folder `<session scratchpad>/task-<x>/`. Ports: U `REFRAME_E2E_PORT=8720
 | Date | What |
 |------|------|
 | 2026-11-15 | Wave 0 committed. Wave 1 (H, I, E, L) launched. |
+| 2026-11-15 | Merged H (1b987dd), L (e8c00b7), E (429cce7), I (4576aa4: two phases), P (7c4db12), U (2370c95: two phases). The lead broke each task once (`LanguageIETF` not written; the `Suppress-Script` rule off; compressed tracks counted again; an in-place refusal not failing the job; the IANA notice removed; no `≈`), and its tests caught each. Integration fixes by the lead: the reader's new segment fields broke the writer's self-check (9aede14); buffered reads fetched 1 MiB per small read on the CIFS share (aed9545). |
+| 2026-11-15 | Reviews R1 (C-18 file safety) and R2 (C-19, C-20, removal, UI), Opus 5.5 High, from `git archive` copies: no blocker, 5 majors, 4 reproduced and fixed (FW d23e70a: a torn switch put back, the writer in its own thread, `DocTypeVersion`; FE e5a4cc6: a huge `TimestampScale`, attachments in the video estimate, timed-out samples cached, the fingerprint, the Kelvin sign), 1 kept as a known limit (few samples on variable audio). The lead broke each fix round once (the write-back skipped; the non-stream bytes kept), caught. |
+| 2026-11-15 | Real-file checks, the final checks (each alone) and the docs; see "Where C-18 / C-19 / C-20 ended". |
+
+#### Where C-18 / C-19 / C-20 ended (2026-11-15)
+
+Done on Linux, on `m10-hardening`, not merged into `main`, not pushed. Every worktree and
+branch of the run (H, I, E, L, P, U, FW, FE) is removed; R1 and R2 worked from scratch
+copies. The decisions' "Review" sections hold the findings, the known limits and the owner
+questions; status.md has the rows. Rest of M10: S-6's NVIDIA/Intel checks (need such a host)
+and the release checklist.

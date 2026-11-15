@@ -490,11 +490,14 @@ cancelling a scan stops its FFmpeg process within 1 s.
       do count them, so Reframe computes its own; 0016).
 - [ ] Logs: the full command line + stderr, to `<data>/logs/<job>.log`. Rate-limited
       `job.log` events.
-- [ ] Pause and resume: psutil `suspend()` / `resume()` on the process tree.
+- [ ] Pause and resume: psutil `suspend()` / `resume()` on the process tree. The in-process
+      `header_edit` step cannot be suspended: a pause shows at once, the write (milliseconds)
+      ends, and nothing after it starts until resume ([decision 0080](../decisions/0080-own-matroska-header-writer.md) "Built: I").
 - [ ] Cancel: kill the tree and remove the `.part` file.
 - [ ] Time limits: none for an encode; a sleep-aware stall watchdog for FFmpeg steps (no
       progress, no output and no CPU use for 10 minutes) and a 5-minute limit for other short tool steps
-      (0016). The in-process `header_edit` step (C-18) is let finish once it writes.
+      (0016). The in-process `header_edit` step (C-18) has no time limit and is let finish
+      once it starts; a cancel or close before it starts writes nothing.
 - [ ] Success: re-probe the `.part` output and check its layout (number and type of streams,
       languages) **before** the rename, so a bad output never takes the final name; then rename
       `.part` → final name (collision policy; with `ask` the job fails with the issue and the
@@ -735,27 +738,27 @@ Reframe's own code writes the Matroska header changes that mkvpropedit wrote bef
 ([decision 0080](../decisions/0080-own-matroska-header-writer.md)). MKVToolNix is a development
 tool only: tests use it as an oracle, and no product code runs it. Milestone M10.
 
-- [ ] A writer in `metadata/` that shares the EBML parsing and the `MAX_*` limits of
+- [x] A writer in `metadata/` that shares the EBML parsing and the `MAX_*` limits of
       `probe/matroska.py` and runs in-process (a worker thread). It edits, in each
       `TrackEntry`, `Language`, `LanguageIETF`, `Name` and the six flags (`FlagDefault`,
       `FlagForced`, `FlagCommentary`, `FlagHearingImpaired`, `FlagVisualImpaired`,
       `FlagOriginal`), and in `Info`, `Title`. Tracks are picked as the n-th track of a type
       in `TrackEntry` order. Both language elements are always written (ISO 639-2/B and
       BCP 47).
-- [ ] An element that still fits in its place and the `Void` after it is written there. One
+- [x] An element that still fits in its place and the `Void` after it is written there. One
       that does not fit moves to the end of the segment: the old place becomes a `Void`, and
       the `SeekHead` entry and the segment size are updated. A `CRC-32` child of a changed
       element is calculated again.
-- [ ] A file the writer cannot edit safely is refused with a reason (a failed step, not an
+- [x] A file the writer cannot edit safely is refused with a reason (a failed step, not an
       exception), and the file is unchanged. Record each such case, found on real files, in
       `testdata/README.md`.
-- [ ] Crash safety: every state that a crash or a kill can leave is a file that ffprobe and
+- [x] Crash safety: every state that a crash or a kill can leave is a file that ffprobe and
       `mkvmerge -J` open with all the old values or all the new ones. Once the writer starts
       to write, a cancel or `close()` lets it finish.
-- [ ] The plan step kind `header_edit` (was `mkvpropedit`) for the `metadata_edit` job (C-13)
+- [x] The plan step kind `header_edit` (was `mkvpropedit`) for the `metadata_edit` job (C-13)
       and the `LanguageIETF` fix-up (C-7). Its line in the command preview lists the edits
       (track, field, value).
-- [ ] mkvpropedit leaves the product: discovery, `ToolName`, `ToolsStatus`, `reframe tools
+- [x] mkvpropedit leaves the product: discovery, `ToolName`, `ToolsStatus`, `reframe tools
       status`, Settings → Tools, the first-run check, `REFRAME_MKVPROPEDIT`, the Windows
       install-folder search, `tool.mkvpropedit_missing`, the BCP 47 silent loss, and the
       settings field `tools.mkvpropedit` (`schema_version` bump, migration, down-level note).
@@ -766,7 +769,8 @@ Done when:
 1. Property tests: an EBML element that the writer encodes reads back the same through
    `probe/matroska.py`.
 2. Oracle tests (`needs_mkvtoolnix`): on the fixture corpus (FFmpeg-written files,
-   mkvmerge-written files with `CRC-32` elements, reordered tracks with attachments, 6000-character
+   mkvmerge-written files, files with `CRC-32` elements (mkvmerge 103 writes none: the corpus
+   adds them to an mkvmerge file), reordered tracks with attachments, 6000-character
    names that move `Tracks`), the same edit done by mkvpropedit and by the writer reads back the
    same in `mkvmerge -J`, and ffprobe still reads every stream.
 3. Fault-injection tests stop the writer after each write; every file left opens in ffprobe
@@ -780,22 +784,25 @@ Done when:
 The probe fills the gaps that MediaInfo filled with Reframe's own code, and MediaInfo leaves the
 product ([decision 0081](../decisions/0081-probe-without-mediainfo.md)). Milestone M10.
 
-- [ ] Stale statistics tags: a track whose `TrackEntry` has `ContentEncodings` with compression
+- [x] Stale statistics tags: a track whose `TrackEntry` has `ContentEncodings` with compression
       (mkvmerge zlib-compresses PGS) is left out of the `NUMBER_OF_BYTES` sum;
       Reframe's Matroska reader reads `ContentEncodings`.
-- [ ] Sampled estimate for Matroska and WebM, when a video or audio stream has no rate after
-      ffprobe and the tags: 32 clusters at evenly spaced offsets (2 % to 98 %), each with the
-      next cluster's timestamp, in the file's `TimestampScale`. Audio: bytes per sampled
-      second. A single video stream without a rate: the file's rate minus every other stream's.
-      More than one such video stream: bytes per sampled second each. Bounded reads (256 KB
-      windows, a cluster of at most 64 MB, the reader's `MAX_*` limits), in the probe's worker
-      thread, with a time limit and cancel; a file that cannot be sampled keeps `unknown`.
-- [ ] `BitrateSource.estimated` replaces `mediainfo` (`schema_version` bump, migration
+- [x] Sampled estimate for Matroska and WebM, when a video or audio stream has no rate after
+      ffprobe and the tags: the clusters that start in 32 windows at evenly spaced offsets
+      (2 % to 98 %; a segment no larger than the windows is read whole), each with the next
+      cluster's timestamp, in the file's `TimestampScale`. Audio: bytes per sampled
+      second. A single video stream without a rate: the file's rate, without the bytes of
+      attachments, cues and tags, minus every other stream's. More than one such video stream:
+      bytes per sampled second each. Bounded reads (256 KB windows, a cluster of at most 64 MB,
+      256 MB in all, the reader's `MAX_*` limits), in the probe's worker thread, with a time
+      limit and cancel; a file that cannot be sampled keeps `unknown`, and a sample that timed
+      out is not cached ([decision 0081](../decisions/0081-probe-without-mediainfo.md) "Built: E").
+- [x] `BitrateSource.estimated` replaces `mediainfo` (`schema_version` bump, migration
       `mediainfo` → `estimated`, down-level note); the probe cache key changes. The track
       table shows `≈` and "estimated from 32 samples" next to **Measure**.
-- [ ] VFR from ffprobe's output and the 120-packet fallback only. BCP 47 for containers other
+- [x] VFR from ffprobe's output and the 120-packet fallback only. BCP 47 for containers other
       than Matroska from the ISO 639 code.
-- [ ] MediaInfo leaves the product: `probe/mediainfo.py`, the `[mediainfo]` extra and
+- [x] MediaInfo leaves the product: `probe/mediainfo.py`, the `[mediainfo]` extra and
       `pymediainfo` in the sidecar, discovery, `ToolName`, `ToolsStatus`, Settings → Tools,
       `REFRAME_MEDIAINFO`, the settings field `tools.mediainfo` (`schema_version` bump,
       migration, down-level note), the Windows MediaInfo CLI in `tools/bundled-tools.toml` and
@@ -821,21 +828,23 @@ A generated data file replaces `langcodes`, `language_data` and `marisa-trie` at
 ([decision 0082](../decisions/0082-own-language-data-table.md)). The two libraries move to the
 dev dependency group. Milestone M10.
 
-- [ ] `scripts/gen-language-data.py` builds the file from the libraries into
+- [x] `scripts/gen-language-data.py` builds the file from the libraries into
       `reframe/definitions/data/`: the IANA registry subtags (type, `Deprecated`,
       `Preferred-Value`, `Suppress-Script`, `Macrolanguage`), langcodes' alias tables and the
       canonical tag of each language subtag, ISO 639-1/2B/2T/3 codes, English and native
       names of languages, English names of scripts, regions and variants, region and script
       names per locale, and language names per locale with langcodes' name normalisation.
       `--check` fails when the committed file differs from a new build.
-- [ ] A core part (codes, canonical forms, English and native names) read at the first use,
+- [x] A core part (codes, canonical forms, English and native names) read at the first use,
       and lazy parts (names per locale) read only by a native name of an unlisted variant or
       a name search.
-- [ ] `reframe.languages` keeps its public API and its results, read from the file (standard
-      library only). English names compose as `Language (detail, detail)`; a script that is
-      the language's `Suppress-Script` is left out; `und`, `mul`, `zxx`, `mis` with a detail
-      compose as "Unknown language (…)".
-- [ ] `langcodes`, `language_data` and `marisa-trie` leave the runtime dependencies, the
+- [x] `reframe.languages` keeps its public API and its results, read from the file (standard
+      library only). English names compose as `Language (detail, detail)` from the script and
+      region (a variant is not named: `de-1901` is "German"); a script that is the language's
+      `Suppress-Script` is left out; `und` with a detail composes as "Unknown language (…)"
+      (`mul-US` is "Multiple languages (United States)";
+      [decision 0082](../decisions/0082-own-language-data-table.md) "Built: L").
+- [x] `langcodes`, `language_data` and `marisa-trie` leave the runtime dependencies, the
       PyInstaller spec and the notices; the notices get the CLDR and IANA terms (Q-5).
 
 Done when:

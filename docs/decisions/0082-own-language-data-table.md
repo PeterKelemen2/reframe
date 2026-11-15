@@ -1,6 +1,6 @@
 # 0082 — A generated language table replaces langcodes and language_data at run time
 
-- Status: accepted
+- Status: accepted; built 2026-11-15 on `m10-hardening` (C-20 done on Linux)
 - Date: 2026-11-15
 - Steps: C-20 (new); also C-6, Q-5
 
@@ -232,10 +232,36 @@ Wiktionary's terms is P's and the lead's call.
    library update that rebuilds the tables fails until the notices follow); a table without
    its text stops the notices; both notices have the section.
 
-### The real-file check
+### The equivalence check (the lead, 2026-11-15)
 
-*Placeholder.*
+On the final tree, the whole equivalence suite including the slow sweeps
+(`uv run pytest packages/reframe/tests/languages packages/reframe/tests/test_languages.py`)
+passed: 251 tests in 156 s, no result different from `langcodes` 3.5.1 / `language_data`
+1.4.0. Its corpus covers this decision's check and the two parts the check left out: every
+listed base language with every region and script (215,688 tags), every registry language
+with regions and scripts, 14,066 registry inputs (extlang, grandfathered, deprecated, alias
+keys), every key of the name tables and their prefix forms (195,201, the fuzzy prefix match
+too), every name of the listed languages in every locale through `search`, and since review
+R2 the 20 non-ASCII characters whose case forms are ASCII (8,757 inputs).
+`scripts/gen-language-data.py --check` passes.
 
 ## Review
 
-*Placeholder.*
+Review R2 (2026-11-15, the scope of 0081 and this decision; details in 0081 "Review") found
+two nits here, both fixed by task FE with a test that failed before: the Kelvin sign (U+212A)
+was lowercased to `k` before the code's ASCII check (`'Ko'` gave Korean, the libraries `fuj`),
+and the probe cache's fingerprint did not cover `languages.py` and the tables. A fuzz of
+20,121 odd inputs found no other difference.
+
+### Plan changes made with the build
+
+05 §C-20: English names do not name a variant (`de-1901` is "German"), and only `und` with a
+detail composes as "Unknown language (…)" (`mul-US` is "Multiple languages (United States)"):
+the libraries' results, which the check above described too broadly (task L).
+
+### Owner questions (defaults kept)
+
+- The name search holds names from `language_data`'s Wiktionary list (CC BY-SA), as the
+  libraries did. Default: keep them, with a CC BY-SA attribution in the notices (task P).
+- The full equivalence sweep adds about 2 minutes to each Python CI job; it is not marked
+  out of CI.
