@@ -148,7 +148,8 @@ def test_status_lines_are_shared_with_python_m_reframe_tools(fake: ft.FakeTools)
     tools = discover_tools_sync()
     lines = status_lines(tools)
     result = invoke("tools", "status")
-    assert result.stdout.splitlines()[:4] == lines
+    assert [line.split()[0] for line in lines] == ["ffmpeg", "ffprobe"]
+    assert result.stdout.splitlines()[: len(lines)] == lines
 
 
 def test_fetched_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
