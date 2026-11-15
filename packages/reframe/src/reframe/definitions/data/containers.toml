@@ -116,29 +116,22 @@ encode = ["opus"]
 copy = ["webvtt"]
 encode = ["webvtt"]
 
-# The FFmpeg disposition and the mkvpropedit property of each track flag
-# (`mkvpropedit --list-property-names`).
+# The FFmpeg disposition of each track flag.
 
 [flag.default]
 disposition = "default"
-mkvpropedit = "flag-default"
 
 [flag.forced]
 disposition = "forced"
-mkvpropedit = "flag-forced"
 
 [flag.commentary]
 disposition = "comment"
-mkvpropedit = "flag-commentary"
 
 [flag.hearing_impaired]
 disposition = "hearing_impaired"
-mkvpropedit = "flag-hearing-impaired"
 
 [flag.visual_impaired]
 disposition = "visual_impaired"
-mkvpropedit = "flag-visual-impaired"
 
 [flag.original]
 disposition = "original"
-mkvpropedit = "flag-original"

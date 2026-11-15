@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from reframe.metadata import remux_job
-from reframe.models import ReplaceOp, ToolStatus
+from reframe.models import ReplaceOp
 from reframe.queue import files
 from reframe.validation import FileSystemView, LocalFileSystem
 from reframe.validation.inplace import source_writable
@@ -122,17 +122,17 @@ def in_place() -> Any:
     return s
 
 
-def test_mkvpropedit_missing_fix_writes_a_new_file_with_a_new_path() -> None:
+def test_read_only_source_fix_writes_a_new_file_with_a_new_path() -> None:
     s = in_place()
-    s.tools = sc.make_tools(mkvpropedit=sc.tool("mkvpropedit", ToolStatus.MISSING))
-    [issue] = [i for i in s.validate() if i.code == "tool.mkvpropedit_missing"]
+    s.fs.writable_file = lambda path: False
+    [issue] = [i for i in s.validate() if i.code == "inplace.source_not_writable"]
     fix = issue.fixes[0]
     assert fix.label.startswith("Write a new file (")
     ops = {op.path: op.value for op in fix.patch if isinstance(op, ReplaceOp)}
     assert ops["/output/edit_in_place"] is False
     assert ops["/output/path"] != str(s.source.ref.path)
     after = s.apply(fix).validate()
-    assert not sc.found(after, "tool.mkvpropedit_missing")
+    assert not sc.found(after, "inplace.source_not_writable")
     assert not sc.found(after, "output.same_as_source")
 
 

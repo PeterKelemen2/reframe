@@ -19,7 +19,7 @@ from reframe.queue.service import OUTPUT_CLAIMED
 from reframe_testing import fake_tools as ft
 from reframe_testing.links import needs_symlinks
 
-from .conftest import Harness, encode_rule, queue_at, store_together, tool_set
+from .conftest import Harness, encode_rule, queue_at, store_together
 from .test_in_place_scheduling import in_place_job
 
 pytestmark = pytest.mark.anyio
@@ -94,7 +94,6 @@ async def test_an_in_place_edit_of_a_waiting_jobs_source_is_added_failed(
 ) -> None:
     """An in-place edit writes its source, so its output is the encode's source."""
     h = harness
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     await h.queue.add(h.job("Encode"))
     edit = await h.queue.add(in_place_job(h))
     assert edit.state is JobState.FAILED
@@ -107,7 +106,6 @@ async def test_an_encode_of_a_file_that_is_edited_in_place_is_not_claimed(
 ) -> None:
     """Its output is another file; the runner keeps the two from running at once."""
     h = harness
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     await h.queue.add(in_place_job(h))
     encode = await h.queue.add(h.job("Encode"))
     assert encode.state is JobState.WAITING, encode.issues

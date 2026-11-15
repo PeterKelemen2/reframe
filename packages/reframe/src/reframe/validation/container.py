@@ -14,7 +14,6 @@ from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.issues import Fix, FixTarget, ValidationIssue
 from reframe.models.job import AudioOutputTrack, Container, TrackMetadata
 from reframe.models.media import AudioStream
-from reframe.models.tools import ToolStatus
 from reframe.validation.common import (
     SwitchContainer,
     containers_for,
@@ -23,7 +22,6 @@ from reframe.validation.common import (
     remove,
     replace,
     switch_container_fixes,
-    tool_problem,
     usable_encoder,
     warning,
 )
@@ -215,14 +213,12 @@ def _metadata_blocks(ctx: JobContext) -> Iterator[tuple[str, TrackMetadata]]:
             yield f"subtitles[{index}].metadata", subtitle.metadata
 
 
-@job_rule("container", "container.flag_unsupported", "tool.mkvpropedit_missing")
+@job_rule("container", "container.flag_unsupported")
 def track_flags(ctx: JobContext) -> Iterator[ValidationIssue]:
-    """A flag the muxer cannot write is lost, so it is a warning. A flag that an ``mkvpropedit``
-    step sets after muxing is a warning only when mkvpropedit is missing."""
+    """A flag the muxer cannot write is lost, so it is a warning."""
     container = ctx.container
     if container is None:
         return
-    mkvpropedit = ctx.tools.mkvpropedit.status is ToolStatus.FOUND
     for prefix, metadata in _metadata_blocks(ctx):
         for flag in TRACK_FLAGS:
             if not getattr(metadata, flag) or flag in container.flags:
@@ -230,20 +226,10 @@ def track_flags(ctx: JobContext) -> Iterator[ValidationIssue]:
             path = f"{prefix}.{flag}"
             clear = fix(f"Clear the {flag} flag", replace(path, False), target=ctx.target)
             label = flag.replace("_", " ")
-            if flag in container.mkvpropedit_flags:
-                if not mkvpropedit:
-                    yield warning(
-                        "tool.mkvpropedit_missing",
-                        path,
-                        f"The {label} flag needs mkvpropedit after muxing, which is not "
-                        f"available: the flag will be lost.{tool_problem(ctx.tools.mkvpropedit)}",
-                        clear,
-                    )
-                continue
             others = [
                 c
                 for c, definition in ctx.definitions.containers.items()
-                if flag in definition.flags or flag in definition.mkvpropedit_flags
+                if flag in definition.flags
             ]
             yield warning(
                 "container.flag_unsupported",

@@ -248,13 +248,6 @@ def ffmpeg_status(status: ToolStatus | None) -> Mod:
     return mod
 
 
-def mkvpropedit(status: ToolStatus) -> Mod:
-    def mod(s: Any) -> None:
-        s.tools = sc.make_tools(mkvpropedit=sc.tool("mkvpropedit", status))
-
-    return mod
-
-
 def hdr_source(s: Any) -> None:
     s.source.video[0].color = ColorInfo(primaries="bt2020", transfer="smpte2084", matrix="bt2020nc")
 
@@ -308,12 +301,6 @@ def nothing(s: Any) -> None:
 def no_frame_rate(s: Any) -> None:
     s.source.video[0].frame_rate = None
     s.source.video[0].avg_frame_rate = None
-
-
-def mkv_original_via_mkvpropedit(d: Definitions) -> None:
-    mkv = d.containers["mkv"]
-    mkv.flags = [f for f in mkv.flags if f != "original"]
-    mkv.mkvpropedit_flags = ["original"]
 
 
 def x265_without_quality(d: Definitions) -> None:
@@ -400,31 +387,6 @@ CASES: list[Case] = [
         ERR,
         ffmpeg_status(ToolStatus.BROKEN),
         ffmpeg_status(None),
-    ),
-    Case(
-        "mkvpropedit for edit in place",
-        "tool.mkvpropedit_missing",
-        "output.edit_in_place",
-        ERR,
-        both(
-            lambda s: setattr(s.job.output, "edit_in_place", True), mkvpropedit(ToolStatus.MISSING)
-        ),
-        lambda s: setattr(s.job.output, "edit_in_place", True),
-    ),
-    Case(
-        "mkvpropedit for a flag",
-        "tool.mkvpropedit_missing",
-        "audio[0].metadata.original",
-        WARN,
-        both(
-            defs(mkv_original_via_mkvpropedit),
-            mkvpropedit(ToolStatus.MISSING),
-            lambda s: setattr(s.job.audio[0].metadata, "original", True),
-        ),
-        both(
-            defs(mkv_original_via_mkvpropedit),
-            lambda s: setattr(s.job.audio[0].metadata, "original", True),
-        ),
     ),
     Case(
         "unknown video encoder",
@@ -1252,34 +1214,6 @@ CASES: list[Case] = [
         sub(PGS, action="burn", forced_only=True),
     ),
     Case(
-        "BCP 47 tag without mkvpropedit",
-        "metadata.language_tag_lost",
-        "audio[0].metadata.language",
-        WARN,
-        both(
-            lambda s: setattr(s.job.audio[0].metadata, "language", "pt-BR"),
-            mkvpropedit(ToolStatus.MISSING),
-        ),
-        lambda s: setattr(s.job.audio[0].metadata, "language", "pt-BR"),
-    ),
-    Case(
-        "BCP 47 tag of the source without mkvpropedit",
-        "metadata.language_tag_lost",
-        "subtitles[0].metadata.language",
-        WARN,
-        both(
-            lambda s: setattr(s.source.subtitles[0], "language_ietf", "zh-Hant"),
-            mkvpropedit(ToolStatus.MISSING),
-        ),
-        both(
-            lambda s: setattr(s.source.subtitles[0], "language_ietf", "zh-Hant"),
-            mkvpropedit(ToolStatus.MISSING),
-            container("mp4"),
-            output_path(Path("/out/Movie (2019).mp4")),
-            subs(SubtitleOutputTrack(source=3, action="convert", convert_to="mov_text")),
-        ),
-    ),
-    Case(
         "unknown language",
         "metadata.language_invalid",
         "audio[0].metadata.language",
@@ -1594,7 +1528,8 @@ for _name in EXTRA_CASE_FILES:
 @pytest.fixture(autouse=True)
 def _fresh_definitions() -> None:
     """Custom-definition cases copy the definitions; the shared ones must stay unchanged."""
-    assert DEFS.containers["mkv"].mkvpropedit_flags == []
+    assert DEFS.containers["mkv"].text_subtitle_target is not None
+    assert DEFS.video_encoders["libx265"].rate_control.quality is not None
 
 
 def test_clean_job_has_no_issues() -> None:

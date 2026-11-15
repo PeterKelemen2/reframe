@@ -1,9 +1,9 @@
-"""Metadata edits of unusual files through the facade, the real queue and the real tools:
-MediaInfo's BCP 47 tags, an invalid ``LanguageIETF``, and a SeekHead position past 2^63."""
+"""Metadata edits of unusual files through the facade, the real queue and the real writer:
+MediaInfo's BCP 47 tags, an invalid ``LanguageIETF``, and a SeekHead position past 2^63.
+mkvpropedit only makes the unusual files."""
 
 from __future__ import annotations
 
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -11,8 +11,9 @@ import pytest
 
 from reframe.models import JobDraft, JobState
 from reframe.probe import mediainfo
+from reframe_testing.mkvtoolnix import mkvtoolnix_tool
 
-from .test_metadata_edit_real import Env, draft_remux, env, mkvmerge, reprobe, run
+from .test_metadata_edit_real import Env, draft_remux, env, mkvmerge, needs_writer, reprobe, run
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.anyio]
 __all__ = ["env"]
@@ -63,10 +64,9 @@ def with_bogus_seek_entry(path: Path) -> None:
 def with_bad_tag(path: Path, bad: bytes) -> None:
     """``LanguageIETF`` of a1 = ``bad`` (5 bytes): mkvpropedit writes ``en-US``, then the bytes
     are replaced (mkvpropedit does not write an invalid tag)."""
-    tool = shutil.which("mkvpropedit")
-    assert tool is not None
     subprocess.run(
-        [tool, str(path), "--edit", "track:a1", "--set", "language-ietf=en-US"],
+        [mkvtoolnix_tool("mkvpropedit"), str(path), "--edit", "track:a1",
+         "--set", "language-ietf=en-US"],
         check=True, capture_output=True,
     )  # fmt: skip
     data = bytearray(path.read_bytes())
@@ -77,6 +77,7 @@ def with_bad_tag(path: Path, bad: bytes) -> None:
     path.write_bytes(bytes(data))
 
 
+@needs_writer
 async def test_with_mediainfo_on_the_reprobe_shows_only_the_files_bcp47_tags(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -108,6 +109,7 @@ async def test_with_mediainfo_on_the_reprobe_shows_only_the_files_bcp47_tags(
         await app.close()
 
 
+@pytest.mark.needs_mkvtoolnix
 @pytest.mark.parametrize("bad", [b"en_US", b"j\na;x"])
 async def test_a_file_with_an_invalid_language_ietf_can_be_drafted_and_planned(
     env: Env, bad: bytes
@@ -129,13 +131,15 @@ async def test_a_file_with_an_invalid_language_ietf_can_be_drafted_and_planned(
 
 
 def with_long_names(path: Path, name: str) -> None:
-    tool = shutil.which("mkvpropedit")
-    assert tool is not None
     names = [arg for n in (1, 2, 3) for arg in ("--edit", f"track:a{n}", "--set", f"name={name}")]
-    subprocess.run([tool, str(path), *names], check=True, capture_output=True)
+    subprocess.run(
+        [mkvtoolnix_tool("mkvpropedit"), str(path), *names], check=True, capture_output=True
+    )
 
 
-async def test_an_in_place_edit_of_a_file_with_a_seek_position_past_2_63_ends_as_data(
+@needs_writer
+@pytest.mark.needs_mkvtoolnix
+async def test_an_in_place_edit_of_a_file_with_a_seek_position_past_2_63_is_refused(
     env: Env,
 ) -> None:
     long = "N" * 6000
@@ -151,7 +155,9 @@ async def test_an_in_place_edit_of_a_file_with_a_seek_position_past_2_63_ends_as
         ended = await run(app, job)
         assert ended.state is JobState.FAILED
         assert ended.error is not None
-        assert ended.error.startswith("mkvpropedit failed (exit code 2)"), ended.error
+        assert ended.error.startswith(
+            "Reframe cannot edit the Matroska header of Show.S01E01.mkv:"
+        ), ended.error
         assert env.source.read_bytes() == before
     finally:
         await app.close()

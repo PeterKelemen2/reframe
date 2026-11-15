@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import sqlite3
+import threading
 import time
 from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
@@ -18,6 +19,8 @@ import pytest
 from reframe.command import build_plan
 from reframe.definitions import load_definitions
 from reframe.events import EventBus
+from reframe.metadata import header
+from reframe.metadata.header import HeaderEditResult
 from reframe.models import (
     AppSettings,
     AudioOutputTrack,
@@ -26,6 +29,7 @@ from reframe.models import (
     EncoderState,
     EncoderStatus,
     Event,
+    HeaderEdit,
     JobSettings,
     MediaSource,
     OutputSettings,
@@ -109,7 +113,9 @@ def all_caps(*, state: EncoderState = EncoderState.AVAILABLE) -> CapabilitySnaps
     return CapabilitySnapshot(encoders=encoders, filters=names)
 
 
-def tool_set(ffmpeg: Path, *, mkvpropedit: Path | None = None) -> ToolSet:
+def tool_set(ffmpeg: Path) -> ToolSet:
+    """The fake FFmpeg as ffmpeg and ffprobe; no MKVToolNix, which no plan needs."""
+
     def info(name: Any, path: Path | None) -> ToolInfo:
         return ToolInfo(
             name=name,
@@ -120,9 +126,41 @@ def tool_set(ffmpeg: Path, *, mkvpropedit: Path | None = None) -> ToolSet:
     return ToolSet(
         ffmpeg=info("ffmpeg", ffmpeg),
         ffprobe=info("ffprobe", ffmpeg),
-        mkvpropedit=info("mkvpropedit", mkvpropedit),
+        mkvpropedit=info("mkvpropedit", None),
         mediainfo=info("mediainfo", None),
     )
+
+
+@dataclass
+class FakeWriter:
+    """Stands in for the Matroska header writer (it runs in a worker thread): records each
+    edit and returns :attr:`result`, or raises :attr:`raises`. With :attr:`hold`, a write
+    waits for :meth:`release` (at most 30 s). :attr:`effect` runs when a write ends (the
+    stubbed probe then shows the new values)."""
+
+    result: HeaderEditResult = field(default_factory=lambda: HeaderEditResult("written"))
+    raises: Exception | None = None
+    hold: bool = False
+    effect: Callable[[], None] | None = None
+    edits: list[HeaderEdit] = field(default_factory=list)
+    started: threading.Event = field(default_factory=threading.Event)
+    finished: threading.Event = field(default_factory=threading.Event)
+    _released: threading.Event = field(default_factory=threading.Event)
+
+    def __call__(self, edit: HeaderEdit) -> HeaderEditResult:
+        self.edits.append(edit)
+        self.started.set()
+        if self.hold and not self._released.wait(30):
+            raise TimeoutError("the test never released the write")
+        if self.effect is not None:
+            self.effect()
+        self.finished.set()
+        if self.raises is not None:
+            raise self.raises
+        return self.result
+
+    def release(self) -> None:
+        self._released.set()
 
 
 @dataclass
@@ -241,6 +279,7 @@ def draft(source: MediaSource, output: Path, **video: Any) -> JobSettings:
 class Harness:
     tmp: Path
     fake: ft.FakeTools
+    writer: FakeWriter
     events: RecordingBus
     settings: AppSettings
     tools: StubTools
@@ -372,7 +411,9 @@ async def restore_together(h: Harness, *jobs: JobSettings) -> list[str]:
 
 
 @pytest.fixture
-async def harness(tmp_path: Path, fake_tools: ft.FakeTools) -> AsyncIterator[Harness]:
+async def harness(
+    tmp_path: Path, fake_tools: ft.FakeTools, monkeypatch: pytest.MonkeyPatch
+) -> AsyncIterator[Harness]:
     source_path = tmp_path / "media" / "Movie.Source.mkv"
     source_path.parent.mkdir()
     source_path.write_bytes(b"not really matroska")
@@ -385,9 +426,12 @@ async def harness(tmp_path: Path, fake_tools: ft.FakeTools) -> AsyncIterator[Har
     sources = StubSources(recorded("multitrack.mkv", source_path))
     backend = CountingBackend()
     inhibitor = SleepInhibitor([backend], events)
+    writer = FakeWriter()
+    monkeypatch.setattr(header, "apply_header_edit", writer)
     harness = Harness(
         tmp=tmp_path,
         fake=fake_tools,
+        writer=writer,
         events=events,
         settings=settings,
         tools=tools,
@@ -411,4 +455,5 @@ async def harness(tmp_path: Path, fake_tools: ft.FakeTools) -> AsyncIterator[Har
     try:
         yield harness
     finally:
+        writer.release()  # never leave a write waiting (the queue's close waits for it)
         await harness.queue.close()

@@ -141,7 +141,62 @@ Until task I merges, a `header_edit` step still runs mkvpropedit. Tasks and cont
 
 ### Built: I (the plan step, runner and validation)
 
-*Placeholder.*
+1. **The edit computation** is `command/header.py` (pure): `in_place_edit` (what differs from
+   the probed source, as a `HeaderEdit`), `fixup_edit` (the `LanguageIETF` fix-up) and
+   `edit_line` (the preview line). `command/mkvpropedit.py`, `header_edit()`,
+   `header_edit_args()` and `command/metadata.ietf_edits` are gone.
+2. **The fix-up is planned for every MKV output that has a language ISO 639-2 cannot say**,
+   with no tool check. It writes only `Language` + `LanguageIETF`: FFmpeg writes all six
+   flags, so the flag part of the fix-up is gone with its definitions field (item 6).
+3. **The preview line** of a `header_edit` step is the word `header_edit`, the shell-quoted
+   file, then per track `<type> <n>:` and its `field=value` words, then the title:
+   `header_edit /media/Show.mkv audio 1: language=hun language_ietf=hu name='Magyar 5.1'
+   default=0 original=1 audio 3: delete_name title='Show – S01E02'`. The field names are
+   those of `TrackHeaderEdit`; a flag is `0`/`1`; `delete_name` and `delete_title` remove.
+   Values use the shell's quoting, so the line splits into words as the other steps do. It
+   is not a command; the job log shows the same line.
+4. **The runner** runs the writer in the default executor with
+   `loop.run_in_executor(None, apply_header_edit, edit)`, not `asyncio.to_thread`: the result
+   is a plain future, not a task, so an event loop that shuts down (it cancels every task)
+   does not cancel the wait for the writer's result. The awaiting task is shielded; a
+   cancelled task waits for the write, sets `end_note` (what the file holds) and re-raises.
+   - **Cancel and `close()`**: a thread cannot be stopped, so every `header_edit` step (in
+     place and the fix-up on the `.part` file) runs to its end; the log says "it is let
+     finish". The fix-up's `.part` file is removed only after the write (on Windows an open
+     file cannot be removed). A cancel before the write starts writes nothing.
+   - **Pause**: the job shows `paused` at once (its inhibit is freed); the write, which cannot
+     be suspended and is short, runs to its end, and nothing after it (the next step, the
+     check of the edited source) starts until resume. A stop of a paused job during the
+     write shows it `running` again until it ends, as before.
+   - **Time limit**: none for a `header_edit` step. A limit could only stop waiting while the
+     thread may still write the user's file, and another job could then start on it. The
+     writer's work is bounded by the reader's `MAX_*` limits; only a hung file system can
+     hold it, and then the job stays running and `close()` waits. The 5-minute limit stays
+     for a tool step other than FFmpeg (none is planned now).
+   - **Results**: `refused` fails the step with the writer's reason and "Nothing was changed
+     in the file"; `failed` fails the job with "The file holds either all its old values or
+     all the new ones", also when it came after a cancel; a writer that raises is an internal
+     error. The log line is `Step i/n ended: <status> (<code>): <reason> after <s> s`.
+   - A run that a crash stopped during an in-place edit is restored with "If Reframe was
+     writing the header of X at that moment, the file holds either all its old values or all
+     the new ones."
+5. **Validation**: `tool.mkvpropedit_missing` (in-place error and flag warning) and
+   `metadata.language_tag_lost` are gone with their tests; a test proves that an in-place
+   edit, a BCP 47 language and every flag validate without an issue when no MKVToolNix is
+   found.
+6. **Definitions**: `TrackFlagDef.mkvpropedit` and `ContainerDef.mkvpropedit_flags` are
+   **dropped**, not renamed. The writer uses the flag names of `HeaderFlag` and owns the
+   Matroska element IDs; no container set `mkvpropedit_flags`, and a muxer that cannot write
+   a flag is now only `container.flag_unsupported`. The definitions are package data, not a
+   persisted user document, so no migration; the lint rule about the field is gone. Both
+   models are in the OpenAPI document, so `frontend/src/api/schema.d.ts` changes.
+7. **The guard against MKVToolNix** (`tests/queue/test_no_mkvtoolnix.py`): an AST scan of
+   every module under `packages/reframe/src` and `packages/reframe-server/src` for string
+   constants (outside docstrings) that name `mkvpropedit`, `mkvmerge`, `mkvinfo` or
+   `mkvextract`, and two queue runs that record every process started (an in-place edit
+   starts none; an encode with the fix-up starts only FFmpeg). Until P lands, the scan skips
+   `reframe/tools/**`, `models/tools.py`, `paths.py` and `cli.py`; `models/migrations.py` may
+   name the removed settings key.
 
 ### Built: P (mkvpropedit leaves the product)
 

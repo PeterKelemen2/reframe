@@ -666,8 +666,6 @@ def _lint_container(w: str, cont: ContainerDef, audio_codecs: set[str]) -> list[
             out.append(f"{w}.codec_tags: the container cannot hold {codec}")
         if not tag:
             out.append(f"{w}.codec_tags: empty tag for {codec}")
-    if set(cont.flags) & set(cont.mkvpropedit_flags):
-        out.append(f"{w}: a flag is both muxer-written and mkvpropedit-written")
     if "default" not in cont.flags:
         out.append(f"{w}: every muxer writes the default flag")
     return out

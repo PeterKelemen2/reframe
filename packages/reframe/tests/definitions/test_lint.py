@@ -349,7 +349,6 @@ def test_container_problems_are_reported() -> None:
         mp4["audio"]["encode"] = ["aac", "vorbis"]
         mp4["subtitles"]["encode"] = ["pgs"]
         mp4["audio"]["copy_args"] = {"vorbis": ["-strict", "-2"]}
-        mp4["mkvpropedit_flags"] = ["default"]
         raw["containers"]["webm"]["flags"] = ["forced"]
         raw["containers"]["webm"]["subtitles"] = {"copy": [], "encode": []}
         raw["containers"]["webm"]["audio"]["copy_except"] = ["aac"]
@@ -366,7 +365,6 @@ def test_container_problems_are_reported() -> None:
         "unknown formats ['pgs']",
         "text_subtitle_target",
         "vorbis is not copyable",
-        "both muxer-written and mkvpropedit-written",
         "webm: every muxer writes the default flag",
         "webm.subtitles: holds nothing",
         "webm.audio.copy_except: only needed with copy = ['*']",

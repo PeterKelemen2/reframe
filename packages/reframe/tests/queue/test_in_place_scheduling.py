@@ -72,7 +72,6 @@ async def test_conflict_rule(harness: Harness, tmp_path: Path) -> None:
 async def test_an_in_place_edit_waits_for_an_encode_of_its_source(harness: Harness) -> None:
     h = harness
     h.settings.queue.parallel_jobs = 2
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     h.scenario(encode_rule(ft.progress(blocks=1, end=False), ft.hang()))
     encode, edit = await restore_together(h, h.job("Encode"), in_place_job(h))
     h.queue.start()
@@ -89,7 +88,6 @@ async def test_an_in_place_edit_waits_for_an_encode_of_its_source(harness: Harne
 async def test_an_encode_waits_for_an_in_place_edit_of_its_source(harness: Harness) -> None:
     h = harness
     h.settings.queue.parallel_jobs = 2
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     h.scenario(encode_rule(ft.progress(blocks=1, end=True)))
     edit = await h.queue.add(in_place_job(h))
     encode = await h.queue.add(h.job("Encode"))
@@ -101,7 +99,6 @@ async def test_an_encode_waits_for_an_in_place_edit_of_its_source(harness: Harne
 async def test_two_in_place_edits_of_one_file_run_one_after_the_other(harness: Harness) -> None:
     h = harness
     h.settings.queue.parallel_jobs = 2
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     first, second = await restore_together(h, in_place_job(h, "One"), in_place_job(h, "Two"))
     h.queue.start()
     await h.queue.wait([first, second])
@@ -113,7 +110,7 @@ async def test_restored_in_place_jobs_have_nothing_to_clean_up(
 ) -> None:
     h = harness
     h.settings.output.partial_file = "delete"
-    tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
+    tools = tool_set(h.fake.ffmpeg)
     job = in_place_job(h)
     plan = build_plan(job, h.sources.source, all_caps(), tools)
     assert plan.job_type == "metadata_edit"

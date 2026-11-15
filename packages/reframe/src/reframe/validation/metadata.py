@@ -6,12 +6,11 @@ from __future__ import annotations
 from collections.abc import Iterator
 
 from reframe import languages
-from reframe.command.metadata import dispositions, needs_ietf
+from reframe.command.metadata import dispositions
 from reframe.definitions import ContainerDef
 from reframe.models.issues import ValidationIssue
 from reframe.models.job import TrackMetadata
-from reframe.models.tools import ToolStatus
-from reframe.validation.common import error, fix, replace, tool_problem, warning
+from reframe.validation.common import error, fix, replace, warning
 from reframe.validation.context import JobContext
 from reframe.validation.registry import job_rule
 
@@ -44,35 +43,6 @@ def _written_languages(ctx: JobContext) -> Iterator[tuple[str, str | None]]:
         else:
             source = subtitle.source.language
         yield f"subtitles[{index}].metadata", subtitle.metadata.language or source
-
-
-@job_rule("metadata", "metadata.language_tag_lost")
-def language_tags(ctx: JobContext) -> Iterator[ValidationIssue]:
-    """A BCP 47 tag that ISO 639-2 cannot say (``pt-BR``, ``yue``) needs mkvpropedit to write
-    Matroska's ``LanguageIETF``. Without it only the ISO 639-2 code is written: a warning,
-    with a fix that writes the code on purpose."""
-    container = ctx.container
-    if (
-        container is None
-        or container.id != "mkv"
-        or container.language_format != "iso639_2b"
-        or ctx.tools.mkvpropedit.status is ToolStatus.FOUND
-    ):
-        return
-    for prefix, language in _written_languages(ctx):
-        if language is None or languages.validate(language) is not None:
-            continue
-        if not needs_ietf(language):
-            continue
-        legacy = languages.to_matroska_legacy(language)
-        yield warning(
-            "metadata.language_tag_lost",
-            f"{prefix}.language",
-            f"The language {language} needs mkvpropedit after muxing (Matroska LanguageIETF), "
-            f"which is not available: only {legacy!r} is written."
-            f"{tool_problem(ctx.tools.mkvpropedit)}",
-            fix(f"Write it as {legacy}", replace(f"{prefix}.language", legacy), target=ctx.target),
-        )
 
 
 @job_rule("metadata", "metadata.language_invalid")
@@ -120,17 +90,11 @@ def track_names(ctx: JobContext) -> Iterator[ValidationIssue]:
 
 
 def _written_default(ctx: JobContext, container: ContainerDef, metadata: TrackMetadata) -> bool:
-    """The default flag as the plan writes it: an FFmpeg disposition, else the mkvpropedit
-    step after muxing."""
+    """The default flag as the plan writes it: an FFmpeg disposition."""
     if not metadata.default:
         return False
     disposition = ctx.definitions.track_flags["default"].disposition
-    if disposition in dispositions(metadata, container, ctx.definitions).split("+"):
-        return True
-    return (
-        "default" in container.mkvpropedit_flags
-        and ctx.tools.mkvpropedit.status is ToolStatus.FOUND
-    )
+    return disposition in dispositions(metadata, container, ctx.definitions).split("+")
 
 
 @job_rule("metadata", "metadata.several_defaults")

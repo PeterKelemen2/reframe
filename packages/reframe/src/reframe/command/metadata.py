@@ -2,7 +2,7 @@
 
 Stream tags are never copied: every output track gets its language, title and flags written
 explicitly. A BCP 47 tag that ISO 639-2 cannot express is written to Matroska ``LanguageIETF``
-by an mkvpropedit step, since FFmpeg never writes that element.
+by a ``header_edit`` step, since FFmpeg never writes that element.
 """
 
 from __future__ import annotations
@@ -48,7 +48,6 @@ __all__ = [
     "dispositions",
     "ffmetadata",
     "generated_starts",
-    "ietf_edits",
     "needs_ietf",
     "planned_chapters",
     "render_tag",
@@ -131,16 +130,6 @@ def stream_metadata_args(
             f"-disposition:{t.type}:{t.index}",
             dispositions(t.metadata, container, definitions),
         ]
-    return args
-
-
-def ietf_edits(tracks: list[OutputTrack]) -> list[str]:
-    """``mkvpropedit`` arguments for the tracks whose language needs ``LanguageIETF``."""
-    args: list[str] = []
-    for t in tracks:
-        if needs_ietf(t.language):
-            tag = languages.to_matroska_ietf(t.language)
-            args += ["--edit", f"track:{t.type}{t.index + 1}", "--set", f"language={tag}"]
     return args
 
 

@@ -32,7 +32,7 @@ __all__ = [
 #: Seconds of active time without progress, output or CPU use before an FFmpeg step counts as
 #: stalled.
 STALL_AFTER = 600.0
-#: Seconds of active time a short step (``mkvpropedit``) may take.
+#: Seconds of active time a tool step other than FFmpeg may take.
 STEP_TIME_LIMIT = 300.0
 #: Seconds between two watchdog ticks.
 TICK = 5.0

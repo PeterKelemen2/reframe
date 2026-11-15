@@ -2974,11 +2974,6 @@ export interface components {
              */
             flags: ("default" | "forced" | "commentary" | "hearing_impaired" | "visual_impaired" | "original")[];
             /**
-             * Mkvpropedit Flags
-             * @description Flags the muxer cannot write that a ``mkvpropedit`` step can.
-             */
-            mkvpropedit_flags?: ("default" | "forced" | "commentary" | "hearing_impaired" | "visual_impaired" | "original")[];
-            /**
              * Default Always Set
              * @description MP4: when no track of a type is default, the muxer marks the first one default.
              * @default false
@@ -5468,7 +5463,7 @@ export interface components {
             naming?: components["schemas"]["JobNaming"];
             /**
              * Edit In Place
-             * @description Remux-only jobs on MKV: edit metadata in place with mkvpropedit.
+             * @description Remux-only jobs on MKV: edit the metadata of the source in place, with no new file.
              * @default false
              */
             edit_in_place: boolean;
@@ -7220,13 +7215,11 @@ export interface components {
         };
         /**
          * TrackFlagDef
-         * @description How a track flag is written: FFmpeg disposition and mkvpropedit property.
+         * @description How a track flag is written: its FFmpeg disposition.
          */
         TrackFlagDef: {
             /** Disposition */
             disposition: string;
-            /** Mkvpropedit */
-            mkvpropedit: string;
         };
         /**
          * TrackFlags
