@@ -15,7 +15,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "guessit>=4.4.0",
+    "guessit>=4.5.1",
     "langcodes>=3.5.1",
     "language-data>=1.4.0",
     "platformdirs>=4.13.0",
