@@ -59,9 +59,11 @@ def test_every_distribution_that_provides_a_shipped_module_is_listed() -> None:
 def test_the_frozen_sidecars_modules_and_libraries_are_read() -> None:
     names = tpn.shipped_top_level_names(SIDECAR)
 
-    # pydantic is pure Python inside the executables' archives; pydantic_core and pymediainfo
-    # are folders in _internal.
-    assert {"pydantic", "guessit", "uvicorn", "typer", "pydantic_core", "pymediainfo"} <= names
+    # pydantic is pure Python inside the executables' archives; pydantic_core is a folder in
+    # _internal.
+    assert {"pydantic", "guessit", "uvicorn", "typer", "pydantic_core"} <= names
+    # The language tables replace these libraries; MediaInfo is not used.
+    assert not {"langcodes", "language_data", "marisa_trie", "pymediainfo"} & names
 
 
 def test_a_missing_sidecar_is_an_error(tmp_path: Path) -> None:
@@ -231,63 +233,40 @@ def test_a_library_pinned_for_another_platform_gets_no_entry(tmp_path: Path) -> 
     assert entry.name == "ffmpeg"
 
 
-def _write_pin(path: Path, table: str) -> None:
-    path.write_text(
-        f"[{table}]\n"
-        'version = "103.0"\nlicense = "GPL-2.0-only"\nlicense_file = "COPYING"\n'
-        'source_url = "https://mkvtoolnix.download/sources/mkvtoolnix-103.0.tar.xz"\n'
-        f"[{table}.platforms.windows-x64]\n"
-        'url = "https://mkvtoolnix.download/windows/mkvtoolnix-64-bit-103.0.7z"\n'
-    )
-
-
-@pytest.mark.parametrize("table", ["builds.default", "tools.mkvtoolnix"])
-def test_another_tools_pin_is_found_in_its_own_or_a_shared_manifest(
-    tmp_path: Path, table: str
-) -> None:
+def test_another_tools_pin_is_found_in_its_own_manifest(tmp_path: Path) -> None:
     manifests = tmp_path / "manifests"
     manifests.mkdir()
-    _write_pin(
-        manifests / ("mkvtoolnix.toml" if table == "builds.default" else "bundled.toml"), table
+    (manifests / "example.toml").write_text(
+        "[builds.default]\n"
+        'version = "1.0"\nlicense = "MIT"\nlicense_file = "COPYING"\n'
+        'source_url = "https://example.invalid/example-1.0.tar.xz"\n'
+        "[builds.default.platforms.windows-x64]\n"
+        'url = "https://example.invalid/example-1.0-win64.zip"\n'
     )
     tools = tmp_path / "tools"
-    _layout(tools, "mkvtoolnix", licence="COPYING")
+    _layout(tools, "example", licence="COPYING")
 
     [entry] = tpn.tool_entries(tools, manifests, "windows-x64")
 
-    assert (entry.name, entry.version, entry.license) == ("mkvtoolnix", "103.0", "GPL-2.0-only")
-    assert "source_url: https://mkvtoolnix.download/sources/mkvtoolnix-103.0.tar.xz" in entry.text
-    assert "windows-x64.url: https://mkvtoolnix.download/windows/" in entry.text
-    assert entry.text.endswith("mkvtoolnix licence text")
+    assert (entry.name, entry.version, entry.license) == ("example", "1.0", "MIT")
+    assert "source_url: https://example.invalid/example-1.0.tar.xz" in entry.text
+    assert "windows-x64.url: https://example.invalid/example-1.0-win64.zip" in entry.text
+    assert entry.text.endswith("example licence text")
 
 
-def test_the_windows_tools_get_their_pins_from_the_repositorys_manifest(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("folder", "licence"), [("mkvtoolnix", "COPYING.txt"), ("mediainfo", "LICENSE")]
+)
+def test_a_laid_out_mkvtoolnix_or_mediainfo_folder_stops_the_windows_notices(
+    tmp_path: Path, folder: str, licence: str
+) -> None:
+    """No pin names them any more: a stale folder would ship without its notices."""
     tools = tmp_path / "tools"
-    (tools / "mediainfo").mkdir(parents=True)
-    (tools / "mediainfo" / "LICENSE").write_text("BSD-2-Clause text")
-    manifest = tpn.tomllib.loads((REPO_ROOT / "tools" / "bundled-tools.toml").read_text())
-
-    [entry] = tpn.tool_entries(tools, REPO_ROOT / "tools", "windows-x64")
-
-    pin = manifest["tools"]["mediainfo"]
-    assert (entry.name, entry.version, entry.license) == (
-        "mediainfo",
-        pin["version"],
-        pin["license"],
-    )
-    for value in (pin["source_url"], pin["source_tag"], pin["platforms"]["windows-x64"]["sha256"]):
-        assert value in entry.text
-    assert entry.text.endswith("BSD-2-Clause text")
-
-
-def test_a_laid_out_mkvtoolnix_folder_stops_the_windows_notices(tmp_path: Path) -> None:
-    """No pin names MKVToolNix any more: a stale folder would ship without its notices."""
-    tools = tmp_path / "tools"
-    (tools / "mkvtoolnix" / "doc").mkdir(parents=True)
-    (tools / "mkvtoolnix" / "doc" / "COPYING.txt").write_text("GPL-2.0 text")
+    (tools / folder).mkdir(parents=True)
+    (tools / folder / licence).write_text("licence text")
 
     with pytest.raises(
-        tpn.NoticesError, match=r"mkvtoolnix is bundled but no manifest in .* pins it"
+        tpn.NoticesError, match=rf"{folder} is bundled but no manifest in .* pins it"
     ):
         tpn.tool_entries(tools, REPO_ROOT / "tools", "windows-x64")
 
@@ -316,46 +295,6 @@ def test_no_tools_folder_gives_no_tool_entries(tmp_path: Path) -> None:
     assert tpn.tool_entries(tmp_path / "missing", REPO_ROOT / "tools", "linux-x64") == []
 
 
-def test_the_mediainfo_library_licence_is_read_for_the_bundled_version(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from pymediainfo import MediaInfo
-
-    (tmp_path / "_internal" / "pymediainfo").mkdir(parents=True)
-    (tmp_path / "_internal" / "pymediainfo" / "libmediainfo.so.0").write_bytes(b"")
-    requested: list[str] = []
-
-    class Response:
-        def __enter__(self) -> Response:
-            return self
-
-        def __exit__(self, *args: object) -> None:
-            pass
-
-        def read(self) -> bytes:
-            return b"BSD 2-Clause License"
-
-    def urlopen(request: Any, timeout: float) -> Response:
-        requested.append(request.full_url)
-        return Response()
-
-    monkeypatch.setattr(tpn.urllib.request, "urlopen", urlopen)
-
-    [entry] = tpn.mediainfo_library_entry(tmp_path)
-
-    version = MediaInfo._get_library()[2]
-    assert requested == [
-        f"https://raw.githubusercontent.com/MediaArea/MediaInfoLib/v{version}/LICENSE"
-    ]
-    assert (entry.version, entry.text) == (version, "BSD 2-Clause License")
-
-
-def test_no_mediainfo_library_in_the_sidecar_needs_no_notice(tmp_path: Path) -> None:
-    (tmp_path / "_internal").mkdir()
-
-    assert tpn.mediainfo_library_entry(tmp_path) == []
-
-
 def test_every_entry_and_its_text_are_written() -> None:
     sections = [
         ("Bundled tools", [tpn.Entry("ffmpeg", "n9.0", "GPL-3.0-or-later", "https://x", "GPL")]),
@@ -382,7 +321,7 @@ def test_the_header_names_the_packages_version(
 ) -> None:
     for name in ("shipped_top_level_names", "shipped_distributions", "python_entries"):
         monkeypatch.setattr(tpn, name, lambda *args: [])
-    for name in ("mediainfo_library_entry", "javascript_entries", "rust_entries"):
+    for name in ("javascript_entries", "rust_entries"):
         monkeypatch.setattr(tpn, name, lambda *args: [])
     monkeypatch.setattr(tpn, "python_interpreter_entry", lambda: tpn.Entry("Python", "3", "PSF"))
     monkeypatch.setattr(tpn, "DEFAULT_TOOLS", tmp_path / "no-tools")
@@ -391,8 +330,60 @@ def test_the_header_names_the_packages_version(
     assert tpn.main(["--platform", "linux-x64", "--out", str(out)]) == 0
 
     config = json.loads((REPO_ROOT / "desktop" / "src-tauri" / "tauri.conf.json").read_text())
-    header = out.read_text().splitlines()[0]
-    assert header == f"Third-party notices for Reframe {config['version']} (linux-x64)"
+    lines = out.read_text().splitlines()
+    assert lines[0] == f"Third-party notices for Reframe {config['version']} (linux-x64)"
+    assert tpn.LANGUAGE_DATA in lines
+    assert "Unicode CLDR 40" in lines
+
+
+DATA_NAMES = [
+    "Unicode CLDR",
+    "IANA Language Subtag Registry",
+    "Wiktionary: List of languages",
+    "langcodes",
+    "language_data",
+]
+
+
+def test_the_language_tables_name_the_sources_of_their_data() -> None:
+    """Every package ships the language tables: CLDR's licence text, the IANA registry, the
+    Wiktionary names' CC BY-SA terms and the MIT notices of the libraries they are built from."""
+    entries = {entry.name: entry for entry in tpn.data_entries()}
+
+    assert list(entries) == DATA_NAMES
+    cldr = entries["Unicode CLDR"].text
+    assert "UNICODE, INC. LICENSE AGREEMENT - DATA FILES AND SOFTWARE" in cldr
+    assert "Copyright © 1991-2021 Unicode, Inc. All rights reserved." in cldr
+    assert "Attribution-ShareAlike" in entries["Wiktionary: List of languages"].text
+    for name in ("langcodes", "language_data"):
+        assert entries[name].license == "MIT"
+        assert "Permission is hereby granted, free of charge" in entries[name].text
+
+
+def test_the_language_data_notices_follow_the_libraries_the_tables_are_built_from() -> None:
+    """A new langcodes or language_data rebuilds the tables (gen-language-data.py --check in
+    CI): the notices must then name that version and its registry."""
+    import importlib.metadata
+    import importlib.resources
+
+    entries = {entry.name: entry for entry in tpn.data_entries()}
+    for name in ("langcodes", "language_data"):
+        assert entries[name].version == importlib.metadata.version(name)
+    registry = importlib.resources.files("language_data") / "data" / "language-subtag-registry.txt"
+    file_date = registry.read_text(encoding="utf-8").splitlines()[0]
+    assert entries["IANA Language Subtag Registry"].version == file_date.replace(":", "")
+    assert f"of {file_date.replace(':', '')}," in entries["IANA Language Subtag Registry"].text
+
+
+def test_a_language_data_table_without_its_text_stops_the_notices(tmp_path: Path) -> None:
+    texts = tmp_path / "licence-texts.toml"
+    texts.write_text('[data."Unicode CLDR"]\nversion = "40"\nlicense = "Unicode-DFS-2016"\n')
+
+    with pytest.raises(tpn.NoticesError, match=r"data\.Unicode CLDR needs its license and text"):
+        tpn.data_entries(texts)
+    texts.write_text("")
+    with pytest.raises(tpn.NoticesError, match=r"has no \[data\] tables"):
+        tpn.data_entries(texts)
 
 
 def test_the_notices_ship_in_every_desktop_package() -> None:
@@ -412,7 +403,7 @@ MANIFEST = {
     "btbn-davs2-0123456789ab.tar.xz": ("btbn-stage", ["linux-x64"]),
     "btbn-mingw-0123456789ab.tar.xz": ("btbn-stage", ["windows-x64"]),
     "btbn-armonly-0123456789ab.tar.xz": ("btbn-stage", ["linux-arm64"]),
-    "MediaInfo_CLI_26.10_GNU_FromSource.tar.xz": ("url", ["windows-x64"]),
+    "example-1.0.tar.xz": ("url", ["windows-x64"]),
     "libva-2.24.1.tar.bz2": ("url", ["linux-x64"]),
     "ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar": ("ubuntu-source", ["linux-x64"]),
     "type2-runtime-dd6cebedcbdd.tar.xz": ("repository", ["linux-x64"]),
@@ -430,7 +421,7 @@ BUNDLED = {
     "windows-x64": [
         *EVERY_PLATFORM,
         "btbn-mingw-0123456789ab.tar.xz",
-        "MediaInfo_CLI_26.10_GNU_FromSource.tar.xz",
+        "example-1.0.tar.xz",
     ],
     "docker-linux-x64": [*EVERY_PLATFORM, "btbn-davs2-0123456789ab.tar.xz"],
     "docker-linux-arm64": [*EVERY_PLATFORM, "btbn-armonly-0123456789ab.tar.xz"],
@@ -529,7 +520,7 @@ def test_the_notices_list_only_the_archives_that_the_platform_bundles(
 @pytest.mark.parametrize(
     ("archive", "platforms"),
     [
-        ("MediaInfo_CLI_26.10_GNU_FromSource.tar.xz", {"windows-x64"}),
+        ("example-1.0.tar.xz", {"windows-x64"}),
         ("ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar", {"linux-x64"}),
         ("libva-2.24.1.tar.bz2", {"linux-x64"}),
         ("btbn-armonly-0123456789ab.tar.xz", {"docker-linux-arm64"}),
@@ -745,8 +736,6 @@ def stub_sections(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tpn, "python_interpreter_entry", lambda: python)
     for name in ("python_entries", "javascript_entries", "rust_entries"):
         monkeypatch.setattr(tpn, name, lambda *args: [])
-    for name in ("docker_mediainfo_entry", "mediainfo_library_entry"):
-        monkeypatch.setattr(tpn, name, lambda *args: [])
     monkeypatch.setattr(tpn, "docker_distributions", lambda machine: [])
     monkeypatch.setattr(tpn, "shipped_top_level_names", lambda sidecar: set())
 
@@ -760,6 +749,7 @@ def test_the_image_notices_list_its_ffmpeg_and_no_desktop_part(tmp_path: Path) -
 
     assert [entry.name for entry in sections["Bundled tools"]] == ["ffmpeg"]
     assert "Statically linked libraries" not in sections
+    assert [entry.name for entry in sections[tpn.LANGUAGE_DATA]] == DATA_NAMES
 
 
 def test_the_image_notices_need_the_folder_with_the_images_ffmpeg(
@@ -797,7 +787,6 @@ def test_the_desktop_notices_list_each_library_a_static_build_links(tmp_path: Pa
 
 @pytest.mark.usefixtures("stub_sections")
 def test_the_windows_notices_name_no_static_build(tmp_path: Path) -> None:
-    """The installers no longer bundle MKVToolNix's mkvpropedit.exe (an MXE static build)."""
     sections = dict(tpn.desktop_sections("windows-x64", tmp_path / "no-tools"))
 
     assert sections["Statically linked libraries"] == []
@@ -921,7 +910,7 @@ def test_each_committed_licence_text_says_where_it_was_read() -> None:
     data = tpn.tomllib.loads(tpn.LICENCE_TEXTS.read_text(encoding="utf-8"))
     for registry, packages in data.items():
         for name, table in packages.items():
-            assert registry in ("npm", "pypi", "sources")
+            assert registry in ("npm", "pypi", "sources", "data")
             assert table["source"].startswith("https://"), name
             assert table["version"], name
             assert re.search(r"copyright", table["text"], re.IGNORECASE), name

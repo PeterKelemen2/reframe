@@ -2893,10 +2893,9 @@ PyInstaller 6.22.3 with pyinstaller-hooks-contrib 2026.9, Tauri 2.12.5 (CLI 2.12
   with the death signal alone (no `--parent-pid`) ended with the job `interrupted` and its
   `.part` file removed.
 - **PyInstaller onedir**: the bootloader runs Python in its own process (no child process;
-  `/proc/<pid>/exe` is the frozen binary). The hooks of pydantic, uvicorn, websockets and
-  langcodes collect what they need; babelfish, language_data, guessit, the `reframe` data and
-  pymediainfo need options (the table in `desktop/spike/README.md`, each with its error). The
-  pymediainfo hook's default library patterns miss the wheel's `libmediainfo.so.0`. Asserted by
+  `/proc/<pid>/exe` is the frozen binary). The hooks of pydantic, uvicorn and websockets
+  collect what they need; babelfish, guessit and the `reframe` data (with the language tables)
+  need options (the table in `desktop/spike/README.md`, each with its error). Asserted by
   `packages/reframe-server/tests/test_frozen_sidecar.py` (skipped without the build).
 - **guessit 4.4.0** reads `guessit/config/options.json` at its first call; without it every call
   raises (`FileNotFoundError`), and the core reads that as "no match".
@@ -2925,12 +2924,10 @@ PyInstaller 6.22.3 with pyinstaller-hooks-contrib 2026.9, Tauri 2.12.5 (CLI 2.12
 - **A process name with `)` and a space**: a Python started through a symlink named `a) b` has
   `comm` `a) b` and a stat line `381433 (a) b) S 381432 …`; only the last `)` ends the name.
   Asserted by `test_parent.py::test_a_process_younger_than_the_server_is_not_its_parent`.
-- **MediaInfo in the frozen build** (`/usr/bin/ffprobe` n9.0.2): of the fixtures, the video
-  bit rate of `anamorphic`, `hdr10-4k`, `hdr10`, `interlaced`, `letterbox`, `pgs`, `vobsub` and
-  `vfr.mkv` comes from MediaInfo (`vfr.mkv`: 483043, source `mediainfo`); a build without
-  `pymediainfo` and `libmediainfo` gives `unknown` for each, and no fixture gets a
-  `language_ietf`. `vfr.mp4` has a stream bit rate from ffprobe (489085). Asserted by
-  `test_frozen_sidecar.py::test_the_frozen_server_reads_bit_rates_with_its_bundled_mediainfo`.
+- **Bit rates in the frozen build** (2026-11-15, the pinned ffprobe n9.0.2): the build has no
+  MediaInfo; `vfr.mkv`'s video bit rate, which ffprobe does not give, is sampled from its
+  clusters (489048, source `estimated`, 1 sample). Asserted by
+  `test_frozen_sidecar.py::test_the_frozen_server_estimates_the_bit_rates_that_ffprobe_does_not_give`.
 - **Tauri's event permissions**: `core:event:default` is `allow-listen`, `allow-unlisten`,
   `allow-emit` and `allow-emit-to` (`src-tauri/gen/schemas/acl-manifests.json`, Tauri 2.12.5).
 - **Tauri's `data_directory`** (Tauri 2.12.5, wry 0.57.0): `WebviewWindowBuilder::data_directory`

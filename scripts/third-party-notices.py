@@ -1,9 +1,9 @@
 """Write THIRD_PARTY_NOTICES for a desktop package or the Docker image: the licences of the
 Python packages that the frozen sidecar (or the image) ships, of the frontend's production
-packages and of the desktop app's Rust crates, the bundled tool builds with their licences and
-corresponding-source links, and the sources release with the SHA-256 and the licence texts of
-each of its archives that the package's platform bundles. Every part must come with a licence
-text: a part without one stops the run.
+packages and of the desktop app's Rust crates, of the data in Reframe's language tables, the
+bundled tool builds with their licences and corresponding-source links, and the sources release
+with the SHA-256 and the licence texts of each of its archives that the package's platform
+bundles. Every part must come with a licence text: a part without one stops the run.
 
 Run it after the sidecar build and the tools layout, in the project environment with
 pip-licenses next to it; ``npx`` and ``cargo about`` must be on ``PATH``. The Linux packages'
@@ -35,7 +35,6 @@ import tempfile
 import textwrap
 import tomllib
 import urllib.parse
-import urllib.request
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,8 +55,6 @@ TEXTS = "licence-texts.json"
 DOC_ROOT = Path("/usr/share/doc")
 
 LICENSE_CHECKER = "license-checker@25.0.1"
-MEDIAINFOLIB_LICENSE = "https://raw.githubusercontent.com/MediaArea/MediaInfoLib/v{version}/LICENSE"
-USER_AGENT = "reframe-third-party-notices/1"
 RUST_TARGETS = {"linux-x64": "x86_64-unknown-linux-gnu", "windows-x64": "x86_64-pc-windows-msvc"}
 #: The Docker image's platforms: the pinned FFmpeg platform and the machine of each.
 DOCKER_PLATFORMS = {
@@ -66,7 +63,7 @@ DOCKER_PLATFORMS = {
 }
 DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile"
 #: The packages the image's ``uv sync`` installs, as ``uv export`` options.
-DOCKER_EXPORT = ("--frozen", "--no-dev", "--all-packages", "--extra", "cli", "--extra", "mediainfo")
+DOCKER_EXPORT = ("--frozen", "--no-dev", "--all-packages", "--extra", "cli")
 _DOCKER_PYTHON_RE = re.compile(r"uv python install (\S+)")
 _SUMS_LINE_RE = re.compile(r"^([0-9a-f]{64}) [ *]([A-Za-z0-9._-]+)$")
 # Reframe's own distributions: their licence is not a third party's.
@@ -269,14 +266,6 @@ def docker_python_version(dockerfile: Path = DOCKERFILE) -> str:
     return str(found[-1])
 
 
-def docker_mediainfo_entry() -> list[Entry]:
-    """The MediaInfo library in the pymediainfo wheel of this environment (the image's has it
-    too)."""
-    import pymediainfo
-
-    return _mediainfo_library(Path(pymediainfo.__file__).parent)
-
-
 def read_sources_sums(path: Path) -> list[tuple[str, str]]:
     """``(sha256, archive)`` of each line of a ``SHA256SUMS`` file (``sha256sum`` format).
 
@@ -464,36 +453,6 @@ def sources_text(url: str, sums: Sequence[tuple[str, str]]) -> str:
     return "\n".join(lines + [f"  {sha256}  {name}" for sha256, name in sums])
 
 
-def mediainfo_library_entry(sidecar: Path) -> list[Entry]:
-    """The MediaInfo library that pymediainfo's wheel carries: the wheel holds pymediainfo's
-    licence only, so the library's comes from MediaInfoLib's tag of that version."""
-    return _mediainfo_library(sidecar / "_internal" / "pymediainfo")
-
-
-def _mediainfo_library(package: Path) -> list[Entry]:
-    if not any(package.glob("*mediainfo*")):
-        return []
-    from pymediainfo import MediaInfo
-
-    version = MediaInfo._get_library()[2]
-    url = MEDIAINFOLIB_LICENSE.format(version=version)
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            text = response.read().decode("utf-8")
-    except (OSError, UnicodeDecodeError) as e:
-        raise NoticesError(f"cannot read the MediaInfoLib licence {url}: {e}") from e
-    return [
-        Entry(
-            name="MediaInfoLib (the library in pymediainfo)",
-            version=version,
-            license="BSD-2-Clause",
-            url=f"https://github.com/MediaArea/MediaInfoLib/tree/v{version}",
-            text=text,
-        )
-    ]
-
-
 def javascript_entries(frontend: Path) -> list[Entry]:
     output = _run(
         [
@@ -537,13 +496,38 @@ def parse_license_checker(packages: Mapping[str, Mapping[str, Any]]) -> list[Ent
 
 def read_licence_texts(path: Path = LICENCE_TEXTS) -> dict[str, list[tuple[str, str]]]:
     """``[registry."name"]`` tables of ``tools/licence-texts.toml``: ``(name pattern, text)`` by
-    registry (``npm``, ``pypi``, and ``sources`` for archive names)."""
+    registry (``npm``, ``pypi``, ``sources`` for archive names, and ``data``)."""
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     return {
         registry: [(str(name), str(table["text"])) for name, table in sorted(packages.items())]
         for registry, packages in data.items()
         if isinstance(packages, dict)
     }
+
+
+def data_entries(path: Path = LICENCE_TEXTS) -> list[Entry]:
+    """The ``[data."name"]`` tables of ``tools/licence-texts.toml``: the sources of the language
+    tables in ``reframe/definitions/data``, which every package ships.
+
+    :raises NoticesError: there is none, or one lacks its licence or text.
+    """
+    tables = tomllib.loads(path.read_text(encoding="utf-8")).get("data", {})
+    entries = []
+    for name, table in tables.items():
+        if not str(table.get("license", "")).strip() or not str(table.get("text", "")).strip():
+            raise NoticesError(f"{path.name}: data.{name} needs its license and text")
+        entries.append(
+            Entry(
+                name=name,
+                version=str(table.get("version", "")),
+                license=str(table["license"]),
+                url=str(table.get("url", "")),
+                text=str(table["text"]),
+            )
+        )
+    if not entries:
+        raise NoticesError(f"{path.name} has no [data] tables: the language tables need them")
+    return entries
 
 
 def with_texts(entries: Sequence[Entry], registry: str) -> list[Entry]:
@@ -624,21 +608,12 @@ def parse_cargo_about(report: Mapping[str, Any]) -> list[Entry]:
 
 
 def _pin_tables(tool: str, manifests: Path) -> tuple[Mapping[str, Any], Path] | None:
-    """The table that pins ``tool``: ``[builds.default]`` of ``tools/<tool>.toml``, or
-    ``[tools.<tool>]`` of another manifest there."""
-    own = manifests / f"{tool}.toml"
-    candidates = [own, *sorted(p for p in manifests.glob("*.toml") if p != own)]
-    for path in candidates:
-        if not path.is_file():
-            continue
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-        if path == own:
-            table = data.get("builds", {}).get("default")
-        else:
-            table = data.get("tools", {}).get(tool)
-        if isinstance(table, dict):
-            return table, path
-    return None
+    """The table that pins ``tool``: ``[builds.default]`` of ``tools/<tool>.toml``."""
+    path = manifests / f"{tool}.toml"
+    if not path.is_file():
+        return None
+    table = tomllib.loads(path.read_text(encoding="utf-8")).get("builds", {}).get("default")
+    return (table, path) if isinstance(table, dict) else None
 
 
 def _strings(table: Mapping[str, Any], skip: Iterable[str] = ()) -> list[tuple[str, str]]:
@@ -792,6 +767,9 @@ def render(
     return "\n".join(out) + "\n"
 
 
+LANGUAGE_DATA = "Language data (in Reframe's language tables)"
+
+
 def desktop_sections(platform: str, tools: Path) -> list[tuple[str, list[Entry]]]:
     names = shipped_top_level_names(DEFAULT_SIDECAR)
     distributions = shipped_distributions(names, importlib.metadata.packages_distributions())
@@ -799,10 +777,8 @@ def desktop_sections(platform: str, tools: Path) -> list[tuple[str, list[Entry]]
         ("Bundled tools", tool_entries(tools, TOOL_MANIFESTS, platform)),
         ("Statically linked libraries", static_entries(TOOL_MANIFESTS, platform)),
         ("Python (the sidecar's interpreter)", [python_interpreter_entry()]),
-        (
-            "Python packages (the sidecar)",
-            python_entries(distributions) + mediainfo_library_entry(DEFAULT_SIDECAR),
-        ),
+        ("Python packages (the sidecar)", python_entries(distributions)),
+        (LANGUAGE_DATA, data_entries()),
         ("JavaScript packages (the user interface)", javascript_entries(FRONTEND)),
         ("Rust crates (the desktop app)", rust_entries(TAURI_DIR / "Cargo.toml", platform)),
     ]
@@ -825,10 +801,8 @@ def docker_sections(platform: str, tools: Path) -> list[tuple[str, list[Entry]]]
     return [
         ("Bundled tools", tool_entries(tools, TOOL_MANIFESTS, ffmpeg_platform, libraries=False)),
         ("Python (the image's interpreter)", [python_interpreter_entry()]),
-        (
-            "Python packages (the server)",
-            python_entries(docker_distributions(machine)) + docker_mediainfo_entry(),
-        ),
+        ("Python packages (the server)", python_entries(docker_distributions(machine))),
+        (LANGUAGE_DATA, data_entries()),
         ("JavaScript packages (the user interface)", javascript_entries(FRONTEND)),
     ]
 
