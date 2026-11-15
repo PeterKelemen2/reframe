@@ -31,6 +31,8 @@ from reframe.probe import (
     sampling,
 )
 from reframe.probe import prober as prober_mod
+from reframe.probe.cache import ProbeCache
+from reframe.probe.folder import probe_folder
 from reframe.probe.matroska import MatroskaFile, MatroskaTrack, read_matroska
 from reframe.probe.sampling import ClusterSample, estimate_bitrates, sample_clusters
 from reframe.tools import CancelToken
@@ -354,6 +356,15 @@ def test_audio_per_second_and_the_single_video_by_subtraction() -> None:
     assert source.video[0].bitrate == _estimated(5_000_000 - 200_000 - 640_000 - 40_000)
 
 
+def test_bytes_that_are_not_streams_are_not_the_videos() -> None:
+    """Attachments, cues and tags are in the file's size, not in any stream."""
+    source = _source(_video(0), _audio(1))
+    info = _tracks("video", "audio")
+    info.other_bytes = 1_000_000  # 80 kb/s over the 100 s
+    estimate_bitrates(source, info, ClusterSample(4, 10.0, {2: 250_000}))
+    assert source.video[0].bitrate == _estimated(5_000_000 - 80_000 - 200_000, samples=4)
+
+
 def test_a_track_the_file_has_but_ffprobe_does_not_map_is_subtracted() -> None:
     source = _source(_video(0))
     sample = ClusterSample(4, 10.0, {1: 100, 2: 125_000})
@@ -547,3 +558,170 @@ async def test_a_sample_that_cannot_read_the_file_leaves_the_rates_unknown(
     source = await _fake_prober(fake_tools, probe).probe(path, use_cache=False)
     assert isinstance(source, MediaSource), source
     assert source.audio[0].bitrate == BitrateInfo()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("error", [OverflowError, ZeroDivisionError, ValueError])
+async def test_an_error_in_the_sample_leaves_the_rates_unknown(
+    fake_tools: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: type
+) -> None:
+    def fail(path: Path, info: MatroskaFile, **kw: Any) -> None:
+        raise error("a value the arithmetic cannot take")
+
+    monkeypatch.setattr(sampling, "sample_clusters", fail)
+    path, probe = _two_audio_file(tmp_path)
+    source = await _fake_prober(fake_tools, probe).probe(path, use_cache=False)
+    assert isinstance(source, MediaSource), source
+    assert [a.bitrate for a in source.audio] == [BitrateInfo(), BitrateInfo()]
+    assert source.video[0].bitrate == BitrateInfo()
+
+
+def _huge_timestamp_scale_file(tmp_path: Path, name: str = "huge.mkv") -> Path:
+    """A ``TimestampScale`` of 130 bytes and no ``Duration``: a float of the cluster spans
+    overflows."""
+    clusters = [cluster(i * 1000, [(1, 50_000), (2, 8_000)]) for i in range(4)]
+    return write(tmp_path, mkv(clusters, scale=1 << (8 * 130 - 1)), name)
+
+
+@pytest.mark.anyio
+async def test_a_huge_timestamp_scale_keeps_the_rates_unknown(
+    fake_tools: ft.FakeTools, tmp_path: Path
+) -> None:
+    path = _huge_timestamp_scale_file(tmp_path)
+    probe = _probe_json(tmp_path, path, _video(0), _audio(1), duration=4.0)
+    source = await _fake_prober(fake_tools, probe).probe(path, use_cache=False)
+    assert isinstance(source, MediaSource), source
+    assert [source.video[0].bitrate, source.audio[0].bitrate] == [BitrateInfo(), BitrateInfo()]
+
+
+@pytest.mark.anyio
+async def test_a_huge_timestamp_scale_does_not_fail_the_folder(
+    fake_tools: ft.FakeTools, tmp_path: Path
+) -> None:
+    folder = tmp_path / "season"
+    folder.mkdir()
+    damaged = _huge_timestamp_scale_file(folder, "e01.mkv")
+    good = write(folder, mkv([cluster(i * 1000, [(1, 50_000), (2, 8_000)]) for i in range(4)]),
+                 "e02.mkv")  # fmt: skip
+    probe = _probe_json(tmp_path, good, _video(0), _audio(1), duration=4.0)
+    result = await probe_folder(_fake_prober(fake_tools, probe), folder)
+    assert result.errors == []
+    assert [s.ref.path.name for s in result.sources] == [damaged.name, good.name]
+    assert result.sources[1].audio[0].bitrate.source is BitrateSource.ESTIMATED
+
+
+def _first_sample_times_out(path: Path, info: MatroskaFile, *, stop: Callable[[], bool]) -> None:
+    while not stop():
+        time.sleep(0.01)
+
+
+def _first_sample_cannot_read(path: Path, info: MatroskaFile, **kw: Any) -> None:
+    raise OSError("the share went away")
+
+
+def _first_sample_finds_no_cluster(path: Path, info: MatroskaFile, **kw: Any) -> None:
+    return None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("first", "sampled_again"),
+    [
+        (_first_sample_times_out, True),
+        (_first_sample_cannot_read, True),
+        (_first_sample_finds_no_cluster, False),
+    ],
+    ids=["timed-out", "unreadable", "no-cluster"],
+)
+async def test_a_sample_that_could_not_run_is_not_cached(
+    fake_tools: ft.FakeTools,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    first: Callable[..., ClusterSample | None],
+    sampled_again: bool,
+) -> None:
+    """A slow or unreachable share is not the file: the next probe samples again. A file
+    without a usable cluster stays cached."""
+    real = sampling.sample_clusters
+    calls: list[str] = []
+
+    def sample(path: Path, info: MatroskaFile, **kw: Any) -> ClusterSample | None:
+        calls.append(path.name)
+        return first(path, info, **kw) if len(calls) == 1 else real(path, info, **kw)
+
+    monkeypatch.setattr(sampling, "sample_clusters", sample)
+    monkeypatch.setattr(prober_mod, "SAMPLE_TIMEOUT", 0.2)
+    path, probe = _two_audio_file(tmp_path)
+    prober = _fake_prober(fake_tools, probe)
+    prober.cache = ProbeCache(tmp_path / "cache")
+    once = await prober.probe(path)
+    assert isinstance(once, MediaSource), once
+    assert once.audio[0].bitrate == BitrateInfo()
+    again = await prober.probe(path)
+    assert isinstance(again, MediaSource), again
+    assert len(calls) == (2 if sampled_again else 1)
+    assert (again.audio[0].bitrate.source is BitrateSource.ESTIMATED) is sampled_again
+
+
+@pytest.mark.anyio
+async def test_track_headers_that_timed_out_are_not_cached(
+    fake_tools: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = matroska.read_matroska
+    release = threading.Event()
+    calls: list[Path] = []
+
+    def read(path: Path) -> MatroskaFile:
+        calls.append(path)
+        if len(calls) == 1:
+            release.wait(5)
+        return real(path)
+
+    monkeypatch.setattr(matroska, "read_matroska", read)
+    monkeypatch.setattr(prober_mod, "MATROSKA_TIMEOUT", 0.05)
+    path, probe = _two_audio_file(tmp_path)
+    prober = _fake_prober(fake_tools, probe)
+    prober.cache = ProbeCache(tmp_path / "cache")
+    try:
+        once = await prober.probe(path)
+    finally:
+        release.set()
+    assert isinstance(once, MediaSource), once
+    assert once.audio[0].bitrate == BitrateInfo()
+    again = await prober.probe(path)
+    assert isinstance(again, MediaSource), again
+    assert len(calls) == 2
+    assert again.audio[0].bitrate.source is BitrateSource.ESTIMATED
+
+
+def _seek_head(entries: Sequence[tuple[int, int]], size: int = 200) -> bytes:
+    """A ``SeekHead`` of ``(element ID, position)`` padded with a Void to ``size`` bytes."""
+    seeks = b"".join(
+        element(0x4DBB, element(0x53AB, target.to_bytes(4, "big")) + uint(0x53AC, position))
+        for target, position in entries
+    )
+    void = size - len(element(0x114D9B74, seeks)) - len(element(0xEC, b""))
+    assert void >= 0
+    return element(0x114D9B74, seeks + element(0xEC, b"\0" * void))
+
+
+def test_the_reader_finds_the_size_of_what_holds_no_blocks(tmp_path: Path) -> None:
+    head = info(1_000_000, 4000) + tracks(track(1, 1), track(2, 2))
+    attachments = element(0x1941A469, b"\0" * 5000)
+    clusters = b"".join(cluster(i * 1000, [(1, 50_000), (2, 8_000)]) for i in range(4))
+    cues, tags = element(0x1C53BB6B, b"\0" * 300), element(0x1254C367, b"\0" * 700)
+    first_cluster = 200 + len(head) + len(attachments)
+    after = first_cluster + len(clusters)
+    seek_head = _seek_head(
+        [
+            (0x1941A469, 200 + len(head)),
+            (0x1C53BB6B, after),
+            (0x1254C367, after + len(cues)),
+            (0x1043A770, first_cluster),  # not Chapters: left out
+        ]
+    )
+    segment = seek_head + head + attachments + clusters + cues + tags
+    path = write(tmp_path, header() + element(_SEGMENT, segment))
+    found = read_matroska(path)
+    others = len(seek_head) + len(head) + len(attachments) + len(cues) + len(tags)
+    assert found.other_bytes == others

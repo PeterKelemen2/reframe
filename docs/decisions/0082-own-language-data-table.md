@@ -168,6 +168,22 @@ in a child Python and runs every kind of call. By hand: a venv with only the whe
 langcodes code (MIT). Whether the notices keep langcodes' and language_data's MIT texts and add
 Wiktionary's terms is P's and the lead's call.
 
+#### Review fixes (FE, 2026-11-15)
+
+1. **The Kelvin sign.** `normalize` lowered code-shaped input before the ASCII shape check,
+   and the Kelvin sign (U+212A) lowers to an ASCII `k`: `"Ko"` gave `ko` (Korean) where
+   the libraries give `fuj`, `"UOK"` gave `ema` where they give `None`. The shape is now
+   checked on the input as given. A scan of Unicode (Python 3.14) finds 20 non-ASCII
+   characters with an ASCII letter in their lower, upper, title or casefold form (U+00DF,
+   U+0130, U+0131, U+0149, U+017F, U+01F0, U+1E96–U+1E9A, U+1E9E, U+212A, U+FB00–U+FB06); only
+   the Kelvin sign is the whole of an ASCII letter under `lower()`. The equivalence test
+   computes the list and puts each character in place of its letters in every code and name of
+   the picker list: 8,757 inputs, all tag functions and `search`, about 9 s. Before the fix it
+   failed (`"ABK"` gave `ab`, the libraries `None`; a first run over 3,931 such inputs
+   found 1,729 differences, all with the Kelvin sign); after it, no difference.
+2. **The probe cache** (with 0081's review fixes): `parser_fingerprint` hashes `languages.py`
+   and the three tables, so a change to them invalidates the cached probes.
+
 ### Built: P (the notices and the frozen sidecar)
 
 1. **The sidecar spec**: `language_data` is no longer a data package; `langcodes`,

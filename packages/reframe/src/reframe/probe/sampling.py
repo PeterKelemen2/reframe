@@ -353,10 +353,11 @@ def estimate_bitrates(source: MediaSource, info: MatroskaFile, sample: ClusterSa
     their indexes.
 
     Audio gets its bytes per sampled second. A single video stream without a rate gets the
-    file's rate minus every other stream's, which does not depend on how evenly its bits are
-    spread; with more than one, or when the sample holds every cluster, each gets its bytes
-    per sampled second. The n-th track of a kind is the n-th stream of that kind; when the
-    counts differ, nothing is estimated.
+    rate of the file's bytes outside ``info.other_bytes`` (attachments, cues, tags…) minus
+    every other stream's, which does not depend on how evenly its bits are spread; with more
+    than one, or when the sample holds every cluster, each gets its bytes per sampled second.
+    The n-th track of a kind is the n-th stream of that kind; when the counts differ, nothing
+    is estimated.
     """
     kinds = matroska.tracks_by_kind(info)
     streams: list[tuple[list[VideoStream] | list[AudioStream] | list[SubtitleStream], TrackKind]]
@@ -384,7 +385,7 @@ def estimate_bitrates(source: MediaSource, info: MatroskaFile, sample: ClusterSa
         if audio.bitrate.source is BitrateSource.UNKNOWN:
             give(audio, sampled(number[audio.index]))
     unknown = [v for v in source.video if v.bitrate.source is BitrateSource.UNKNOWN]
-    file_rate = _file_rate(source)
+    file_rate = _file_rate(source, info)
     if len(unknown) == 1 and not sample.complete and file_rate is not None:
         target = unknown[0]
         others = 0.0
@@ -404,10 +405,10 @@ def estimate_bitrates(source: MediaSource, info: MatroskaFile, sample: ClusterSa
     return estimated
 
 
-def _file_rate(source: MediaSource) -> float | None:
+def _file_rate(source: MediaSource, info: MatroskaFile) -> float | None:
     container = source.container
-    if container.bitrate:
-        return container.bitrate
-    if container.size and container.duration:
-        return container.size * 8 / container.duration
-    return None
+    if not container.duration:
+        return container.bitrate or None
+    rate = container.bitrate or (container.size or 0) * 8 / container.duration
+    rate -= info.other_bytes * 8 / container.duration
+    return rate if rate > 0 else None

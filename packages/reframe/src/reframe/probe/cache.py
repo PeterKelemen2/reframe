@@ -49,33 +49,38 @@ PRUNE_EVERY = 200
 #: A temporary file older than this was left behind by a crash.
 _STALE_TMP_AGE = 3600.0
 
-#: The modules whose source decides what a probe produces (``matroska.py`` gives the track's
-#: ``language_ietf``, ``sampling.py`` the estimated bit rates).
-_PARSER_MODULES = (
-    "parse.py",
-    "names.py",
-    "roles.py",
-    "hdr.py",
-    "bitrate.py",
-    "matroska.py",
-    "sampling.py",
-    "prober.py",
+#: The files, relative to the ``reframe`` package, whose content decides what a probe produces
+#: (``matroska.py`` gives the track's ``language_ietf``, ``sampling.py`` the estimated bit
+#: rates, ``languages.py`` and its tables the normalised language tags).
+_PARSER_FILES = (
+    "probe/parse.py",
+    "probe/names.py",
+    "probe/roles.py",
+    "probe/hdr.py",
+    "probe/bitrate.py",
+    "probe/matroska.py",
+    "probe/sampling.py",
+    "probe/prober.py",
+    "languages.py",
+    "definitions/data/language-core.json.gz",
+    "definitions/data/language-locale-names.json.gz",
+    "definitions/data/language-search.json.gz",
 )
 
 
 @functools.cache
 def parser_fingerprint() -> str:
-    """``PARSER_VERSION`` and a hash of the parser modules' source.
+    """``PARSER_VERSION`` and a hash of the parser's source files and language tables.
 
     Without the source files (a frozen app that ships only bytecode), the Reframe version
     stands in for the hash.
     """
     digest = hashlib.sha256()
-    here = Path(__file__).resolve().parent
+    package = Path(__file__).resolve().parent.parent
     try:
-        for name in _PARSER_MODULES:
+        for name in _PARSER_FILES:
             digest.update(name.encode())
-            digest.update((here / name).read_bytes())
+            digest.update((package / name).read_bytes())
     except OSError:
         from reframe import __version__
 

@@ -200,6 +200,44 @@ audio within 9.86 % (FLAC) of the block scan.
   prober both keep their statistics tags (`stats_tag`, video equal to the block scan to 1 bit/s).
 - **Oracle**: `testing/reframe_testing/blockscan.py`, the exact block scan.
 
+#### Review fixes (FE, 2026-11-15)
+
+Fixes of R2's findings, each with a test that failed before the fix.
+
+1. **A huge `TimestampScale`.** The reader read an unsigned integer of any length, so a
+   `TimestampScale` of 130 bytes in an `Info` without `Duration` passed, the sample's span
+   raised `OverflowError` and `probe_folder` failed with an `ExceptionGroup`. Now an unsigned
+   integer element over 8 bytes (the specification's limit) is damaged: `MatroskaError`, so the
+   track headers are not used and the rates stay `unknown`. Checked with ffprobe n9.0.2 on R2's
+   file: libavformat also rejects it ("Invalid length 0x82 > 0x8 for element with ID
+   0x2AD7B1") and reads the rest. A `Duration` whose seconds overflow a float is no duration.
+   The prober also catches `ArithmeticError` and `ValueError` from the sample (the file keeps
+   `unknown`, no exception: "Done when" 3).
+2. **Attachments counted as video.** The single video stream got the rate of the whole file
+   minus the other streams, so the `Attachments` element went to the video (R2's 60 s 2 Mb/s
+   file with a 4 MB font: +26.8 %). `MatroskaFile.other_bytes` is now the size of the top-level
+   elements that hold no blocks: those the reader reads before `Tracks` and `Info` are found,
+   and the `Attachments`, `Chapters`, `Tags` and `Cues` that the `SeekHead` lists (one 12-byte
+   header read each; ffmpeg n9.0.2 and mkvmerge 103 both list them, checked with `mkvinfo`). The
+   file's rate leaves them out. Chosen over the sizes in `source.attachments`: those come from
+   ffprobe, do not cover cover art, cues and tags, and are not the element's bytes. An entry
+   that does not point at its element is left out. R2's file after the fix: video 2,003,430
+   vs 2,000,281 b/s (+0.16 %). Tests: a generated ffmpeg (`-attach`) and mkvmerge
+   (`--attach-file`) file with 4 MB of random bytes, each within 3 % of the block scan; the
+   reader's sizes on a synthetic file. `cache_options()` is `{"matroska": 4}`.
+3. **A timed-out sample was cached.** A sample or a Matroska header read that times out or
+   fails with `OSError` (a slow or unreachable share, not the file) now leaves the probe out of
+   the cache, so the next probe reads again. A file without a usable cluster, or with damaged
+   headers, is still cached. The header read is included because it has the same problem.
+4. **Fingerprint.** `parser_fingerprint` hashes `languages.py` and the three language tables
+   too (`parse.py` uses `languages.normalize`); the list is `_PARSER_FILES`, relative to the
+   `reframe` package.
+5. **Docstring.** `tracks_by_kind` explains the order without mkvpropedit.
+
+Not changed (outside this task): the accuracy of few samples on variable audio (R2's
+`vbr-flac.mkv`: audio −30 %, video +9 %), and the per-track estimate when a file has two video
+streams (R2's `mkvmerge-nostats.mkv`: first video −4.4 %).
+
 ### Built: P (MediaInfo leaves the product)
 
 1. **The core and server**: as 0080's P items 1 and 2 (`mediainfo` leaves `ToolName`,

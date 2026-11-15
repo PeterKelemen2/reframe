@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import json
+import random
 import shutil
 import subprocess
 import sys
@@ -137,6 +138,58 @@ async def test_a_non_default_timestamp_scale_from_mkvmerge(prober: Prober, tmp_p
     assert read_matroska(out).timestamp_scale == 100_000
     source = await _probe(prober, out)
     assert check_against_the_block_scan(source, out) == 2
+
+
+def _attachment(tmp_path: Path) -> Path:
+    """4 MB that do not compress: as many bits per second as 1.6 Mb/s of video in 20 s."""
+    blob = tmp_path / "font.ttf"
+    blob.write_bytes(random.Random(0).randbytes(4 * 1024 * 1024))
+    return blob
+
+
+def _ffmpeg_attached(tmp_path: Path) -> Path:
+    ffmpeg = media.find_ffmpeg()
+    assert ffmpeg is not None
+    out = tmp_path / "attached.mkv"
+    subprocess.run(
+        [ffmpeg, "-v", "error", "-i", str(_generated(tmp_path)), "-map", "0", "-c", "copy",
+         "-attach", str(_attachment(tmp_path)), "-metadata:s:t", "mimetype=font/ttf",
+         "-cluster_time_limit", "500", str(out)],
+        check=True,
+    )  # fmt: skip
+    return out
+
+
+def _mkvmerge_attached(tmp_path: Path) -> Path:
+    out = tmp_path / "attached.mkv"
+    subprocess.run(
+        [mkvtoolnix_tool("mkvmerge"), "--quiet", "--disable-track-statistics-tags",
+         "--cluster-length", "400ms", "--attach-file", str(_attachment(tmp_path)), "-o",
+         str(out), str(_generated(tmp_path))],
+        check=True,
+    )  # fmt: skip
+    return out
+
+
+@pytest.mark.needs_ffmpeg
+async def test_an_ffmpeg_attachment_is_not_counted_as_video(prober: Prober, tmp_path: Path) -> None:
+    out = _ffmpeg_attached(tmp_path)
+    source = await _probe(prober, out)
+    assert [a.size for a in source.attachments] == [4 * 1024 * 1024]
+    assert check_against_the_block_scan(source, out) == 2
+    assert 10 <= (source.video[0].bitrate.samples or 0) <= 32
+
+
+@pytest.mark.needs_ffmpeg
+@pytest.mark.needs_mkvtoolnix
+async def test_an_mkvmerge_attachment_is_not_counted_as_video(
+    prober: Prober, tmp_path: Path
+) -> None:
+    out = _mkvmerge_attached(tmp_path)
+    source = await _probe(prober, out)
+    assert len(source.attachments) == 1
+    assert check_against_the_block_scan(source, out) == 2
+    assert 10 <= (source.video[0].bitrate.samples or 0) <= 32
 
 
 def test_content_encodings_are_read(tmp_path: Path) -> None:

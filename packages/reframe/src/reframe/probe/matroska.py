@@ -9,6 +9,7 @@ limits, raises :class:`MatroskaError`.
 from __future__ import annotations
 
 import itertools
+import math
 import os
 import struct
 from collections.abc import Iterator
@@ -62,6 +63,10 @@ _TIMESTAMP_SCALE = 0x2AD7B1
 _DURATION = 0x4489
 _TRACKS = 0x1654AE6B
 _CLUSTER = 0x1F43B675
+_ATTACHMENTS = 0x1941A469
+_CHAPTERS = 0x1043A770
+_TAGS = 0x1254C367
+_CUES = 0x1C53BB6B
 _TRACK_ENTRY = 0xAE
 _CONTENT_ENCODINGS = 0x6D80
 _CONTENT_ENCODING = 0x6240
@@ -71,8 +76,10 @@ _CONTENT_COMPRESSION = 0x5034
 #: The ``TimestampScale`` when ``Info`` has none (nanoseconds per tick).
 DEFAULT_TIMESTAMP_SCALE = 1_000_000
 
+#: Top-level elements that hold no blocks and can be large (after the clusters, too).
+_NOT_BLOCKS = frozenset({_ATTACHMENTS, _CHAPTERS, _TAGS, _CUES})
 #: The ``SeekHead`` targets that are kept.
-_SEEK_TARGETS = frozenset({_TRACKS, _INFO, _SEEK_HEAD})
+_SEEK_TARGETS = frozenset({_TRACKS, _INFO, _SEEK_HEAD}) | _NOT_BLOCKS
 
 _KINDS: dict[int, TrackKind] = {1: "video", 2: "audio", 0x11: "subtitle"}
 _UINTS = {
@@ -135,10 +142,13 @@ class MatroskaFile:
     """The file position of the Segment's data."""
     segment_size: int | None = field(default=None, compare=False)
     """``None`` for a Segment of unknown size."""
+    other_bytes: int = field(default=0, compare=False)
+    """Bytes of the top-level elements that hold no blocks (attachments, cues, tags…) that the
+    reader saw or the ``SeekHead`` lists."""
 
 
 def tracks_by_kind(info: MatroskaFile) -> dict[TrackKind, list[MatroskaTrack]]:
-    """The tracks of each kind, in file order (the order of mkvpropedit's ``track:a1``…)."""
+    """The tracks of each kind, in file order: the order ffprobe gives the streams of a kind."""
     result: dict[TrackKind, list[MatroskaTrack]] = {
         "video": [],
         "audio": [],
@@ -224,6 +234,8 @@ def _children(data: bytes, budget: _Budget, what: str) -> list[tuple[int, bytes]
 
 
 def _uint(data: bytes) -> int:
+    if len(data) > 8:
+        raise MatroskaError(f"an unsigned integer of {len(data)} bytes, over 8 bytes")
     return int.from_bytes(data, "big") if data else 0
 
 
@@ -296,14 +308,16 @@ def _info(info: MatroskaFile, payload: bytes, budget: _Budget) -> None:
             info.timestamp_scale = _uint(data)
         elif element_id == _DURATION:
             ticks = _float(data)
-    if ticks is not None and ticks > 0 and ticks != float("inf"):
-        info.duration = ticks * info.timestamp_scale / 1e9
+    if ticks is not None and ticks > 0:
+        duration = ticks * info.timestamp_scale / 1e9
+        if math.isfinite(duration):
+            info.duration = duration
 
 
 def _seek_entries(payload: bytes, budget: _Budget, room: int) -> dict[int, int]:
-    """``{element ID: position}`` of the ``Tracks``, ``Info`` and ``SeekHead`` entries inside the
-    file. Positions are relative to the segment's data, and ``room`` is the number of bytes
-    after it. The first usable entry of each ID wins."""
+    """``{element ID: position}`` of the :data:`_SEEK_TARGETS` entries inside the file.
+    Positions are relative to the segment's data, and ``room`` is the number of bytes after
+    it. The first usable entry of each ID wins."""
     entries: dict[int, int] = {}
     for element_id, seek in itertools.islice(_iter_children(payload, budget), MAX_CHILDREN):
         if element_id != _SEEK:
@@ -403,6 +417,7 @@ def _read(reader: _Reader) -> MatroskaFile:
     found_tracks = found_info = False
     seeks: dict[int, int] = {}
     first_seek_head: int | None = None
+    sizes: dict[int, int] = {}
     pos = base
     for _ in range(MAX_TOP_LEVEL):
         if pos >= reader.size or (found_tracks and found_info):
@@ -410,6 +425,7 @@ def _read(reader: _Reader) -> MatroskaFile:
         element_id, element_size, header = reader.header(pos)
         if element_id == _CLUSTER or element_size is None:
             break
+        sizes[pos] = min(header + element_size, reader.size - pos)
         if element_id == _TRACKS:
             info.tracks = _tracks(reader.payload(pos)[1], reader.budget)
             found_tracks = True
@@ -440,4 +456,19 @@ def _read(reader: _Reader) -> MatroskaFile:
             _info(info, payload, reader.budget)
     if not found_tracks:
         raise MatroskaError("no Tracks element found")
+    for target in _NOT_BLOCKS & seeks.keys():
+        _add_size(reader, base + seeks[target], target, sizes)
+    info.other_bytes = sum(sizes.values())
     return info
+
+
+def _add_size(reader: _Reader, pos: int, target: int, sizes: dict[int, int]) -> None:
+    """Add the size of the ``target`` element at ``pos``; a damaged one is left out."""
+    if pos in sizes:
+        return
+    try:
+        element_id, size, header = reader.header(pos)
+    except MatroskaError:
+        return
+    if element_id == target and size is not None:
+        sizes[pos] = min(header + size, reader.size - pos)
