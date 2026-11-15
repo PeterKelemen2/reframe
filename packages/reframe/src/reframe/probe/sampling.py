@@ -100,7 +100,14 @@ class _File:
             raise _Stop
         self.left -= count
         self.handle.seek(pos)
-        return self.handle.read(count)
+        chunks: list[bytes] = []
+        while count > 0:
+            chunk = self.handle.read(count)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            count -= len(chunk)
+        return b"".join(chunks)
 
     def load_window(self, pos: int) -> bytes:
         self.window = b""
@@ -315,7 +322,9 @@ def sample_clusters(
     """
     if info.timestamp_scale <= 0:
         return None
-    with open(Path(path), "rb") as handle:
+    # Unbuffered: a network share's large block size would make every small read after a
+    # seek fetch a whole buffer.
+    with open(Path(path), "rb", buffering=0) as handle:
         size = os.fstat(handle.fileno()).st_size
         limit = size if info.segment_size is None else min(size, info.segment + info.segment_size)
         file = _File(handle, size, stop)

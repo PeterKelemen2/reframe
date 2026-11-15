@@ -4,17 +4,19 @@ and mkvmerge files, the recorded probes of two real mkvmerge files, and a probe 
 
 from __future__ import annotations
 
+import io
 import json
 import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from reframe.models import AudioStream, BitrateSource, MediaSource, VideoStream
-from reframe.probe import Prober, ProbeTool
+from reframe.probe import Prober, ProbeTool, matroska, sampling
 from reframe.probe.matroska import TrackKind, read_matroska, tracks_by_kind
 from reframe.tools import discover_tools
 from reframe_testing import fake_tools as ft
@@ -258,3 +260,55 @@ def _without_pymediainfo(path: Path, ffprobe: Path) -> str:
         check=True,
     )
     return done.stdout
+
+
+class _CountingFile(io.FileIO):
+    """A raw file that counts the bytes the OS hands over."""
+
+    total = 0
+
+    def readinto(self, buffer: Any) -> int | None:
+        count = super().readinto(buffer)
+        _CountingFile.total += count or 0
+        return count
+
+
+def _network_share_open(path: Any, mode: str = "r", buffering: int = -1, **kwargs: Any) -> Any:
+    """``open`` as on a CIFS mount, whose 1 MiB ``st_blksize`` becomes the read buffer."""
+    assert mode == "rb", mode
+    raw = _CountingFile(path, "r")
+    return raw if buffering == 0 else io.BufferedReader(raw, buffer_size=1024 * 1024)
+
+
+@pytest.mark.needs_ffmpeg
+def test_sampling_reads_from_the_os_only_the_bytes_it_samples(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A network share hands over a whole buffer for each small header read after a seek."""
+    path = _generated(tmp_path)
+    info = read_matroska(path)
+    counted: list[int] = []
+    original = sampling._File.read
+
+    def read(self: sampling._File, pos: int, count: int) -> bytes:
+        data = original(self, pos, count)
+        counted.append(len(data))
+        return data
+
+    monkeypatch.setattr(sampling._File, "read", read)
+    monkeypatch.setattr(sampling, "open", _network_share_open, raising=False)
+    _CountingFile.total = 0
+    sample = sampling.sample_clusters(path, info)
+    assert sample is not None
+    assert sample.clusters >= 10
+    assert _CountingFile.total <= sum(counted)
+
+
+def test_the_header_reader_reads_from_the_os_only_the_headers(
+    fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = fixture_media("multitrack")
+    monkeypatch.setattr(matroska, "open", _network_share_open, raising=False)
+    _CountingFile.total = 0
+    assert read_matroska(path).tracks
+    assert _CountingFile.total < 64 * 1024
