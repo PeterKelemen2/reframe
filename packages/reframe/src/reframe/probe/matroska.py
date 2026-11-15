@@ -139,7 +139,7 @@ class MatroskaFile:
 
 
 def tracks_by_kind(info: MatroskaFile) -> dict[TrackKind, list[MatroskaTrack]]:
-    """The tracks of each kind, in file order (the order of mkvpropedit's ``track:a1``…)."""
+    """The tracks of each kind, in file order: the order ffprobe gives the streams of a kind."""
     result: dict[TrackKind, list[MatroskaTrack]] = {
         "video": [],
         "audio": [],
