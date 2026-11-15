@@ -202,7 +202,36 @@ audio within 9.86 % (FLAC) of the block scan.
 
 ### Built: P (MediaInfo leaves the product)
 
-*Placeholder.*
+1. **The core and server**: as 0080's P items 1 and 2 (`mediainfo` leaves `ToolName`,
+   `ToolSet`, discovery, `REFRAME_MEDIAINFO`, the bundled `mediainfo/` folder and
+   `parse_mediainfo_version`). The `language_ietf` description no longer names MediaInfo.
+2. **Python packages**: the `[mediainfo]` extra of `reframe` and `pymediainfo` are gone (the
+   dev group installs `reframe[cli]`; `uv.lock` without pymediainfo). The sidecar spec has no
+   `pymediainfo` hidden import and no libmediainfo binaries.
+3. **The Windows layout** is FFmpeg only: `tools/bundled-tools.toml` pins no MediaInfo CLI,
+   and `scripts/bundle-tools.py` loses its tool-archive path (the kept-files list, archives
+   without a top folder); the libva pin stays. A `mediainfo/` folder of an earlier layout is
+   removed. The sources manifest names no MediaInfo source, so the Windows installers'
+   sources are FFmpeg's only. `reframe.tools.fetch` keeps its generic zip-without-a-top-folder
+   support (now unused by any pin).
+4. **Docker**: no `mediainfo` package, no `--extra mediainfo`; the notices' `uv export` has
+   no `mediainfo` extra.
+5. **Notices**: the MediaInfoLib entry (read from pymediainfo's library) is gone. One of
+   0079 item 12's open licence-text groups (MediaInfoLib's internal code) goes away.
+6. **Checked on this host (2026-11-15)**:
+   - the frozen sidecar (`desktop/sidecar/build.py`): no `pymediainfo` module or folder and no
+     file named like `*mediainfo*`; the frozen server probes `vfr.mkv` (pinned ffprobe
+     n9.0.2) with a video rate of 489048, source `estimated`, 1 sample
+     (`test_the_frozen_server_estimates_the_bit_rates_that_ffprobe_does_not_give`);
+   - the Docker image (classic builder, linux/amd64, built and removed): `dpkg-query` lists
+     no `mediainfo`, `libmediainfo*`, `libzen*`, `mkvtoolnix`, `libebml*` or `libmatroska*`;
+     its `DEBIAN_PACKAGES` names none; its venv has no pymediainfo; `reframe tools status`
+     lists the bundled ffmpeg and ffprobe only;
+   - deb/rpm: the Tauri config has no `recommends`; the packages were not built (the build
+     needs the Ubuntu 22.04 build image and a final version), the container install test
+     checks it when they are.
+7. **The D-8 open item** (the system `mediainfo` `broken` under the AppImage's
+   `LD_LIBRARY_PATH`) goes away.
 
 ### Built: U (the track table)
 
