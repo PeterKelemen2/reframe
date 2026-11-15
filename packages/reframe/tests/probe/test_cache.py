@@ -233,15 +233,14 @@ def test_parser_fingerprint_follows_the_source() -> None:
     fingerprint = cache_mod.parser_fingerprint()
     assert fingerprint.startswith(f"{PARSER_VERSION}:")
     assert len(fingerprint.split(":")[1]) == 16
-    doc_path_names = cache_mod._PARSER_MODULES
-    here = Path(cache_mod.__file__).parent
-    assert all((here / name).is_file() for name in doc_path_names)
+    package = Path(cache_mod.__file__).parent.parent
+    assert all((package / name).is_file() for name in cache_mod._PARSER_FILES)
 
 
 def test_parser_fingerprint_without_source(monkeypatch: pytest.MonkeyPatch) -> None:
     import reframe
 
-    monkeypatch.setattr(cache_mod, "_PARSER_MODULES", ("missing-module.py",))
+    monkeypatch.setattr(cache_mod, "_PARSER_FILES", ("probe/missing-module.py",))
     cache_mod.parser_fingerprint.cache_clear()
     try:
         assert cache_mod.parser_fingerprint() == f"{PARSER_VERSION}:reframe-{reframe.__version__}"
