@@ -11,7 +11,7 @@ import stat
 import sys
 import tarfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import ModuleType
 from typing import Any
 
@@ -96,16 +96,7 @@ class Setup:
                     f"{LINUX_ROOT}/LICENSE.txt": b"GPL-3",
                 }
             ),
-            "MediaInfo_CLI_x64.zip": _zip(
-                {
-                    "MediaInfo/MediaInfo.exe": b"MZ mediainfo",
-                    "MediaInfo/LICENSE": b"BSD-2",
-                    "MediaInfo/doc/History.txt": b"history",
-                    "MediaInfo/LIBCURL.DLL": b"MZ curl",
-                }
-            ),
         }
-        self.mediainfo_files = '["MediaInfo.exe", "LICENSE"]'
         self.libraries = ""
         self.write()
 
@@ -166,23 +157,7 @@ ffprobe = "bin/ffprobe.exe"
 """,
             encoding="utf-8",
         )
-        mi = "MediaInfo_CLI_x64.zip"
-        self.tools_manifest.write_text(
-            f"""schema_version = 1
-[tools.mediainfo]
-version = "26.10"
-license = "BSD-2-Clause"
-license_file = "LICENSE"
-source_url = "https://example.invalid/mediainfo.tar.xz"
-[tools.mediainfo.platforms.windows-x64]
-url = "{self.url(mi)}"
-{self.pin(mi)}format = "zip"
-root = "MediaInfo"
-binary = "MediaInfo.exe"
-files = {self.mediainfo_files}
-{self.libraries}""",
-            encoding="utf-8",
-        )
+        self.tools_manifest.write_text(f"schema_version = 1\n{self.libraries}", encoding="utf-8")
 
     def bundle(self, platform: str = "windows-x64") -> Any:
         return bt.bundle(
@@ -212,7 +187,7 @@ def no_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.usefixtures("no_discovery")
-def test_windows_layout_has_each_tool_its_licence_and_nothing_else(setup: Setup) -> None:
+def test_windows_layout_has_ffmpeg_its_licence_and_nothing_else(setup: Setup) -> None:
     setup.bundle()
     assert setup.tree() == [
         "README.md",
@@ -220,22 +195,21 @@ def test_windows_layout_has_each_tool_its_licence_and_nothing_else(setup: Setup)
         "ffmpeg/bin/avcodec-63.dll",
         "ffmpeg/bin/ffmpeg.exe",
         "ffmpeg/bin/ffprobe.exe",
-        "mediainfo/LICENSE",
-        "mediainfo/MediaInfo.exe",
     ]
-    assert (setup.dest / "mediainfo" / "MediaInfo.exe").read_bytes() == b"MZ mediainfo"
+    assert (setup.dest / "ffmpeg" / "bin" / "ffprobe.exe").read_bytes() == b"MZ ffprobe"
 
 
 @pytest.mark.usefixtures("no_discovery")
 def test_a_tool_folder_of_an_earlier_layout_does_not_stay_to_be_shipped(setup: Setup) -> None:
-    """The bundler ships every folder of the layout: an mkvpropedit.exe laid out before
-    MKVToolNix stopped being bundled would end up in the installers."""
-    old = setup.dest / "mkvtoolnix"
-    old.mkdir()
-    (old / "mkvpropedit.exe").write_bytes(b"MZ mkvpropedit")
-    (old / bt.fetch.MARKER_NAME).write_text('{"build": "mkvtoolnix", "layout": "bundled"}')
+    """The bundler ships every folder of the layout: an mkvpropedit.exe or MediaInfo.exe laid
+    out by an earlier layout would end up in the installers."""
+    for folder, exe in (("mkvtoolnix", "mkvpropedit.exe"), ("mediainfo", "MediaInfo.exe")):
+        old = setup.dest / folder
+        old.mkdir()
+        (old / exe).write_bytes(b"MZ")
+        (old / bt.fetch.MARKER_NAME).write_text(f'{{"build": "{folder}", "layout": "bundled"}}')
     setup.bundle()
-    assert sorted(p.name for p in setup.dest.iterdir()) == ["README.md", "ffmpeg", "mediainfo"]
+    assert sorted(p.name for p in setup.dest.iterdir()) == ["README.md", "ffmpeg"]
 
 
 @pytest.mark.usefixtures("no_discovery")
@@ -243,7 +217,7 @@ def test_a_tool_folder_of_an_earlier_layout_does_not_stay_to_be_shipped(setup: S
 def test_a_download_that_does_not_match_its_pin_is_never_extracted(
     setup: Setup, field: str
 ) -> None:
-    name = "MediaInfo_CLI_x64.zip"
+    name = f"{FF_ROOT}.zip"
     pinned = setup.files[name]
     setup.write()
     # The server now serves other bytes of the same size, or one byte more.
@@ -251,7 +225,7 @@ def test_a_download_that_does_not_match_its_pin_is_never_extracted(
     (setup.archives / name).write_bytes(other)
     with pytest.raises(FetchError, match=r"SHA-256|size"):
         setup.bundle()
-    assert not (setup.dest / "mediainfo").exists()
+    assert not (setup.dest / "ffmpeg").exists()
     assert not [p for p in setup.dest.iterdir() if p.name.startswith(".bundle-")]
 
 
@@ -261,25 +235,16 @@ def test_a_rerun_keeps_an_intact_layout_and_repairs_a_changed_one(
 ) -> None:
     monkeypatch.setattr(bt.fetch, "_sleep", lambda seconds, cancel: None)
     setup.bundle()
-    archive = setup.archives / "MediaInfo_CLI_x64.zip"
+    archive = setup.archives / f"{FF_ROOT}.zip"
     archive.unlink()
     setup.bundle()  # nothing to download: every folder still matches its marker
-    exe = setup.dest / "mediainfo" / "MediaInfo.exe"
+    exe = setup.dest / "ffmpeg" / "bin" / "ffmpeg.exe"
     exe.write_bytes(b"changed")
     with pytest.raises(FetchError, match="download failed"):
         setup.bundle()
-    archive.write_bytes(setup.files["MediaInfo_CLI_x64.zip"])
+    archive.write_bytes(setup.files[f"{FF_ROOT}.zip"])
     setup.bundle()
-    assert exe.read_bytes() == b"MZ mediainfo"
-
-
-@pytest.mark.usefixtures("no_discovery")
-def test_a_changed_list_of_kept_files_is_laid_out_again(setup: Setup) -> None:
-    setup.bundle()
-    setup.mediainfo_files = '["MediaInfo.exe", "LICENSE", "doc/History.txt"]'
-    setup.write()
-    setup.bundle()
-    assert (setup.dest / "mediainfo" / "doc" / "History.txt").read_bytes() == b"history"
+    assert exe.read_bytes() == b"MZ ffmpeg"
 
 
 @pytest.mark.usefixtures("no_discovery")
@@ -313,11 +278,13 @@ def test_files_the_script_did_not_make_are_refused_and_kept(setup: Setup, foreig
 
 @pytest.mark.usefixtures("no_discovery")
 def test_an_archive_without_a_pinned_file_lays_out_nothing(setup: Setup) -> None:
-    setup.mediainfo_files = '["MediaInfo.exe", "LICENSE", "MediaInfo.dll"]'
+    setup.files[f"{FF_ROOT}.zip"] = _zip(
+        {f"{FF_ROOT}/bin/ffmpeg.exe": b"MZ ffmpeg", f"{FF_ROOT}/bin/ffprobe.exe": b"MZ ffprobe"}
+    )
     setup.write()
-    with pytest.raises(FetchError, match=r"has no MediaInfo\.dll"):
+    with pytest.raises(FetchError, match=r"has no LICENSE\.txt"):
         setup.bundle()
-    assert not (setup.dest / "mediainfo").exists()
+    assert not (setup.dest / "ffmpeg").exists()
 
 
 def test_the_bundled_libva_searches_the_cores_driver_folders(
@@ -339,57 +306,11 @@ def test_the_bundled_libva_searches_the_cores_driver_folders(
     assert f"-Ddriverdir={folders}" in calls[0]
 
 
-@pytest.mark.parametrize(
-    ("change", "error"),
-    [
-        (('files = ["MediaInfo.exe", "LICENSE"]', 'files = ["MediaInfo.exe"]'),
-         "does not keep LICENSE"),
-        (('root = "MediaInfo"\n', ""), None),
-        (('format = "zip"\nroot', 'format = "tar.xz"\nroot'), "format"),
-        (("file://", "http://"), "https"),
-        (('binary = "MediaInfo.exe"', 'binary = "../MediaInfo.exe"'), "relative"),
-        (("[tools.mediainfo]\n", "[tools.mkvtoolnix]\n"), "unknown tool"),
-        (('version = "26.10"\n', ""), "version"),
-    ],
-)  # fmt: skip
-def test_bad_tool_pins_are_refused(
-    setup: Setup, change: tuple[str, str], error: str | None
-) -> None:
-    text = setup.tools_manifest.read_text(encoding="utf-8")
-    assert change[0] in text
-    setup.tools_manifest.write_text(text.replace(change[0], change[1], 1), encoding="utf-8")
-    if error is None:  # a zip without its top folder is fine to parse
-        assert [a.root for a in bt.tool_archives(setup.tools_manifest, "windows-x64")] == [None]
-        return
-    with pytest.raises(FetchError, match=error):
-        bt.tool_archives(setup.tools_manifest, "windows-x64")
-
-
-def test_a_tar_xz_tool_archive_needs_its_top_folder(setup: Setup) -> None:
-    text = setup.tools_manifest.read_text(encoding="utf-8")
-    text = (
-        text.replace("MediaInfo_CLI_x64.zip", "mi.tar.xz")
-        .replace('format = "zip"', 'format = "tar.xz"')
-        .replace('root = "MediaInfo"\n', "")
-    )
-    setup.tools_manifest.write_text(text, encoding="utf-8")
-    with pytest.raises(FetchError, match="needs its top folder"):
-        bt.tool_archives(setup.tools_manifest, "windows-x64")
-
-
-def test_the_real_pins_keep_each_binary_and_licence() -> None:
-    windows = bt.tool_archives(bt.TOOLS_MANIFEST, "windows-x64")
-    # MKVToolNix's Windows build links OpenSSL (Apache-2.0) into GPL-2.0-only code.
-    assert {a.folder: a.required[0] for a in windows} == {"mediainfo": "MediaInfo.exe"}
-    for archive in windows:
-        assert archive.files is not None
-        assert set(archive.required) <= set(archive.files)
-        assert archive.url.startswith("https://")
-    assert bt.tool_archives(bt.TOOLS_MANIFEST, "linux-x64") == []
+def test_the_real_ffmpeg_pins_keep_both_binaries_and_the_licence() -> None:
     for platform in ("linux-x64", "windows-x64"):
         ffmpeg = bt.ffmpeg_archive(bt.FFMPEG_MANIFEST, platform)
-        assert ffmpeg.files is None
-        assert len(ffmpeg.required) == 3
+        assert [PurePosixPath(p).stem for p in ffmpeg.required] == ["ffmpeg", "ffprobe", "LICENSE"]
+        assert ffmpeg.url.startswith("https://")
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="the fake binaries are shell scripts")
@@ -508,6 +429,9 @@ def test_building_libva_without_its_tools_names_them(
     [
         (("[libraries.libva]", "[libraries.libfoo]"), "no build is known"),
         (('root = "libva-9.9"\n', ""), "needs its top folder"),
+        (('format = "tar.bz2"', 'format = "tar.xz"'), "format"),
+        (("file://", "http://"), "https"),
+        (('version = "9.9"\n', ""), "version"),
         (('license_file = "COPYING"', 'license_file = "/COPYING"'), "relative"),
     ],
 )

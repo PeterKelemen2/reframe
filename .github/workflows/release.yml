@@ -230,7 +230,7 @@ jobs:
 
       - run: uv sync --frozen
 
-      - name: Lay out the bundled tools (FFmpeg, MediaInfo)
+      - name: Lay out the bundled tools (FFmpeg)
         run: uv run python scripts/bundle-tools.py --platform windows-x64
 
       - name: Build the frozen sidecar

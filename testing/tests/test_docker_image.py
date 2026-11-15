@@ -45,7 +45,7 @@ DPKG_ROWS = [
     ("ii ", "login", "1:4.17.4-2", "shadow", "1:4.17.4-2"),
     ("ii ", "libc6:amd64", "2.41-12", "glibc", "2.41-12"),
     ("rc ", "removed-package", "1.0-1", "removed-package", "1.0-1"),
-    ("ii ", "mkvtoolnix", "92.0-1+deb13u1", "mkvtoolnix", "92.0-1+deb13u1"),
+    ("ii ", "mesa-va-drivers", "25.0.7-2+deb13u1", "mesa", "25.0.7-2+deb13u1"),
 ]
 
 
@@ -78,8 +78,8 @@ def test_the_package_list_links_each_installed_package_to_its_source_on_snapshot
     assert lines[3:] == [
         f"libc6:amd64 2.41-12 glibc 2.41-12 {snapshot}/glibc/2.41-12/",
         f"login 1:4.17.4-2 shadow 1:4.17.4-2 {snapshot}/shadow/1%3A4.17.4-2/",
-        "mkvtoolnix 92.0-1+deb13u1 mkvtoolnix 92.0-1+deb13u1"
-        f" {snapshot}/mkvtoolnix/92.0-1%2Bdeb13u1/",
+        "mesa-va-drivers 25.0.7-2+deb13u1 mesa 25.0.7-2+deb13u1"
+        f" {snapshot}/mesa/25.0.7-2%2Bdeb13u1/",
         f"tini 0.19.0-3+b8 tini 0.19.0-3 {snapshot}/tini/0.19.0-3/",
     ]
     assert not out.with_name("DEBIAN_PACKAGES.part").exists()
@@ -141,7 +141,7 @@ def _doc_root(tmp_path: Path, texts: dict[str, str]) -> Path:
 COPYRIGHTS = {
     "libc6": "glibc: LGPL-2.1+\n",
     "login": "shadow: BSD-3-Clause\n",
-    "mkvtoolnix": "MKVToolNix: GPL-2.0\n",
+    "mesa-va-drivers": "Mesa: MIT\n",
     "tini": "tini: MIT, Copyright (c) Thomas Orozco\n",
 }
 
@@ -167,10 +167,10 @@ def test_the_notices_get_each_installed_packages_copyright_file_once(
     assert text.startswith("Third-party notices for Reframe 1.0.0 (docker-linux-x64)\n\n")
     section = text.split("the copyright file of each\n", 1)[1]
     packages = re.findall(r"^-{78}\n(\S+)\n-{78}$", section, re.MULTILINE)
-    assert packages == ["libc6:amd64", "login", "mkvtoolnix", "tini"]
+    assert packages == ["libc6:amd64", "login", "mesa-va-drivers", "tini"]
     assert section.count("glibc: LGPL-2.1+") == 1
     assert "The same text as libc6:amd64 above." in section
-    for package in ("mkvtoolnix", "tini"):
+    for package in ("mesa-va-drivers", "tini"):
         assert COPYRIGHTS[package] in section
     assert "not installed" not in section
     assert not notices.with_name("THIRD_PARTY_NOTICES.part").exists()

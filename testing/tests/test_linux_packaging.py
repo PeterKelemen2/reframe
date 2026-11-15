@@ -18,13 +18,15 @@ skip_windows = pytest.mark.skipif(sys.platform == "win32", reason="Linux package
 TAURI = Path(__file__).resolve().parents[2] / "desktop" / "src-tauri"
 
 
-def test_the_linux_packages_use_the_desktop_template_and_recommend_the_tools() -> None:
+def test_the_linux_packages_use_the_desktop_template_and_ask_for_no_other_tool() -> None:
     config = json.loads((TAURI / "tauri.linux.conf.json").read_text())["bundle"]["linux"]
     template = (TAURI / "linux" / "Reframe.desktop.hbs").read_text().splitlines()
 
     for package in ("deb", "rpm"):
         assert config[package]["desktopTemplate"] == "linux/Reframe.desktop.hbs"
-        assert config[package]["recommends"] == ["mkvtoolnix", "mediainfo"]
+        # Reframe writes Matroska headers and probes files itself.
+        assert "recommends" not in config[package]
+        assert "depends" not in config[package]
     assert config["rpm"]["postRemoveScript"] == "linux/remove-app-dirs.sh"
     # File managers pass every selected file to one process only with %F.
     assert "Exec={{exec}} %F" in template

@@ -3,11 +3,10 @@ tag of its sources release: ``sources-`` and the first 12 hex digits of the mani
 
 The manifest names, for every pinned FFmpeg platform, the FFmpeg commit, the BtbN build scripts'
 commit and each dependency download those scripts make for that platform (found by running the
-scripts' own ``generate.sh``), the MediaInfo source tarball, the libva source,
-the tree and the linked libraries of each static build in ``tools/static-builds.toml``, and the
-Ubuntu source package of each distro package the Linux packages carry. The same pins give the
-same bytes, so the tag changes only when a source changes. ``bash`` and ``git`` must be on
-``PATH``::
+scripts' own ``generate.sh``), the libva source, the tree and the linked libraries of each
+static build in ``tools/static-builds.toml``, and the Ubuntu source package of each distro
+package the Linux packages carry. The same pins give the same bytes, so the tag changes only
+when a source changes. ``bash`` and ``git`` must be on ``PATH``::
 
     uv run python scripts/sources-manifest.py --out sources/manifest.json \\
         --appimage-libs appimage-libs.json
@@ -318,24 +317,11 @@ def _url_entry(
     }
 
 
-def tool_entries(tools: Path) -> list[dict[str, Any]]:
-    """The source tarball of each tool and library that ``tools/bundled-tools.toml`` pins."""
+def library_entries(tools: Path) -> list[dict[str, Any]]:
+    """The source tarball of each library that ``tools/bundled-tools.toml`` pins."""
     path = tools / "bundled-tools.toml"
     data = _load_toml(path)
     entries: dict[str, dict[str, Any]] = {}
-    for name, pin in sorted(data.get("tools", {}).items()):
-        where = f"{path.name}: tools.{name}"
-        platforms = sorted(pin.get("platforms", {}))
-        if not platforms:
-            continue
-        entry = _url_entry(
-            name,
-            str(pin.get("description", name)),
-            _str(pin, "license", where),
-            _str(pin, "source_url", where),
-            str(pin.get("source_sha256", "")),
-        )
-        entries[entry["name"]] = entry | {"platforms": platforms}
     for name, pin in sorted(data.get("libraries", {}).items()):
         where = f"{path.name}: libraries.{name}"
         for platform, archive in sorted(pin.get("platforms", {}).items()):
@@ -462,7 +448,7 @@ def tag(data: bytes) -> str:
 
 def build(tools: Path, build_scripts: Path | None, appimage_libs: Path | None) -> dict[str, Any]:
     pin = ffmpeg_pin(tools)
-    entries = tool_entries(tools) + static_entries(tools)
+    entries = library_entries(tools) + static_entries(tools)
     if appimage_libs is not None:
         try:
             libs = json.loads(appimage_libs.read_text(encoding="utf-8"))

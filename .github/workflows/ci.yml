@@ -96,6 +96,14 @@ jobs:
       - name: Generate the test media (incremental)
         run: uv run python scripts/make-testdata.py
 
+      # The Matroska header writer's oracle tests (needs_mkvtoolnix) compare with MKVToolNix.
+      # The product never runs it; on Windows those tests skip.
+      - name: Install MKVToolNix for the header writer's oracle tests
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mkvtoolnix
+
       - run: uv run pytest -m "not needs_gpu and not benchmark"
 
   frontend:

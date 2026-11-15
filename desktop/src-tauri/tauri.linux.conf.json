@@ -4,11 +4,9 @@
     "targets": ["deb", "rpm", "appimage"],
     "linux": {
       "deb": {
-        "recommends": ["mkvtoolnix", "mediainfo"],
         "desktopTemplate": "linux/Reframe.desktop.hbs"
       },
       "rpm": {
-        "recommends": ["mkvtoolnix", "mediainfo"],
         "desktopTemplate": "linux/Reframe.desktop.hbs",
         "postRemoveScript": "linux/remove-app-dirs.sh"
       }

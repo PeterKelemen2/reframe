@@ -288,8 +288,8 @@ def _tarball(path: Path, files: Mapping[str, bytes], mode: str = "w:xz") -> byte
 
 
 def test_a_tarball_must_have_its_pinned_checksum(tmp_path: Path) -> None:
-    tarball = tmp_path / "upstream" / "mediainfo-26.10.tar.xz"
-    source = _tarball(tarball, {"MediaInfo/LICENSE": b"BSD-2-Clause"})
+    tarball = tmp_path / "upstream" / "example-1.0.tar.xz"
+    source = _tarball(tarball, {"example/LICENSE": b"MIT"})
     out = tmp_path / "out"
 
     with pytest.raises(sf.SourcesError, match="the SHA-256 is"):
