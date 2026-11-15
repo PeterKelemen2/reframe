@@ -101,7 +101,7 @@ class Sources:
     """Probes with the real ffprobe, memoised by path."""
 
     def __init__(self, ffprobe: str) -> None:
-        self.prober = Prober(ffprobe, use_mediainfo=False)
+        self.prober = Prober(ffprobe)
         self.known: dict[str, MediaSource] = {}
         self.calls = 0
 

@@ -24,7 +24,6 @@ from reframe.models import (
     ToolsChangedEvent,
     ToolStatus,
 )
-from reframe.probe import mediainfo
 from reframe.service import (
     FolderProbeResult,
     ProbeError,
@@ -85,7 +84,6 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         monkeypatch.delenv(var, raising=False)
     for name in ("config", "data", "cache"):
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     return tmp_path
 
 

@@ -26,7 +26,6 @@ from reframe.models import (
     ValidationIssue,
 )
 from reframe.models.migrations import current_version
-from reframe.probe import mediainfo
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
@@ -49,7 +48,6 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
         monkeypatch.delenv(var, raising=False)
     for name in ("config", "data", "cache"):
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     return tmp_path
 
 

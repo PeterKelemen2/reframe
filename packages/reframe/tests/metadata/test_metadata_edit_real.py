@@ -18,7 +18,6 @@ from pathlib import Path
 import pytest
 
 from reframe.models import JobDraft, JobSettings, JobState, MediaSource, QueueJob
-from reframe.probe import mediainfo
 from reframe.probe.matroska import read_matroska
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
@@ -64,7 +63,6 @@ def env(
     monkeypatch.setenv("REFRAME_FFMPEG", ffmpeg)
     monkeypatch.setenv("REFRAME_FFPROBE", ffprobe)
     monkeypatch.setenv("REFRAME_MKVPROPEDIT", mkvpropedit)
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     _settings(tmp_path / "config")
     source = tmp_path / "media" / "Show.S01E01.mkv"
     source.parent.mkdir()

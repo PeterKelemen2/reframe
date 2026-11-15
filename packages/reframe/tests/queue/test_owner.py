@@ -39,8 +39,6 @@ WINDOWS = sys.platform == "win32"
 #: ``app.warning`` events. ``hold``: it starts the job, prints ``running`` and waits to be killed.
 CHILD = """
 import asyncio, json, sys
-from reframe.probe import mediainfo
-mediainfo.mediainfo_available = lambda: False
 from reframe.models import JobSettings
 from reframe.service import Reframe
 
