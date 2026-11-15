@@ -7,6 +7,7 @@ edit by mkvpropedit reads back the same in ``mkvmerge -J``."""
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
 import os
 import shutil
@@ -14,12 +15,14 @@ import subprocess
 import sys
 import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from reframe.command.header import edit_line
 from reframe.metadata import header
 from reframe.metadata.header import HeaderEditResult
 from reframe.models import (
@@ -33,6 +36,7 @@ from reframe.models import (
     resolve_argv,
 )
 from reframe.probe.matroska import read_matroska
+from reframe.queue import runner as runner_module
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
 from reframe_testing import media
@@ -394,9 +398,16 @@ async def test_an_edit_that_changed_nothing_fails_the_reprobe_check(
             "room. Nothing was changed in the file.",
         ),
         (
-            HeaderEditResult("failed", "header.write_error", "Input/output error"),
+            HeaderEditResult(
+                "failed", "header.write_error", "Input/output error", file_state="old"
+            ),
             "Writing the Matroska header of Show.S01E01.mkv failed: Input/output error. The "
-            "file holds either all its old values or all the new ones.",
+            "file holds all its old values.",
+        ),
+        (
+            HeaderEditResult("failed", "header.write_error", "Input/output error"),
+            "Writing the Matroska header of Show.S01E01.mkv failed: Input/output error. "
+            "Reframe cannot tell what the file holds now.",
         ),
     ],
 )
@@ -498,3 +509,222 @@ async def poll(condition: Callable[[], bool], limit: float = 20.0) -> None:
     while not condition():
         assert asyncio.get_running_loop().time() < deadline, "condition not met in time"
         await asyncio.sleep(0.01)
+
+
+def changed_under_the_writer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The real writer, with the file touched between its read and its write: it writes
+    nothing and fails with ``header.changed``."""
+    prepare = header._prepare
+
+    def touching(handle: Any, edit: HeaderEdit) -> Any:
+        steps = prepare(handle, edit)
+        os.utime(edit.path, ns=(0, 1))
+        return steps
+
+    monkeypatch.setattr(header, "_prepare", touching)
+
+
+async def test_a_header_that_may_be_damaged_is_said_first_and_its_old_bytes_are_kept(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defect: the disk fails during the switch and while its old bytes are written back, and
+    the job hides that the header may be damaged, or loses the bytes that would repair it."""
+    writes = [0]
+
+    class FailingIO(header._FileIO):
+        def write(self, pos: int, data: bytes) -> None:
+            writes[0] += 1
+            if writes[0] > 1:
+                raise OSError(errno.ENOSPC, "No space left on device")
+            super().write(pos, data[: len(data) // 2])
+            raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(header, "_FileIO", FailingIO)
+    original = env.source.read_bytes()
+    app = await env.app()
+    try:
+        job = await draft_remux(app, env.source)
+        job.audio[0].metadata.name = "X"
+        ended = await run(app, job)
+        assert ended.state is JobState.FAILED
+        assert ended.error is not None
+        head = (
+            "Writing the Matroska header of Show.S01E01.mkv failed: The header of the file may "
+            "be damaged. Writing the header failed ([Errno 28] No space left on device), and "
+            "writing its old bytes back failed too ([Errno 28] No space left on device). Its old "
+            "bytes at offset "
+        )
+        assert ended.error.startswith(head), ended.error
+        offset = int(ended.error[len(head) :].split(" ", 1)[0])
+        saved = app.queue.log_path(ended.id).parent / f"{ended.id}.header-at-{offset}.bin"
+        assert f"are saved in {saved}: writing them back at that offset restores" in ended.error
+        data = saved.read_bytes()
+        assert data == original[offset : offset + len(data)]
+        assert env.source.read_bytes() != original
+        put_back(env.source, offset, data)
+        assert env.source.read_bytes() == original
+    finally:
+        await app.close()
+
+
+def put_back(path: Path, offset: int, data: bytes) -> None:
+    with open(path, "r+b") as handle:
+        handle.seek(offset)
+        handle.write(data)
+
+
+async def test_a_failure_that_wrote_nothing_says_so_and_only_so(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defect: the job says the file "is unchanged" and then that it "holds either all its old
+    values or all the new ones"."""
+    changed_under_the_writer(monkeypatch)
+    before = env.source.read_bytes()
+    app = await env.app()
+    try:
+        job = await draft_remux(app, env.source)
+        job.audio[0].metadata.name = "X"
+        ended = await run(app, job)
+        assert ended.state is JobState.FAILED
+        assert ended.error == (
+            "Writing the Matroska header of Show.S01E01.mkv failed: The file changed while "
+            "its header was read. Nothing was changed in the file."
+        )
+        assert env.source.read_bytes() == before
+    finally:
+        await app.close()
+
+
+async def test_a_cancel_during_a_write_that_wrote_nothing_says_so_and_only_so(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defect: the same contradiction in the error of a job cancelled during the write."""
+    changed_under_the_writer(monkeypatch)
+    real = header.apply_header_edit
+    gate, started = threading.Event(), threading.Event()
+
+    def gated(edit: HeaderEdit) -> HeaderEditResult:
+        started.set()
+        gate.wait(30)
+        return real(edit)
+
+    monkeypatch.setattr(header, "apply_header_edit", gated)
+    app = await env.app()
+    try:
+        job = await draft_remux(app, env.source)
+        job.audio[0].metadata.name = "X"
+        queued = await app.queue.add(job)
+        app.queue.start(job_ids=[queued.id])
+        try:
+            assert await asyncio.to_thread(started.wait, 30)
+            task = app.queue._active[queued.id].task
+            assert task is not None
+            task.cancel()  # as an event loop that shuts down does
+            await asyncio.sleep(0.2)
+        finally:
+            gate.set()
+        [ended] = await app.queue.wait([queued.id])
+        assert ended.error is not None
+        assert ended.error.endswith(
+            "the write was let finish (failed (header.changed): The file changed while its "
+            "header was read.). Nothing was changed in the file."
+        ), ended.error
+    finally:
+        await app.close()
+
+
+async def test_the_writer_does_not_wait_behind_other_blocked_threads(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defect: the writer waits for a worker of the shared default executor, which slow
+    shares can hold; a cancel in that time cannot stop it, and the source is written after the
+    cancel."""
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(ThreadPoolExecutor(max_workers=1))
+    gate = threading.Event()
+    ran = asyncio.Event()
+    real = header.apply_header_edit
+
+    def recording(edit: HeaderEdit) -> HeaderEditResult:
+        result = real(edit)
+        loop.call_soon_threadsafe(ran.set)
+        return result
+
+    monkeypatch.setattr(header, "apply_header_edit", recording)
+
+    def then_busy(edit: HeaderEdit, shell: Any) -> str:
+        loop.run_in_executor(None, gate.wait, 60)  # a hung share holds the only worker
+        return edit_line(edit, shell)
+
+    monkeypatch.setattr(runner_module, "edit_line", then_busy)
+    app = await env.app()
+    try:
+        job = await draft_remux(app, env.source)
+        job.audio[0].metadata.name = "Renamed"
+        queued = await app.queue.add(job)
+        app.queue.start(job_ids=[queued.id])
+        try:
+            await asyncio.wait_for(ran.wait(), 10)
+        finally:
+            gate.set()
+        [ended] = await app.queue.wait([queued.id])
+        assert ended.state is JobState.DONE, ended.error
+        assert (await reprobe(app, env.source)).audio[0].title == "Renamed"
+    finally:
+        gate.set()
+        await app.close()
+
+
+class HeldThread(threading.Thread):
+    """A writer thread that the test holds before it runs (as a busy machine may)."""
+
+    hold = threading.Event()
+    waiting = threading.Event()
+
+    def run(self) -> None:
+        HeldThread.waiting.set()
+        HeldThread.hold.wait(30)
+        super().run()
+
+
+@pytest.mark.parametrize("how", ["cancel", "close"])
+async def test_a_stop_before_the_writer_starts_writes_nothing_and_ends_at_once(
+    env: Env, monkeypatch: pytest.MonkeyPatch, how: str
+) -> None:
+    """Defect: a cancel or ``close()`` while the writer has not started yet waits for it, and
+    the writer then writes the source of a job that was stopped."""
+    from reframe.metadata import own_thread
+
+    HeldThread.hold, HeldThread.waiting = threading.Event(), threading.Event()
+    monkeypatch.setattr(own_thread, "Thread", HeldThread)
+    calls = fake_writer(monkeypatch, HeaderEditResult("written"))
+    before = env.source.read_bytes()
+    app = await env.app()
+    closed = False
+    try:
+        job = await draft_remux(app, env.source)
+        job.audio[0].metadata.name = "Renamed"
+        queued = await app.queue.add(job)
+        app.queue.start(job_ids=[queued.id])
+        try:
+            assert await asyncio.to_thread(HeldThread.waiting.wait, 30)
+            if how == "cancel":
+                await asyncio.wait_for(app.queue.cancel(queued.id), 5)
+                [ended] = await asyncio.wait_for(app.queue.wait([queued.id]), 5)
+                assert ended.state is JobState.CANCELLED
+                assert ended.error is None
+            else:
+                await asyncio.wait_for(app.close(), 5)
+                closed = True
+        finally:
+            HeldThread.hold.set()
+        await asyncio.sleep(0.2)
+        assert calls == []
+        assert env.source.read_bytes() == before
+        if how == "cancel":
+            log = app.queue.log_path(queued.id).read_text(encoding="utf-8")
+            assert "before Reframe started to write the header" in log
+    finally:
+        HeldThread.hold.set()
+        if not closed:
+            await app.close()

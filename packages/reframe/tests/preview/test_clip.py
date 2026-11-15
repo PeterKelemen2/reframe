@@ -8,11 +8,13 @@ import os
 import subprocess
 import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+import reframe.preview.clip as clip_module
 from reframe.metadata import header
 from reframe.metadata.header import HeaderEditResult
 from reframe.models import (
@@ -377,6 +379,73 @@ async def test_a_cancel_during_the_header_edit_waits_for_it(
     done = await env.tasks.wait(info.id)
     assert done.state is TaskState.CANCELLED
     assert no_leftovers(tmp_path / "cache" / "clips") == []
+
+
+async def test_a_cancel_ends_at_once_while_other_threads_hold_the_executor(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defect: the header edit waits for a worker of the shared default executor; a cancel
+    then waits for whatever holds that worker."""
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(ThreadPoolExecutor(max_workers=1))
+    gate, busy = threading.Event(), asyncio.Event()
+
+    async def encode_then_busy(*args: Any, **kwargs: Any) -> RunResult:
+        result = await run_streaming(*args, **kwargs)
+        if not busy.is_set():  # after the last encode: a hung share holds the only worker
+            loop.run_in_executor(None, gate.wait, 60)
+            busy.set()
+        return result
+
+    monkeypatch.setattr(clip_module, "run_streaming", encode_then_busy)
+    writer = Writer()
+    monkeypatch.setattr(header, "apply_header_edit", writer)
+    env = make_env(tmp_path / "cache")
+    job = portuguese_loudness_job(fixture_media("multitrack"))
+    job.audio[0].loudness = "off"  # one FFmpeg run, then the header edit
+    info = start_preview_clip(env.ctx, job, start=1.0, seconds=2.0)
+    try:
+        await asyncio.wait_for(busy.wait(), 60)
+        await asyncio.sleep(0.3)
+        assert env.tasks.cancel(info.id)
+        done = await asyncio.wait_for(env.tasks.wait(info.id), 5)
+        assert done.state is TaskState.CANCELLED
+    finally:
+        gate.set()
+
+
+async def test_a_cancel_before_the_header_edit_starts_ends_at_once_and_writes_nothing(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defect: a cancel while the writer's thread has not run yet waits for it, and the
+    writer then writes a file of a cancelled clip."""
+    hold, waiting = threading.Event(), threading.Event()
+
+    class HeldThread(threading.Thread):
+        def run(self) -> None:
+            waiting.set()
+            hold.wait(30)
+            super().run()
+
+    from reframe.metadata import own_thread
+
+    monkeypatch.setattr(own_thread, "Thread", HeldThread)
+    writer = Writer()
+    monkeypatch.setattr(header, "apply_header_edit", writer)
+    env = make_env(tmp_path / "cache")
+    info = start_preview_clip(
+        env.ctx, portuguese_loudness_job(fixture_media("multitrack")), start=1.0, seconds=2.0
+    )
+    try:
+        assert await asyncio.to_thread(waiting.wait, 60)
+        assert env.tasks.cancel(info.id)
+        done = await asyncio.wait_for(env.tasks.wait(info.id), 5)
+        assert done.state is TaskState.CANCELLED
+        assert no_leftovers(tmp_path / "cache" / "clips") == []
+    finally:
+        hold.set()
+    await asyncio.sleep(0.2)
+    assert writer.edits == []
 
 
 @pytest.mark.needs_mkvtoolnix

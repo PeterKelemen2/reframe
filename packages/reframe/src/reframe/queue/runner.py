@@ -3,14 +3,15 @@
 
 A job never writes its source, except a metadata edit in place, whose only steps are
 ``header_edit`` steps on the source. A ``header_edit`` step runs Reframe's own Matroska writer in
-a worker thread, which cannot be stopped: a cancel or ``close()`` waits for it. The output is
-checked before it takes its final name.
+a thread of its own: a cancel or ``close()`` before the writer starts prevents it, and one after
+waits for it. The output is checked before it takes its final name.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import logging
 import os
 from collections import deque
@@ -27,13 +28,14 @@ from reframe.command.quoting import Shell, command_line, default_shell
 from reframe.definitions import Definitions
 from reframe.events import EventBus
 from reframe.metadata import header
+from reframe.metadata.own_thread import OwnThread
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.events import JobProgressEvent
 from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.media import MediaSource
 from reframe.models.naming import NamingOptions
-from reframe.models.plan import EncodePlan, PlanStep, resolve_argv
+from reframe.models.plan import EncodePlan, HeaderEdit, PlanStep, resolve_argv
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.settings import AppSettings, CollisionPolicy
 from reframe.models.tools import ToolInfo, ToolSet, ToolStatus
@@ -535,8 +537,9 @@ class JobRunner:
     async def _write_header(
         self, job: QueueJob, active: ActiveJob, joblog: JobLog, step: PlanStep, label: str
     ) -> header.HeaderEditResult:
-        """Run a ``header_edit`` step: the writer in a worker thread, always to its end. No time
-        limit: a thread cannot be stopped, and the writer's reads are bounded."""
+        """Run a ``header_edit`` step: the writer in a thread of its own, once started always to
+        its end. No time limit: a thread cannot be stopped, and the writer's reads are
+        bounded."""
         edit = step.header_edit
         assert edit is not None
         if active.token.cancelled:
@@ -544,12 +547,12 @@ class JobRunner:
         joblog.note(f"{label} ({step.kind}): {step.description or step.kind}")
         joblog.write(edit_line(edit, self._shell))
         started = self._clock.monotonic()
-        # A plain future, not a task: an event loop that shuts down cancels every task, and
-        # the wait for the writer's result must outlive that.
-        run = asyncio.get_running_loop().run_in_executor(None, header.apply_header_edit, edit)
-        guard = asyncio.ensure_future(self._let_finish(job, active, joblog, edit.path))
+        keep = joblog.path.parent if active.in_place else None
+        write = OwnThread(lambda: _write_and_keep(edit, keep, job.id))
+        write.start()
+        guard = asyncio.ensure_future(self._let_finish(job, active, joblog, edit.path, write))
         try:
-            result = await self._to_its_end(run, active, joblog, label, edit.path)
+            result = await self._to_its_end(write, active, joblog, label, edit.path)
         finally:
             guard.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -559,13 +562,25 @@ class JobRunner:
         return result
 
     async def _let_finish(
-        self, job: QueueJob, active: ActiveJob, joblog: JobLog, path: Path
+        self,
+        job: QueueJob,
+        active: ActiveJob,
+        joblog: JobLog,
+        path: Path,
+        write: OwnThread[header.HeaderEditResult],
     ) -> None:
-        """While a ``header_edit`` step runs: when the job is stopped, log that the write is
-        let finish, and show a paused job running again, since its write goes on. Runs under
-        the job's control lock, so a pause under way ends first."""
+        """While a ``header_edit`` step runs: when the job is stopped before the writer
+        starts, it never starts; once it has started, log that the write is let finish, and
+        show a paused job running again, since its write goes on. Runs under the job's control
+        lock, so a pause under way ends first."""
         await active.token.wait()
         why = "Reframe is closing" if active.stop_reason == "close" else "The job is cancelled"
+        if write.prevent():
+            joblog.note(
+                f"{why} before Reframe started to write the header of {path.name}: nothing "
+                "was written"
+            )
+            return
         joblog.note(f"{why} while Reframe is writing the header of {path.name}: it is let finish")
         async with active.control:
             if active.paused:
@@ -580,35 +595,42 @@ class JobRunner:
 
     async def _to_its_end(
         self,
-        run: asyncio.Future[header.HeaderEditResult],
+        write: OwnThread[header.HeaderEditResult],
         active: ActiveJob,
         joblog: JobLog,
         label: str,
         path: Path,
     ) -> header.HeaderEditResult:
-        """The writer's result. If the awaiting task is cancelled (also by an event loop that
-        shuts down), the write still runs to its end, then the cancellation goes on, with
+        """The writer's result; :class:`_Stopped` when a stop came before it started. If the
+        awaiting task is cancelled (also by an event loop that shuts down) after the writer
+        started, the write still runs to its end, then the cancellation goes on, with
         ``active.end_note`` saying what happened to the file."""
+        run = write.future
         try:
-            return await asyncio.shield(run)
+            done = await asyncio.shield(run)
         except asyncio.CancelledError:
+            if write.prevent():
+                raise
             while not run.done():
                 with contextlib.suppress(asyncio.CancelledError):
                     await asyncio.shield(run)
             error = None if run.cancelled() else run.exception()
-            if run.cancelled() or error is not None:
+            result = None if run.cancelled() or error is not None else run.result()
+            if result is None:
                 what = f"it ended with an internal error ({error!r})"
-                state = _FILE_STATE["failed"]
+                state = _UNKNOWN_STATE
             else:
-                result = run.result()
                 what = _result_text(result)
-                state = _FILE_STATE[result.status]
+                state = _state_text(result)
             active.end_note = (
                 f"The job was stopped while Reframe was writing the header of {path.name}: the "
                 f"write was let finish ({what}). {state}"
             )
             joblog.note(f"{label} ended: {what}; the job was stopped during the write")
             raise
+        if done is None:
+            raise _Stopped
+        return done
 
     def _measure(
         self, step: PlanStep, result: RunResult, values: dict[str, str], joblog: JobLog
@@ -845,12 +867,47 @@ def _stopped_after_edit(
     )
 
 
-#: What a ``header_edit`` result left in the file.
-_FILE_STATE = {
-    "written": "The new values are written; the check of the edited file did not run.",
-    "refused": "Nothing was changed in the file.",
-    "failed": "The file holds either all its old values or all the new ones.",
+#: What the file of a ``header_edit`` step holds after it.
+_FILE_STATE: dict[header.HeaderFileState, str] = {
+    "unchanged": "Nothing was changed in the file.",
+    "old": "The file holds all its old values.",
+    "new": "The new values are written; the check of the edited file did not run.",
+    "damaged": "The header of the file may be damaged.",
 }
+_UNKNOWN_STATE = "Reframe cannot tell what the file holds now."
+_STATUS_STATE: dict[header.HeaderEditStatus, header.HeaderFileState] = {
+    "written": "new",
+    "refused": "unchanged",
+}
+
+
+def _state_text(result: header.HeaderEditResult) -> str:
+    state = result.file_state
+    if state is None:
+        state = _STATUS_STATE.get(result.status)
+    return _UNKNOWN_STATE if state is None else _FILE_STATE[state]
+
+
+def _write_and_keep(edit: HeaderEdit, keep: Path | None, job_id: str) -> header.HeaderEditResult:
+    """The writer's result. When the file may be damaged and ``keep`` is a folder, the old
+    bytes the writer could not put back are saved there, and the reason says where. Blocking."""
+    result = header.apply_header_edit(edit)
+    backup = result.backup
+    if keep is None or backup is None:
+        return result
+    saved = keep / f"{job_id}.header-at-{backup.offset}.bin"
+    try:
+        keep.mkdir(parents=True, exist_ok=True)
+        saved.write_bytes(backup.data)
+    except OSError as exc:
+        note = f"Its old bytes could not be saved ({exc})."
+    else:
+        note = (
+            f"Its old bytes at offset {backup.offset} ({len(backup.data)} bytes) are saved in "
+            f"{saved}: writing them back at that offset restores the old header."
+        )
+    reason = f"{result.reason or ''} {note}".strip()
+    return dataclasses.replace(result, reason=reason)
 
 
 def _result_text(result: header.HeaderEditResult) -> str:
@@ -872,7 +929,9 @@ def _header_error(path: Path, result: header.HeaderEditResult) -> str:
         head = f"Reframe cannot edit the Matroska header of {path.name}:"
     else:
         head = f"Writing the Matroska header of {path.name} failed:"
-    return f"{head}{reason} {_FILE_STATE[result.status]}"
+    if result.file_state == "damaged":  # the warning before the details
+        return f"{head} {_state_text(result)}{reason}"
+    return f"{head}{reason} {_state_text(result)}"
 
 
 def _killed(result: RunResult) -> bool:
