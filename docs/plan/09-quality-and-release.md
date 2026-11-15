@@ -126,8 +126,9 @@ This is not legal advice. Review it before any public or commercial distribution
 | FFmpeg GPL build (with x264, x265) | GPL-2.0+/GPL-3.0 | **Every artefact bundles it**: the Docker image, AppImage, .deb, .rpm and the Windows installer. Each must include the licence and the corresponding source (or a written offer) **for the exact build that ships** |
 | `libfdk_aac` | Not redistributable with GPL builds | **Never bundled.** It is used only if the user's own FFmpeg has it |
 | MKVToolNix | GPL-2.0 | **Not bundled and not run** by the product: since C-18 Reframe writes the Matroska headers itself ([decision 0080](../decisions/0080-own-matroska-header-writer.md)); tests use it as an oracle. Its Windows build links OpenSSL (Apache-2.0) into GPL-2.0-only code ([decision 0079](../decisions/0079-q5-release-process.md) item 11) |
-| MediaInfo | BSD-2-Clause | Notice required |
+| MediaInfo | BSD-2-Clause | Notice required until C-19; then **not bundled and not used** ([decision 0081](../decisions/0081-probe-without-mediainfo.md)) |
 | guessit, rebulk | LGPL-3.0 | Compatible with a GPL app. Notice required |
+| CLDR and IANA language subtag registry data (the generated language table) | Unicode licence (CLDR); the registry is IANA's | Notice required. Replaces the entries of `langcodes`, `language_data` and `marisa-trie` ([decision 0082](../decisions/0082-own-language-data-table.md)); confirm the exact licence text from the CLDR release that the table is built from |
 | Tauri, Vue, PrimeVue, FastAPI, Pydantic | MIT / Apache-2.0 | Notices required |
 
 - [x] Recommended licence for Reframe: **GPL-3.0-or-later** (open question 2 in

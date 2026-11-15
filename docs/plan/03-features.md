@@ -336,10 +336,11 @@ tracks (DTS-HD MA) often show no bitrate.
 | 3 | eng | Director's Commentary | AC-3 | 2.0 | 48 kHz | 192 kb/s | `Commentary` |
 
 - **Codec** uses the commercial name (DTS-HD MA, DTS:X, TrueHD Atmos, E-AC-3 JOC, AAC-LC, HE-AAC,
-  FLAC, PCM), from the FFprobe profile with MediaInfo as a fallback.
+  FLAC, PCM), from the FFprobe profile.
 - **Bitrate** comes from, in order: the stream's `bit_rate` → Matroska statistics tags (`BPS`,
-  `NUMBER_OF_BYTES`/`DURATION`) → MediaInfo → `—` with a **Measure** button that runs a
-  packet-size scan as a cancellable background task.
+  `NUMBER_OF_BYTES`/`DURATION`) → for Matroska, an estimate from 32 sampled clusters, shown
+  as `≈` → `—`. A **Measure** button runs a packet-size scan as a cancellable background task
+  for the exact value ([decision 0081](../decisions/0081-probe-without-mediainfo.md)).
 - **Role badges**: `Commentary`, `Audio description`, `Music only`, `Main`. A badge is solid
   when the file's disposition flag sets it. It is outlined when a heuristic sets it (title
   keywords in several languages, or a 2.0 low-bitrate track in the same language as a main
@@ -815,7 +816,7 @@ The Summary tab shows which job type you will get, and why.
 
 | Section | Contents |
 |---------|----------|
-| Tools | ffmpeg, ffprobe, mediainfo. Each shows its version and where it comes from (bundled, settings, environment). A path override field, **Test** and **Use bundled** buttons. Overrides from environment variables are read-only |
+| Tools | ffmpeg, ffprobe. Each shows its version and where it comes from (bundled, settings, environment). A path override field, **Test** and **Use bundled** buttons. Overrides from environment variables are read-only |
 | Encoders | Table of all known encoders: status, reason, last check time. **Re-scan** button. Hardware test encodes on / off. VAAPI device (automatic, or one `/dev/dri/renderD*` node; [decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)) |
 | Output | Default folder, [naming](#output-naming) templates and options, default container, collision behaviour, partial file behaviour |
 | Languages | Favourite languages. Preferred audio and subtitle languages (used by preset rules) |

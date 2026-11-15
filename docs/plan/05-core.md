@@ -6,8 +6,8 @@ work headless, from a script or from the bundled CLI.
 ## Rules for the core
 
 - No imports from FastAPI, Tauri, Vue or any UI toolkit. Dependencies: `pydantic`, `psutil`,
-  `platformdirs`, `langcodes`, `guessit`. Optional extras: `pymediainfo`
-  (`[mediainfo]`), `typer` (`[cli]`).
+  `platformdirs`, `guessit`. Optional extra: `typer` (`[cli]`). No `[mediainfo]` extra since
+  C-19 ([decision 0081](../decisions/0081-probe-without-mediainfo.md)).
 - The public API is the `Reframe` facade (`C-15`) and `reframe.models`. Everything else is
   internal and can change.
 - Async throughout. All subprocess calls go through `reframe.tools.run*` (`C-1`).
@@ -77,7 +77,7 @@ async def run_streaming(argv, *, on_stdout_line, on_stderr_line, cancel, timeout
       ([decision 0005](../decisions/0005-tool-discovery-details.md)). FFmpeg then dies if
       Reframe dies.
 - [ ] Windows: `CREATE_NO_WINDOW`, so no console window flashes.
-- [ ] Discovery for each tool (`ffmpeg`, `ffprobe`, `mediainfo`) in the order
+- [ ] Discovery for each tool (`ffmpeg`, `ffprobe`; `mediainfo` until C-19) in the order
       from [02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg): environment variable →
       Settings path → bundled directory → `PATH` (only without a bundled build). Record which
       source won (`ToolInfo.origin = env | settings | bundled | path`) so the UI can show it.
@@ -105,7 +105,8 @@ Pydantic v2 models in `reframe.models`. All of them are JSON-serialisable and ha
 
 - [ ] **Media** (`MediaSource`, `VideoStream`, `AudioStream`, `SubtitleStream`, `Chapter`,
       `Attachment`, `ColorInfo`, `HdrInfo`, `Disposition`, `TrackRole`, `BitrateInfo` with a
-      `source` field: `stream | stats_tag | mediainfo | measured | unknown`).
+      `source` field: `stream | stats_tag | estimated | measured | unknown`; `estimated` replaces
+      `mediainfo` with C-19).
 - [ ] **Job** (sketch):
 
 ```python
@@ -151,8 +152,7 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
       with a 60 s timeout (network shares can be slow).
 - [ ] Parse it into `MediaSource`. Handle: attached pictures (cover art is not a video track),
       attachments (fonts), data streams, VFR (`r_frame_rate` ≠ `avg_frame_rate`; in Matroska
-      also `NUMBER_OF_FRAMES` / `DURATION` vs `avg_frame_rate`, then MediaInfo, then a packet
-      timestamp sample), interlacing (`field_order`), stream start offsets (`delay`, relative
+      also `NUMBER_OF_FRAMES` / `DURATION` vs `avg_frame_rate`, then a packet timestamp sample), interlacing (`field_order`), stream start offsets (`delay`, relative
       to the main video stream, shown as audio delay), and missing durations (decision 0007).
 - [ ] **HDR**: read stream side data (mastering display, content light level, DOVI
       configuration). If it is missing, read the first frame's side data
@@ -164,13 +164,14 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
       `truehd/… + Dolby Atmos → TrueHD Atmos`, `eac3/… + Dolby Atmos → E-AC-3 Atmos`,
       `aac/LC → AAC-LC`, `hdmv_pgs_subtitle → PGS`. A table-driven test covers the map.
 - [ ] **Bitrate chain**: `bit_rate` → Matroska statistics tags (`BPS`, `BPS-eng`,
-      `NUMBER_OF_BYTES` / `DURATION`) → MediaInfo (the pymediainfo library, if it loads) →
-      `unknown`. The value records its source. Statistics tags are used only when they are
-      plausible for the file (size, bit rate, duration); FFmpeg copies stale ones on re-encode.
+      `NUMBER_OF_BYTES` / `DURATION`) → for Matroska, the sampled estimate of C-19 → `unknown`.
+      The value records its source. Statistics tags are used only when they are plausible for
+      the file (size, bit rate, duration; a compressed track's `NUMBER_OF_BYTES` is left out of
+      the size check, C-19); FFmpeg copies stale ones on re-encode.
       `language_ietf` is the file's BCP 47 tag (Matroska `LanguageIETF`, which ffprobe does
       not show): for Matroska, Reframe's own track reader gives it (`None` when the track has
-      none); for other containers, and when the reader cannot read or match the tracks,
-      MediaInfo gives it (decision 0007 and its follow-ups, decision 0034).
+      none); for other containers it is derived from the ISO 639 code (decision 0007 and its follow-ups,
+      decision 0034, [decision 0081](../decisions/0081-probe-without-mediainfo.md)).
 - [ ] **Subtitle event counts** from `NUMBER_OF_FRAMES` tags, when present and plausible.
 - [ ] **Role heuristics** (`probe/roles.py`): dispositions first, then title keywords
       (commentary, kommentar, commentaire, comentario, commento, kommentár, コメンタリー; SDH, CC,
@@ -311,7 +312,9 @@ class EncoderOption(BaseModel):
       (what / use when / avoid when / speed cost).
 - [ ] `languages.py`: search (by name, native name, ISO 639-1/2/3, BCP 47), normalisation,
       `to_matroska_legacy()` (ISO 639-2/B, for example `ger`, `fre`, `chi`), `to_mp4()`
-      (ISO 639-2/T), display names. Built on `langcodes`.
+      (ISO 639-2/T), display names. Built on a generated language table (C-20,
+      [decision 0082](../decisions/0082-own-language-data-table.md)); `langcodes` and
+      `language_data` are dev tools that build it.
 
 Done when: a definitions linter test runs. It checks that every option has help text and a
 mapping, that ranges are consistent, and that every fallback chain ends in a software encoder.
@@ -771,3 +774,78 @@ Done when:
 4. Every refused case leaves the file byte for byte unchanged.
 5. C-13's "Done when" passes with the writer, and no product code path starts an MKVToolNix
    program.
+
+## C-19 Probe without MediaInfo
+
+The probe fills the gaps that MediaInfo filled with Reframe's own code, and MediaInfo leaves the
+product ([decision 0081](../decisions/0081-probe-without-mediainfo.md)). Milestone M10.
+
+- [ ] Stale statistics tags: a track whose `TrackEntry` has `ContentEncodings` with compression
+      (mkvmerge zlib-compresses PGS) is left out of the `NUMBER_OF_BYTES` sum;
+      Reframe's Matroska reader reads `ContentEncodings`.
+- [ ] Sampled estimate for Matroska and WebM, when a video or audio stream has no rate after
+      ffprobe and the tags: 32 clusters at evenly spaced offsets (2 % to 98 %), each with the
+      next cluster's timestamp, in the file's `TimestampScale`. Audio: bytes per sampled
+      second. A single video stream without a rate: the file's rate minus every other stream's.
+      More than one such video stream: bytes per sampled second each. Bounded reads (256 KB
+      windows, a cluster of at most 64 MB, the reader's `MAX_*` limits), in the probe's worker
+      thread, with a time limit and cancel; a file that cannot be sampled keeps `unknown`.
+- [ ] `BitrateSource.estimated` replaces `mediainfo` (`schema_version` bump, migration
+      `mediainfo` → `estimated`, down-level note); the probe cache key changes. The track
+      table shows `≈` and "estimated from 32 samples" next to **Measure**.
+- [ ] VFR from ffprobe's output and the 120-packet fallback only. BCP 47 for containers other
+      than Matroska from the ISO 639 code.
+- [ ] MediaInfo leaves the product: `probe/mediainfo.py`, the `[mediainfo]` extra and
+      `pymediainfo` in the sidecar, discovery, `ToolName`, `ToolsStatus`, Settings → Tools,
+      `REFRAME_MEDIAINFO`, the settings field `tools.mediainfo` (`schema_version` bump,
+      migration, down-level note), the Windows MediaInfo CLI in `tools/bundled-tools.toml` and
+      `scripts/bundle-tools.py`, `Recommends: mediainfo`, the Docker image's `mediainfo`
+      package and extra, and the notices.
+
+Done when:
+
+1. On the fixtures and a recorded real-file corpus (mkvmerge with compressed PGS tracks,
+   HandBrake 0.10 and 1.x, FFmpeg output), every video and audio stream of an MKV has a rate;
+   each `estimated` video rate is within 3 % and each audio rate within 12 % of the exact
+   block-scan value, recorded in `testdata/README.md`.
+2. The two mkvmerge files of 0081 whose tags were called stale keep their statistics tags
+   (`stats_tag`), checked with a recorded probe of each.
+3. A file the sampler cannot read (damaged clusters, unknown-size clusters only) keeps
+   `unknown` with no exception.
+4. Q-3's probe budgets still pass, and `import reframe` and a probe work with no
+   `pymediainfo` installed; no package contains MediaInfo.
+
+## C-20 Language data table
+
+A generated data file replaces `langcodes`, `language_data` and `marisa-trie` at run time
+([decision 0082](../decisions/0082-own-language-data-table.md)). The two libraries move to the
+dev dependency group. Milestone M10.
+
+- [ ] `scripts/gen-language-data.py` builds the file from the libraries into
+      `reframe/definitions/data/`: the IANA registry subtags (type, `Deprecated`,
+      `Preferred-Value`, `Suppress-Script`, `Macrolanguage`), langcodes' alias tables and the
+      canonical tag of each language subtag, ISO 639-1/2B/2T/3 codes, English and native
+      names of languages, English names of scripts, regions and variants, region and script
+      names per locale, and language names per locale with langcodes' name normalisation.
+      `--check` fails when the committed file differs from a new build.
+- [ ] A core part (codes, canonical forms, English and native names) read at the first use,
+      and lazy parts (names per locale) read only by a native name of an unlisted variant or
+      a name search.
+- [ ] `reframe.languages` keeps its public API and its results, read from the file (standard
+      library only). English names compose as `Language (detail, detail)`; a script that is
+      the language's `Suppress-Script` is left out; `und`, `mul`, `zxx`, `mis` with a detail
+      compose as "Unknown language (…)".
+- [ ] `langcodes`, `language_data` and `marisa-trie` leave the runtime dependencies, the
+      PyInstaller spec and the notices; the notices get the CLDR and IANA terms (Q-5).
+
+Done when:
+
+1. An equivalence test (dev and CI, libraries installed) gives the same `normalize`,
+   `english_name`, `native_name`, `to_matroska_legacy`, `to_mp4`, `search` and `matches`
+   results as the libraries over a fixed corpus: every registry language subtag, every
+   listed base language with every region and script, deprecated, extlang and grandfathered
+   tags, and the names of every listed language in every locale. Each tie (an ambiguous
+   name) is fixed to today's result.
+2. `scripts/gen-language-data.py --check` passes in CI.
+3. `import reframe` and a probe, a draft and a search work in a virtual environment without
+   the three libraries, and the frozen sidecar contains none of them.

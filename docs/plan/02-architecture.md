@@ -18,7 +18,7 @@
                     │ command builder · validation · preview · presets · batch · queue · metadata     │
                     └───────────┬─────────────────────────────────────────────────────────────────────┘
                                 │ subprocess (asyncio)
-                      ffprobe · ffmpeg · mediainfo (optional)
+                      ffprobe · ffmpeg
 ```
 
 The core is the product. The server is a thin transport layer. The frontend is the only UI
@@ -63,7 +63,7 @@ reframe/
 | Async | `asyncio` subprocesses, `anyio` in tests | FastAPI is async. Encodes are long-running child processes |
 | Process control | `psutil` | Cross-platform suspend/resume (pause), tree kill, parent-death watch |
 | Paths | `platformdirs` | Config/data/cache dirs on Linux and Windows |
-| Languages | `langcodes` (+ `language_data`) | BCP 47 parsing, display names, ISO 639-2/B conversion for Matroska |
+| Languages | A generated table, built from `langcodes` + `language_data` at dev time ([decision 0082](../decisions/0082-own-language-data-table.md)) | BCP 47 parsing, display names, ISO 639-2/B conversion for Matroska, without 27 MB of libraries at run time |
 | Release-name parsing | `guessit` (LGPL-3.0) | Title, year, season/episode, episode title and release tags from file and folder names, with their positions, for [output naming](03-features.md#output-naming) |
 | Storage | JSON files (presets, settings) + SQLite (queue, history) | Presets stay portable. The queue needs safe updates |
 | Server | **FastAPI** + uvicorn, WebSocket for events | Async, OpenAPI out of the box |
@@ -87,8 +87,9 @@ reframe/
   what FFmpeg's Matroska muxer cannot (BCP 47 `LanguageIETF`). It replaces `mkvpropedit`;
   MKVToolNix is a development tool only, used by tests as an oracle
   ([decision 0080](../decisions/0080-own-matroska-header-writer.md), step C-18).
-- `mediainfo` (optional, through `pymediainfo`) adds detail when FFprobe has none (for
-  example the bitrate of lossless audio in files without statistics tags).
+- No MediaInfo: where ffprobe gives no bit rate, the probe estimates it from a sample of the
+  Matroska clusters, and **Measure** gives the exact value
+  ([decision 0081](../decisions/0081-probe-without-mediainfo.md), step C-19).
 
 Why not HandBrakeCLI as the backend? It hides the knobs this project needs to expose:
 per-stream metadata flags, arbitrary encoder parameters, FFmpeg filters such as `libplacebo`
@@ -114,7 +115,8 @@ build behaves the same.
   (.deb/.rpm: the package's resource folder next to the sidecar, so it does not conflict with
   the distro's `ffmpeg` package),
   `/opt/reframe/tools/ffmpeg/` (Docker), `<data dir>/tools/ffmpeg/` (`reframe tools fetch`, and
-  CI). The bundled MediaInfo (Windows) goes to `tools/mediainfo/` next to it; no package bundles
+  CI). No package bundles MediaInfo since C-19
+  ([decision 0081](../decisions/0081-probe-without-mediainfo.md)), and none bundles
   MKVToolNix ([decision 0079](../decisions/0079-q5-release-process.md) item 11), and since C-18
   Reframe does not run it ([decision 0080](../decisions/0080-own-matroska-header-writer.md)). Each folder holds the binaries in `bin/` or directly. `REFRAME_CONFIG_DIR`,
   `REFRAME_DATA_DIR` and `REFRAME_CACHE_DIR` override the platform folders
@@ -124,7 +126,7 @@ build behaves the same.
 
 | # | Source | Typical use |
 |---|--------|-------------|
-| 1 | Environment variable: `REFRAME_FFMPEG`, `REFRAME_FFPROBE` (also `REFRAME_MEDIAINFO`) | Docker, scripts, CI. Settings shows the value read-only, with a note that the environment sets it |
+| 1 | Environment variable: `REFRAME_FFMPEG`, `REFRAME_FFPROBE` | Docker, scripts, CI. Settings shows the value read-only, with a note that the environment sets it |
 | 2 | Path in **Settings → Tools** | Desktop users with their own FFmpeg build |
 | 3 | Bundled build | Default |
 | 4 | `PATH` | Only when no bundled build exists (for example when running from source) |

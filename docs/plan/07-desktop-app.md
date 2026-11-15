@@ -116,11 +116,16 @@ this:
 Every desktop package bundles the pinned FFmpeg from `tools/ffmpeg.toml`
 ([02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg)).
 
-| Platform | FFmpeg | mediainfo |
-|----------|--------|-------------------------|
-| Windows | Bundled in `resources/tools/ffmpeg/` | Bundled MediaInfo CLI |
-| Linux AppImage | Bundled inside the AppImage | System packages, if installed |
-| Linux .deb / .rpm | Bundled in `/usr/lib/Reframe/tools/ffmpeg/`. No dependency on the distro `ffmpeg` package | `Recommends: mediainfo` |
+| Platform | FFmpeg |
+|----------|--------|
+| Windows | Bundled in `resources/tools/ffmpeg/` |
+| Linux AppImage | Bundled inside the AppImage |
+| Linux .deb / .rpm | Bundled in `/usr/lib/Reframe/tools/ffmpeg/`. No dependency on the distro `ffmpeg` package |
+
+No other tool is bundled or recommended: since C-18 and C-19 Reframe runs no MKVToolNix or
+MediaInfo ([decision 0080](../decisions/0080-own-matroska-header-writer.md),
+[decision 0081](../decisions/0081-probe-without-mediainfo.md)). Until then, the Windows
+package bundles the MediaInfo CLI and the .deb / .rpm have `Recommends: mediainfo`.
 
 **Override**: Settings → Tools has a path field for each tool, a **Test** button and a **Use
 bundled** reset. Environment variables (`REFRAME_FFMPEG`, …) take precedence and show as
@@ -144,7 +149,8 @@ or delete it ([decision 0054](../decisions/0054-d0-spike-layout-and-parent-watch
       remains. The same with a kill from Task Manager: *(Windows testing phase)*.
 - [x] Check drag-and-drop paths, PrimeVue rendering and canvas magnifier performance on
       WebKitGTK.
-- [x] Note any PyInstaller hidden imports (pydantic, uvicorn loops, langcodes data).
+- [x] Note any PyInstaller hidden imports (pydantic, uvicorn loops, langcodes data; since C-20
+      the generated language table instead, [decision 0082](../decisions/0082-own-language-data-table.md)).
 
 Linux result (2026-10-28): [decision 0001](../decisions/0001-desktop-shell.md). The Windows items
 stay open for the Windows testing phase.
@@ -175,7 +181,8 @@ and confirms or revisits this choice. It lists the Windows items as not verified
       line.
 
 Linux result (2026-11-03): [decision 0069](../decisions/0069-m5-desktop-shell.md) "Task A". The
-sidecar ships MediaInfo (pymediainfo with its own library).
+sidecar ships MediaInfo (pymediainfo with its own library) until C-19
+([decision 0081](../decisions/0081-probe-without-mediainfo.md)).
 
 ### D-3 Sidecar manager (Rust)
 - [x] Spawn with `tokio::process`. Read the ready line. Keep the managed state.
@@ -221,7 +228,8 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       Windows *(Windows testing phase)*. Record each host and its result in `docs/decisions/0002-bundled-ffmpeg.md`, and
       list there the hosts that were not tested as not verified
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 7).
-- [x] CI downloads the pinned FFmpeg / MediaInfo builds (MKVToolNix: not bundled since
+- [x] CI downloads the pinned FFmpeg / MediaInfo builds (MediaInfo: until C-19,
+      [decision 0081](../decisions/0081-probe-without-mediainfo.md); MKVToolNix: not bundled since
       [decision 0079](../decisions/0079-q5-release-process.md) item 11), verifies the checksums,
       and puts them in `resources/tools/` (`scripts/bundle-tools.py`; one build platform per
       layout, so no sub-folder per OS). The same step feeds the .deb/.rpm layout. The
@@ -232,7 +240,8 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       bundled MediaInfo is checked with D-8's installer
       ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) "Task U"). Since
       C-18 there is no mkvpropedit row and no MKVToolNix text
-      ([decision 0080](../decisions/0080-own-matroska-header-writer.md)).
+      ([decision 0080](../decisions/0080-own-matroska-header-writer.md)), and since C-19 no
+      mediainfo row ([decision 0081](../decisions/0081-probe-without-mediainfo.md)).
 
 ### D-8 Packaging, signing, updates
 - [x] Windows: NSIS installer (per-user, no admin rights), WebView2 bootstrapper, optional MSI.

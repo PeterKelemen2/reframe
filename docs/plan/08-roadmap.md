@@ -177,7 +177,7 @@ validation error from the dry run.
 
 ## M10 — Hardening and v1.0 release
 
-| Steps | `Q-1.4` (the Windows testing phase), `C-18` (Reframe's own Matroska header writer, [decision 0080](../decisions/0080-own-matroska-header-writer.md); before the release checklist), `S-6`, `D-7`, `D-8`, `D-9`, `F-19` (the Range selector, [decision 0074](../decisions/0074-range-selector-in-m10.md); before F-16), `F-16`, `F-17` (all five flows in Chromium and WebKit), `Q-3`, `Q-4`, `Q-5` |
+| Steps | `Q-1.4` (the Windows testing phase), `C-18` (Reframe's own Matroska header writer, [decision 0080](../decisions/0080-own-matroska-header-writer.md); before the release checklist), `C-19` (the probe without MediaInfo, [decision 0081](../decisions/0081-probe-without-mediainfo.md); before the release checklist), `C-20` (a generated language table, [decision 0082](../decisions/0082-own-language-data-table.md); before the release checklist), `S-6`, `D-7`, `D-8`, `D-9`, `F-19` (the Range selector, [decision 0074](../decisions/0074-range-selector-in-m10.md); before F-16), `F-16`, `F-17` (all five flows in Chromium and WebKit), `Q-3`, `Q-4`, `Q-5` |
 |-------|---|
 
 `S-6` is built early, on the branch `server-complete`
