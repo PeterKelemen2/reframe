@@ -27,7 +27,6 @@ from reframe.models import (
     Severity,
     SubtitleOutputSettings,
     SubtitleOutputTrack,
-    ToolStatus,
     TrackMetadata,
     TrackMetadataTemplate,
     TrackSelector,
@@ -156,8 +155,8 @@ def test_an_in_place_edit_with_two_default_tracks() -> None:
 
 def plan_defaults(plan: EncodePlan, source: MediaSource) -> dict[str, list[int]]:
     """The 1-based output track numbers, per type (``a``, ``s``), that the file has marked
-    default after the plan: the FFmpeg dispositions, then the mkvpropedit edits (an in-place
-    edit starts from the source's flags)."""
+    default after the plan: the FFmpeg dispositions, then the header edits (an in-place edit
+    starts from the source's flags)."""
     flags: dict[tuple[str, int], bool] = {}
     if plan.job_type == "metadata_edit":
         for kind, streams in (("a", source.audio), ("s", source.subtitles)):
@@ -170,19 +169,10 @@ def plan_defaults(plan: EncodePlan, source: MediaSource) -> dict[str, list[int]]
                     flags[(edit.track_type[0], edit.number)] = edit.flags["default"]
             continue
         argv = [str(a) for a in step.argv]
-        selector: tuple[str, int] | None = None
         for arg, value in itertools.pairwise(argv):
-            if step.tool == "ffmpeg":
-                found = re.fullmatch(r"-disposition:([as]):(\d+)", arg)
-                if found is not None:
-                    flags[(found[1], int(found[2]) + 1)] = "default" in value.split("+")
-            elif arg == "--edit":
-                track = re.fullmatch(r"track:([vas])(\d+)", value)
-                selector = (track[1], int(track[2])) if track is not None else None
-            elif arg == "--set" and selector is not None:
-                flag = re.fullmatch(r"flag-default=([01])", value)
-                if flag is not None:
-                    flags[selector] = flag[1] == "1"
+            found = re.fullmatch(r"-disposition:([as]):(\d+)", arg)
+            if found is not None:
+                flags[(found[1], int(found[2]) + 1)] = "default" in value.split("+")
     marked: dict[str, list[int]] = {}
     for (kind, number), default in sorted(flags.items()):
         if default and kind in ("a", "s"):
@@ -229,22 +219,6 @@ def burn_and_copies(s: Any) -> None:
     ]
 
 
-def default_by_mkvpropedit(status: ToolStatus) -> Callable[[Any], None]:
-    """An MKV muxer that cannot write the default flag, which the mkvpropedit fix-up then
-    writes (when mkvpropedit is found)."""
-
-    def mod(s: Any) -> None:
-        defs = s.definitions.model_copy(deep=True)
-        mkv = defs.containers["mkv"]
-        mkv.flags = [flag for flag in mkv.flags if flag != "default"]
-        mkv.mkvpropedit_flags = ["default"]
-        s.definitions = defs
-        s.tools = sc.make_tools(mkvpropedit=sc.tool("mkvpropedit", status))
-        mark(s.job.audio, 0, 1)
-
-    return mod
-
-
 def in_place(s: Any) -> None:
     s.job = remux_job(s.job, s.source, edit_in_place=True)
     mark(s.job.audio, 0, 1)
@@ -256,8 +230,6 @@ AGREEMENT: dict[str, Callable[[Any], None]] = {
     "one of each kind": one_of_each_kind,
     "mp4": mp4,
     "a burned-in subtitle between two copies": burn_and_copies,
-    "flag written by mkvpropedit": default_by_mkvpropedit(ToolStatus.FOUND),
-    "flag lost without mkvpropedit": default_by_mkvpropedit(ToolStatus.MISSING),
     "in-place edit": in_place,
 }
 

@@ -639,11 +639,11 @@ def stale_stats_source() -> Case:
 
 
 @case
-def eac3_atmos_without_mkvpropedit() -> Case:
+def eac3_atmos_with_a_bcp47_subtitle() -> Case:
     src = recorded("eac3-atmos")
     job = draft(src, audio="passthru", video={"encoder": "libx264"})
     job.subtitles[0].metadata = TrackMetadata(language="pt-BR")
-    return plain(job, src, tools=tools(mkvpropedit=False))
+    return plain(job, src)
 
 
 def _in_place(path: Path = Path("/media/multitrack.mkv")) -> tuple[JobSettings, MediaSource]:

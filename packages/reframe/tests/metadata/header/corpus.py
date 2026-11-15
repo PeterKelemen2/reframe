@@ -18,7 +18,7 @@ from typing import Any
 from reframe.models.plan import HeaderEdit, InfoHeaderEdit, TrackHeaderEdit
 from reframe.probe.matroska import _header, read_matroska
 from reframe_testing import media
-from reframe_testing.mkvtoolnix import mkvtoolnix_tool
+from reframe_testing.mkvtoolnix import mkvpropedit_args, mkvtoolnix_tool
 
 SEGMENT = 0x18538067
 SEEK_HEAD = 0x114D9B74
@@ -399,9 +399,7 @@ def ffprobe_view(path: Path) -> list[tuple[str, str | None, str | None, str | No
 
 
 def mkvpropedit(edit: HeaderEdit, path: Path) -> subprocess.CompletedProcess[str]:
-    from reframe.command.mkvpropedit import header_edit_args
-
-    argv = header_edit_args(edit.model_copy(update={"path": path}))
+    argv = mkvpropedit_args(edit.model_copy(update={"path": path}))
     return subprocess.run(
         [mkvtoolnix_tool("mkvpropedit"), *argv],
         capture_output=True, text=True, timeout=60, check=False,

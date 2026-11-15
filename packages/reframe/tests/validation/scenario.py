@@ -245,7 +245,8 @@ def tool(name: str, status: ToolStatus = ToolStatus.FOUND, **extra: Any) -> Tool
 
 
 def make_tools(**overrides: ToolInfo) -> ToolSet:
-    tools = {name: tool(name) for name in ("ffmpeg", "ffprobe", "mkvpropedit", "mediainfo")}
+    tools = {name: tool(name) for name in ("ffmpeg", "ffprobe", "mediainfo")}
+    tools["mkvpropedit"] = tool("mkvpropedit", ToolStatus.MISSING)  # no plan needs it
     tools.update(overrides)
     return ToolSet(**tools)
 

@@ -2064,9 +2064,9 @@
     ]),
   })
 # ---
-# name: test_plan_snapshot[eac3_atmos_without_mkvpropedit]
+# name: test_plan_snapshot[eac3_atmos_with_a_bcp47_subtitle]
   dict({
-    'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/show-eac3-atmos.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -c:a:0 copy -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -metadata:s:a:0 title=English -disposition:a:0 default -metadata:s:s:0 language=por -metadata:s:s:0 title=English -disposition:s:0 0 -metadata:s:s:1 language=eng -metadata:s:s:1 'title=English [SDH]' -disposition:s:1 0 -metadata:s:s:2 language=eng -metadata:s:s:2 'title=English [Forced]' -disposition:s:2 0 -map_chapters -1 -map_metadata 0 -f matroska /out/show-eac3-atmos.part.mkv && mv -f -- /out/show-eac3-atmos.part.mkv /out/show-eac3-atmos.mkv",
+    'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/show-eac3-atmos.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -c:a:0 copy -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -metadata:s:a:0 title=English -disposition:a:0 default -metadata:s:s:0 language=por -metadata:s:s:0 title=English -disposition:s:0 0 -metadata:s:s:1 language=eng -metadata:s:s:1 'title=English [SDH]' -disposition:s:1 0 -metadata:s:s:2 language=eng -metadata:s:s:2 'title=English [Forced]' -disposition:s:2 0 -map_chapters -1 -map_metadata 0 -f matroska /out/show-eac3-atmos.part.mkv && header_edit /out/show-eac3-atmos.part.mkv subtitle 1: language=por language_ietf=pt-BR && mv -f -- /out/show-eac3-atmos.part.mkv /out/show-eac3-atmos.mkv",
     'expected_duration': 4.004,
     'files': list([
     ]),
@@ -2153,6 +2153,32 @@
         ]),
         'progress_weight': 1.0,
         'tool': 'ffmpeg',
+      }),
+      dict({
+        'argv': list([
+        ]),
+        'description': 'Write the BCP 47 languages (Matroska LanguageIETF)',
+        'header_edit': dict({
+          'info': None,
+          'path': '/out/show-eac3-atmos.part.mkv',
+          'tracks': list([
+            dict({
+              'delete_name': False,
+              'flags': dict({
+              }),
+              'language': 'por',
+              'language_ietf': 'pt-BR',
+              'name': None,
+              'number': 1,
+              'track_type': 'subtitle',
+            }),
+          ]),
+        }),
+        'kind': 'header_edit',
+        'measures': list([
+        ]),
+        'progress_weight': 0.01,
+        'tool': None,
       }),
       dict({
         'argv': list([
@@ -4400,7 +4426,7 @@
 # ---
 # name: test_plan_snapshot[languages_flags_and_ietf]
   dict({
-    'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=jpn -metadata:s:v:0 title=Main -disposition:v:0 default -metadata:s:a:0 language=por -metadata:s:a:0 'title=Japanese 5.1' -disposition:a:0 default+original -metadata:s:a:1 language=chi -metadata:s:a:1 'title=English Stereo' -disposition:a:1 visual_impaired -metadata:s:a:2 language=chi -disposition:a:2 comment -metadata:s:s:0 language=srp -metadata:s:s:0 title=English -disposition:s:0 default+forced+comment+hearing_impaired+visual_impaired+original -metadata:s:s:1 language=eng -metadata:s:s:1 'title=English SDH' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 'title=Signs & Songs' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mkvpropedit /out/multitrack.part.mkv --edit track:a1 --set language=por --set language-ietf=pt-BR --edit track:a2 --set language=chi --set language-ietf=yue --edit track:a3 --set language=chi --set language-ietf=zh-Hant --edit track:s1 --set language=srp --set language-ietf=sr-Latn && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv",
+    'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=jpn -metadata:s:v:0 title=Main -disposition:v:0 default -metadata:s:a:0 language=por -metadata:s:a:0 'title=Japanese 5.1' -disposition:a:0 default+original -metadata:s:a:1 language=chi -metadata:s:a:1 'title=English Stereo' -disposition:a:1 visual_impaired -metadata:s:a:2 language=chi -disposition:a:2 comment -metadata:s:s:0 language=srp -metadata:s:s:0 title=English -disposition:s:0 default+forced+comment+hearing_impaired+visual_impaired+original -metadata:s:s:1 language=eng -metadata:s:s:1 'title=English SDH' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 'title=Signs & Songs' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && header_edit /out/multitrack.part.mkv audio 1: language=por language_ietf=pt-BR audio 2: language=chi language_ietf=yue audio 3: language=chi language_ietf=zh-Hant subtitle 1: language=srp language_ietf=sr-Latn && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv",
     'expected_duration': 4.021,
     'files': list([
     ]),
@@ -5295,7 +5321,7 @@
 # ---
 # name: test_plan_snapshot[metadata_edit_in_place]
   dict({
-    'display': "mkvpropedit /media/Show.S01E02.Title.mkv --edit track:a1 --set language=hun --set language-ietf=hu --set 'name=Magyar 5.1' --set flag-default=0 --set flag-original=1 --edit track:a2 --set language=por --set language-ietf=pt-BR --set flag-default=1 --edit track:a3 --delete name --edit track:s2 --set flag-visual-impaired=1 --edit track:s3 --set flag-forced=0 --edit info --set 'title=Show – S01E02'",
+    'display': "header_edit /media/Show.S01E02.Title.mkv audio 1: language=hun language_ietf=hu name='Magyar 5.1' default=0 original=1 audio 2: language=por language_ietf=pt-BR default=1 audio 3: delete_name subtitle 2: visual_impaired=1 subtitle 3: forced=0 title='Show – S01E02'",
     'expected_duration': 0.0,
     'files': list([
     ]),
@@ -5398,7 +5424,7 @@
 # ---
 # name: test_plan_snapshot[metadata_edit_windows_display]
   dict({
-    'display': 'mkvpropedit "C:/Media/Movie & Co.mkv" --edit track:s1 --set "name=English \\"full\\" 100%"',
+    'display': 'header_edit "C:/Media/Movie & Co.mkv" subtitle 1: name="English \\"full\\" 100%"',
     'expected_duration': 0.0,
     'files': list([
     ]),

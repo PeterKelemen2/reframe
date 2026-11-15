@@ -23,6 +23,7 @@ from reframe.models import (
     PlanStep,
     SubtitleOutputTrack,
     TimeRange,
+    ToolStatus,
     TrackHeaderEdit,
     TrackMetadata,
     resolve_argv,
@@ -189,14 +190,12 @@ def test_two_pass_with_loudnorm_steps_and_weights() -> None:
     assert plan.temp_files[0] == Path("/out/multitrack.part.passlog")
 
 
-def test_no_mkvpropedit_step_without_the_tool_or_for_webm() -> None:
+def test_a_header_edit_step_for_mkv_without_any_mkvtoolnix_but_not_for_webm() -> None:
     src = recorded("multitrack.mkv")
     job = draft(src)
     job.audio[0].metadata = TrackMetadata(language="pt-BR")
+    assert tools().mkvpropedit.status is not ToolStatus.FOUND
     assert "header_edit" in [s.kind for s in plan_of(job, src).steps]
-    assert "header_edit" not in [
-        s.kind for s in plan_of(job, src, tools=tools(mkvpropedit=False)).steps
-    ]
     webm = draft(src, container="webm", audio_encoder="libopus", video={"encoder": "libsvtav1"})
     webm.audio[0].metadata = TrackMetadata(language="pt-BR")
     assert "header_edit" not in [s.kind for s in plan_of(webm, src).steps]

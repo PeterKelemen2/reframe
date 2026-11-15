@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from reframe.metadata import header
+from reframe.metadata.header import HeaderEditResult
 from reframe.models import (
     AudioOutputTrack,
     AverageBitrate,
@@ -19,10 +23,10 @@ from reframe.models import (
     EncoderState,
     EncoderStatus,
     FrameSet,
+    HeaderEdit,
     JobSettings,
     PreviewClip,
     TaskState,
-    ToolStatus,
     TrackMetadata,
 )
 from reframe.preview import clip_path, start_frames, start_preview_clip
@@ -30,6 +34,7 @@ from reframe.preview.cache import is_clip_id
 from reframe.tools import RunResult, run_streaming
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
+from reframe_testing.mkvtoolnix import mkvtoolnix_tool
 
 from .helpers import (
     Env,
@@ -296,17 +301,7 @@ async def test_two_pass_runs_both_passes(
     assert no_leftovers(tmp_path / "cache" / "clips") == []
 
 
-@pytest.mark.parametrize("mkvpropedit", [True, False])
-async def test_loudness_and_languages(
-    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch, mkvpropedit: bool
-) -> None:
-    """The analyse step measures, the encode uses the values. FFmpeg writes the ISO 639-2
-    language, and mkvpropedit (when it is installed) the BCP 47 one, which ffprobe never
-    shows."""
-    src = fixture_media("multitrack")
-    tools = real_tools(mkvpropedit=mkvpropedit)
-    env = make_env(tmp_path / "cache", tools=tools)
-    runs = record_runs(monkeypatch)
+def portuguese_loudness_job(src: Path) -> JobSettings:
     job = job_for(src)
     job.audio = [
         AudioOutputTrack(
@@ -316,12 +311,92 @@ async def test_loudness_and_languages(
             metadata=TrackMetadata(language="pt-BR"),
         )
     ]
-    result = await clip(env, job, start=1.0, seconds=2.0)
+    return job
+
+
+class Writer:
+    """The header writer, faked: records each edit and the files that existed then."""
+
+    def __init__(self, hold: threading.Event | None = None) -> None:
+        self.edits: list[HeaderEdit] = []
+        self.existed: list[bool] = []
+        self.hold = hold
+        self.started = threading.Event()
+
+    def __call__(self, edit: HeaderEdit) -> HeaderEditResult:
+        self.edits.append(edit)
+        self.existed.append(edit.path.is_file())
+        self.started.set()
+        if self.hold is not None:
+            self.hold.wait(30)
+        return HeaderEditResult("written")
+
+
+async def test_loudness_and_the_bcp47_language_header_edit(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The analyse step measures, the encode uses the values. FFmpeg writes the ISO 639-2
+    language, and the header edit on the clip's own ``.part`` file the BCP 47 one; no
+    MKVToolNix program runs."""
+    env = make_env(tmp_path / "cache")
+    runs = record_runs(monkeypatch)
+    writer = Writer()
+    monkeypatch.setattr(header, "apply_header_edit", writer)
+    result = await clip(env, portuguese_loudness_job(fixture_media("multitrack")), 1.0, 2.0)
     streams = probe(result.path)["streams"]
     assert [s["codec_type"] for s in streams] == ["video", "audio"]
     assert streams[1]["tags"]["language"] == "por"
-    ietf = [run for run in runs if "language-ietf=pt-BR" in run]
-    assert len(ietf) == (1 if tools.mkvpropedit.status is ToolStatus.FOUND else 0)
+    assert [Path(run[0]).name for run in runs] == ["ffmpeg", "ffmpeg"]  # analyse, encode
+    [edit] = writer.edits
+    assert edit.path.parent == tmp_path / "cache" / "clips"
+    assert ".part" in edit.path.name
+    assert writer.existed == [True]
+    assert [(t.track_type, t.number, t.language, t.language_ietf) for t in edit.tracks] == [
+        ("audio", 1, "por", "pt-BR")
+    ]
+
+
+async def test_a_cancel_during_the_header_edit_waits_for_it(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The writer's thread cannot be stopped: the clip's ``.part`` file is removed after the
+    write, never under it."""
+    env = make_env(tmp_path / "cache")
+    release = threading.Event()
+    writer = Writer(hold=release)
+    monkeypatch.setattr(header, "apply_header_edit", writer)
+    job = portuguese_loudness_job(fixture_media("multitrack"))
+    info = start_preview_clip(env.ctx, job, start=1.0, seconds=2.0)
+    try:
+        assert await asyncio.to_thread(writer.started.wait, 30)
+        assert env.tasks.cancel(info.id)
+        await asyncio.sleep(0.2)
+        assert writer.edits[0].path.is_file()  # not removed under the write
+    finally:
+        release.set()
+    done = await env.tasks.wait(info.id)
+    assert done.state is TaskState.CANCELLED
+    assert no_leftovers(tmp_path / "cache" / "clips") == []
+
+
+@pytest.mark.needs_mkvtoolnix
+async def test_the_clip_has_the_bcp47_language(tmp_path: Path, fixture_media: Media) -> None:
+    env = make_env(tmp_path / "cache")
+    result = await clip(env, portuguese_loudness_job(fixture_media("multitrack")), 1.0, 2.0)
+    [audio] = [t for t in mkvmerge_tracks(result.path) if t["type"] == "audio"]
+    assert (audio["properties"]["language"], audio["properties"]["language_ietf"]) == (
+        "por",
+        "pt-BR",
+    )
+
+
+def mkvmerge_tracks(path: Path) -> list[dict[str, Any]]:
+    out = subprocess.run(
+        [mkvtoolnix_tool("mkvmerge"), "-J", str(path)],
+        capture_output=True, text=True, check=True, timeout=60,
+    )  # fmt: skip
+    tracks: list[dict[str, Any]] = json.loads(out.stdout)["tracks"]
+    return tracks
 
 
 @pytest.mark.parametrize(

@@ -52,10 +52,6 @@ def cases(h: Any) -> list[Any]:
             err, both(in_place, read_only_source), both(in_place, writable_source),
         ),
         case(
-            "inplace_mkvpropedit_missing", "tool.mkvpropedit_missing", "output.edit_in_place",
-            err, both(in_place, h.mkvpropedit(h.ToolStatus.MISSING)), in_place,
-        ),
-        case(
             "inplace_output_ignored", "inplace.output_ignored", "output.path", warn,
             both(in_place, other_output), in_place,
         ),

@@ -6426,7 +6426,7 @@
       }),
       'edit_in_place': dict({
         'default': False,
-        'description': 'Remux-only jobs on MKV: edit metadata in place with mkvpropedit.',
+        'description': 'Remux-only jobs on MKV: edit the metadata of the source in place, with no new file.',
         'title': 'Edit In Place',
         'type': 'boolean',
       }),

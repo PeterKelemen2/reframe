@@ -102,7 +102,7 @@ async def test_a_flags_only_change_edited_in_place_is_a_metadata_edit(
         answer = ok(await api.client.post("/api/jobs/type", json={"job": job}))
     assert answer == {
         "job_type": "metadata_edit",
-        "reason": "Metadata edit: only the track metadata changes, so mkvpropedit edits "
+        "reason": "Metadata edit: only the track metadata changes, so Reframe edits "
         "Show.mkv in place, in seconds.",
         "in_place_blockers": [],
     }

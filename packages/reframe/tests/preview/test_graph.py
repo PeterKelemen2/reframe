@@ -33,7 +33,7 @@ from reframe.preview.graph import (
 
 from .helpers import DEFS, caps, real_tools, recorded
 
-TOOLS = real_tools(mkvpropedit=False)
+TOOLS = real_tools()
 
 
 def job(source: MediaSource, **fields: Any) -> JobSettings:

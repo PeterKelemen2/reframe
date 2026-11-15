@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 import sys
 from collections.abc import Callable
@@ -40,6 +39,7 @@ from reframe.models import (
 )
 from reframe.probe import Prober
 from reframe_testing import media
+from reframe_testing.mkvtoolnix import mkvtoolnix_tool
 
 from .conftest import caps, draft, ffprobe_json, run_plan, tools
 
@@ -55,11 +55,7 @@ def tool_paths() -> dict[str, str]:
     ffmpeg, ffprobe = media.find_ffmpeg(), media.find_ffprobe()
     assert ffmpeg is not None
     assert ffprobe is not None
-    paths = {"ffmpeg": ffmpeg, "ffprobe": ffprobe}
-    mkvpropedit = shutil.which("mkvpropedit")
-    if mkvpropedit is not None:
-        paths["mkvpropedit"] = mkvpropedit
-    return paths
+    return {"ffmpeg": ffmpeg, "ffprobe": ffprobe}
 
 
 @pytest.fixture
@@ -822,12 +818,11 @@ async def test_remux_with_a_negative_subtitle_offset_starts_at_zero(
     assert [c[0] for c in cues] == ["00:00:01,300 --> 00:00:02,900"]
 
 
-async def test_bcp47_language_goes_through_mkvpropedit(
+@pytest.mark.needs_mkvtoolnix
+async def test_bcp47_language_is_written_by_the_header_writer(
     fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
 ) -> None:
-    mkvmerge = shutil.which("mkvmerge")
-    if "mkvpropedit" not in tool_paths or mkvmerge is None:
-        pytest.skip("needs mkvpropedit and mkvmerge")
+    mkvmerge = mkvtoolnix_tool("mkvmerge")
     src = await source_of(prober, fixture_media("multitrack"))
     job = draft(src, output=tmp_path / "ietf.mkv", video=FAST_X264, subtitles=False)
     job.audio[1].metadata = TrackMetadata(language="pt-BR")

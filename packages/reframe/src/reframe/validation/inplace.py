@@ -1,4 +1,4 @@
-"""Rules for in-place metadata edits: mkvpropedit changes the track metadata of an MKV source.
+"""Rules for in-place metadata edits: Reframe changes the track metadata of an MKV source.
 
 Edit in place (``output.edit_in_place``) needs a job that changes only metadata, with an MKV
 source and output. The output rules skip the path checks of a metadata edit, since its output

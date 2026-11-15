@@ -10,8 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from reframe.command.mkvpropedit import header_edit_args
 from reframe.definitions import load_definitions
+from reframe.metadata import header
 from reframe.models import (
     AudioAction,
     AudioOutputTrack,
@@ -91,7 +91,9 @@ def caps(
     )
 
 
-def tools(*, mkvpropedit: bool = True, paths: dict[ToolName, Path] | None = None) -> ToolSet:
+def tools(*, paths: dict[ToolName, Path] | None = None) -> ToolSet:
+    """FFmpeg and ffprobe; no MKVToolNix and no MediaInfo, which no plan needs."""
+
     def info(name: ToolName, found: bool = True) -> ToolInfo:
         return ToolInfo(
             name=name,
@@ -102,7 +104,7 @@ def tools(*, mkvpropedit: bool = True, paths: dict[ToolName, Path] | None = None
     return ToolSet(
         ffmpeg=info("ffmpeg"),
         ffprobe=info("ffprobe"),
-        mkvpropedit=info("mkvpropedit", mkvpropedit),
+        mkvpropedit=info("mkvpropedit", False),
         mediainfo=info("mediainfo", False),
     )
 
@@ -188,10 +190,11 @@ def run_plan(plan: EncodePlan, tool_paths: dict[str, str], *, cleanup: bool = Tr
                 plan.output_tmp.replace(plan.output_final)
                 continue
             if step.header_edit is not None:
-                argv = [tool_paths["mkvpropedit"], *header_edit_args(step.header_edit)]
-            else:
-                assert step.tool is not None
-                argv = [tool_paths[step.tool], *resolve_argv(step.argv, result.measured)]
+                written = header.apply_header_edit(step.header_edit)
+                assert written.ok, f"header_edit {written.status}: {written.code} {written.reason}"
+                continue
+            assert step.tool is not None
+            argv = [tool_paths[step.tool], *resolve_argv(step.argv, result.measured)]
             proc = subprocess.run(argv, capture_output=True, text=True, timeout=300, check=False)
             result.stderr.append(proc.stderr)
             assert proc.returncode == 0, f"{step.kind} failed ({proc.returncode}):\n{proc.stderr}"

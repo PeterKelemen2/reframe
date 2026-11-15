@@ -28,7 +28,7 @@ from .conftest import all_caps, recorded, tool_set
 
 DEFS = load_definitions()
 SOURCE = Path("/media/Show.S01E01.mkv")
-TOOLS = tool_set(Path("/usr/bin/ffmpeg"), mkvpropedit=Path("/usr/bin/mkvpropedit"))
+TOOLS = tool_set(Path("/usr/bin/ffmpeg"))
 
 
 def in_place() -> tuple[JobSettings, MediaSource]:
@@ -42,7 +42,7 @@ def plan_of(job: JobSettings, source: MediaSource) -> EncodePlan:
 
 
 def edited(source: MediaSource, job: JobSettings) -> MediaSource:
-    """What the file looks like when mkvpropedit did everything the job asks."""
+    """What the file looks like when the header edit did everything the job asks."""
     out = source.model_copy(deep=True)
     for stream, track in zip(out.audio, job.audio, strict=True):
         meta = track.metadata
@@ -82,7 +82,7 @@ def test_each_difference_is_named() -> None:
         "audio track 3: the original flag should be set",
         "title 'New title' expected, 'Reframe multi-track fixture' found",
     ]
-    # Without a plan (or a plan without mkvpropedit) only the layout and ISO codes count.
+    # Without a plan (or a plan without a header edit) only the layout and ISO codes count.
     assert check_output(job, source, source, DEFS) == [
         "audio track 2: language por expected, eng found"
     ]
@@ -129,13 +129,13 @@ def test_fixup_checks_ietf_only_where_it_was_written() -> None:
     ]
     output.audio[0].language_ietf = "pt-BR"
     assert check_output(job, source, output, DEFS, plan=plan) == []
-    # MediaInfo derives BCP 47 from the legacy code: "de" for "ger" is the same language.
+    # A BCP 47 tag derived from the legacy code: "de" for "ger" is the same language.
     output.audio[1].language_ietf = "de"
     assert check_output(job, source, output, DEFS, plan=plan) == []
-    # Without mkvpropedit the step is not planned and por is what is expected.
-    no_tool = build_plan(job, source, all_caps(), tool_set(Path("/usr/bin/ffmpeg")))
+    # A plan without the fix-up step expects only the ISO 639-2 code.
+    no_fixup = plan.model_copy(update={"steps": [s for s in plan.steps if s.kind != "header_edit"]})
     output.audio[0].language_ietf = None
-    assert check_output(job, source, output, DEFS, plan=no_tool) == []
+    assert check_output(job, source, output, DEFS, plan=no_fixup) == []
 
 
 def test_expected_titles_of_external_and_burned_subtitles() -> None:

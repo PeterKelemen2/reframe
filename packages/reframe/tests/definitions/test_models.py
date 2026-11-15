@@ -237,7 +237,7 @@ def test_containers_answer_the_validation_questions() -> None:
     assert c["mp4"].model_dump()["video"]["copy"]  # serialised under the alias
     flags = load_definitions().track_flags
     assert flags["commentary"].disposition == "comment"
-    assert flags["hearing_impaired"].mkvpropedit == "flag-hearing-impaired"
+    assert flags["hearing_impaired"].disposition == "hearing_impaired"
 
 
 def test_passthru_and_mixdowns() -> None:

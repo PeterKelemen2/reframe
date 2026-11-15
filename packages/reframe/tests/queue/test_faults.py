@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from pathlib import Path
 
 import pytest
 
-from reframe.models import AverageBitrate, JobSettings, JobState, QueueJob, Severity
+from reframe.metadata.header import HeaderEditResult
+from reframe.models import (
+    AverageBitrate,
+    HeaderEdit,
+    JobSettings,
+    JobState,
+    QueueJob,
+    Severity,
+    ToolStatus,
+    TrackHeaderEdit,
+)
 from reframe.probe import ProbeError, ProbeErrorKind
 from reframe_testing import fake_tools as ft
 
@@ -225,57 +236,107 @@ async def test_silent_track_values_are_clamped_for_the_encode(harness: Harness) 
 
 def ietf_job(h: Harness) -> JobSettings:
     job = h.job()
-    job.audio[1].metadata.language = "pt-BR"  # needs Matroska LanguageIETF: mkvpropedit
+    job.audio[1].metadata.language = "pt-BR"  # needs Matroska LanguageIETF: a header edit
     return job
 
 
-async def test_failing_mkvpropedit_step(harness: Harness) -> None:
+def written_as_portuguese(h: Harness) -> None:
+    """The re-probed output has what the job wrote: the header edit's language, and only the
+    flags that :func:`draft` keeps."""
+    portuguese = h.sources.source.model_copy(deep=True)
+    for stream in [*portuguese.video, *portuguese.audio, *portuguese.subtitles]:
+        for flag in ("hearing_impaired", "visual_impaired", "original"):
+            setattr(stream.disposition, flag, False)
+    portuguese.audio[1].language = "por"
+    portuguese.audio[1].language_ietf = "pt-BR"
+    h.sources.output = lambda path: portuguese
+
+
+async def test_the_fixup_writes_the_part_file_without_any_mkvtoolnix(harness: Harness) -> None:
     h = harness
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
+    assert h.tools.tools.mkvpropedit.status is not ToolStatus.FOUND
     job = ietf_job(h)
     part = h.plan(job).output_tmp
-    h.scenario(
-        ft.Rule(
-            tool="ffmpeg",
-            argv_has=["--edit"],
-            actions=[ft.stderr("Error: The file could not be opened for reading and writing.\n")],
-            exit_code=2,
-        )
-    )
+    written_as_portuguese(h)
     ended = await h.run_one(job)
-    assert ended.error == (
-        "mkvpropedit failed (exit code 2): Error: The file could not be opened for reading and "
-        "writing."
-    )
-    assert_failed_run(h, ended.id, error_part="mkvpropedit")
-    assert not part.exists()
-    [edit] = [call for call in h.fake.calls("ffmpeg") if "--edit" in call]
-    assert edit[0] == str(part)
+    assert (ended.state, ended.error) == (JobState.DONE, None)
+    assert h.writer.edits == [
+        HeaderEdit(
+            path=part,
+            tracks=[
+                TrackHeaderEdit(track_type="audio", number=2, language="por", language_ietf="pt-BR")
+            ],
+        )
+    ]
+    [encode] = h.fake.calls("ffmpeg")  # the header edit started no program
+    assert "matroska" in encode
+    log = h.log_text(ended.id)
+    assert f"header_edit {part} audio 2: language=por language_ietf=pt-BR" in log
+    assert "Step 2/3 ended: written after" in log
 
 
-async def test_hanging_mkvpropedit_hits_its_time_limit(harness: Harness) -> None:
-    h = harness
-    h.queue._runner._step_time_limit = 0.3
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
-    h.scenario(ft.Rule(tool="ffmpeg", argv_has=["--edit"], actions=[ft.hang()]))
-    ended = await h.run_one(ietf_job(h))
-    assert ended.error == "A step did not finish within 0.3 seconds and was stopped."
-    assert h.leftovers() == []
-
-
-async def test_mkvpropedit_missing_at_run_time(harness: Harness) -> None:
+async def test_a_failed_fixup_fails_the_job_and_removes_the_part(harness: Harness) -> None:
     h = harness
     job = ietf_job(h)
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
-    portuguese = h.sources.source.model_copy(deep=True)
-    portuguese.audio[1].language = "por"
-    h.sources.output = lambda path: portuguese
+    part = h.plan(job).output_tmp
+    h.writer.result = HeaderEditResult("failed", "header.write_error", "No space left on device")
+    ended = await h.run_one(job)
+    assert ended.error == (
+        "Writing the Matroska header of Movie.part.mkv failed: No space left on device. The file "
+        "holds either all its old values or all the new ones."
+    )
+    assert_failed_run(h, ended.id, error_part="Writing the Matroska header")
+    assert "Step 2/3 ended: failed (header.write_error): No space left on device" in h.log_text(
+        ended.id
+    )
+    assert not part.exists()
+
+
+async def test_a_refused_fixup_fails_the_job(harness: Harness) -> None:
+    h = harness
+    job = ietf_job(h)
+    part = h.plan(job).output_tmp
+    h.writer.result = HeaderEditResult("refused", "header.no_room", "The SeekHead has no room.")
+    ended = await h.run_one(job)
+    assert ended.state is JobState.FAILED
+    assert ended.error == (
+        "Reframe cannot edit the Matroska header of Movie.part.mkv: The SeekHead has no room. "
+        "Nothing was changed in the file."
+    )
+    assert not part.exists()
+
+
+async def test_a_writer_that_raises_is_an_internal_error(harness: Harness) -> None:
+    h = harness
+    h.writer.raises = RuntimeError("a bug")
+    ended = await h.run_one(ietf_job(h))
+    assert ended.state is JobState.FAILED
+    assert ended.error == "Internal error: RuntimeError: a bug"
+
+
+async def test_a_cancel_during_the_fixup_waits_for_the_write(harness: Harness) -> None:
+    """The worker thread cannot be stopped: the ``.part`` file is removed only after the write
+    ended, never under it."""
+    h = harness
+    h.writer.hold = True
+    job = ietf_job(h)
+    part = h.plan(job).output_tmp
     added = await h.queue.add(job)
-    h.tools.tools = tool_set(h.fake.ffmpeg)  # gone before the run: the plan has no such step
     h.queue.start()
-    [ended] = await h.queue.wait([added.id])
-    assert ended.state is JobState.DONE
-    assert not any("--edit" in call for call in h.fake.calls("ffmpeg"))
+    await h.wait_for(h.writer.started.is_set)
+    cancel = asyncio.ensure_future(h.queue.cancel(added.id))
+    await asyncio.sleep(0.2)
+    assert not cancel.done()
+    assert part.exists()
+    h.writer.release()
+    await cancel
+    ended = h.queue.get(added.id)
+    assert ended is not None
+    assert (ended.state, ended.error) == (JobState.CANCELLED, None)
+    assert h.writer.finished.is_set()
+    assert not part.exists()
+    note = "The job is cancelled while Reframe is writing the header of Movie.part.mkv"
+    assert f"{note}: it is let finish" in h.log_text(added.id)
 
 
 async def test_reprobe_mismatch(harness: Harness) -> None:

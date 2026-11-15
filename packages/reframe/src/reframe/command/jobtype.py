@@ -153,7 +153,7 @@ def _typed(
     if job.output.edit_in_place:
         if not blockers:
             return "metadata_edit", (
-                "Metadata edit: only the track metadata changes, so mkvpropedit edits "
+                "Metadata edit: only the track metadata changes, so Reframe edits "
                 f"{PurePath(source.ref.path).name} in place, in seconds."
             )
         kind, reason = _copy_type(job, source, defs)

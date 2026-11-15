@@ -21,7 +21,7 @@ from reframe.queue.service import _conflicts, _output_key, _source_key
 from reframe_testing import fake_tools as ft
 from reframe_testing.links import needs_symlinks
 
-from .conftest import Harness, encode_rule, queue_at, restore_together, store_rows, tool_set
+from .conftest import Harness, encode_rule, queue_at, restore_together, store_rows
 from .test_in_place_scheduling import active_for, ended_before_started, in_place_job, queued
 
 pytestmark = pytest.mark.anyio
@@ -150,7 +150,6 @@ async def test_two_in_place_edits_through_a_link_run_one_after_the_other(
 ) -> None:
     h = harness
     h.settings.queue.parallel_jobs = 2
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     link = tmp_path / "media" / "link-to-source.mkv"
     link.symlink_to(h.source_path)
     first, second = await restore_together(
@@ -171,7 +170,6 @@ async def test_an_encode_of_a_hard_link_waits_for_the_in_place_edit(
     except OSError as exc:  # pragma: no cover - a file system without hard links
         pytest.skip(f"no hard links here: {exc}")
     h.settings.queue.parallel_jobs = 2
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     h.scenario(encode_rule(ft.progress(blocks=1, end=True)))
     edit = await h.queue.add(in_place_job(h))
     job = h.job("Encode")

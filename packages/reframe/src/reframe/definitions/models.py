@@ -615,10 +615,9 @@ class CodecSupport(ReframeModel):
 
 
 class TrackFlagDef(ReframeModel):
-    """How a track flag is written: FFmpeg disposition and mkvpropedit property."""
+    """How a track flag is written: its FFmpeg disposition."""
 
     disposition: str
-    mkvpropedit: str
 
 
 class ContainerDef(ReframeModel):
@@ -642,8 +641,6 @@ class ContainerDef(ReframeModel):
     attachments: bool
     flags: list[TrackFlag]
     """Flags the FFmpeg muxer writes (and ffprobe reads back)."""
-    mkvpropedit_flags: list[TrackFlag] = Field(default_factory=list)
-    """Flags the muxer cannot write that a ``mkvpropedit`` step can."""
     default_always_set: bool = False
     """MP4: when no track of a type is default, the muxer marks the first one default."""
     language_format: Literal["iso639_2b", "iso639_2t"]

@@ -1,6 +1,8 @@
-"""Metadata edits and the post-mux fix-up through the real queue and mkvpropedit, on a copy of
-the ``multitrack`` fixture. MediaInfo is off, so the BCP 47 languages that the re-probe shows
-come from Reframe's own Matroska reader. Failures use fake mkvpropedit scripts (POSIX only)."""
+"""Metadata edits and the post-mux fix-up through the real queue and Reframe's own Matroska
+header writer, on a copy of the ``multitrack`` fixture, with no MKVToolNix program for the
+product to find. The BCP 47 languages that the re-probe shows come from Reframe's own
+Matroska reader. MKVToolNix is only the oracle (``needs_mkvtoolnix``): the same
+edit by mkvpropedit reads back the same in ``mkvmerge -J``."""
 
 from __future__ import annotations
 
@@ -8,20 +10,33 @@ import asyncio
 import json
 import os
 import shutil
-import stat
 import subprocess
 import sys
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 
-from reframe.models import JobDraft, JobSettings, JobState, MediaSource, QueueJob
+from reframe.metadata import header
+from reframe.metadata.header import HeaderEditResult
+from reframe.models import (
+    EncodePlan,
+    HeaderEdit,
+    JobDraft,
+    JobSettings,
+    JobState,
+    MediaSource,
+    QueueJob,
+    resolve_argv,
+)
 from reframe.probe.matroska import read_matroska
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
 from reframe_testing import media
+from reframe_testing.mkvtoolnix import mkvpropedit_args, mkvtoolnix_tool
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.anyio]
 
@@ -52,17 +67,17 @@ def _settings(config: Path, **output: object) -> None:
 def env(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fixture_media: Callable[[str], Path]
 ) -> Env:
-    mkvpropedit = shutil.which("mkvpropedit")
     ffmpeg, ffprobe = media.find_ffmpeg(), media.find_ffprobe()
-    if mkvpropedit is None or ffmpeg is None or ffprobe is None:
-        pytest.skip("needs mkvpropedit, ffmpeg and ffprobe")
+    if ffmpeg is None or ffprobe is None:
+        pytest.skip("needs ffmpeg and ffprobe")
     for var in ENV_VARS.values():
         monkeypatch.delenv(var, raising=False)
     for name in ("config", "data", "cache"):
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     monkeypatch.setenv("REFRAME_FFMPEG", ffmpeg)
     monkeypatch.setenv("REFRAME_FFPROBE", ffprobe)
-    monkeypatch.setenv("REFRAME_MKVPROPEDIT", mkvpropedit)
+    # Even an installed MKVToolNix is not found: no product path may need it.
+    monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(tmp_path / "no-mkvtoolnix" / "mkvpropedit"))
     _settings(tmp_path / "config")
     source = tmp_path / "media" / "Show.S01E01.mkv"
     source.parent.mkdir()
@@ -97,12 +112,41 @@ async def reprobe(app: Reframe, path: Path) -> MediaSource:
     return source
 
 
+def mkvmerge_json(path: Path) -> dict[str, Any]:
+    out = subprocess.run(
+        [mkvtoolnix_tool("mkvmerge"), "-J", str(path)],
+        capture_output=True, text=True, check=True, timeout=60,
+    )  # fmt: skip
+    data: dict[str, Any] = json.loads(out.stdout)
+    return data
+
+
 def mkvmerge(path: Path) -> list[dict[str, object]]:
-    tool = shutil.which("mkvmerge")
-    if tool is None:
+    """The track properties as ``mkvmerge -J`` reads them; ``[]`` without MKVToolNix."""
+    if shutil.which("mkvmerge") is None:
         return []
-    out = subprocess.run([tool, "-J", str(path)], capture_output=True, text=True, check=True)
-    return [t["properties"] for t in json.loads(out.stdout)["tracks"]]
+    return [t["properties"] for t in mkvmerge_json(path)["tracks"]]
+
+
+def same_as_mkvpropedit(edit: HeaderEdit, edited: Path, original: Path, scratch: Path) -> None:
+    """``mkvpropedit`` makes ``edit`` on a copy of ``original``; ``edited`` (Reframe's) must read
+    back the same in ``mkvmerge -J``, and ffprobe must still read every stream."""
+    oracle = scratch / f"oracle-{edited.name}"
+    shutil.copyfile(original, oracle)
+    args = mkvpropedit_args(edit.model_copy(update={"path": oracle}))
+    subprocess.run([mkvtoolnix_tool("mkvpropedit"), *args], check=True, capture_output=True)
+    ours, theirs = mkvmerge_json(edited), mkvmerge_json(oracle)
+    assert [t["properties"] for t in ours["tracks"]] == [t["properties"] for t in theirs["tracks"]]
+    assert ours["container"]["properties"].get("title") == theirs["container"]["properties"].get(
+        "title"
+    )
+    ffprobe = media.find_ffprobe()
+    assert ffprobe is not None
+    streams = subprocess.run(
+        [ffprobe, "-v", "error", "-of", "json", "-show_streams", str(edited)],
+        capture_output=True, text=True, check=True, timeout=60,
+    )  # fmt: skip
+    assert len(json.loads(streams.stdout)["streams"]) == len(theirs["tracks"])
 
 
 async def test_languages_and_flags_are_a_metadata_edit_under_a_second(env: Env) -> None:
@@ -117,6 +161,7 @@ async def test_languages_and_flags_are_a_metadata_edit_under_a_second(env: Env) 
         plan = await app.jobs.plan(job)
         assert not isinstance(plan, list), plan
         assert plan.job_type == "metadata_edit"
+        assert [s.kind for s in plan.steps] == ["header_edit"]
         ended = await run(app, job)
         assert ended.state is JobState.DONE, ended.error
         assert ended.output_path == env.source
@@ -128,7 +173,8 @@ async def test_languages_and_flags_are_a_metadata_edit_under_a_second(env: Env) 
         ]  # fmt: skip
         assert [s.disposition.forced for s in out.subtitles] == [False, False, False]
         log = app.queue.log_path(ended.id).read_text(encoding="utf-8")
-        assert "mkvpropedit" in log
+        assert f"header_edit {env.source}" in log
+        assert "Step 1/1 ended: written" in log
         assert "Edited Show.S01E01.mkv in place" in log
     finally:
         await app.close()
@@ -169,11 +215,6 @@ async def test_languages_names_and_flags_the_reprobe_shows_them_all(env: Env) ->
             ("eng", None, "Kommentár", False, True, False),
             ("hun", "hu", "Magyar SDH", False, False, True),
         ]
-        tracks = mkvmerge(env.source)
-        if tracks:  # MKVToolNix reads the same values
-            assert [(t.get("language"), t.get("language_ietf")) for t in tracks[1:3]] == [
-                ("hun", "hu"), ("por", "pt-BR"),
-            ]  # fmt: skip
     finally:
         await app.close()
 
@@ -197,6 +238,34 @@ async def test_only_flags_is_a_metadata_edit_under_a_second(env: Env) -> None:
         await app.close()
 
 
+@pytest.mark.needs_mkvtoolnix
+async def test_an_in_place_edit_reads_back_as_mkvpropedits(
+    env: Env, fixture_media: Callable[[str], Path]
+) -> None:
+    app = await env.app()
+    try:
+        job = await draft_remux(app, env.source)
+        job.video.metadata.name = "Main"
+        job.audio[0].metadata.language = "hu"
+        job.audio[0].metadata.name = "Magyar 5.1"
+        job.audio[0].metadata.default = False
+        job.audio[1].metadata.language = "pt-BR"
+        job.audio[1].metadata.original = True
+        job.audio[2].metadata.name = ""
+        job.subtitles[1].metadata.visual_impaired = True
+        job.subtitles[2].metadata.forced = False
+        job.tags.title = "Új cím"
+        plan = await app.jobs.plan(job)
+        assert not isinstance(plan, list), plan
+        [step] = plan.steps
+        assert step.header_edit is not None
+        ended = await run(app, job)
+        assert ended.state is JobState.DONE, ended.error
+    finally:
+        await app.close()
+    same_as_mkvpropedit(step.header_edit, env.source, fixture_media("multitrack"), env.tmp)
+
+
 async def job_type(app: Reframe, job: JobSettings) -> tuple[str, str]:
     from reframe.command import job_type as detect
 
@@ -205,7 +274,7 @@ async def job_type(app: Reframe, job: JobSettings) -> tuple[str, str]:
     return detect(job, source)
 
 
-async def test_nothing_to_change_is_done_without_running_mkvpropedit(env: Env) -> None:
+async def test_nothing_to_change_is_done_without_a_write(env: Env) -> None:
     app = await env.app()
     try:
         job = await draft_remux(app, env.source)
@@ -242,29 +311,63 @@ async def test_post_mux_fixup_writes_bcp47_and_is_checked_before_the_rename(env:
         await app.close()
 
 
-FAKE_VERSION = "mkvpropedit v101.0 ('Time To Turn') 64-bit"
+@pytest.mark.needs_mkvtoolnix
+async def test_the_fixup_reads_back_as_mkvpropedits(env: Env) -> None:
+    """The plan's encode step makes the muxed file; mkvpropedit and the writer each make the
+    fix-up on a copy of it."""
+    app = await env.app()
+    try:
+        draft = await app.jobs.draft_remux(env.source, edit_in_place=False)
+        assert isinstance(draft, JobDraft)
+        job = draft.job
+        job.output.container = "mkv"
+        job.output.path = env.tmp / "out" / "Fixed.mkv"
+        job.audio[1].metadata.language = "pt-BR"
+        job.subtitles[0].metadata.language = "zh-Hant"
+        plan = await app.jobs.plan(job)
+        assert not isinstance(plan, list), plan
+        tools = await app.tools.status()
+    finally:
+        await app.close()
+    assert tools.ffmpeg.path is not None
+    fixup_both_ways(plan, tools.ffmpeg.path, env.tmp)
+    tracks = mkvmerge(plan.output_tmp)
+    assert [(t.get("language"), t.get("language_ietf")) for t in (tracks[2], tracks[4])] == [
+        ("por", "pt-BR"), ("chi", "zh-Hant"),
+    ]  # fmt: skip
 
 
-def fake_mkvpropedit(folder: Path, body: str) -> Path:
-    """A POSIX shell mkvpropedit: ``--version`` prints the fake version, else runs ``body``."""
-    script = folder / "mkvpropedit"
-    folder.mkdir(parents=True, exist_ok=True)
-    script.write_text(
-        f'#!/bin/sh\nif [ "$1" = "--version" ]; then echo "{FAKE_VERSION}"; exit 0; fi\n{body}\n',
-        encoding="utf-8",
-    )
-    script.chmod(script.stat().st_mode | stat.S_IEXEC)
-    return script
+def fixup_both_ways(plan: EncodePlan, ffmpeg: Path, scratch: Path) -> None:
+    encode, fixup, _ = plan.steps
+    assert fixup.header_edit is not None
+    plan.output_tmp.parent.mkdir(parents=True)
+    subprocess.run([str(ffmpeg), *resolve_argv(encode.argv, {})], check=True, capture_output=True)
+    muxed = scratch / "muxed.mkv"
+    shutil.copyfile(plan.output_tmp, muxed)
+    written = header.apply_header_edit(fixup.header_edit)
+    assert written.ok, written
+    same_as_mkvpropedit(fixup.header_edit, plan.output_tmp, muxed, scratch)
 
 
-posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the fake mkvpropedit is sh")
+def fake_writer(
+    monkeypatch: pytest.MonkeyPatch, result: HeaderEditResult
+) -> list[tuple[HeaderEdit, bytes]]:
+    """The writer replaced: it writes nothing and returns ``result``; each call's edit and the
+    file's bytes at that moment."""
+    calls: list[tuple[HeaderEdit, bytes]] = []
+
+    def write(edit: HeaderEdit) -> HeaderEditResult:
+        calls.append((edit, edit.path.read_bytes()))
+        return result
+
+    monkeypatch.setattr(header, "apply_header_edit", write)
+    return calls
 
 
-@posix_only
 async def test_an_edit_that_changed_nothing_fails_the_reprobe_check(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(fake_mkvpropedit(env.tmp / "bin", "exit 0")))
+    calls = fake_writer(monkeypatch, HeaderEditResult("written"))
     _settings(env.tmp / "config", partial_file="delete")
     app = await env.app()
     try:
@@ -278,28 +381,42 @@ async def test_an_edit_that_changed_nothing_fails_the_reprobe_check(
             "por expected, eng found; audio track 2: BCP 47 language pt-BR expected, en found; "
             "audio track 2: the original flag should be set."
         )
+        assert [edit.path for edit, _ in calls] == [env.source]
         assert env.source.exists()  # never removed, whatever the partial-file setting
     finally:
         await app.close()
 
 
-@posix_only
-async def test_a_failing_mkvpropedit_fails_the_job_and_keeps_the_source(
-    env: Env, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("result", "error"),
+    [
+        (
+            HeaderEditResult("refused", "header.no_room", "The SeekHead has no room."),
+            "Reframe cannot edit the Matroska header of Show.S01E01.mkv: The SeekHead has no "
+            "room. Nothing was changed in the file.",
+        ),
+        (
+            HeaderEditResult("failed", "header.write_error", "Input/output error"),
+            "Writing the Matroska header of Show.S01E01.mkv failed: Input/output error. The "
+            "file holds either all its old values or all the new ones.",
+        ),
+    ],
+)
+async def test_a_write_that_is_refused_or_fails_fails_the_job_and_keeps_the_source(
+    env: Env, monkeypatch: pytest.MonkeyPatch, result: HeaderEditResult, error: str
 ) -> None:
-    body = 'echo "Error: The file could not be opened for writing." ; exit 2'
-    monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(fake_mkvpropedit(env.tmp / "bin", body)))
+    fake_writer(monkeypatch, result)
     _settings(env.tmp / "config", partial_file="delete")
+    before = env.source.read_bytes()
     app = await env.app()
     try:
         job = await draft_remux(app, env.source)
         job.audio[0].metadata.name = "X"
         ended = await run(app, job)
-        assert ended.state is JobState.FAILED
-        assert ended.error is not None
-        assert ended.error.startswith("mkvpropedit failed (exit code 2)")
-        assert env.source.exists()
+        assert (ended.state, ended.error) == (JobState.FAILED, error)
+        assert env.source.read_bytes() == before
         log = app.queue.log_path(ended.id).read_text(encoding="utf-8")
+        assert f"Step 1/1 ended: {result.status} ({result.code})" in log
         assert "Clean-up" not in log
         assert "partial output" not in log
     finally:
@@ -326,17 +443,20 @@ async def test_a_read_only_source_is_a_validation_error(env: Env) -> None:
         await app.close()
 
 
-@posix_only
-async def test_cancelling_an_in_place_edit_lets_mkvpropedit_finish(
+async def test_cancelling_an_in_place_edit_lets_the_writer_finish(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A cancel does not stop mkvpropedit while it writes the source: a kill can destroy the
-    track headers. The fake waits at a gate, so the cancel always comes during the step."""
-    real = shutil.which("mkvpropedit")
-    assert real is not None
-    gate, started = env.tmp / "gate", env.tmp / "started"
-    body = f'touch "{started}"\nwhile [ ! -e "{gate}" ]; do sleep 0.01; done\nexec "{real}" "$@"'
-    monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(fake_mkvpropedit(env.tmp / "bin", body)))
+    """A cancel does not stop the writer while it writes the source. The real writer waits at
+    a gate, so the cancel always comes during the step."""
+    real = header.apply_header_edit
+    gate, started = threading.Event(), threading.Event()
+
+    def gated(edit: HeaderEdit) -> HeaderEditResult:
+        started.set()
+        gate.wait(30)
+        return real(edit)
+
+    monkeypatch.setattr(header, "apply_header_edit", gated)
     _settings(env.tmp / "config", partial_file="delete")
     app = await env.app()
     try:
@@ -346,7 +466,7 @@ async def test_cancelling_an_in_place_edit_lets_mkvpropedit_finish(
         app.queue.start(job_ids=[queued.id])
         cancel: asyncio.Task[None] | None = None
         try:
-            await poll(started.exists)
+            assert await asyncio.to_thread(started.wait, 30)
             cancel = asyncio.create_task(app.queue.cancel(queued.id))
 
             def stop_requested() -> bool:
@@ -355,18 +475,18 @@ async def test_cancelling_an_in_place_edit_lets_mkvpropedit_finish(
 
             await poll(stop_requested)
         finally:
-            gate.touch()
+            gate.set()
         assert cancel is not None
         await cancel
         [ended] = await app.queue.wait([queued.id])
         assert ended.state is JobState.CANCELLED
         assert ended.error == (
             "The edit was already written to Show.S01E01.mkv when the job was cancelled: "
-            "mkvpropedit is never stopped while it writes the source (that can damage the "
-            "file). The check of the edited file did not run."
+            "Reframe never stops a write into the source. The check of the edited file did "
+            "not run."
         )
         out = await reprobe(app, env.source)
-        assert out.audio[0].title == "Renamed"  # the real mkvpropedit wrote it
+        assert out.audio[0].title == "Renamed"  # the real writer wrote it
         assert len(read_matroska(env.source).tracks) == 7
         log = app.queue.log_path(ended.id).read_text(encoding="utf-8")
         assert "it is let finish" in log

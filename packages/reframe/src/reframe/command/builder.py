@@ -17,6 +17,7 @@ from reframe.command.filtergraph import (
     filter_available,
     keeps_hdr,
 )
+from reframe.command.header import FixupTrack, edit_line, fixup_edit, in_place_edit, is_empty
 from reframe.command.jobtype import job_type
 from reframe.command.metadata import (
     OutputTrack,
@@ -26,15 +27,6 @@ from reframe.command.metadata import (
     render_tag,
     stream_metadata_args,
     tag_args,
-)
-from reframe.command.mkvpropedit import (
-    FixupTrack,
-    InfoEdit,
-    TrackEdit,
-    fixup_edits,
-    header_edit,
-    header_edit_args,
-    in_place_edits,
 )
 from reframe.command.quoting import Shell, command_line, default_shell, quote_posix, quote_windows
 from reframe.command.subtitles import SubtitlePlan, plan_subtitles
@@ -57,6 +49,7 @@ from reframe.models import (
     ExternalSubtitle,
     FrameRange,
     Geometry,
+    HeaderEdit,
     JobSettings,
     Measurement,
     MediaSource,
@@ -69,7 +62,6 @@ from reframe.models import (
     TimeRange,
     ToolName,
     ToolSet,
-    ToolStatus,
     VideoSettings,
     VideoStream,
 )
@@ -452,7 +444,7 @@ def build_plan(
     else:
         what = "Remux (copy the streams)" if kind == "remux" else f"Encode ({vplan.label})"
         steps.append(_step("encode", ffmpeg_argv(None), what))
-    fixup = _fixup_step(tracks, container, defs, tools, tmp)
+    fixup = _fixup_step(tracks, container, tmp)
     if fixup is not None:
         steps.append(fixup)
     steps.append(
@@ -498,42 +490,27 @@ def output_chapters(
     return planned
 
 
-def _fixup_step(
-    tracks: list[OutputTrack],
-    container: ContainerDef,
-    defs: Definitions,
-    tools: ToolSet,
-    tmp: Path,
-) -> PlanStep | None:
-    """The post-mux fix-up: mkvpropedit writes what FFmpeg's Matroska muxer does not (the BCP 47
-    languages and the track flags). Only for MKV, and only when mkvpropedit was found: validation
-    warns about what is lost without it."""
-    if container.id != "mkv" or tools.mkvpropedit.status is not ToolStatus.FOUND:
+def _fixup_step(tracks: list[OutputTrack], container: ContainerDef, tmp: Path) -> PlanStep | None:
+    """The post-mux fix-up of an MKV output: the BCP 47 languages (Matroska ``LanguageIETF``)
+    that FFmpeg's muxer does not write."""
+    if container.id != "mkv":
         return None
-    edits = fixup_edits(
-        [FixupTrack(t.type, t.index + 1, t.language, t.metadata) for t in tracks],
-        container,
-        defs,
-    )
-    if not edits:
+    edit = fixup_edit(tmp, [FixupTrack(t.type, t.index + 1, t.language) for t in tracks])
+    if is_empty(edit):
         return None
-    what = []
-    if any(e.language is not None for e in edits):
-        what.append("the BCP 47 languages (Matroska LanguageIETF)")
-    if any(e.flags for e in edits):
-        what.append("the track flags FFmpeg cannot write")
     return PlanStep(
-        kind="header_edit", tool=None, header_edit=header_edit(tmp, edits),
-        progress_weight=STEP_WEIGHTS["header_edit"], description="Write " + " and ".join(what),
+        kind="header_edit", tool=None, header_edit=edit,
+        progress_weight=STEP_WEIGHTS["header_edit"],
+        description="Write the BCP 47 languages (Matroska LanguageIETF)",
     )  # fmt: skip
 
 
-def _describe_edits(edits: list[TrackEdit | InfoEdit]) -> str:
-    tracks = sum(1 for e in edits if isinstance(e, TrackEdit))
+def _describe_edit(edit: HeaderEdit) -> str:
+    tracks = len(edit.tracks)
     parts = []
     if tracks:
         parts.append(f"the metadata of {tracks} track" + ("" if tracks == 1 else "s"))
-    if any(isinstance(e, InfoEdit) for e in edits):
+    if edit.info is not None:
         parts.append("the title")
     return " and ".join(parts)
 
@@ -547,7 +524,7 @@ def _in_place_plan(
     now: datetime | None,
     shell: Shell,
 ) -> EncodePlan:
-    """The plan of a ``metadata_edit`` job: one mkvpropedit step on the source itself, with no
+    """The plan of a ``metadata_edit`` job: one ``header_edit`` step on the source itself, with no
     ``.part`` file and no rename. ``output_tmp`` and ``output_final`` are the source. No step
     when the source already has every value."""
     target = Path(job.source.path)
@@ -559,15 +536,14 @@ def _in_place_plan(
             now=now, definitions=defs,
         )  # fmt: skip
 
-    edits = in_place_edits(job, source, defs, render_title=render_title)
+    edit = in_place_edit(target, job, source, defs, render_title=render_title)
     steps: list[PlanStep] = []
-    if edits:
+    if not is_empty(edit):
         steps.append(
             PlanStep(
-                kind="header_edit", tool=None, header_edit=header_edit(target, edits),
+                kind="header_edit", tool=None, header_edit=edit,
                 progress_weight=STEP_WEIGHTS["header_edit"],
-                description=f"Edit {_describe_edits(edits)} of {target.name} "
-                "in place",
+                description=f"Edit {_describe_edit(edit)} of {target.name} in place",
             )
         )  # fmt: skip
     return EncodePlan(
@@ -647,8 +623,7 @@ def _display(steps: list[PlanStep], tools: ToolSet, tmp: Path, final: Path, shel
     quote = quote_posix if shell == "posix" else quote_windows
     for step in steps:
         if step.header_edit is not None:
-            argv = header_edit_args(step.header_edit)
-            lines.append(command_line(_program(tools, "mkvpropedit"), argv, shell))
+            lines.append(edit_line(step.header_edit, shell))
             continue
         if step.tool is None:
             mover = "mv -f --" if shell == "posix" else "move /Y"

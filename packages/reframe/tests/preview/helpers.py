@@ -5,7 +5,6 @@ from __future__ import annotations
 import builtins
 import json
 import os
-import shutil
 import subprocess
 import threading
 from collections.abc import Callable
@@ -80,11 +79,12 @@ def tool(name: ToolName, path: str | None) -> ToolInfo:
     return ToolInfo(name=name, status=ToolStatus.FOUND, path=Path(path))
 
 
-def real_tools(*, mkvpropedit: bool = True) -> ToolSet:
+def real_tools() -> ToolSet:
+    """The real FFmpeg and ffprobe; no MKVToolNix, which no plan needs."""
     return ToolSet(
         ffmpeg=tool("ffmpeg", media.find_ffmpeg()),
         ffprobe=tool("ffprobe", media.find_ffprobe()),
-        mkvpropedit=tool("mkvpropedit", shutil.which("mkvpropedit") if mkvpropedit else None),
+        mkvpropedit=tool("mkvpropedit", None),
         mediainfo=tool("mediainfo", None),
     )
 

@@ -131,17 +131,11 @@ def metadata_problems(
     fixup: bool,
     title: tuple[bool, str | None] = (False, None),
 ) -> list[str]:
-    """What differs in BCP 47 languages, names and flags. ``in_place``: the source was edited
-    with mkvpropedit; ``fixup``: a post-mux mkvpropedit step ran; ``title``:
+    """What differs in BCP 47 languages, names and flags. ``in_place``: the source's header
+    was edited; ``fixup``: a post-mux ``header_edit`` step ran; ``title``:
     :func:`planned_title`."""
     flags: tuple[TrackFlag, ...] = (
-        TRACK_FLAGS
-        if in_place
-        else tuple(
-            f
-            for f in TRACK_FLAGS
-            if f in container.flags or (fixup and f in container.mkvpropedit_flags)
-        )
+        TRACK_FLAGS if in_place else tuple(f for f in TRACK_FLAGS if f in container.flags)
     )
     expected = expected_streams(job, source, container)
     found = _streams(output)
@@ -194,7 +188,7 @@ def check_output(
     plan: EncodePlan | None = None,
 ) -> list[str]:
     """What differs between the plan and the re-probed ``output`` (empty: it matches). With a
-    ``plan`` that changes metadata with mkvpropedit, the metadata is checked too."""
+    ``plan`` that has a ``header_edit`` step, the metadata is checked too."""
     container = definitions.containers.get(job.output.container)
     if container is None:
         return [f"unknown container {job.output.container!r}"]

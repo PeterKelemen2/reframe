@@ -1,9 +1,9 @@
 """Running one job: prepare, run the plan's steps, finalize. :class:`JobRunner` returns an
 :class:`Outcome` for every run and never raises for an expected failure.
 
-A job never writes its source, except a metadata edit in place, which runs only mkvpropedit on
-the source. That step is not killed by a cancel or by ``close()``: mkvpropedit installs no signal
-handler, and a kill during its write can leave the source without track headers. The output is
+A job never writes its source, except a metadata edit in place, whose only steps are
+``header_edit`` steps on the source. A ``header_edit`` step runs Reframe's own Matroska writer in
+a worker thread, which cannot be stopped: a cancel or ``close()`` waits for it. The output is
 checked before it takes its final name.
 """
 
@@ -22,26 +22,27 @@ from typing import Literal, Protocol
 import psutil
 
 from reframe.command import PlanError, build_plan
-from reframe.command.mkvpropedit import header_edit_args
+from reframe.command.header import edit_line
 from reframe.command.quoting import Shell, command_line, default_shell
 from reframe.definitions import Definitions
 from reframe.events import EventBus
+from reframe.metadata import header
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.events import JobProgressEvent
 from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.media import MediaSource
 from reframe.models.naming import NamingOptions
-from reframe.models.plan import EncodePlan, PlanArg, PlanStep, resolve_argv
+from reframe.models.plan import EncodePlan, PlanStep, resolve_argv
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.settings import AppSettings, CollisionPolicy
-from reframe.models.tools import ToolInfo, ToolName, ToolSet, ToolStatus
+from reframe.models.tools import ToolInfo, ToolSet, ToolStatus
 from reframe.probe import ProbeError, matroska
 from reframe.queue import files, loudnorm
 from reframe.queue.clock import Clock
 from reframe.queue.errors import closed_error, exit_text, printable, stderr_reason
 from reframe.queue.logs import JobLog
-from reframe.queue.process import resume_tree, suspend_tree
+from reframe.queue.process import suspend_tree
 from reframe.queue.progress import ProgressBlock, ProgressParser, ProgressTracker
 from reframe.queue.verify import check_output
 from reframe.queue.watchdog import StepWatch, Verdict, tree_cpu_seconds
@@ -69,17 +70,9 @@ _WHAT = {
     "pass1": "Pass 1",
     "pass2": "Pass 2",
     "encode": "The encode",
-    "header_edit": "mkvpropedit",
+    "header_edit": "Writing the Matroska header",
     "finalize": "Finalizing",
 }
-
-
-def _program(step: PlanStep) -> tuple[ToolName, list[PlanArg]]:
-    """The tool and the arguments that run ``step`` (not ``finalize``)."""
-    if step.header_edit is not None:
-        return "mkvpropedit", list(header_edit_args(step.header_edit))
-    assert step.tool is not None
-    return step.tool, step.argv
 
 
 class ToolsSource(Protocol):
@@ -137,8 +130,8 @@ class ActiveJob:
     """The run ended: pause and resume do nothing any more."""
     task: asyncio.Task[None] | None = None
     end_note: str | None = None
-    """The error of a run whose own task was cancelled during an in-place step: what happened
-    to the source."""
+    """The error of a run whose own task was cancelled during an in-place ``header_edit`` step:
+    what happened to the source."""
 
     def __post_init__(self) -> None:
         self.resumed.set()
@@ -393,7 +386,19 @@ class JobRunner:
             if step.kind == "finalize":
                 joblog.note(f"Step {index + 1}/{count} ({step.kind}): {step.description}")
                 return await self._finalize(job, active, joblog, prepared, tracker)
-            tool, step_argv = _program(step)
+            if step.header_edit is not None:
+                written = await self._write_header(
+                    job, active, joblog, step, f"Step {index + 1}/{count}"
+                )
+                if active.stop_reason is not None:
+                    raise _Stopped  # the output is removed: what the write did does not matter
+                if not written.ok:
+                    error = _header_error(step.header_edit.path, written)
+                    return Outcome(JobState.FAILED, error=error, plan=plan)
+                self._publish(job, tracker.step_done())
+                continue
+            assert step.tool is not None
+            tool, step_argv = step.tool, step.argv
             info = prepared.tools.get(tool)
             what = _WHAT[step.kind]
             if not _usable(info):
@@ -446,16 +451,11 @@ class JobRunner:
         label: str,
         info: ToolInfo,
         argv: list[str],
-        *,
-        in_place: Path | None = None,
     ) -> tuple[RunResult, list[str]]:
-        """Run one tool step. ``in_place``: the step edits this source in place, so a stop of
-        the job does not kill it; only the step's time limit does."""
+        """Run one tool step."""
         assert info.path is not None
         assert active.tracker is not None
         tracker = active.tracker
-        if in_place is not None and active.token.cancelled:
-            raise _Stopped  # never start writing the source after a stop
         program = str(info.path)
         joblog.note(f"{label} ({step.kind}): {step.description or step.kind}")
         joblog.write("$ " + command_line(program, argv, self._shell))
@@ -497,36 +497,20 @@ class JobRunner:
             if active.paused:
                 suspend_tree(active.process)
 
-        step_token = CancelToken() if in_place is not None else active.token
-        watchdog = asyncio.ensure_future(
-            self._watchdog(active, watch, step_token if in_place is not None else None)
-        )
-        guard = (
-            asyncio.ensure_future(self._let_finish(job, active, joblog, in_place))
-            if in_place is not None
-            else None
-        )
+        watchdog = asyncio.ensure_future(self._watchdog(active, watch))
         try:
-            run = run_streaming(
+            result = await run_streaming(
                 [program, *argv],
                 on_stdout_line=on_stdout,
                 on_stderr_line=on_stderr,
-                cancel=step_token,
+                cancel=active.token,
                 extra_env=info.env or None,
                 on_start=on_start,
             )
-            if in_place is None:
-                result = await run
-            else:
-                result = await self._to_its_end(
-                    asyncio.ensure_future(run), active, joblog, label, in_place
-                )
         finally:
-            for helper in (watchdog, guard):
-                if helper is not None:
-                    helper.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await helper
+            watchdog.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await watchdog
             active.process = None
         joblog.flush_file()
         if result.error is not None:
@@ -537,43 +521,55 @@ class JobRunner:
             joblog.note(f"{label} ended: {ended} after {result.duration:.1f} s")
         return result, list(stderr)
 
-    async def _watchdog(
-        self, active: ActiveJob, watch: StepWatch, step_token: CancelToken | None = None
-    ) -> None:
-        """Stop the job when the step stalls or runs out of time. An in-place step has its own
-        token, so only the step stops: a step that exits 0 just after its limit ends as any
-        finished step and is checked."""
+    async def _watchdog(self, active: ActiveJob, watch: StepWatch) -> None:
+        """Stop the job when the step stalls or runs out of time."""
         while True:
             await asyncio.sleep(self._tick)
             process = active.process
             cpu = tree_cpu_seconds(process.pid) if process is not None else None
             verdict: Verdict | None = watch.tick(self._clock.monotonic(), cpu, paused=active.paused)
             if verdict is not None:
-                if step_token is not None:
-                    step_token.cancel(verdict)
-                else:
-                    active.stop(verdict)
+                active.stop(verdict)
                 return
 
+    async def _write_header(
+        self, job: QueueJob, active: ActiveJob, joblog: JobLog, step: PlanStep, label: str
+    ) -> header.HeaderEditResult:
+        """Run a ``header_edit`` step: the writer in a worker thread, always to its end. No time
+        limit: a thread cannot be stopped, and the writer's reads are bounded."""
+        edit = step.header_edit
+        assert edit is not None
+        if active.token.cancelled:
+            raise _Stopped  # never start writing after a stop
+        joblog.note(f"{label} ({step.kind}): {step.description or step.kind}")
+        joblog.write(edit_line(edit, self._shell))
+        started = self._clock.monotonic()
+        # A plain future, not a task: an event loop that shuts down cancels every task, and
+        # the wait for the writer's result must outlive that.
+        run = asyncio.get_running_loop().run_in_executor(None, header.apply_header_edit, edit)
+        guard = asyncio.ensure_future(self._let_finish(job, active, joblog, edit.path))
+        try:
+            result = await self._to_its_end(run, active, joblog, label, edit.path)
+        finally:
+            guard.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await guard
+        seconds = max(self._clock.monotonic() - started, 0.0)
+        joblog.note(f"{label} ended: {_result_text(result)} after {seconds:.1f} s")
+        return result
+
     async def _let_finish(
-        self, job: QueueJob, active: ActiveJob, joblog: JobLog, source: Path
+        self, job: QueueJob, active: ActiveJob, joblog: JobLog, path: Path
     ) -> None:
-        """While an in-place step runs: when the job is stopped, log that the step is let
-        finish, and resume it if the job was paused, since a suspended step would never end.
-        Runs under the job's control lock, so a pause under way ends first."""
+        """While a ``header_edit`` step runs: when the job is stopped, log that the write is
+        let finish, and show a paused job running again, since its write goes on. Runs under
+        the job's control lock, so a pause under way ends first."""
         await active.token.wait()
-        if active.stop_reason not in ("cancel", "close"):
-            return  # not a stop of the job: only the step's own time limit stops the step
         why = "Reframe is closing" if active.stop_reason == "close" else "The job is cancelled"
-        joblog.note(
-            f"{why} while mkvpropedit is writing {source.name}: it is let finish (stopping it "
-            "could damage the file)"
-        )
+        joblog.note(f"{why} while Reframe is writing the header of {path.name}: it is let finish")
         async with active.control:
             if active.paused:
-                active.paused = False  # the step's time limit counts again
-                if active.process is not None:
-                    await asyncio.to_thread(resume_tree, active.process)
+                active.paused = False
                 if active.tracker is not None:
                     active.tracker.resume()
                 if self._resumed is not None:
@@ -584,54 +580,35 @@ class JobRunner:
 
     async def _to_its_end(
         self,
-        run: asyncio.Future[RunResult],
+        run: asyncio.Future[header.HeaderEditResult],
         active: ActiveJob,
         joblog: JobLog,
         label: str,
-        source: Path,
-    ) -> RunResult:
-        """The result of an in-place step. If only the awaiting task is cancelled, the step
-        still runs to its end (its time limit bounds it), then the cancellation goes on. If the
-        event loop shuts down, the step's own run is cancelled too and mkvpropedit is killed;
-        the job's end then says the file may be damaged. Either way ``active.end_note`` says
-        what happened to the source."""
+        path: Path,
+    ) -> header.HeaderEditResult:
+        """The writer's result. If the awaiting task is cancelled (also by an event loop that
+        shuts down), the write still runs to its end, then the cancellation goes on, with
+        ``active.end_note`` saying what happened to the file."""
         try:
             return await asyncio.shield(run)
         except asyncio.CancelledError:
             while not run.done():
                 with contextlib.suppress(asyncio.CancelledError):
                     await asyncio.shield(run)
-            if run.cancelled() or run.exception() is not None:
-                # The run's own task was cancelled too: its clean-up killed the process tree.
-                active.end_note = (
-                    f"Reframe was shut down while mkvpropedit was editing {source.name} in "
-                    "place: mkvpropedit was stopped before it ended, so the file may be damaged."
-                )
-                joblog.note(f"{label} ended: stopped. {active.end_note}")
-                raise
-            result = run.result()
-            if _killed(result):  # the step's time limit
-                active.end_note = self._timed_out(source)
-                joblog.note(f"{label} ended: stopped. {active.end_note}")
-                raise
-            if result.error is None and result.returncode == 0:
-                active.end_note = (
-                    f"The job was stopped while mkvpropedit was editing {source.name} in place: "
-                    "it was let finish, so the edit is written. The check of the edited file "
-                    "did not run."
-                )
-            joblog.note(
-                f"{label} ended: {exit_text(result.returncode)}; the job was stopped while "
-                "mkvpropedit was writing the source: it was let finish"
+            error = None if run.cancelled() else run.exception()
+            if run.cancelled() or error is not None:
+                what = f"it ended with an internal error ({error!r})"
+                state = _FILE_STATE["failed"]
+            else:
+                result = run.result()
+                what = _result_text(result)
+                state = _FILE_STATE[result.status]
+            active.end_note = (
+                f"The job was stopped while Reframe was writing the header of {path.name}: the "
+                f"write was let finish ({what}). {state}"
             )
+            joblog.note(f"{label} ended: {what}; the job was stopped during the write")
             raise
-
-    def _timed_out(self, source: Path) -> str:
-        """The error of an in-place step that its time limit stopped."""
-        return (
-            f"mkvpropedit did not finish within {_duration(self._step_time_limit)} and was "
-            f"stopped while it was editing {source.name} in place: the file may be damaged."
-        )
 
     def _measure(
         self, step: PlanStep, result: RunResult, values: dict[str, str], joblog: JobLog
@@ -772,36 +749,19 @@ class JobRunner:
             for index, step in enumerate(plan.steps):
                 await self._wait_resumed(active)
                 self._publish(job, tracker.start_step(index))
-                info = prepared.tools.get("mkvpropedit")
-                if not _usable(info):
-                    reason = f": {info.reason}" if info.reason else ""
-                    return Outcome(
-                        JobState.FAILED,
-                        error=f"Editing in place needs mkvpropedit, which is not available{reason}",
-                        plan=plan,
-                    )
-                argv = resolve_argv(_program(step)[1], {})
-                result, stderr = await self._run_step(
-                    job, active, joblog, step, f"Step {index + 1}/{count}", info, argv,
-                    in_place=source,
-                )  # fmt: skip
-                if _killed(result):  # only the step's time limit stops an in-place step
-                    return Outcome(
-                        JobState.FAILED,
-                        error=self._timed_out(source),
-                        plan=plan,
-                        stop_reason="timeout",
-                    )
-                # Exit code 0, also one that came just as the time limit fired: the step ended
-                # on its own and its edit is in the file.
-                finished = result.error is None and result.returncode == 0
-                if finished:
+                result = await self._write_header(
+                    job, active, joblog, step, f"Step {index + 1}/{count}"
+                )
+                if result.status == "failed":  # said even after a stop: the source may be new
+                    return Outcome(JobState.FAILED, error=_header_error(source, result), plan=plan)
+                if result.ok:
                     written += 1
                 if active.stop_reason is not None:
                     raise _Stopped
-                if not finished:
-                    return Outcome(JobState.FAILED, error=_failure(step, result, stderr), plan=plan)
+                if not result.ok:
+                    return Outcome(JobState.FAILED, error=_header_error(source, result), plan=plan)
                 self._publish(job, tracker.step_done())
+            await self._wait_resumed(active)
             joblog.note(f"Checking the edited source {source.name}")
             output = await self._until_stopped(
                 self._sources.probe(source, use_cache=False, cancel=active.token), active
@@ -873,17 +833,46 @@ def _stopped_after_edit(
     what = (
         "The edit was"
         if written >= count
-        else f"Part of the edit ({written} of {count} mkvpropedit steps) was"
+        else f"Part of the edit ({written} of {count} header edits) was"
     )
     return Outcome(
         state,
-        error=f"{what} already written to {source.name} when {when}: mkvpropedit is never "
-        "stopped while it writes the source (that can damage the file). The check of the "
-        "edited file did not run.",
+        error=f"{what} already written to {source.name} when {when}: Reframe never stops a "
+        "write into the source. The check of the edited file did not run.",
         plan=plan,
         output_path=source,
         stop_reason=reason,
     )
+
+
+#: What a ``header_edit`` result left in the file.
+_FILE_STATE = {
+    "written": "The new values are written; the check of the edited file did not run.",
+    "refused": "Nothing was changed in the file.",
+    "failed": "The file holds either all its old values or all the new ones.",
+}
+
+
+def _result_text(result: header.HeaderEditResult) -> str:
+    """``written``, or ``refused (header.x): reason`` for the log."""
+    if result.ok:
+        return result.status
+    code = f" ({result.code})" if result.code else ""
+    reason = f": {result.reason}" if result.reason else ""
+    return f"{result.status}{code}{reason}"
+
+
+def _header_error(path: Path, result: header.HeaderEditResult) -> str:
+    """The job's error for a ``header_edit`` step that was refused or failed."""
+    reason = (result.reason or "").strip()
+    if reason and not reason.endswith((".", "!", "?")):
+        reason += "."
+    reason = f" {reason}" if reason else ""
+    if result.status == "refused":
+        head = f"Reframe cannot edit the Matroska header of {path.name}:"
+    else:
+        head = f"Writing the Matroska header of {path.name} failed:"
+    return f"{head}{reason} {_FILE_STATE[result.status]}"
 
 
 def _killed(result: RunResult) -> bool:
@@ -915,8 +904,8 @@ def _in_place_refusal(
     plan: EncodePlan, source: Path, probed: MediaSource
 ) -> tuple[str, str] | None:
     """Why the runner refuses a ``metadata_edit`` plan (blocking): ``(code, message)``, or
-    ``None``. Only mkvpropedit steps on the source are allowed: no other file is written and
-    nothing is removed."""
+    ``None``. Only ``header_edit`` steps on the source are allowed: no other file is written
+    and nothing is removed."""
     targets = [plan.output_tmp, plan.output_final]
     steps_ok = all(
         step.kind == "header_edit"
@@ -934,8 +923,8 @@ def _in_place_refusal(
     ):
         return (
             "queue.writes_source",
-            f"The in-place edit of {source.name} would write other files or use another tool "
-            "than mkvpropedit on the source, so nothing was written or removed.",
+            f"The in-place edit of {source.name} would write other files or do more than edit "
+            "its Matroska header, so nothing was written or removed.",
         )
     if not plan.steps:
         return None
@@ -1006,7 +995,7 @@ def _source_issue(error: ProbeError) -> ValidationIssue:
 
 def _failure(step: PlanStep, result: RunResult, stderr: Sequence[str]) -> str:
     what = _WHAT[step.kind]
-    tool = _program(step)[0]
+    tool = step.tool
     if result.error is not None:
         return f"{what} could not start {tool}: {result.error}"
     crash = crashed(result.returncode)

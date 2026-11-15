@@ -161,16 +161,17 @@ def _claim_issue(job: QueueJob, other: QueueJob, *, as_source: bool) -> Validati
 
 
 def _restored_error(job: QueueJob) -> str:
-    """The error of a job that was running or paused when Reframe stopped. An in-place edit
-    may have been stopped while mkvpropedit wrote its source (a crash or a hard exit kills the
-    child), so the error says what that can mean for the file."""
+    """The error of a job that was running or paused when Reframe stopped. A crash or a hard
+    exit may have stopped an in-place edit while it wrote the source, so the error says what
+    that can mean for the file."""
     error = "Reframe stopped while the job was running."
     plan = job.plan
     edits = plan is not None and plan.job_type == "metadata_edit" and bool(plan.steps)
     if job.settings.output.edit_in_place and edits:
         name = Path(job.settings.source.path).name
         error += (
-            f" If mkvpropedit was editing {name} in place at that moment, the file may be damaged."
+            f" If Reframe was writing the header of {name} at that moment, the file holds "
+            "either all its old values or all the new ones."
         )
     return error
 
@@ -188,7 +189,7 @@ class QueueService:
     :param fs: the file-system view of validation and of the collision rename.
     :param stall_after: seconds without progress, output or CPU use before an FFmpeg step is
         stopped (``None``: never).
-    :param step_time_limit: seconds a short step (``mkvpropedit``) may take.
+    :param step_time_limit: seconds a tool step other than FFmpeg may take.
     :param lock_backend: the OS lock of ``queue.lock``; tests replace it.
     """
 
@@ -512,8 +513,8 @@ class QueueService:
     async def cancel(self, job_id: str | None = None) -> None:
         """Cancel a job: a waiting one is marked ``cancelled``; a running or paused one has
         its process tree killed and ends ``cancelled`` with its ``.part`` file removed — except a
-        running in-place mkvpropedit edit, which is let finish first (stopping it could damage
-        the source) before the job ends ``cancelled``.
+        running ``header_edit`` step, which is let finish first (a worker thread cannot be
+        stopped) before the job ends ``cancelled``.
         ``None``: every job that has not ended (running, paused and waiting). Returns when
         the cancelled jobs have ended."""
         self._check_open()
@@ -567,7 +568,7 @@ class QueueService:
     async def close(self) -> None:
         """No new jobs; a when-done countdown that the queue started is cancelled (its action
         never runs); running jobs are stopped (``interrupted``, ``.part`` removed; a running
-        in-place mkvpropedit edit is let finish first, as in :meth:`cancel`), the sleep inhibit
+        ``header_edit`` step is let finish first, as in :meth:`cancel`), the sleep inhibit
         is freed and the store is flushed. Safe to call more than once."""
         if self._closed:
             return
@@ -975,10 +976,9 @@ class QueueService:
         await self._inhibitor.release()
 
     async def _resumed_for_stop(self, job: QueueJob, active: ActiveJob) -> None:
-        """A paused job's in-place mkvpropedit step was resumed so that a cancel or
-        ``close()`` can let it finish (called by the runner with ``active.control`` held): the
-        job is ``running`` again until it ends, and holds its sleep inhibit, as after
-        :meth:`resume`."""
+        """A paused job's ``header_edit`` step goes on writing while a cancel or ``close()``
+        lets it finish (called by the runner with ``active.control`` held): the job is
+        ``running`` again until it ends, and holds its sleep inhibit, as after :meth:`resume`."""
         await self._set_state(job, JobState.RUNNING)
         await self._hold_inhibit(active, job)
 
