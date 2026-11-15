@@ -37,27 +37,12 @@ from reframe.probe.matroska import read_matroska
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
 from reframe_testing import media
-from reframe_testing.mkvtoolnix import mkvtoolnix_tool
+from reframe_testing.mkvtoolnix import mkvpropedit_args, mkvtoolnix_tool
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.anyio]
 
 #: The time limit of a metadata edit, in seconds.
 LIMIT = 1.0
-
-
-def _writer_is_stub() -> bool:
-    """The writer is still the stub, which raises for any edit (the real one refuses a file
-    that does not exist)."""
-    try:
-        header.apply_header_edit(HeaderEdit(path=Path("/nonexistent/reframe/stub-check.mkv")))
-    except NotImplementedError:
-        return True
-    return False
-
-
-needs_writer = pytest.mark.skipif(
-    _writer_is_stub(), reason="the Matroska header writer is not merged yet"
-)
 
 
 @dataclass
@@ -145,40 +130,6 @@ def mkvmerge(path: Path) -> list[dict[str, object]]:
     return [t["properties"] for t in mkvmerge_json(path)["tracks"]]
 
 
-_MKVPROPEDIT_FLAGS = {
-    "default": "flag-default",
-    "forced": "flag-forced",
-    "commentary": "flag-commentary",
-    "hearing_impaired": "flag-hearing-impaired",
-    "visual_impaired": "flag-visual-impaired",
-    "original": "flag-original",
-}
-
-
-def mkvpropedit_args(edit: HeaderEdit) -> list[str]:
-    """The mkvpropedit command line (after the program) that makes ``edit``: the oracle."""
-    args = [str(edit.path)]
-    for track in edit.tracks:
-        args += ["--edit", f"track:{track.track_type[0]}{track.number}"]
-        if track.language is not None and track.language_ietf is not None:
-            # In this order: a later ``--set language`` overwrites ``language-ietf``.
-            args += ["--set", f"language={track.language}"]
-            args += ["--set", f"language-ietf={track.language_ietf}"]
-        if track.delete_name:
-            args += ["--delete", "name"]
-        elif track.name is not None:
-            args += ["--set", f"name={track.name}"]
-        for flag, value in track.flags.items():
-            args += ["--set", f"{_MKVPROPEDIT_FLAGS[flag]}={int(value)}"]
-    if edit.info is not None:
-        args += ["--edit", "info"]
-        if edit.info.title is None:
-            args += ["--delete", "title"]
-        else:
-            args += ["--set", f"title={edit.info.title}"]
-    return args
-
-
 def same_as_mkvpropedit(edit: HeaderEdit, edited: Path, original: Path, scratch: Path) -> None:
     """``mkvpropedit`` makes ``edit`` on a copy of ``original``; ``edited`` (Reframe's) must read
     back the same in ``mkvmerge -J``, and ffprobe must still read every stream."""
@@ -200,7 +151,6 @@ def same_as_mkvpropedit(edit: HeaderEdit, edited: Path, original: Path, scratch:
     assert len(json.loads(streams.stdout)["streams"]) == len(theirs["tracks"])
 
 
-@needs_writer
 async def test_languages_and_flags_are_a_metadata_edit_under_a_second(env: Env) -> None:
     app = await env.app()
     try:
@@ -232,7 +182,6 @@ async def test_languages_and_flags_are_a_metadata_edit_under_a_second(env: Env) 
         await app.close()
 
 
-@needs_writer
 async def test_languages_names_and_flags_the_reprobe_shows_them_all(env: Env) -> None:
     app = await env.app()
     try:
@@ -272,7 +221,6 @@ async def test_languages_names_and_flags_the_reprobe_shows_them_all(env: Env) ->
         await app.close()
 
 
-@needs_writer
 async def test_only_flags_is_a_metadata_edit_under_a_second(env: Env) -> None:
     app = await env.app()
     try:
@@ -292,7 +240,6 @@ async def test_only_flags_is_a_metadata_edit_under_a_second(env: Env) -> None:
         await app.close()
 
 
-@needs_writer
 @pytest.mark.needs_mkvtoolnix
 async def test_an_in_place_edit_reads_back_as_mkvpropedits(
     env: Env, fixture_media: Callable[[str], Path]
@@ -342,7 +289,6 @@ async def test_nothing_to_change_is_done_without_a_write(env: Env) -> None:
         await app.close()
 
 
-@needs_writer
 async def test_post_mux_fixup_writes_bcp47_and_is_checked_before_the_rename(env: Env) -> None:
     app = await env.app()
     try:
@@ -367,7 +313,6 @@ async def test_post_mux_fixup_writes_bcp47_and_is_checked_before_the_rename(env:
         await app.close()
 
 
-@needs_writer
 @pytest.mark.needs_mkvtoolnix
 async def test_the_fixup_reads_back_as_mkvpropedits(env: Env) -> None:
     """The plan's encode step makes the muxed file; mkvpropedit and the writer each make the
@@ -500,7 +445,6 @@ async def test_a_read_only_source_is_a_validation_error(env: Env) -> None:
         await app.close()
 
 
-@needs_writer
 async def test_cancelling_an_in_place_edit_lets_the_writer_finish(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:

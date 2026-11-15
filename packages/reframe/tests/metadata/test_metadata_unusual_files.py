@@ -13,7 +13,7 @@ from reframe.models import JobDraft, JobState
 from reframe.probe import mediainfo
 from reframe_testing.mkvtoolnix import mkvtoolnix_tool
 
-from .test_metadata_edit_real import Env, draft_remux, env, mkvmerge, needs_writer, reprobe, run
+from .test_metadata_edit_real import Env, draft_remux, env, mkvmerge, reprobe, run
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.anyio]
 __all__ = ["env"]
@@ -77,7 +77,6 @@ def with_bad_tag(path: Path, bad: bytes) -> None:
     path.write_bytes(bytes(data))
 
 
-@needs_writer
 async def test_with_mediainfo_on_the_reprobe_shows_only_the_files_bcp47_tags(
     env: Env, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -137,7 +136,6 @@ def with_long_names(path: Path, name: str) -> None:
     )
 
 
-@needs_writer
 @pytest.mark.needs_mkvtoolnix
 async def test_an_in_place_edit_of_a_file_with_a_seek_position_past_2_63_is_refused(
     env: Env,

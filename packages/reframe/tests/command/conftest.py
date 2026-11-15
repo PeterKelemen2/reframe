@@ -10,8 +10,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from reframe.definitions import load_definitions
 from reframe.metadata import header
 from reframe.models import (
@@ -22,7 +20,6 @@ from reframe.models import (
     EncodePlan,
     EncoderState,
     EncoderStatus,
-    HeaderEdit,
     JobSettings,
     MediaSource,
     OutputSettings,
@@ -193,7 +190,7 @@ def run_plan(plan: EncodePlan, tool_paths: dict[str, str], *, cleanup: bool = Tr
                 plan.output_tmp.replace(plan.output_final)
                 continue
             if step.header_edit is not None:
-                written = header_or_skip(step.header_edit)
+                written = header.apply_header_edit(step.header_edit)
                 assert written.ok, f"header_edit {written.status}: {written.code} {written.reason}"
                 continue
             assert step.tool is not None
@@ -213,14 +210,6 @@ def run_plan(plan: EncodePlan, tool_paths: dict[str, str], *, cleanup: bool = Tr
             for p in [*plan.temp_files, *(f.path for f in plan.files)]:
                 p.unlink(missing_ok=True)
     return result
-
-
-def header_or_skip(edit: HeaderEdit) -> header.HeaderEditResult:
-    """The real writer's result; a skip while the writer is still the stub."""
-    try:
-        return header.apply_header_edit(edit)
-    except NotImplementedError:
-        pytest.skip("the Matroska header writer is not merged yet")
 
 
 def ffprobe_json(tool: str, path: Path, *args: str) -> dict[str, Any]:

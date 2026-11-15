@@ -279,6 +279,17 @@ For task I and the reviewers:
    starts none; an encode with the fix-up starts only FFmpeg). Until P lands, the scan skips
    `reframe/tools/**`, `models/tools.py`, `paths.py` and `cli.py`; `models/migrations.py` may
    name the removed settings key.
+8. **With the real writer** (checked on Linux, MKVToolNix 103 as the oracle): C-13's "Done
+   when" passes through the facade and the real queue with no mkvpropedit to be found
+   (`REFRAME_MKVPROPEDIT` points at a missing file): languages and flags on the `multitrack`
+   copy run as `metadata_edit` in under 1 s and the re-probe shows them. The same in-place
+   edit (names, BCP 47 languages, flags, title) and the same fix-up (`pt-BR`, `zh-Hant` on
+   an FFmpeg-muxed file) done by mkvpropedit read back the same in `mkvmerge -J` (track
+   properties and title), and ffprobe reads every stream. A source whose SeekHead points
+   `Tracks` past 2^63, which mkvpropedit failed on, is now refused ("The file's SeekHead
+   entries for Tracks disagree"), byte for byte unchanged. The oracle's argument builder
+   (`mkvpropedit_args`, the old `header_edit_args`) is a test helper in
+   `reframe_testing.mkvtoolnix`, shared with the writer's own oracle tests.
 
 ### Built: P (mkvpropedit leaves the product)
 

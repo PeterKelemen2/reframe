@@ -7,10 +7,14 @@ it carry the ``needs_mkvtoolnix`` marker, and are skipped where it is not instal
 from __future__ import annotations
 
 import shutil
+from typing import TYPE_CHECKING
 
 import pytest
 
-__all__ = ["MKVTOOLNIX_TOOLS", "mkvtoolnix_problem", "mkvtoolnix_tool"]
+if TYPE_CHECKING:
+    from reframe.models import HeaderEdit
+
+__all__ = ["MKVTOOLNIX_TOOLS", "mkvpropedit_args", "mkvtoolnix_problem", "mkvtoolnix_tool"]
 
 MKVTOOLNIX_TOOLS = ("mkvmerge", "mkvinfo", "mkvpropedit")
 
@@ -31,3 +35,38 @@ def mkvtoolnix_tool(name: str) -> str:
     if found is None:
         pytest.skip(f"{name} not found on PATH")
     return found
+
+
+_FLAG_PROPERTIES = {
+    "default": "flag-default",
+    "forced": "flag-forced",
+    "commentary": "flag-commentary",
+    "hearing_impaired": "flag-hearing-impaired",
+    "visual_impaired": "flag-visual-impaired",
+    "original": "flag-original",
+}
+
+
+def mkvpropedit_args(edit: HeaderEdit) -> list[str]:
+    """The mkvpropedit command line (after the program) that makes the ``header_edit`` step's
+    ``edit``: the oracle's form of the same edit."""
+    args = [str(edit.path)]
+    for track in edit.tracks:
+        args += ["--edit", f"track:{track.track_type[0]}{track.number}"]
+        if track.language is not None and track.language_ietf is not None:
+            # In this order: a later ``--set language`` overwrites ``language-ietf``.
+            args += ["--set", f"language={track.language}"]
+            args += ["--set", f"language-ietf={track.language_ietf}"]
+        if track.delete_name:
+            args += ["--delete", "name"]
+        elif track.name is not None:
+            args += ["--set", f"name={track.name}"]
+        for flag, value in track.flags.items():
+            args += ["--set", f"{_FLAG_PROPERTIES[flag]}={int(value)}"]
+    if edit.info is not None:
+        args += ["--edit", "info"]
+        if edit.info.title is None:
+            args += ["--delete", "title"]
+        else:
+            args += ["--set", f"title={edit.info.title}"]
+    return args

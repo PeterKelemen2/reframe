@@ -381,8 +381,6 @@ async def test_a_cancel_during_the_header_edit_waits_for_it(
 
 @pytest.mark.needs_mkvtoolnix
 async def test_the_clip_has_the_bcp47_language(tmp_path: Path, fixture_media: Media) -> None:
-    if writer_is_stub(tmp_path):
-        pytest.skip("the Matroska header writer is not merged yet")
     env = make_env(tmp_path / "cache")
     result = await clip(env, portuguese_loudness_job(fixture_media("multitrack")), 1.0, 2.0)
     [audio] = [t for t in mkvmerge_tracks(result.path) if t["type"] == "audio"]
@@ -399,16 +397,6 @@ def mkvmerge_tracks(path: Path) -> list[dict[str, Any]]:
     )  # fmt: skip
     tracks: list[dict[str, Any]] = json.loads(out.stdout)["tracks"]
     return tracks
-
-
-def writer_is_stub(tmp_path: Path) -> bool:
-    """The writer is still the stub (it raises for any edit; the real one refuses a missing
-    file)."""
-    try:
-        header.apply_header_edit(HeaderEdit(path=tmp_path / "missing.mkv"))
-    except NotImplementedError:
-        return True
-    return False
 
 
 @pytest.mark.parametrize(
