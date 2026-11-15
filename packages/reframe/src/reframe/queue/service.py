@@ -171,7 +171,8 @@ def _restored_error(job: QueueJob) -> str:
         name = Path(job.settings.source.path).name
         error += (
             f" If Reframe was writing the header of {name} at that moment, the file holds "
-            "either all its old values or all the new ones."
+            "either all its old values or all the new ones, unless the computer lost power "
+            "during the write: then check that the file still opens."
         )
     return error
 

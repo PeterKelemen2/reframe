@@ -386,6 +386,7 @@ async def test_a_restored_in_place_job_that_was_running_says_what_the_file_holds
     assert errors == [
         "Reframe stopped while the job was running. If Reframe was writing the header of "
         "Movie.Source.mkv at that moment, the file holds either all its old values or all the "
-        "new ones.",
+        "new ones, unless the computer lost power during the write: then check that the file "
+        "still opens.",
         "Reframe stopped while the job was running.",
     ]
