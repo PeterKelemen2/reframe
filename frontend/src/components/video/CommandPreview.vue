@@ -19,6 +19,9 @@ const { plan, problem, pending } = useCommandPlan(open)
 const { copy, copied, isSupported } = useClipboard({ legacy: true, copiedDuring: 2000 })
 
 const lines = computed(() => (plan.value === null ? [] : stepLines(tokenize(plan.value.display))))
+const editsHeader = computed(
+  () => plan.value?.steps.some((step) => step.kind === 'header_edit') ?? false,
+)
 
 async function copyCommand(): Promise<void> {
   if (plan.value !== null) await copy(plan.value.display)
@@ -61,21 +64,25 @@ async function copyCommand(): Promise<void> {
       }}</span>
     </div>
     <div v-if="open" :id="bodyId" class="command-preview__body">
-      <pre
-        v-if="plan !== null"
-        class="command-preview__code"
-        :class="{ 'command-preview__code--stale': pending }"
-        tabindex="0"
-        :aria-label="t('video.command.code')"
-      ><code><span
-        v-for="(line, row) in lines"
-        :key="row"
-        class="command-preview__line"
-      ><span
-        v-for="(token, column) in line"
-        :key="column"
-        :class="`cmd-${token.kind}`"
-      >{{ token.text }}</span></span></code></pre>
+      <template v-if="plan !== null">
+        <pre
+          class="command-preview__code"
+          :class="{ 'command-preview__code--stale': pending }"
+          tabindex="0"
+          :aria-label="t('video.command.code')"
+        ><code><span
+          v-for="(line, row) in lines"
+          :key="row"
+          class="command-preview__line"
+        ><span
+          v-for="(token, column) in line"
+          :key="column"
+          :class="`cmd-${token.kind}`"
+        >{{ token.text }}</span></span></code></pre>
+        <p v-if="editsHeader" class="command-preview__note" data-note="header-edit">
+          {{ t('video.command.headerEdit') }}
+        </p>
+      </template>
       <div v-else-if="problem?.kind === 'invalid'" class="command-preview__problem">
         <p>{{ t('video.command.invalid') }}</p>
         <IssueList :issues="problem.issues" />
@@ -175,8 +182,24 @@ async function copyCommand(): Promise<void> {
   margin: 0;
 }
 
+.command-preview__note {
+  margin: var(--rf-space-2) 0 0;
+  color: var(--rf-color-text-muted);
+  font-size: var(--rf-font-size-sm);
+}
+
 .cmd-program {
   font-weight: var(--rf-font-weight-bold);
+}
+
+/* Not a program on PATH: Reframe runs the step itself. */
+.cmd-step {
+  font-style: italic;
+  font-weight: var(--rf-font-weight-bold);
+}
+
+.cmd-track {
+  font-weight: var(--rf-font-weight-medium);
 }
 
 .cmd-option {

@@ -212,9 +212,7 @@ export function describeEntry(
         kind: 'system',
         tone: usable ? 'ok' : 'error',
         text: t('queue.activity.tools'),
-        detail: [tools.ffmpeg, tools.ffprobe, tools.mkvpropedit, tools.mediainfo]
-          .map((tool) => toolText(tool, t))
-          .join(' · '),
+        detail: [tools.ffmpeg, tools.ffprobe].map((tool) => toolText(tool, t)).join(' · '),
       }
     }
     case 'capabilities.changed':

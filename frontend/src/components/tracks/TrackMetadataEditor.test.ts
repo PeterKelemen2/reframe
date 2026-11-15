@@ -161,7 +161,7 @@ describe('the metadata block of an output track', () => {
       'Japanese · “Japanese 5.1” · Default',
     )
     useValidationStore().issues = [
-      issue('tool.mkvpropedit_missing', 'audio[0].metadata.original', 'warning'),
+      issue('container.flag_unsupported', 'audio[0].metadata.original', 'warning'),
     ]
     await nextTick()
     expect(body().isVisible()).toBe(true)

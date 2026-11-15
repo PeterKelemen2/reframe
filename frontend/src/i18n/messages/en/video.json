@@ -113,6 +113,7 @@
     "updating": "Updating…",
     "loading": "Making the command…",
     "invalid": "There is no command while the job has errors:",
-    "failed": "The command could not be made: {reason}"
+    "failed": "The command could not be made: {reason}",
+    "headerEdit": "header_edit is not a program: Reframe itself writes these values into the header of the MKV file."
   }
 }

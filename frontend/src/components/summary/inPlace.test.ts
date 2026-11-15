@@ -26,18 +26,16 @@ describe('what can be edited in place', () => {
     expect(isMatroska(source('/media/a.mkv', null))).toBe(false)
   })
 
-  it('has its issues: the inplace ones and any other at the switch, and no others', () => {
+  it('has its issues: the inplace ones, and no others', () => {
     const issues = [
-      issue('inplace.not_allowed', 'output.edit_in_place'),
+      issue('inplace.not_possible', 'output.edit_in_place'),
       issue('inplace.output_ignored', 'output.path'),
-      issue('tool.mkvpropedit_missing', 'output.edit_in_place'),
       issue('output.same_as_source', 'output.path'),
       issue('encoder.unavailable', 'video.encoder'),
     ]
     expect(inPlaceIssues(issues).map((found) => found.code)).toEqual([
-      'inplace.not_allowed',
+      'inplace.not_possible',
       'inplace.output_ignored',
-      'tool.mkvpropedit_missing',
     ])
   })
 })

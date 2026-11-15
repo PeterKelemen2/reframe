@@ -95,7 +95,7 @@ describe('the job type and in-place edits against a real server', () => {
     expect(jobType.answer.value).toEqual({
       job_type: 'metadata_edit',
       reason:
-        'Metadata edit: only the track metadata changes, so mkvpropedit edits multitrack.mkv in place, in seconds.',
+        'Metadata edit: only the track metadata changes, so Reframe edits multitrack.mkv in place, in seconds.',
       in_place_blockers: [],
     })
 

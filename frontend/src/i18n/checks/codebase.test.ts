@@ -43,6 +43,19 @@ describe('the code base', () => {
     expect(found.map((f) => `${f.file}:${f.line} ${f.key} (${f.problem})`)).toEqual([])
   })
 
+  it('names no tool that Reframe does not run in a message', () => {
+    const found: string[] = []
+    const walk = (value: unknown, path: string): void => {
+      if (typeof value === 'string') {
+        if (/mkvpropedit|mkvtoolnix|mediainfo/i.test(value)) found.push(`${path}: ${value}`)
+      } else if (typeof value === 'object' && value !== null) {
+        for (const [name, child] of Object.entries(value)) walk(child, `${path}.${name}`)
+      }
+    }
+    walk(en, 'en')
+    expect(found).toEqual([])
+  })
+
   it('builds no user-visible text in code without vue-i18n, but for the allowed findings', () => {
     const found = Object.entries({ ...components, ...scripts })
       .filter(([file]) => !TEST_HELPER.test(file))

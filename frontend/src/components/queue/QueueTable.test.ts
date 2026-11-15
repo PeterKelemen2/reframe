@@ -329,7 +329,7 @@ describe('the queue table', () => {
     target.dispatchEvent(new MouseEvent('mouseenter'))
     await vi.waitFor(() =>
       expect(document.querySelector('.p-tooltip')?.textContent).toBe(
-        'mkvpropedit changes /media/a.mkv itself: no new file is written.',
+        'Reframe writes the changes into /media/a.mkv itself: no new file is written.',
       ),
     )
     expect(row('b').querySelector('[data-field="output"]')?.textContent?.trim()).toBe('b.mkv')
@@ -346,7 +346,7 @@ describe('the queue table', () => {
     const target = row('a').querySelector<HTMLElement>('[data-field="output"]')!
     expect(target.tabIndex).toBe(0)
     target.focus()
-    const tip = 'mkvpropedit changes /media/a.mkv itself: no new file is written.'
+    const tip = 'Reframe writes the changes into /media/a.mkv itself: no new file is written.'
     await vi.waitFor(() => expect(document.querySelector('.p-tooltip')?.textContent).toBe(tip))
     const described = document.getElementById(target.getAttribute('aria-describedby') ?? '')
     expect(described?.textContent).toBe(tip)

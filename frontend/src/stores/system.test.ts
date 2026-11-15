@@ -27,10 +27,8 @@ function tools(extra: Partial<Tools> = {}): Tools {
   return {
     ffmpeg: tool('ffmpeg'),
     ffprobe: tool('ffprobe'),
-    mkvpropedit: tool('mkvpropedit'),
-    mediainfo: tool('mediainfo', { status: 'missing' }),
     ...extra,
-  }
+  } as Tools
 }
 
 function info(extra: Partial<SystemInfo> = {}): SystemInfo {

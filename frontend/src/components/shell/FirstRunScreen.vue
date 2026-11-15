@@ -11,14 +11,7 @@ import type { Schemas, ValidationIssue } from '@/api/types'
 import KeyValue from '@/components/base/KeyValue.vue'
 import StatusDot from '@/components/base/StatusDot.vue'
 import RefusalList from '@/components/settings/RefusalList.vue'
-import {
-  FFMPEG_FAMILY,
-  installHint,
-  resetOps,
-  setByEnvironment,
-  TOOL_NAMES,
-  toolTone,
-} from '@/components/settings/tools'
+import { resetOps, setByEnvironment, TOOL_NAMES, toolTone } from '@/components/settings/tools'
 import { useBundledTools } from '@/components/settings/useBundledTools'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
@@ -34,7 +27,7 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const system = useSystemStore()
 const settings = useSettingsStore()
-const { firstStart, finish } = useFirstRun()
+const { finish } = useFirstRun()
 const { canDownload, fetching, fetchTask, use } = useBundledTools()
 
 const checking = ref(false)
@@ -47,13 +40,10 @@ const welcome = computed(() => system.ffmpegProblem === null)
 const tools = computed<ToolInfo[]>(() => {
   const set = system.info?.tools
   if (!set) return []
-  return (firstStart.value ? TOOL_NAMES : FFMPEG_FAMILY).map((name) => set[name])
+  return TOOL_NAMES.map((name) => set[name])
 })
 
-const failing = computed(() => {
-  const set = system.info?.tools
-  return set ? FFMPEG_FAMILY.map((name) => set[name]).filter((tool) => tool.status !== 'found') : []
-})
+const failing = computed(() => tools.value.filter((tool) => tool.status !== 'found'))
 /** The environment sets a tool that fails: it outranks Settings and a bundled build. */
 const setByEnv = computed(() => failing.value.filter(setByEnvironment))
 /** The server refuses tool paths from a browser; only the desktop app can choose one. */
@@ -61,7 +51,7 @@ const desktop = computed(() => system.info?.mode === 'desktop')
 /** A bundled FFmpeg is used once no Settings path wins over it, after a download if needed. */
 const canBundle = computed(() => {
   if (welcome.value || setByEnv.value.length > 0) return false
-  return canDownload.value || resetOps(FFMPEG_FAMILY, settings.settings?.tools).length > 0
+  return canDownload.value || resetOps(TOOL_NAMES, settings.settings?.tools).length > 0
 })
 const canChoosePath = computed(() => desktop.value && setByEnv.value.length === 0)
 const variables = computed(() =>
@@ -111,7 +101,7 @@ function originLabel(tool: ToolInfo): string {
 }
 
 function reasonText(tool: ToolInfo): string | null {
-  const reason = installHint(tool, system.info?.platform, t) ?? tool.reason ?? null
+  const reason = tool.reason ?? null
   return reason === system.ffmpegProblem ? null : reason
 }
 

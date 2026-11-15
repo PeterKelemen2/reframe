@@ -297,7 +297,34 @@ For task I and the reviewers:
 
 ### Built: U (the UI)
 
-*Placeholder.*
+1. **Texts**: the queue's step label of `header_edit` is "Writing the MKV header" (it writes
+   track languages, names, flags and the title, which are not tags); the in-place tooltip is
+   "Reframe writes the changes into {path} itself: no new file is written."; the Edit in place
+   help says Reframe writes them. A test fails when an English message names mkvpropedit,
+   MKVToolNix or MediaInfo.
+2. **Settings → Tools and the first-run screen**: `TOOL_NAMES` is ffmpeg and ffprobe, which one
+   bundled build provides, so the FFmpeg-family split (`FFMPEG_FAMILY`, `familyOf`), the install
+   hints (`installHint`, `settings.tools.install.*`) and the "optional tool" warning tone are
+   gone: a tool that is not found is an error. The first start lists the same two tools as
+   every other start. The activity line of `tools.changed` lists the two.
+3. **Validation**: `tool.mkvpropedit_missing` and `metadata.language_tag_lost` had no handling
+   of their own in the frontend, only test fixtures (now `container.flag_unsupported` and
+   `metadata.language_invalid`). `inPlaceIssues` keeps the `inplace.*` issues only: the "any
+   other issue at the switch" clause existed for `tool.mkvpropedit_missing`.
+4. **The command preview**: the tokenizer reads a line that starts with `header_edit` as the
+   step's name (kind `step`, bold italic, not `program`), its file (`path`), `audio 1:` (kind
+   `track`), each `field=` (`option`) and its value (`value`), and a word alone
+   (`delete_name`, `delete_title`) as a field; the line ends at `&&`. The tokens still join to
+   the exact line, so Copy copies what the server wrote. Under the code, a job with a
+   `header_edit` step has the note "header_edit is not a program: Reframe itself writes these
+   values into the header of the MKV file." (text, so a screen reader and a colour-blind reader
+   get it too). A server test tokenizes the real fix-up line (`pt-BR` on a remux).
+5. Checked headless (Chromium, isolated dev server): the in-place edit of an output-root copy
+   of `multitrack.mkv` shows the reason "…so Reframe edits multitrack.mkv in place…" and the
+   preview line `header_edit <path> audio 1: default=0 audio 2: language=por
+   language_ietf=pt-BR name='Director'"'"'s cut' default=1` with the note; Settings → Tools has
+   the ffmpeg and ffprobe rows only. The a11y gate passed for the audio tab, Settings → Tools,
+   the settings page, the queue and the command drawer in all three browsers.
 
 ## Review
 

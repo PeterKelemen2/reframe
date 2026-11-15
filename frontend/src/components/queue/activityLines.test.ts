@@ -245,16 +245,14 @@ describe('the activity lines', () => {
     const tools = {
       ffmpeg: tool('ffmpeg', 'found', '9.0.2'),
       ffprobe: tool('ffprobe', 'found'),
-      mkvpropedit: tool('mkvpropedit', 'too_old'),
-      mediainfo: tool('mediainfo', 'missing'),
     }
     const found = line({ type: 'tools.changed', tools } as ReframeEvent)
     expect(found).toMatchObject({ kind: 'system', tone: 'ok' })
-    expect(found.detail).toBe(
-      'ffmpeg 9.0.2 · ffprobe found · mkvpropedit too old · mediainfo missing',
-    )
-    const broken = { ...tools, ffprobe: tool('ffprobe', 'broken') }
-    expect(line({ type: 'tools.changed', tools: broken } as ReframeEvent).tone).toBe('error')
+    expect(found.detail).toBe('ffmpeg 9.0.2 · ffprobe found')
+    const broken = { ...tools, ffprobe: tool('ffprobe', 'too_old') }
+    const old = line({ type: 'tools.changed', tools: broken } as ReframeEvent)
+    expect(old.tone).toBe('error')
+    expect(old.detail).toBe('ffmpeg 9.0.2 · ffprobe too old')
   })
 
   it('lists the encoders whose status changed with their state', () => {

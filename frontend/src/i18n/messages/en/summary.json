@@ -62,7 +62,7 @@
     "updating": "Updating…",
     "failed": "The job type cannot be found: {reason}",
     "editInPlace": "Edit in place",
-    "editInPlaceHelp": "mkvpropedit writes the new languages, names and flags into the MKV source itself, in seconds, and no new file is written. This works only when nothing but metadata changes.",
+    "editInPlaceHelp": "Reframe writes the new track languages, names and flags, and the title, into the MKV source itself, in seconds, and no new file is written. This works only when nothing but metadata changes.",
     "inPlace": "The source file itself is changed: {path}. No new file is written, so the output name and folder are not used.",
     "canEditInPlace": "Only metadata changes: with Edit in place, {name} itself is changed in seconds instead of a new file being written.",
     "blocked": "Edit in place is not possible because:",

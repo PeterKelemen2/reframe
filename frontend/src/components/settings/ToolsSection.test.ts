@@ -50,15 +50,30 @@ function fetchEnds(system: ReturnType<typeof useSystemStore>, state: TaskInfo['s
 }
 
 describe('the Tools section', () => {
-  it('shows each tool with its status, version and where it comes from', async () => {
-    const { row } = await mountTools(
-      systemInfo({}, { mediainfo: { status: 'missing', origin: null, path: null, version: null } }),
+  it('shows FFmpeg and FFprobe with their status, version and where each comes from', async () => {
+    const { row, wrapper } = await mountTools(
+      systemInfo(
+        {},
+        {
+          ffprobe: {
+            status: 'missing',
+            origin: null,
+            path: null,
+            version: null,
+            reason: 'ffprobe was not found.',
+          },
+        },
+      ),
     )
+    const rows = wrapper.findAll('[data-tool]').map((found) => found.attributes('data-tool'))
+    expect(rows).toEqual(['ffmpeg', 'ffprobe'])
     expect(row('ffmpeg').text()).toContain('Found')
     expect(row('ffmpeg').text()).toContain('9.0.2')
     expect(row('ffmpeg').find('[data-field="origin"]').text()).toBe('System PATH')
-    expect(row('mediainfo').text()).toContain('Missing')
-    expect(row('mediainfo').find('[data-field="origin"]').text()).toBe('Not found anywhere')
+    expect(row('ffprobe').text()).toContain('Missing')
+    expect(row('ffprobe').find('[data-tone]').attributes('data-tone')).toBe('error')
+    expect(row('ffprobe').find('[data-field="origin"]').text()).toBe('Not found anywhere')
+    expect(row('ffprobe').find('[data-field="reason"]').text()).toBe('ffprobe was not found.')
   })
 
   it('shows an environment override read-only, says which variable to change, and keeps Use bundled off', async () => {
@@ -76,9 +91,6 @@ describe('the Tools section', () => {
     expect(row('ffmpeg').find('[data-field="origin"]').text()).toContain('REFRAME_FFMPEG')
     expect(row('ffmpeg').find('[data-action="remove"]').exists()).toBe(false)
     expect(wrapper.find('[data-action="fetch-bundled"]').attributes('disabled')).toBeDefined()
-    expect(
-      row('mkvpropedit').find('[data-field="override"]').attributes('readonly'),
-    ).toBeUndefined()
   })
 
   it('keeps an ffprobe found next to an overridden ffmpeg editable', async () => {
@@ -104,11 +116,11 @@ describe('the Tools section', () => {
 
   it('removes a Settings path in web mode and checks the tools again', async () => {
     const { row, server, system } = await mountTools(systemInfo({ mode: 'web' }), {
-      mediainfo: '/opt/mediainfo',
+      ffprobe: '/opt/ffprobe',
     })
-    await row('mediainfo').find('[data-action="remove"]').trigger('click')
+    await row('ffprobe').find('[data-action="remove"]').trigger('click')
     await flushPromises()
-    expect(server.patches).toEqual([[{ op: 'replace', path: '/tools/mediainfo', value: null }]])
+    expect(server.patches).toEqual([[{ op: 'replace', path: '/tools/ffprobe', value: null }]])
     expect(system.rescanTools).toHaveBeenCalledTimes(1)
   })
 
@@ -197,7 +209,6 @@ describe('the Tools section', () => {
     it('downloads FFmpeg, then removes the Settings paths that would still win', async () => {
       const { wrapper, server, system } = await mountTools(systemInfo({ mode: 'desktop' }), {
         ffmpeg: '/opt/ff/ffmpeg',
-        mkvpropedit: '/opt/mkvpropedit',
       })
       fetchEnds(system, 'done')
       await wrapper.find('[data-action="fetch-bundled"]').trigger('click')
@@ -238,79 +249,21 @@ describe('the Tools section', () => {
     const { wrapper, row } = await mountTools(
       systemInfo(
         { mode: 'desktop' },
-        { ffmpeg: { ...bundled, path: '/usr/bin/ffmpeg' }, mediainfo: { origin: 'settings' } },
+        { ffmpeg: { ...bundled, path: '/usr/bin/ffmpeg' }, ffprobe: { origin: 'settings' } },
       ),
-      { ffmpeg: '/usr/bin/ffmpeg', mediainfo: '/opt/mediainfo' },
+      { ffmpeg: '/usr/bin/ffmpeg', ffprobe: '/opt/ffprobe' },
     )
     const name = (selector: string) => row('ffmpeg').find(selector).attributes('aria-label')
     expect(name('[data-field="override"]')).toBe('Path override for ffmpeg')
     expect(name('[data-action="test"]')).toBe('Test ffmpeg')
     expect(name('[data-action="use-bundled"]')).toBe('Use bundled ffmpeg')
-    expect(row('mediainfo').find('[data-action="remove"]').attributes('aria-label')).toBe(
-      'Remove override for mediainfo',
+    expect(row('ffprobe').find('[data-action="remove"]').attributes('aria-label')).toBe(
+      'Remove override for ffprobe',
     )
     const names = wrapper
       .findAll('.tool-row input, .tool-row button')
       .map((control) => control.attributes('aria-label') ?? control.text())
     expect(new Set(names).size).toBe(names.length)
-  })
-
-  describe('a tool that no package bundles', () => {
-    const notFound = {
-      status: 'missing' as const,
-      origin: null,
-      path: null,
-      version: null,
-      bundled: false,
-      reason: 'mkvpropedit was not found.',
-    }
-
-    it('tells a Windows user to install MKVToolNix, and offers no Use bundled', async () => {
-      const { row } = await mountTools(
-        systemInfo(
-          { mode: 'desktop', platform: 'win32' },
-          {
-            mkvpropedit: notFound,
-            mediainfo: { bundled: true, origin: 'settings', path: 'C:\\mi\\MediaInfo.exe' },
-          },
-        ),
-        { mkvpropedit: 'C:\\gone\\mkvpropedit.exe', mediainfo: 'C:\\mi\\MediaInfo.exe' },
-      )
-      const reason = row('mkvpropedit').find('[data-field="reason"]').text()
-      expect(reason).toContain('mkvpropedit is part of MKVToolNix')
-      expect(reason).toContain('Install MKVToolNix from mkvtoolnix.download')
-      expect(row('mkvpropedit').find('[data-action="use-bundled"]').exists()).toBe(false)
-      expect(row('mkvpropedit').find('[data-action="remove"]').exists()).toBe(true)
-      expect(row('mediainfo').find('[data-action="use-bundled"]').exists()).toBe(true)
-    })
-
-    it("tells a Linux user to install the distribution's package", async () => {
-      const { row } = await mountTools(
-        systemInfo({ mode: 'desktop', platform: 'linux' }, { mkvpropedit: notFound }),
-      )
-      expect(row('mkvpropedit').find('[data-field="reason"]').text()).toContain(
-        "Install your distribution's mkvtoolnix package",
-      )
-    })
-
-    it("shows the server's reason for a tool that was found but does not work", async () => {
-      const { row } = await mountTools(
-        systemInfo(
-          { mode: 'desktop', platform: 'win32' },
-          { mkvpropedit: { status: 'broken', origin: 'path', reason: 'it crashed' } },
-        ),
-      )
-      expect(row('mkvpropedit').find('[data-field="reason"]').text()).toBe('it crashed')
-    })
-
-    it("names MKVToolNix's own folder as where the tool came from", async () => {
-      const { row } = await mountTools(
-        systemInfo({ platform: 'win32' }, { mkvpropedit: { origin: 'installed' } }),
-      )
-      expect(row('mkvpropedit').find('[data-field="origin"]').text()).toBe(
-        'Where its installer put it',
-      )
-    })
   })
 
   describe('Use bundled, with a bundled build', () => {
@@ -325,7 +278,7 @@ describe('the Tools section', () => {
             ffprobe: { ...bundledFfmpeg, origin: 'settings', path: '/usr/bin/ffprobe' },
           },
         ),
-        { ffmpeg: '/usr/bin/ffmpeg', ffprobe: '/usr/bin/ffprobe', mediainfo: '/opt/mediainfo' },
+        { ffmpeg: '/usr/bin/ffmpeg', ffprobe: '/usr/bin/ffprobe' },
       )
       fetchEnds(system, 'done')
       expect(wrapper.find('[data-action="fetch-bundled"]').exists()).toBe(false)
@@ -346,34 +299,19 @@ describe('the Tools section', () => {
       ).toBe('')
     })
 
-    it('resets MediaInfo on its own', async () => {
-      const { row, server } = await mountTools(
-        systemInfo({ mode: 'desktop' }, { mediainfo: { bundled: true, origin: 'settings' } }),
-        { mediainfo: '/opt/mediainfo', mkvpropedit: '/opt/mkvpropedit' },
-      )
-      expect(row('mkvpropedit').find('[data-action="use-bundled"]').exists()).toBe(false)
-      expect(row('mkvpropedit').find('[data-action="remove"]').exists()).toBe(true)
-
-      await row('mediainfo').find('[data-action="use-bundled"]').trigger('click')
-      await flushPromises()
-      expect(server.patches).toEqual([[{ op: 'replace', path: '/tools/mediainfo', value: null }]])
-    })
-
     it('is not offered when the bundled build is in use already, or the environment sets the tool', async () => {
       const { row } = await mountTools(
         systemInfo(
           { mode: 'desktop' },
           {
             ffmpeg: bundledFfmpeg,
-            ffprobe: bundledFfmpeg,
-            mediainfo: { bundled: true, origin: 'env', path: '/env/mediainfo' },
+            ffprobe: { ...bundledFfmpeg, origin: 'env', path: '/env/ffprobe' },
           },
         ),
-        { mediainfo: '/opt/mediainfo' },
+        { ffprobe: '/opt/ffprobe' },
       )
       expect(row('ffmpeg').find('[data-action="use-bundled"]').exists()).toBe(false)
       expect(row('ffprobe').find('[data-action="use-bundled"]').exists()).toBe(false)
-      expect(row('mediainfo').find('[data-action="use-bundled"]').exists()).toBe(false)
     })
 
     it('is offered only on a row whose own tool has a Settings path', async () => {
@@ -465,13 +403,13 @@ describe('the Tools section', () => {
 
     it('shows a refused reset at the field and does not check the tools', async () => {
       const { row, server, system } = await mountTools(
-        systemInfo({ mode: 'desktop' }, { mkvpropedit: { bundled: true, origin: 'settings' } }),
-        { mkvpropedit: '/opt/mkvpropedit' },
+        systemInfo({ mode: 'desktop' }, { ffprobe: { bundled: true, origin: 'settings' } }),
+        { ffprobe: '/opt/ffprobe' },
       )
       server.refuse = () => refusal(409, 'settings.conflict', 'The settings changed', 'Try again.')
-      await row('mkvpropedit').find('[data-action="use-bundled"]').trigger('click')
+      await row('ffprobe').find('[data-action="use-bundled"]').trigger('click')
       await flushPromises()
-      expect(row('mkvpropedit').find('.rf-field__issue').text()).toContain(
+      expect(row('ffprobe').find('.rf-field__issue').text()).toContain(
         'The settings changed. Try again.',
       )
       expect(system.rescanTools).not.toHaveBeenCalled()

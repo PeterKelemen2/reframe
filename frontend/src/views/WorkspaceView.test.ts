@@ -69,8 +69,6 @@ function working(): SystemInfo {
     tools: {
       ffmpeg: bundledTool('ffmpeg'),
       ffprobe: bundledTool('ffprobe'),
-      mkvpropedit: bundledTool('mkvpropedit'),
-      mediainfo: bundledTool('mediainfo'),
     },
   } as SystemInfo
 }

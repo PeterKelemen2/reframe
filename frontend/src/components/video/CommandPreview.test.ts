@@ -59,6 +59,25 @@ describe('the command preview', () => {
     expect(kind('libx265')).toContain('cmd-value')
   })
 
+  it('adds no note to a job without a header edit', async () => {
+    const { wrapper } = await mountPreview()
+    expect(wrapper.find('.command-preview__code').exists()).toBe(true)
+    expect(wrapper.find('[data-note="header-edit"]').exists()).toBe(false)
+  })
+
+  it('says that a header edit is not a program', async () => {
+    const note = '[data-note="header-edit"]'
+    const { wrapper } = await mountPreview({
+      display: 'header_edit /m/a.mkv audio 1: default=0',
+      steps: [{ kind: 'header_edit' }],
+    })
+    expect(wrapper.find('.cmd-step').text()).toBe('header_edit')
+    expect(wrapper.find('.cmd-program').exists()).toBe(false)
+    expect(wrapper.find(note).text()).toBe(
+      'header_edit is not a program: Reframe itself writes these values into the header of the MKV file.',
+    )
+  })
+
   it('copies the command exactly as the server wrote it', async () => {
     // jsdom has no clipboard permission, so the copy takes the legacy path (a text area).
     let copied: string | undefined

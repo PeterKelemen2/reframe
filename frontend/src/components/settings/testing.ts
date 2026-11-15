@@ -14,7 +14,7 @@ type ToolInfo = Schemas['ToolInfo']
 export function defaultSettings(): AppSettings {
   return {
     schema_version: 1,
-    tools: { ffmpeg: null, ffprobe: null, mkvpropedit: null, mediainfo: null },
+    tools: { ffmpeg: null, ffprobe: null },
     encoders: { hardware_tests: true, vaapi_device: null },
     output: {
       naming: {
@@ -62,12 +62,7 @@ export function systemInfo(
     platform: 'linux',
     problems: [],
     settings_read_only: false,
-    tools: {
-      ffmpeg: tool('ffmpeg', tools.ffmpeg),
-      ffprobe: tool('ffprobe', tools.ffprobe),
-      mkvpropedit: tool('mkvpropedit', tools.mkvpropedit),
-      mediainfo: tool('mediainfo', tools.mediainfo),
-    },
+    tools: { ffmpeg: tool('ffmpeg', tools.ffmpeg), ffprobe: tool('ffprobe', tools.ffprobe) },
     ...extra,
   } as SystemInfo
 }

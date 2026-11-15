@@ -21,7 +21,7 @@ export type FormatNumber = (value: number, options: Intl.NumberFormatOptions) =>
 
 /**
  * Names or values as the locale lists them: `and` reads them as one part of a sentence
- * (`ffprobe and mkvpropedit`), `plain` only separates them (`mkv, mp4`).
+ * (`ffmpeg and ffprobe`), `plain` only separates them (`mkv, mp4`).
  */
 export function formatList(
   items: readonly string[],
