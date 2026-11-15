@@ -156,3 +156,73 @@ def test_an_edit_the_file_has_writes_nothing(
         ours.chmod(0o644)
     assert result.status == "written"
     assert ours.read_bytes() == data
+
+
+def set_flags(path: Path) -> HeaderEdit:
+    track = TrackHeaderEdit(
+        track_type="audio",
+        number=1,
+        flags={"original": True, "commentary": True, "hearing_impaired": True},
+    )
+    return HeaderEdit(path=path, tracks=[track])
+
+
+def bcp47(path: Path) -> HeaderEdit:
+    track = TrackHeaderEdit(track_type="audio", number=1, language="por", language_ietf="pt-BR")
+    return HeaderEdit(path=path, tracks=[track])
+
+
+def name_only(path: Path) -> HeaderEdit:
+    return HeaderEdit(path=path, tracks=[TrackHeaderEdit(track_type="audio", number=1, name="N")])
+
+
+VERSION_EDITS: dict[str, Callable[[Path], HeaderEdit]] = {
+    "flags": set_flags,
+    "bcp47": bcp47,
+    "name only": name_only,
+    "title only": remove_title,
+    "moved": generic_long,
+}
+
+
+@pytest.mark.parametrize("crc", [False, True], ids=["plain", "EBML CRC-32"])
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
+@pytest.mark.parametrize("edit_name", list(VERSION_EDITS))
+@pytest.mark.parametrize("name", ["ffmpeg-multitrack", "ffmpeg-text-subs", "mkvmerge-reordered"])
+def test_the_doc_type_version_is_raised_as_mkvpropedit_does(
+    header_corpus: dict[str, Path],
+    tmp_path: Path,
+    name: str,
+    edit_name: str,
+    version: int,
+    crc: bool,
+) -> None:
+    """Defect: Reframe writes Matroska v4 elements (``LanguageBCP47``, the v4 flags) into a
+    file whose EBML header says ``DocTypeVersion`` 2, where mkvpropedit raises it to 4."""
+    data = corpus.with_doc_type_version(header_corpus[name].read_bytes(), version, crc=crc)
+    ours, theirs = tmp_path / "ours.mkv", tmp_path / "theirs.mkv"
+    ours.write_bytes(data)
+    theirs.write_bytes(data)
+    edit = VERSION_EDITS[edit_name](ours)
+    assert apply_header_edit(edit).ok
+    oracle = corpus.mkvpropedit(edit, theirs)
+    assert oracle.returncode == 0, oracle.stdout
+    assert corpus.doc_type_versions(ours.read_bytes()) == corpus.doc_type_versions(
+        theirs.read_bytes()
+    )
+    assert corpus.ebml_crc_ok(ours.read_bytes())
+    assert corpus.mkvmerge_view(ours) == corpus.mkvmerge_view(theirs)
+    assert corpus.ffprobe_view(ours) == corpus.ffprobe_view(theirs)
+
+
+def test_a_header_without_a_doc_type_version_is_left_so(
+    header_corpus: dict[str, Path], tmp_path: Path
+) -> None:
+    """Without ``DocTypeVersion`` (1 by default) the EBML header would have to grow: the
+    writer leaves it as it is and still writes the edit."""
+    data = corpus.with_doc_type_version(header_corpus["ffmpeg-multitrack"].read_bytes(), None)
+    ours = tmp_path / "ours.mkv"
+    ours.write_bytes(data)
+    assert apply_header_edit(set_flags(ours)).ok
+    assert corpus.doc_type_versions(ours.read_bytes())[0] is None
+    assert ours.read_bytes()[:40] == data[:40]

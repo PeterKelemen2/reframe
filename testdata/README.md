@@ -1991,8 +1991,47 @@ edit.
 | … the file is shorter than its segment | `header.truncated` | edits |
 
 The same files with an edit that fits in place are edited. A refusal is data
-(`HeaderEditResult`), never an exception; an OS error is `failed` (`header.io_error`, the reason
-says whether the file was changed).
+(`HeaderEditResult`), never an exception; an OS error is `failed` (`header.io_error`), and
+`file_state` says what the file holds.
+
+**A write that stops part-way** (checked by fault injection only, 2026-11-15: no real full
+disk). On a full disk the kernel can store the first part of one `write()` and fail the retry
+with `ENOSPC`; on a copy-on-write file system (btrfs, this host's default) an overwrite needs
+free space too. A switch torn that way is not all old or all new: with 64 of its bytes in
+`multitrack.mkv` (a `Tracks` that moves), Reframe's reader fails ("truncated element header"),
+`mkvmerge -J` reads values that are neither all old nor all new, and ffprobe reads the old
+values; with 200 bytes Reframe's reader and `mkvmerge -J` read new and ffprobe old. So the
+writer, when a write over existing bytes fails (also when its `fsync` fails), writes the bytes
+it replaced back, syncs, and reads them back; only then does the result say `old` (`unchanged`
+when it was the first write and the size did not change), or `new` for the clean-up behind the
+clusters after the switch. If writing them back fails too, the result is `damaged` with the old
+bytes and their offset (`HeaderBackup`); the queue saves them as
+`<data dir>/logs/<job id>.header-at-<offset>.bin` and names the file in the job's error. The
+fault tests tear the switch after 1 byte, every tenth of it, 2 bytes into each element header
+in it and all but one byte, in place and when elements move (FFmpeg, mkvmerge with `CRC-32`,
+mkvpropedit's two-`SeekHead` file), and check that ffprobe, `mkvmerge -J` and Reframe's reader
+read what the result says. Before it writes, the writer wants the bytes it writes plus 16 MB
+free on the disk (`shutil.disk_usage`); with less it writes nothing (`header.no_space`). A file
+system that reports a size of 0 is not checked.
+
+**`DocTypeVersion`.** mkvpropedit 103 raises the EBML header's `DocTypeVersion` when it writes
+`Tracks` and an element anywhere in the new `Tracks` is from a later Matroska version: a
+`DocTypeVersion` 2 copy of `multitrack.mkv` or `text-subs.mkv` becomes 4 after any track edit
+(a name, a flag, a language), because their `Tracks` already hold v4 elements
+(`FlagCommentary`, `FlagHearingImpaired`, `CodecDelay`). An edit of `Info` only (a title) leaves
+it at 2. mkvpropedit does not change `DocTypeReadVersion` (2). The writer does the same, with the
+`minver` of every element under `\Segment\Tracks` from the Matroska specification
+(`ebml_matroska.xml` of `ietf-wg-cellar/matroska-specification`, read 2026-11-15): 4 for
+`FlagHearingImpaired`, `FlagVisualImpaired`, `FlagTextDescriptions`, `FlagOriginal`,
+`FlagCommentary` and `LanguageBCP47` (and the colour, projection, block addition mapping,
+`CodecDelay` and `SeekPreRoll` elements); `FlagForced` has none. The new value is written in the
+element's own width before the switch (with a new `CRC-32` when the EBML header has one); a
+header without `DocTypeVersion` is left as it is, since it would have to grow. Of the 31 sampled
+real files, 3 have `DocTypeVersion` 2 (mkvmerge v6.8 era): a BCP 47 language raises them to 4,
+a name only does not (their `Tracks` hold no v4 element).
+
+**Leftovers.** The copies of a stopped edit after the segment are truncated by the next edit,
+also by one that fits in place.
 
 **Real files** (read only; the files themselves are not named here). A dry run of the planner on
 the 32 sampled MKV files on the share (mkvmerge v6.8 to v102, HandBrake 0.10 to 1.10, FFmpeg,

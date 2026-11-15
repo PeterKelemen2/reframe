@@ -4,15 +4,17 @@ title, written into an existing file in place.
 A refused edit leaves the file byte for byte unchanged. Once the first byte is written, every
 state a crash or kill can leave is a file with all the old values or all the new ones: new
 copies of moved elements are written after the end of the segment first, where readers do not
-look, and one write then switches every reader over.
+look, and one write then switches every reader over. A write that fails part-way is undone with
+the bytes it replaced, and the result says what the file holds, read back from the file.
 """
 
 from __future__ import annotations
 
 import copy
 import os
+import shutil
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import BinaryIO, Literal, cast
 
 from reframe.metadata.ebml import (
@@ -28,9 +30,11 @@ from reframe.metadata.ebml import (
     void,
 )
 from reframe.metadata.layout import Element, Layout, Refusal, SeekHead, read_layout
+from reframe.metadata.versions import needed_version
 from reframe.models.plan import HeaderEdit, HeaderFlag, TrackHeaderEdit
 from reframe.probe import matroska
 from reframe.probe.matroska import (
+    _EBML,
     _INFO,
     _SEEK,
     _SEEK_HEAD,
@@ -48,11 +52,23 @@ from reframe.probe.matroska import (
     tracks_by_kind,
 )
 
-__all__ = ["HeaderEditResult", "HeaderEditStatus", "apply_header_edit"]
+__all__ = [
+    "HeaderBackup",
+    "HeaderEditResult",
+    "HeaderEditStatus",
+    "HeaderFileState",
+    "apply_header_edit",
+]
 
 HeaderEditStatus = Literal["written", "refused", "failed"]
+HeaderFileState = Literal["unchanged", "old", "new", "damaged"]
+
+#: Free space the writer wants on the disk beyond the bytes it writes: a copy-on-write file
+#: system also needs room for an overwrite, and a write that runs out of room stops part-way.
+SPARE_SPACE = 16 * 1024 * 1024
 
 _VOID = 0xEC
+_DOC_TYPE_VERSION = 0x4287
 _TRACK_TYPE = 0x83
 _NAME = 0x536E
 _LANGUAGE = 0x22B59C
@@ -71,33 +87,56 @@ _FLAG_IDS = dict(_FLAGS.values())
 
 
 @dataclass(frozen=True, slots=True)
+class HeaderBackup:
+    """Bytes of the file as they were before the edit, starting at ``offset``: writing them
+    back there undoes a write that could not be undone."""
+
+    offset: int
+    data: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class HeaderEditResult:
     """The outcome of :func:`apply_header_edit`.
 
     ``written``: every edit is in the file. ``refused``: nothing was written, the file is
-    unchanged. ``failed``: an OS error; the file holds the old or the new values.
+    unchanged. ``failed``: an OS error; :attr:`file_state` says what the file holds.
     """
 
     status: HeaderEditStatus
     code: str | None = None
     """``header.<reason>`` for ``refused`` and ``failed``."""
     reason: str | None = None
-    """One sentence for the user."""
+    """What went wrong, for the user (not what the file holds: see :attr:`file_state`)."""
+    file_state: HeaderFileState | None = field(default=None, kw_only=True)
+    """``unchanged``: byte for byte. ``old``: all the old values (after the segment, where no
+    reader looks, there may be bytes of the stopped edit). ``new``: all the new values.
+    ``damaged``: the header may be damaged; :attr:`backup` holds its old bytes. ``None``: not
+    said."""
+    backup: HeaderBackup | None = field(default=None, kw_only=True)
 
     @property
     def ok(self) -> bool:
         return self.status == "written"
 
 
+_Stage = Literal["before", "switch", "after"]
+
+
 @dataclass(frozen=True, slots=True)
 class _Write:
     pos: int
     data: bytes
+    old: bytes | None = None
+    """The bytes this write replaces (``None``: it writes past the end of the segment)."""
+    stage: _Stage = "before"
+    """Before the switch the file reads old, after it new."""
 
 
 @dataclass(frozen=True, slots=True)
 class _Truncate:
     size: int
+    stage: _Stage = "before"
 
 
 _Step = _Write | _Truncate
@@ -108,10 +147,8 @@ class _FileIO:
 
     def __init__(self, handle: BinaryIO) -> None:
         self._handle = handle
-        self.started = False
 
     def write(self, pos: int, data: bytes) -> None:
-        self.started = True
         self._handle.seek(pos)
         view = memoryview(data)
         while view:
@@ -121,7 +158,6 @@ class _FileIO:
             view = view[written:]
 
     def truncate(self, size: int) -> None:
-        self.started = True
         self._handle.truncate(size)
 
     def sync(self) -> None:
@@ -354,8 +390,39 @@ def _plan(reader: _Reader, layout: Layout, edit: HeaderEdit) -> list[_Step]:
     cleanup: list[_Step] = []
     if moved:
         steps += _move(reader, layout, moved, patches, cleanup)
+    elif layout.segment_size is not None:
+        end = layout.base + layout.segment_size
+        if end < layout.size and _leftovers(reader, end):
+            steps.append(_Truncate(end))
+    if new_tracks != tracks_raw:
+        version = _version_patch(reader, needed_version(new_tracks))
+        if version is not None:
+            steps.append(version)
     steps.append(_commit(reader, patches))
     return steps + cleanup
+
+
+def _version_patch(reader: _Reader, need: int) -> _Write | None:
+    """The EBML header's ``DocTypeVersion`` raised to ``need``, as mkvpropedit does when it
+    writes ``Tracks``; ``None`` when it is high enough, absent (the header would have to grow)
+    or not one element."""
+    element_id, size, header = reader.header(0)
+    if element_id != _EBML or size is None:
+        return None
+    payload = reader.read(header, size)
+    crc, kids = split_crc(payload, children(payload, reader.budget, "the EBML header"))
+    versions = [kid for kid in kids if kid.id == _DOC_TYPE_VERSION]
+    if len(versions) != 1:
+        return None
+    kid = versions[0]
+    if not 1 <= kid.size <= 8 or int.from_bytes(kid.data(payload), "big") >= need:
+        return None
+    value = encode_uint(need, kid.size)
+    if not crc:
+        pos = kid.offset + kid.header
+        return _Write(header + pos, value, old=payload[pos : pos + kid.size])
+    parts = [k.raw(payload) if k is not kid else k.raw(payload)[: k.header] + value for k in kids]
+    return _Write(header, join_with_crc(parts, crc=True), old=payload)
 
 
 def _move(
@@ -427,7 +494,9 @@ def _move(
     for change in moved:
         if layout.in_front(change.element):
             patches.append(_Write(change.element.pos, void(change.slot_end - change.element.pos)))
-    cleanup += [_Write(old.pos, void(slot_end - old.pos)) for old, slot_end in old_back]
+    for old, slot_end in old_back:
+        mark = void(slot_end - old.pos)
+        cleanup.append(_Write(old.pos, mark, reader.read(old.pos, len(mark)), "after"))
     return steps
 
 
@@ -443,10 +512,11 @@ def _commit(reader: _Reader, patches: list[_Write]) -> _Write:
     """One write covering every patch: the switch from the old values to the new ones."""
     start = min(p.pos for p in patches)
     stop = max(p.pos + len(p.data) for p in patches)
-    span = bytearray(reader.read(start, stop - start))
+    old = reader.read(start, stop - start)
+    span = bytearray(old)
     for patch in patches:
         span[patch.pos - start : patch.pos - start + len(patch.data)] = patch.data
-    return _Write(start, bytes(span))
+    return _Write(start, bytes(span), old, "switch")
 
 
 class _Overlay:
@@ -560,35 +630,110 @@ def apply_header_edit(edit: HeaderEdit) -> HeaderEditResult:
             identity = _identity(handle)
             steps = _prepare(handle, edit)
     except Refusal as exc:
-        return HeaderEditResult("refused", exc.code, exc.reason)
+        return HeaderEditResult("refused", exc.code, exc.reason, file_state="unchanged")
     except OSError as exc:
-        return _failed(f"The file could not be read ({exc}). It is unchanged.")
+        return _failed(f"The file could not be read ({exc}).", "unchanged")
     if not steps:
-        return HeaderEditResult("written")
-    io: _FileIO | None = None
+        return HeaderEditResult("written", file_state="new")
+    short = _short_of_space(edit.path, steps)
+    if short is not None:
+        return HeaderEditResult("failed", "header.no_space", short, file_state="unchanged")
     try:
         with open(edit.path, "r+b", buffering=0) as handle:
             if _identity(handle) != identity:
                 return HeaderEditResult(
                     "failed",
                     "header.changed",
-                    "The file changed while its header was read. It is unchanged.",
+                    "The file changed while its header was read.",
+                    file_state="unchanged",
                 )
             io = _FileIO(handle)
-            for step in steps:
-                if isinstance(step, _Truncate):
-                    io.truncate(step.size)
-                else:
-                    io.write(step.pos, step.data)
-                io.sync()
+            for index, step in enumerate(steps):
+                try:
+                    if isinstance(step, _Truncate):
+                        io.truncate(step.size)
+                    else:
+                        io.write(step.pos, step.data)
+                    io.sync()
+                except OSError as exc:
+                    return _after_failure(handle, io, step, index == 0, identity[2], exc)
     except OSError as exc:
-        if io is None or not io.started:
-            return _failed(f"The file could not be written ({exc}). It is unchanged.")
-        return _failed(
-            f"Writing the header failed ({exc}). The file holds either the old or the new values."
-        )
-    return HeaderEditResult("written")
+        return _failed(f"The file could not be written ({exc}).", "unchanged")
+    return HeaderEditResult("written", file_state="new")
 
 
-def _failed(reason: str) -> HeaderEditResult:
-    return HeaderEditResult("failed", "header.io_error", reason)
+def _failed(reason: str, state: HeaderFileState) -> HeaderEditResult:
+    return HeaderEditResult("failed", "header.io_error", reason, file_state=state)
+
+
+def _short_of_space(path: os.PathLike[str] | str, steps: Sequence[_Step]) -> str | None:
+    """Why the disk has too little free space for ``steps``, or ``None``. A file system that
+    reports no size (some shares do) is not checked."""
+    need = sum(len(s.data) for s in steps if isinstance(s, _Write)) + SPARE_SPACE
+    try:
+        usage = shutil.disk_usage(path)
+    except OSError:
+        return None
+    if usage.total <= 0 or usage.free >= need:
+        return None
+    return (
+        f"The disk has {usage.free / 1e6:.1f} MB free; writing the header safely needs "
+        f"{need / 1e6:.1f} MB."
+    )
+
+
+def _after_failure(
+    handle: BinaryIO, io: _FileIO, step: _Step, first: bool, size: int, exc: OSError
+) -> HeaderEditResult:
+    """The result of a step that failed: a write over old bytes is undone first, and what
+    the file holds is read back, not assumed."""
+    if isinstance(step, _Write) and step.old is not None:
+        problem = _put_back(handle, io, step.pos, step.old)
+        if problem is not None:
+            return HeaderEditResult(
+                "failed",
+                "header.io_error",
+                f"Writing the header failed ({exc}), and writing its old bytes back failed "
+                f"too ({problem}).",
+                file_state="damaged",
+                backup=HeaderBackup(step.pos, step.old),
+            )
+    if step.stage == "after":
+        state: HeaderFileState = "new"
+    elif first and _size(handle) == size:
+        state = "unchanged"
+    else:
+        state = "old"
+    return _failed(f"Writing the header failed ({exc}).", state)
+
+
+def _put_back(handle: BinaryIO, io: _FileIO, pos: int, old: bytes) -> str | None:
+    """Make the file hold ``old`` at ``pos`` again; why that failed, or ``None``."""
+    try:
+        if _read_at(handle, pos, len(old)) == old:
+            return None
+        io.write(pos, old)
+        io.sync()
+        if _read_at(handle, pos, len(old)) == old:
+            return None
+        return "the bytes read back differ"
+    except OSError as exc:
+        return str(exc)
+
+
+def _read_at(handle: BinaryIO, pos: int, count: int) -> bytes:
+    handle.seek(pos)
+    out = bytearray()
+    while len(out) < count:
+        data = handle.read(count - len(out))
+        if not data:
+            break
+        out += data
+    return bytes(out)
+
+
+def _size(handle: BinaryIO) -> int | None:
+    try:
+        return os.fstat(handle.fileno()).st_size
+    except OSError:
+        return None

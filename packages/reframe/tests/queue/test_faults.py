@@ -277,11 +277,13 @@ async def test_a_failed_fixup_fails_the_job_and_removes_the_part(harness: Harnes
     h = harness
     job = ietf_job(h)
     part = h.plan(job).output_tmp
-    h.writer.result = HeaderEditResult("failed", "header.write_error", "No space left on device")
+    h.writer.result = HeaderEditResult(
+        "failed", "header.write_error", "No space left on device", file_state="damaged"
+    )
     ended = await h.run_one(job)
     assert ended.error == (
-        "Writing the Matroska header of Movie.part.mkv failed: No space left on device. The file "
-        "holds either all its old values or all the new ones."
+        "Writing the Matroska header of Movie.part.mkv failed: The header of the file may be "
+        "damaged. No space left on device."
     )
     assert_failed_run(h, ended.id, error_part="Writing the Matroska header")
     assert "Step 2/3 ended: failed (header.write_error): No space left on device" in h.log_text(

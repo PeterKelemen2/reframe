@@ -31,7 +31,7 @@ CANCELLED = WRITTEN.format(when="the job was cancelled")
 CLOSED = WRITTEN.format(when="Reframe was closed")
 LET_FINISH = "while Reframe is writing the header of Movie.Source.mkv: it is let finish"
 REFUSED = HeaderEditResult("refused", "header.no_room", "The SeekHead has no room")
-FAILED = HeaderEditResult("failed", "header.write_error", "Input/output error")
+FAILED = HeaderEditResult("failed", "header.write_error", "Input/output error", file_state="old")
 
 
 @pytest.fixture
@@ -230,7 +230,7 @@ async def test_a_failed_edit_says_the_source_holds_the_old_or_the_new_values(
     assert ended.state is JobState.FAILED
     assert ended.error == (
         "Writing the Matroska header of Movie.Source.mkv failed: Input/output error. The file "
-        "holds either all its old values or all the new ones."
+        "holds all its old values."
     )
 
 
@@ -248,7 +248,7 @@ async def test_a_failed_edit_after_a_cancel_still_fails_with_what_the_source_hol
     assert ended is not None
     assert ended.state is JobState.FAILED
     assert ended.error is not None
-    assert ended.error.endswith("The file holds either all its old values or all the new ones.")
+    assert ended.error.endswith("The file holds all its old values.")
 
 
 async def test_a_refused_edit_after_a_cancel_is_a_plain_cancel(held: Harness) -> None:
@@ -300,7 +300,7 @@ async def test_a_cancelled_run_task_says_what_a_failed_write_left(held: Harness)
     [ended] = await h.queue.wait([job_id])
     assert ended.error == LET_FINISHED.format(
         "failed (header.write_error): Input/output error",
-        "The file holds either all its old values or all the new ones.",
+        "The file holds all its old values.",
     )
 
 

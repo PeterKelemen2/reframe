@@ -22,6 +22,7 @@ from reframe.command import PlanError, build_plan
 from reframe.definitions import Definitions
 from reframe.mediatask import MediaTaskContext, TaskFailed, require_source, require_tool
 from reframe.metadata import header
+from reframe.metadata.own_thread import OwnThread
 from reframe.models import (
     CapabilitySnapshot,
     EncodePlan,
@@ -273,16 +274,22 @@ async def _run_plan(tctx: TaskContext, plan: EncodePlan, tools: ToolSet) -> None
 
 
 async def _write_header(edit: HeaderEdit) -> header.HeaderEditResult:
-    """Run the writer in a worker thread to its end, even when the task is cancelled: the file
-    it writes is removed next, which must wait for the write."""
-    run = asyncio.get_running_loop().run_in_executor(None, header.apply_header_edit, edit)
+    """Run the writer in a thread of its own. Once it has started it runs to its end, even
+    when the task is cancelled: the file it writes is removed next, which must wait for the
+    write."""
+    write = OwnThread(lambda: header.apply_header_edit(edit))
+    write.start()
+    run = write.future
     try:
-        return await asyncio.shield(run)
+        result = await asyncio.shield(run)
     except asyncio.CancelledError:
-        while not run.done():
-            with contextlib.suppress(asyncio.CancelledError):
-                await asyncio.shield(run)
+        if not write.prevent():
+            while not run.done():
+                with contextlib.suppress(asyncio.CancelledError):
+                    await asyncio.shield(run)
         raise
+    assert result is not None  # only prevent() gives None, and then the task is cancelled
+    return result
 
 
 async def _place(own: Path, final: Path) -> int:
