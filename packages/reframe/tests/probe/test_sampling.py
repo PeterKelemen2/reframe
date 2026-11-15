@@ -31,6 +31,7 @@ from reframe.probe import (
     sampling,
 )
 from reframe.probe import prober as prober_mod
+from reframe.probe.cache import ProbeCache
 from reframe.probe.folder import probe_folder
 from reframe.probe.matroska import MatroskaFile, MatroskaTrack, read_matroska
 from reframe.probe.sampling import ClusterSample, estimate_bitrates, sample_clusters
@@ -598,3 +599,87 @@ async def test_a_huge_timestamp_scale_does_not_fail_the_folder(
     assert result.errors == []
     assert [s.ref.path.name for s in result.sources] == [damaged.name, good.name]
     assert result.sources[1].audio[0].bitrate.source is BitrateSource.ESTIMATED
+
+
+def _first_sample_times_out(path: Path, info: MatroskaFile, *, stop: Callable[[], bool]) -> None:
+    while not stop():
+        time.sleep(0.01)
+
+
+def _first_sample_cannot_read(path: Path, info: MatroskaFile, **kw: Any) -> None:
+    raise OSError("the share went away")
+
+
+def _first_sample_finds_no_cluster(path: Path, info: MatroskaFile, **kw: Any) -> None:
+    return None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("first", "sampled_again"),
+    [
+        (_first_sample_times_out, True),
+        (_first_sample_cannot_read, True),
+        (_first_sample_finds_no_cluster, False),
+    ],
+    ids=["timed-out", "unreadable", "no-cluster"],
+)
+async def test_a_sample_that_could_not_run_is_not_cached(
+    fake_tools: ft.FakeTools,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    first: Callable[..., ClusterSample | None],
+    sampled_again: bool,
+) -> None:
+    """A slow or unreachable share is not the file: the next probe samples again. A file
+    without a usable cluster stays cached."""
+    real = sampling.sample_clusters
+    calls: list[str] = []
+
+    def sample(path: Path, info: MatroskaFile, **kw: Any) -> ClusterSample | None:
+        calls.append(path.name)
+        return first(path, info, **kw) if len(calls) == 1 else real(path, info, **kw)
+
+    monkeypatch.setattr(sampling, "sample_clusters", sample)
+    monkeypatch.setattr(prober_mod, "SAMPLE_TIMEOUT", 0.2)
+    path, probe = _two_audio_file(tmp_path)
+    prober = _fake_prober(fake_tools, probe)
+    prober.cache = ProbeCache(tmp_path / "cache")
+    once = await prober.probe(path)
+    assert isinstance(once, MediaSource), once
+    assert once.audio[0].bitrate == BitrateInfo()
+    again = await prober.probe(path)
+    assert isinstance(again, MediaSource), again
+    assert len(calls) == (2 if sampled_again else 1)
+    assert (again.audio[0].bitrate.source is BitrateSource.ESTIMATED) is sampled_again
+
+
+@pytest.mark.anyio
+async def test_track_headers_that_timed_out_are_not_cached(
+    fake_tools: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = matroska.read_matroska
+    release = threading.Event()
+    calls: list[Path] = []
+
+    def read(path: Path) -> MatroskaFile:
+        calls.append(path)
+        if len(calls) == 1:
+            release.wait(5)
+        return real(path)
+
+    monkeypatch.setattr(matroska, "read_matroska", read)
+    monkeypatch.setattr(prober_mod, "MATROSKA_TIMEOUT", 0.05)
+    path, probe = _two_audio_file(tmp_path)
+    prober = _fake_prober(fake_tools, probe)
+    prober.cache = ProbeCache(tmp_path / "cache")
+    try:
+        once = await prober.probe(path)
+    finally:
+        release.set()
+    assert isinstance(once, MediaSource), once
+    assert once.audio[0].bitrate == BitrateInfo()
+    again = await prober.probe(path)
+    assert isinstance(again, MediaSource), again
+    assert len(calls) == 2
+    assert again.audio[0].bitrate.source is BitrateSource.ESTIMATED

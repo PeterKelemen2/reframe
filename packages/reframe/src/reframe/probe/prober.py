@@ -75,7 +75,8 @@ __all__ = [
 
 #: Seconds to wait for the Matroska track reader (a slow network share).
 MATROSKA_TIMEOUT = 30.0
-#: Seconds the cluster sample may take; after that the bit rates stay unknown.
+#: Seconds the cluster sample may take; after that the bit rates stay unknown and the probe is
+#: not cached.
 SAMPLE_TIMEOUT = 30.0
 #: Bump when the Matroska reader or the sample changes what they add: the probe cache is keyed
 #: on this number.
@@ -93,6 +94,14 @@ class _Cancelled:
 
 
 _CANCELLED = _Cancelled()
+
+
+class _NotRun:
+    """Returned when a read timed out or failed: a slow or unreachable share, not the file, so
+    the probe is not cached."""
+
+
+_NOT_RUN = _NotRun()
 
 
 async def _race[T](
@@ -263,11 +272,15 @@ class Prober:
         if isinstance(frames, ProbeError):
             return frames  # cancelled
         tracks: matroska.MatroskaFile | None = None
+        cacheable = True
         if _is_matroska(data):
             read = await _read_matroska(file, cancel)
             if isinstance(read, _Cancelled):
                 return _cancelled(file)
-            tracks = read
+            if isinstance(read, _NotRun):
+                cacheable = False
+            else:
+                tracks = read
         fingerprint = SourceFingerprint(size=stat.st_size, mtime=stat.st_mtime)
         try:
             source = parse_ffprobe(
@@ -294,7 +307,9 @@ class Prober:
                 sample = await _sample(file, tracks, cancel)
                 if isinstance(sample, _Cancelled):
                     return _cancelled(file)
-                if sample is not None and sampling.estimate_bitrates(source, tracks, sample):
+                if isinstance(sample, _NotRun):
+                    cacheable = False
+                elif sample is not None and sampling.estimate_bitrates(source, tracks, sample):
                     roles.assign_audio_roles(source.audio)  # the commentary heuristic uses rates
         for stream in source.video:
             if stream.index in undecided:
@@ -304,7 +319,7 @@ class Prober:
                 stream.vfr = bool(vfr)
         # Warnings added after validation can quote the path: show it as the cached copy does.
         source.warnings = [replace_undecodable(text) for text in source.warnings]
-        if self.cache is not None:
+        if self.cache is not None and cacheable:
             await asyncio.to_thread(self.cache.put, key, source, tool=identity, options=options)
         return source
 
@@ -387,9 +402,10 @@ def _needs_rates(source: MediaSource) -> bool:
 
 async def _sample(
     file: Path, tracks: matroska.MatroskaFile, cancel: CancelToken
-) -> sampling.ClusterSample | _Cancelled | None:
-    """A sample of the clusters, or ``None`` when there is none within :data:`SAMPLE_TIMEOUT`.
-    That is not a warning: the rates stay unknown, and Measure finds them."""
+) -> sampling.ClusterSample | _Cancelled | _NotRun | None:
+    """A sample of the clusters; ``None`` when the file has none that can be used, ``_NOT_RUN``
+    when the file could not be read within :data:`SAMPLE_TIMEOUT`. Neither is a warning: the
+    rates stay unknown, and Measure finds them."""
     stop = threading.Event()
 
     def stopped() -> bool:
@@ -400,7 +416,11 @@ async def _sample(
         return await _race(work, cancel, SAMPLE_TIMEOUT)
     except TimeoutError:
         log.info("%s: the clusters were not sampled within %g s", file, SAMPLE_TIMEOUT)
-    except (OSError, ArithmeticError, ValueError) as exc:
+        return _NOT_RUN
+    except OSError as exc:
+        log.info("%s: the clusters could not be sampled: %s", file, exc)
+        return _NOT_RUN
+    except (ArithmeticError, ValueError) as exc:
         # A damaged file can hold values the arithmetic cannot take: the rates stay unknown.
         log.info("%s: the clusters could not be sampled: %r", file, exc)
     finally:
@@ -410,16 +430,21 @@ async def _sample(
 
 async def _read_matroska(
     file: Path, cancel: CancelToken
-) -> matroska.MatroskaFile | _Cancelled | None:
-    """The track headers, or ``None`` when they cannot be read. That is not a warning: ffprobe
-    read the file, and only ``language_ietf`` and the sampled rates stay unknown."""
+) -> matroska.MatroskaFile | _Cancelled | _NotRun | None:
+    """The track headers; ``None`` when they are damaged, ``_NOT_RUN`` when the file could not
+    be read within :data:`MATROSKA_TIMEOUT`. Neither is a warning: ffprobe read the file, and
+    only ``language_ietf`` and the sampled rates stay unknown."""
     try:
         return await _race(
             asyncio.to_thread(matroska.read_matroska, file), cancel, MATROSKA_TIMEOUT
         )
     except TimeoutError:
         log.info("%s: the Matroska track headers were not read within %g s", file, MATROSKA_TIMEOUT)
-    except (matroska.MatroskaError, OSError) as exc:
+        return _NOT_RUN
+    except OSError as exc:
+        log.info("%s: the Matroska track headers could not be read: %s", file, exc)
+        return _NOT_RUN
+    except matroska.MatroskaError as exc:
         log.info("%s: the Matroska track headers could not be read: %s", file, exc)
     return None
 
