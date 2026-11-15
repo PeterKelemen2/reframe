@@ -139,3 +139,32 @@ def test_a_stopped_edit_is_finished_by_the_next_one(
     clean = corpus.copy(source, tmp_path, "clean.mkv")
     assert apply_header_edit(long_title(clean)).ok
     assert path.read_bytes() == clean.read_bytes()
+
+
+@pytest.mark.parametrize("kept", [3, 9, 200])
+def test_a_torn_copy_after_the_segment_reads_old_and_is_cleaned_up(
+    header_corpus: dict[str, Path],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kept: int,
+) -> None:
+    """Defect: a crash in the middle of writing the moved copies (only ``kept`` bytes of them
+    reach the file) leaves a file that cannot be opened or edited again."""
+    source = header_corpus["ffmpeg-multitrack"]
+    path = corpus.copy(source, tmp_path, "t.mkv")
+
+    class TornIO(FILE_IO):
+        def write(self, pos: int, data: bytes) -> None:
+            super().write(pos, data[:kept])
+            raise OSError(errno.EIO, "torn by the test")
+
+    monkeypatch.setattr(header, "_FileIO", TornIO)
+    assert apply_header_edit(long_title(path)).status == "failed"
+    assert path.stat().st_size == source.stat().st_size + kept
+    assert view(path) == view(source)
+
+    monkeypatch.setattr(header, "_FileIO", FILE_IO)
+    assert apply_header_edit(long_title(path)).ok
+    clean = corpus.copy(source, tmp_path, "clean.mkv")
+    assert apply_header_edit(long_title(clean)).ok
+    assert path.read_bytes() == clean.read_bytes()

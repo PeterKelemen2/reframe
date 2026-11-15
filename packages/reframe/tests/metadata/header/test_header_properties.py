@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import get_args
 
+import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
@@ -31,6 +32,7 @@ TRACKS = [
     Track("audio", name="Japanese 5.1", language="jpn", flags=(("default", True),)),
     Track("audio", name="English", language="eng", ietf="en", flags=(("default", False),)),
     Track("subtitle", language="eng", flags=(("forced", True), ("commentary", False))),
+    Track("other", name="Menu"),
     Track("subtitle", name="Signs", language="eng"),
 ]
 
@@ -153,7 +155,10 @@ def test_a_void_header_covers_exactly_its_gap(total: int) -> None:
     assert length + size == total
 
 
-@given(size=st.integers(0, (1 << 56) - 2))
+@given(
+    size=st.integers(0, (1 << 56) - 2)
+    | st.sampled_from([(1 << (7 * w)) - d for w in range(1, 8) for d in (1, 2)])
+)
 def test_a_size_takes_the_shortest_field_that_holds_it(size: int) -> None:
     """Defect: a size encoded as the all-ones value, which readers take as "unknown"."""
     raw = ebml.encode_size(size)
@@ -182,6 +187,13 @@ def test_fit_fills_the_slot_exactly_and_widens_for_a_one_byte_gap(extra: int, pa
         assert [c.id for c in children] == [ebml.VOID]
     if extra == 1:
         assert header == len(new) - payload + 1
+
+
+def test_sizes_that_cannot_be_encoded_raise() -> None:
+    with pytest.raises(ValueError, match="does not fit"):
+        ebml.encode_size(127, 1)
+    with pytest.raises(ValueError, match="at least 2 bytes"):
+        ebml.void(1)
 
 
 def test_fit_refuses_a_slot_that_is_too_small() -> None:

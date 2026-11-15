@@ -76,11 +76,10 @@ def void(total: int) -> bytes:
     """
     if total < 2:
         raise ValueError("a Void element is at least 2 bytes long")
-    for width in range(1, 9):
-        payload = total - 1 - width
-        if 0 <= payload <= max_size(width):
-            return bytes([VOID]) + encode_size(payload, width)
-    raise ValueError(f"no Void of {total} bytes")
+    width = 1
+    while total - 1 - width > max_size(width):
+        width += 1
+    return bytes([VOID]) + encode_size(total - 1 - width, width)
 
 
 @dataclass(frozen=True, slots=True)

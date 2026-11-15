@@ -225,6 +225,12 @@ def trailing_data(data: bytes) -> bytes:
     return data + b"not an element" * 4
 
 
+def trailing_unknown_size(data: bytes) -> bytes:
+    """A ``Tracks`` ID after the segment, with an unknown size: not a copy a stopped edit
+    leaves."""
+    return data + TRACKS.to_bytes(4, "big") + b"\x01" + b"\xff" * 7 + b"\0" * 20
+
+
 def truncated(data: bytes) -> bytes:
     return data[:-100]
 
@@ -424,7 +430,7 @@ FLAG_IDS = {
     "visual_impaired": 0x55AC,
     "original": 0x55AE,
 }
-KIND_CODES = {"video": 1, "audio": 2, "subtitle": 0x11}
+KIND_CODES = {"video": 1, "audio": 2, "subtitle": 0x11, "other": 0x12}
 
 
 @dataclass(frozen=True)
@@ -466,9 +472,12 @@ def synthetic(
     crc: bool = False,
     size_width: int = 8,
     seek_head: bool = True,
+    extra_seeks: int = 0,
+    cluster: bool = True,
 ) -> bytes:
     """A small Matroska file: ``SeekHead`` (``Info`` and ``Tracks``), ``Info``, ``Tracks``
-    and one ``Cluster``; ``*room`` are the ``Void`` sizes after each (0: none)."""
+    and one ``Cluster``; ``*room`` are the ``Void`` sizes after each (0: none). ``extra_seeks``
+    adds that many ``Seek`` entries for the ``Cluster``."""
     ebml = element(0x1A45DFA3, element(0x4286, b"\x01") + element(0x4282, b"matroska"))
     info_children = [element(0x2AD7B1, (1000000).to_bytes(3, "big"))]
     if title is not None:
@@ -476,10 +485,12 @@ def synthetic(
     info = with_crc(INFO, info_children, crc)
     entries = [track_entry(i + 1, t, crc=crc) for i, t in enumerate(tracks)]
     tracks_element = with_crc(TRACKS, entries, crc)
-    cluster = element(CLUSTER, element(0xE7, b"\x00"))
+    clusters = element(CLUSTER, element(0xE7, b"\x00")) if cluster else b""
 
     def head(info_at: int, tracks_at: int) -> bytes:
-        return with_crc(SEEK_HEAD, [seek(INFO, info_at, 4), seek(TRACKS, tracks_at, 4)], crc)
+        entries = [seek(INFO, info_at, 4), seek(TRACKS, tracks_at, 4)]
+        entries += [seek(CLUSTER, 0, 4)] * extra_seeks
+        return with_crc(SEEK_HEAD, entries, crc)
 
     def pad(total: int) -> bytes:
         return any_void(total) if total else b""
@@ -494,7 +505,7 @@ def synthetic(
         + pad(info_room)
         + tracks_element
         + pad(room)
-        + cluster
+        + clusters
     )
     segment_header = SEGMENT.to_bytes(4, "big") + encode_size(len(body), size_width)
     return ebml + segment_header + body

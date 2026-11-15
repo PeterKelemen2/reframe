@@ -47,6 +47,11 @@ REFUSED: dict[str, tuple[Surgery, Edit, str]] = {
     "two Info elements": (corpus.second_info, corpus.shrink_edit, "header.duplicate"),
     "no Info": (corpus.no_info, set_title, "header.no_info"),
     "data after the segment": (corpus.trailing_data, grow, "header.trailing_data"),
+    "an element of unknown size after the segment": (
+        corpus.trailing_unknown_size,
+        grow,
+        "header.trailing_data",
+    ),
     "truncated": (corpus.truncated, grow, "header.truncated"),
     "no such track": (
         lambda d: d,

@@ -259,8 +259,6 @@ def _fit(new: bytes, slot: int, max_width: int) -> bytes | None:
     id_bytes = encode_id(element_id)
     payload = new[header:]
     for width in range(header - len(id_bytes), max_width + 1):
-        if len(payload) > max_size(width):
-            continue
         candidate = id_bytes + encode_size(len(payload), width) + payload
         gap = slot - len(candidate)
         if gap < 0:
@@ -309,17 +307,24 @@ def _new_seek_head(
     return _element(element.id, join_with_crc(parts, head.crc), element.header - 4)
 
 
+_LEFTOVER_IDS = tuple(encode_id(i) for i in (_TRACKS, _INFO, _SEEK_HEAD, _VOID))
+
+
 def _leftovers(reader: _Reader, start: int) -> bool:
-    """Whether the bytes after the segment are only elements that a stopped edit leaves
-    there."""
+    """Whether the bytes after the segment are what a stopped edit leaves there: copies of
+    header elements, the last one perhaps cut short."""
     pos = start
     for _ in range(matroska.MAX_TOP_LEVEL):
-        if pos == reader.size:
+        if pos >= reader.size:
             return True
-        element_id, size, header = reader.header(pos)
-        if element_id not in (_TRACKS, _INFO, _SEEK_HEAD, _VOID) or size is None:
+        head = reader.read(pos, 12)
+        if not any(head.startswith(i) or i.startswith(head) for i in _LEFTOVER_IDS):
             return False
-        if size > matroska.MAX_ELEMENT or pos + header + size > reader.size:
+        try:
+            _, size, header = _header(head, 0)
+        except MatroskaError:
+            return len(head) < 12
+        if size is None or size > matroska.MAX_ELEMENT:
             return False
         pos += header + size
     return False
@@ -446,8 +451,6 @@ def _commit(reader: _Reader, patches: list[_Write]) -> _Write:
     start = min(p.pos for p in patches)
     stop = max(p.pos + len(p.data) for p in patches)
     span = bytearray(reader.read(start, stop - start))
-    if len(span) != stop - start:
-        raise MatroskaError("truncated header")
     for patch in patches:
         span[patch.pos - start : patch.pos - start + len(patch.data)] = patch.data
     return _Write(start, bytes(span))

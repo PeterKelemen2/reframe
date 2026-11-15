@@ -130,8 +130,6 @@ def _seek_head(reader: _Reader, element: Element) -> SeekHead:
     if element.size > matroska.MAX_SEEK_HEAD:
         raise LayoutError("header.too_large", "The file's SeekHead is too large to edit safely.")
     payload = reader.read(element.pos + element.header, element.size)
-    if len(payload) != element.size:
-        raise MatroskaError("truncated SeekHead")
     crc, seeks = split_crc(payload, children(payload, reader.budget, "a SeekHead"))
     targets: list[tuple[int | None, int | None]] = []
     for seek in seeks:
@@ -250,9 +248,6 @@ def read_layout(reader: _Reader) -> Layout:
     if tracks is None:
         raise MatroskaError("no Tracks element found")
     info = locate(_INFO, front_info, "segment information")
-    for element in (tracks, info):
-        if element is not None and element.size > matroska.MAX_ELEMENT:
-            raise MatroskaError(f"element 0x{element.id:X} is too large to read")
     return Layout(
         size=reader.size,
         max_size_width=max_width,
