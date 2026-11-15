@@ -291,6 +291,72 @@ For task I and the reviewers:
    (`mkvpropedit_args`, the old `header_edit_args`) is a test helper in
    `reframe_testing.mkvtoolnix`, shared with the writer's own oracle tests.
 
+#### Review fixes (FW, 2026-11-15)
+
+Fixes for review R1 of the writer and the runner. The tool facts are in `testdata/README.md`
+"Matroska header writer".
+
+1. **A write that fails part-way is undone, and the result says what the file holds.** A full
+   disk can make the kernel store part of the switch and fail the retry (`ENOSPC`; on btrfs an
+   overwrite needs free space too); the part written stayed, and the result said "the old or the
+   new values" of a file that the three readers read differently or not at all. Now each write
+   over existing bytes carries the bytes it replaces. When the write or its `fsync` fails, the
+   writer writes them back, syncs and reads them back. The contract gets two keyword-only
+   fields with defaults, `HeaderEditResult.file_state: Literal["unchanged", "old", "new",
+   "damaged"] | None` and `HeaderEditResult.backup: HeaderBackup | None` (`offset`, `data`), and a
+   new `failed` code, `header.no_space`; `reason` now says only what went wrong. `old` and
+   `unchanged` are said only after the bytes read back are the old ones; a failure in the
+   clean-up behind the clusters (after the switch) is undone the same way and says `new`.
+   **When writing back fails too** the result is `damaged` with the old bytes. Writing them
+   next to the source would most likely fail on the same disk, so the queue saves them in the
+   data folder, as `logs/<job id>.header-at-<offset>.bin`, and the job's error starts with "The
+   header of the file may be damaged." and names the file and the offset; writing the bytes back
+   there restores the old header (a test does it). A preview clip's `.part` file is removed, so
+   nothing is saved for it. **Smaller window**: before the first write the writer wants the
+   bytes it writes plus 16 MB (`SPARE_SPACE`) free (`shutil.disk_usage`), or it writes nothing
+   (`header.no_space`, `unchanged`); a file system that reports a size of 0 (some shares) is not
+   checked. A write that stops part-way can still happen (another program fills the disk, an
+   I/O error); undoing it is what makes the result true then.
+2. **The writer runs in a thread of its own** (`reframe.metadata.own_thread.OwnThread`), not
+   in the shared default executor, where it waited behind other blocked calls (a hung share):
+   a cancel then could not stop it, and the source was written after the cancel. The thread
+   takes a lock, checks that no stop came and marks itself started; a stop takes the same lock
+   (`prevent()`), so exactly one of them wins. A cancel or `close()` before the start writes
+   nothing and ends the job at once (`cancelled` or `interrupted`, the log says "nothing was
+   written"); after the start the write is let finish, as before. The thread is not a daemon:
+   an exiting interpreter waits for a write under way. `preview/clip.py`'s fix-up uses the same
+   class. This replaces item 4's "in the default executor".
+3. **`DocTypeVersion`** is raised as mkvpropedit does: when the new `Tracks` holds an element of
+   a later Matroska version, before the switch, in the element's own width (one byte, or the
+   whole EBML header with a new `CRC-32` when it has one). The table is `metadata/versions.py`
+   (the specification's `minver` of every element under `Tracks`). `DocTypeReadVersion` is not
+   changed (mkvpropedit does not change it). The oracle tests compare both with mkvpropedit on
+   `DocTypeVersion` 1 to 4 copies, with and without an EBML `CRC-32`.
+4. **Job errors follow `file_state`**: "Nothing was changed in the file." (`unchanged`), "The
+   file holds all its old values." (`old`), "The new values are written; the check of the
+   edited file did not run." (`new`), "The header of the file may be damaged." (`damaged`, said
+   first), and "Reframe cannot tell what the file holds now." when the result says nothing (a
+   writer that raised). The same in the error of a job stopped during the write.
+5. **Leftovers** of a stopped edit after the segment are truncated by the next edit also when
+   it fits in place (a truncate before the switch; no reader looks there).
+
+Known limits:
+
+- **Two Reframe processes on one file.** There is no OS file lock. A second process (a second
+  user session, or a process that could not take the queue's lock and runs its own queue in
+  memory) can edit the same file at the same time; the size and modification-time check before
+  the write narrows this but does not close it. Closing it needs an exclusive OS lock on the
+  file (`fcntl.flock` / `LockFileEx`) held from the read to the last write, which other
+  programs ignore anyway, or a per-file lock shared by Reframe processes.
+- **`ENOSPC` part-way through a write was shown only by fault injection**, not on a real full
+  btrfs disk. On a full copy-on-write disk the write-back can fail for the same reason, which is
+  why the free-space check comes first.
+- A kill or power cut while the kernel copies a switch of more than one page can still tear it
+  (item 3 of H); nothing runs after a kill to undo it, and the queue's restore text after a
+  crash still says the file holds old or new values.
+- `Emphasis` (in `Audio`) has `minver` 5 in the specification; mkvpropedit's own table was not
+  checked for it. A header without `DocTypeVersion` is not raised.
+
 ### Built: P (mkvpropedit leaves the product)
 
 1. **Tool discovery** knows `ffmpeg` and `ffprobe` only: `ToolName = Literal["ffmpeg",
