@@ -12,7 +12,7 @@ Tauri 2 desktop app. FFmpeg/FFprobe run as subprocesses.
   Update it in the same commit as each step that lands.
 - If the plan is wrong or cannot be done, do not quietly change course: write a decision
   record (below) and update the affected plan file **in the same commit**.
-- Do not rely on memory for FFmpeg, ffprobe, mkvpropedit, guessit or library behaviour. Check
+- Do not rely on memory for FFmpeg, ffprobe, Matroska, MKVToolNix, guessit or library behaviour. Check
   it against the real tools and record the result in a test or a decision record.
 
 ## Step IDs
@@ -47,7 +47,7 @@ uv run pytest -m "not needs_gpu"          # what CI runs
 uv run pytest --cov=reframe --cov-report=term-missing  # coverage
 uv run python scripts/make-testdata.py    # generate test media into testdata/media/ (git-ignored)
 uv run --no-project python scripts/fetch-tools.py   # pinned FFmpeg (tools/ffmpeg.toml) into .tools/, prints its bin dir
-uv run python -m reframe.tools            # which ffmpeg/ffprobe/mkvpropedit/mediainfo discovery picks, and why
+uv run python -m reframe.tools            # which ffmpeg/ffprobe discovery picks, and why
 ```
 
 Tests that need real media use the `fixture_media("multitrack")` pytest fixture (generated on

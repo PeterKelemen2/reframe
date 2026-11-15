@@ -18,12 +18,11 @@ repository. The choices are recorded in
 | `frontend` | `npm ci` and `npm run build:web` (Node 24) |
 | `python` | uv and a uv-managed CPython 3.14.8 (`.python-version` names 3.14, the version CI tests) |
 | `tools` | `scripts/fetch-tools.py` downloads the pinned FFmpeg of `tools/ffmpeg.toml` for the platform (`linux-x64` or `linux-arm64`), checks its size and SHA-256 before it extracts anything, and runs `ffmpeg -version` and `ffprobe -version` |
-| `app` | `uv sync --frozen` installs `reframe[cli,mediainfo]` and `reframe-server` from `uv.lock` into `/opt/reframe/venv` |
+| `app` | `uv sync --frozen` installs `reframe[cli]` and `reframe-server` from `uv.lock` into `/opt/reframe/venv` |
 
 The runtime image is Debian 13 (trixie) slim with:
 
 - the bundled FFmpeg in `/opt/reframe/tools/ffmpeg/`, where tool discovery finds it;
-- `mkvtoolnix` (mkvpropedit) and `mediainfo` from Debian;
 - on `linux/amd64` only, the GPU user-space drivers that FFmpeg loads at run time:
   `mesa-va-drivers` (AMD and other Mesa VAAPI drivers), `intel-media-va-driver-non-free`
   (Intel VAAPI) and `libmfx-gen1.2` (the oneVPL GPU runtime for Intel QSV). The NVIDIA driver
@@ -226,9 +225,7 @@ One tool environment holds both packages, so `reframe` and `reframe-server` alwa
 same version ([decision 0042](decisions/0042-one-scheduler-process-and-cli-clients.md)
 item 11). Once the packages are published, the command is
 `uv tool install 'reframe[cli]' --with reframe-server --with-executables-from reframe-server`.
-`uv tool install` resolves the newest allowed versions, not `uv.lock`. Add
-`'./packages/reframe[cli,mediainfo]'` for MediaInfo bit rates (pymediainfo brings its own
-library).
+`uv tool install` resolves the newest allowed versions, not `uv.lock`.
 
 The wheels do not contain FFmpeg. Fetch the pinned build:
 
@@ -238,8 +235,8 @@ reframe tools fetch
 
 It downloads the build of `tools/ffmpeg.toml`, checks its size and SHA-256, and installs it
 in `<data dir>/tools/ffmpeg` (`~/.local/share/reframe/tools/ffmpeg`), where it counts as the
-bundled build. `reframe tools status` shows what is used. Install `mkvtoolnix` and
-`mediainfo` from your distribution. For VAAPI and QSV, install your distribution's VAAPI
+bundled build. `reframe tools status` shows what is used. Reframe needs no other tool: it
+writes Matroska headers and estimates bit rates itself. For VAAPI and QSV, install your distribution's VAAPI
 driver and add your user to the `render` group.
 
 The web UI is not in the wheel. Build it and put it where the server can find it:

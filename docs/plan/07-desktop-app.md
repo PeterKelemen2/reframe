@@ -180,9 +180,10 @@ and confirms or revisits this choice. It lists the Windows items as not verified
 - [x] A smoke test runs the frozen binary with `--mode desktop --port 0` and waits for the ready
       line.
 
-Linux result (2026-11-03): [decision 0069](../decisions/0069-m5-desktop-shell.md) "Task A". The
-sidecar ships MediaInfo (pymediainfo with its own library) until C-19
-([decision 0081](../decisions/0081-probe-without-mediainfo.md)).
+Linux result (2026-11-03): [decision 0069](../decisions/0069-m5-desktop-shell.md) "Task A". Since
+C-19 the sidecar ships no MediaInfo, and since C-20 none of langcodes, language_data and
+marisa-trie ([decision 0081](../decisions/0081-probe-without-mediainfo.md),
+[decision 0082](../decisions/0082-own-language-data-table.md)).
 
 ### D-3 Sidecar manager (Rust)
 - [x] Spawn with `tokio::process`. Read the ready line. Keep the managed state.
