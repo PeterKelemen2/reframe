@@ -356,6 +356,15 @@ def test_audio_per_second_and_the_single_video_by_subtraction() -> None:
     assert source.video[0].bitrate == _estimated(5_000_000 - 200_000 - 640_000 - 40_000)
 
 
+def test_bytes_that_are_not_streams_are_not_the_videos() -> None:
+    """Attachments, cues and tags are in the file's size, not in any stream."""
+    source = _source(_video(0), _audio(1))
+    info = _tracks("video", "audio")
+    info.other_bytes = 1_000_000  # 80 kb/s over the 100 s
+    estimate_bitrates(source, info, ClusterSample(4, 10.0, {2: 250_000}))
+    assert source.video[0].bitrate == _estimated(5_000_000 - 80_000 - 200_000, samples=4)
+
+
 def test_a_track_the_file_has_but_ffprobe_does_not_map_is_subtracted() -> None:
     source = _source(_video(0))
     sample = ClusterSample(4, 10.0, {1: 100, 2: 125_000})
@@ -683,3 +692,36 @@ async def test_track_headers_that_timed_out_are_not_cached(
     assert isinstance(again, MediaSource), again
     assert len(calls) == 2
     assert again.audio[0].bitrate.source is BitrateSource.ESTIMATED
+
+
+def _seek_head(entries: Sequence[tuple[int, int]], size: int = 200) -> bytes:
+    """A ``SeekHead`` of ``(element ID, position)`` padded with a Void to ``size`` bytes."""
+    seeks = b"".join(
+        element(0x4DBB, element(0x53AB, target.to_bytes(4, "big")) + uint(0x53AC, position))
+        for target, position in entries
+    )
+    void = size - len(element(0x114D9B74, seeks)) - len(element(0xEC, b""))
+    assert void >= 0
+    return element(0x114D9B74, seeks + element(0xEC, b"\0" * void))
+
+
+def test_the_reader_finds_the_size_of_what_holds_no_blocks(tmp_path: Path) -> None:
+    head = info(1_000_000, 4000) + tracks(track(1, 1), track(2, 2))
+    attachments = element(0x1941A469, b"\0" * 5000)
+    clusters = b"".join(cluster(i * 1000, [(1, 50_000), (2, 8_000)]) for i in range(4))
+    cues, tags = element(0x1C53BB6B, b"\0" * 300), element(0x1254C367, b"\0" * 700)
+    first_cluster = 200 + len(head) + len(attachments)
+    after = first_cluster + len(clusters)
+    seek_head = _seek_head(
+        [
+            (0x1941A469, 200 + len(head)),
+            (0x1C53BB6B, after),
+            (0x1254C367, after + len(cues)),
+            (0x1043A770, first_cluster),  # not Chapters: left out
+        ]
+    )
+    segment = seek_head + head + attachments + clusters + cues + tags
+    path = write(tmp_path, header() + element(_SEGMENT, segment))
+    found = read_matroska(path)
+    others = len(seek_head) + len(head) + len(attachments) + len(cues) + len(tags)
+    assert found.other_bytes == others

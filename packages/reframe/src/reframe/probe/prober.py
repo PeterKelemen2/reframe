@@ -80,7 +80,7 @@ MATROSKA_TIMEOUT = 30.0
 SAMPLE_TIMEOUT = 30.0
 #: Bump when the Matroska reader or the sample changes what they add: the probe cache is keyed
 #: on this number.
-MATROSKA_READER = 3
+MATROSKA_READER = 4
 
 #: The shape of a ``language_ietf`` value (the model's own type; assignment does not check it).
 _LANGUAGE_TAG: TypeAdapter[str] = TypeAdapter(LanguageTag)
