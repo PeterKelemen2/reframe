@@ -10,8 +10,6 @@ import pytest
 from reframe.tools.versions import (
     lib_major_to_series,
     parse_ffmpeg_version,
-    parse_mediainfo_version,
-    parse_mkvpropedit_version,
 )
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
@@ -268,22 +266,6 @@ def test_unbalanced_quotes_in_configuration() -> None:
     parsed = parse_ffmpeg_version("ffmpeg version n9.0\nconfiguration: --a='b --enable-x\n")
     assert parsed is not None
     assert parsed.configuration == ["--a='b", "--enable-x"]
-
-
-def test_mkvpropedit_version() -> None:
-    parsed = parse_mkvpropedit_version((DATA / "mkvpropedit-v101.0.txt").read_text("utf-8"))
-    assert parsed is not None
-    assert parsed.version == "101.0"
-    assert parsed.parts == (101, 0)
-    assert parse_mkvpropedit_version("mkvmerge v101.0") is None
-
-
-def test_mediainfo_version() -> None:
-    # MediaInfo CLI output format (``mediainfo --Version``).
-    parsed = parse_mediainfo_version("MediaInfo Command line, \nMediaInfoLib - v24.06\n")
-    assert parsed is not None
-    assert parsed.version == "24.06"
-    assert parse_mediainfo_version("nothing") is None
 
 
 @pytest.mark.needs_ffmpeg

@@ -77,8 +77,6 @@ def _toolset() -> ToolSet:
     return ToolSet(
         ffmpeg=info("ffmpeg"),
         ffprobe=info("ffprobe"),
-        mkvpropedit=info("mkvpropedit"),
-        mediainfo=info("mediainfo"),
     )
 
 
@@ -299,7 +297,7 @@ def test_safe_member_names() -> None:
 
 
 def test_an_archive_without_a_top_folder_still_refuses_unsafe_names() -> None:
-    assert str(member_path("MediaInfo.exe", None)) == "MediaInfo.exe"
+    assert str(member_path("tool.exe", None)) == "tool.exe"
     assert str(member_path("./Plugin/x.csv", None)) == "Plugin/x.csv"
     for name in ("../x", "/etc/passwd", "C:/x", "a\\b", "a:b"):
         with pytest.raises(FetchError):
@@ -308,11 +306,11 @@ def test_an_archive_without_a_top_folder_still_refuses_unsafe_names() -> None:
 
 def test_a_zip_without_a_top_folder_is_extracted_as_it_is(tmp_path: Path) -> None:
     archive = tmp_path / "a.zip"
-    archive.write_bytes(zip_bytes({"MediaInfo.exe": b"MZ", "Plugin/x.csv": b"csv"}))
+    archive.write_bytes(zip_bytes({"tool.exe": b"MZ", "Plugin/x.csv": b"csv"}))
     dest = tmp_path / "out"
     dest.mkdir()
     fetch_module.safe_extract(archive, "zip", None, dest, CancelToken())
-    assert (dest / "MediaInfo.exe").read_bytes() == b"MZ"
+    assert (dest / "tool.exe").read_bytes() == b"MZ"
     assert (dest / "Plugin" / "x.csv").read_bytes() == b"csv"
 
 

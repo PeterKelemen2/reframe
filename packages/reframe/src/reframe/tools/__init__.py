@@ -27,8 +27,6 @@ from reframe.tools.versions import (
     MIN_FFMPEG,
     FfmpegVersion,
     parse_ffmpeg_version,
-    parse_mediainfo_version,
-    parse_mkvpropedit_version,
 )
 
 __all__ = [
@@ -48,8 +46,6 @@ __all__ = [
     "kill_process_tree",
     "locate_tools",
     "parse_ffmpeg_version",
-    "parse_mediainfo_version",
-    "parse_mkvpropedit_version",
     "run",
     "run_streaming",
 ]

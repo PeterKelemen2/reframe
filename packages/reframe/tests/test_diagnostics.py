@@ -44,10 +44,6 @@ def tools(ffmpeg_path: str = f"{HOME}/bin/ffmpeg") -> ToolSet:
         ffprobe=ToolInfo(
             name="ffprobe", status=ToolStatus.TOO_OLD, reason="ffprobe 4.4 is too old"
         ),
-        mkvpropedit=ToolInfo(
-            name="mkvpropedit", status=ToolStatus.FOUND, path=Path("/usr/bin/mkvpropedit")
-        ),
-        mediainfo=ToolInfo(name="mediainfo", status=ToolStatus.MISSING, reason="not found"),
     )
 
 
@@ -104,8 +100,7 @@ def test_each_tool_has_status_origin_path_version_flags_libraries_and_reason(
         "    libraries: libavutil 61.1.102, libavcodec 63.1.102",
         "  ffprobe: too_old",
     ]
-    assert "    reason: ffprobe 4.4 is too old" in lines
-    assert lines[-2:] == ["  mediainfo: missing", "    reason: not found"]
+    assert lines[7:] == ["  ffprobe: too_old", "    reason: ffprobe 4.4 is too old"]
 
 
 def test_each_encoder_has_its_status_and_reason_in_a_stable_order(tmp_path: Path) -> None:

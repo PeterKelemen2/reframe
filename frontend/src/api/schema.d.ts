@@ -2185,10 +2185,10 @@ export interface components {
             language?: string | null;
             /**
              * Language Ietf
-             * @description The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
-             *     ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
-             *     Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
-             *     MediaInfo's value when MediaInfo is available. ``None`` when there is none.
+             * @description The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: with a
+             *     Matroska ``LanguageIETF`` of ``pt-BR`` ffprobe still says ``por``. A Matroska track that
+             *     Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take the
+             *     BCP 47 form of their ISO 639 code (``por`` → ``pt``). ``None`` when there is none.
              *
              *     The effective language, which track rules match, is ``language_ietf`` if set, else
              *     ``language``.
@@ -6664,10 +6664,10 @@ export interface components {
             language?: string | null;
             /**
              * Language Ietf
-             * @description The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
-             *     ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
-             *     Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
-             *     MediaInfo's value when MediaInfo is available. ``None`` when there is none.
+             * @description The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: with a
+             *     Matroska ``LanguageIETF`` of ``pt-BR`` ffprobe still says ``por``. A Matroska track that
+             *     Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take the
+             *     BCP 47 form of their ISO 639 code (``por`` → ``pt``). ``None`` when there is none.
              *
              *     The effective language, which track rules match, is ``language_ietf`` if set, else
              *     ``language``.
@@ -6939,7 +6939,7 @@ export interface components {
              * Name
              * @enum {string}
              */
-            name: "ffmpeg" | "ffprobe" | "mkvpropedit" | "mediainfo";
+            name: "ffmpeg" | "ffprobe";
             status: components["schemas"]["ToolStatus"];
             /**
              * Path
@@ -7017,7 +7017,7 @@ export interface components {
          * @description Where the tool path came from, in discovery order.
          * @enum {string}
          */
-        ToolOrigin: "env" | "settings" | "bundled" | "path" | "installed";
+        ToolOrigin: "env" | "settings" | "bundled" | "path";
         /**
          * ToolPaths
          * @description Tool path overrides (``None`` = no override). A path may name the binary or its folder.
@@ -7031,13 +7031,11 @@ export interface components {
         };
         /**
          * ToolSet
-         * @description The discovery result for all four tools.
+         * @description The discovery result for every tool.
          */
         ToolSet: {
             ffmpeg: components["schemas"]["ToolInfo"];
             ffprobe: components["schemas"]["ToolInfo"];
-            mkvpropedit: components["schemas"]["ToolInfo"];
-            mediainfo: components["schemas"]["ToolInfo"];
         };
         /**
          * ToolStatus
@@ -7838,10 +7836,10 @@ export interface components {
             language?: string | null;
             /**
              * Language Ietf
-             * @description The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
-             *     ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
-             *     Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
-             *     MediaInfo's value when MediaInfo is available. ``None`` when there is none.
+             * @description The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: with a
+             *     Matroska ``LanguageIETF`` of ``pt-BR`` ffprobe still says ``por``. A Matroska track that
+             *     Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take the
+             *     BCP 47 form of their ISO 639 code (``por`` → ``pt``). ``None`` when there is none.
              *
              *     The effective language, which track rules match, is ``language_ietf`` if set, else
              *     ``language``.

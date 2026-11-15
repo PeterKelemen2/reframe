@@ -1038,10 +1038,10 @@
         ]),
         'default': None,
         'description': '''
-          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
-          ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
-          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
-          MediaInfo's value when MediaInfo is available. ``None`` when there is none.
+          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: with a
+          Matroska ``LanguageIETF`` of ``pt-BR`` ffprobe still says ``por``. A Matroska track that
+          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take the
+          BCP 47 form of their ISO 639 code (``por`` → ``pt``). ``None`` when there is none.
           
           The effective language, which track rules match, is ``language_ietf`` if set, else
           ``language``.
@@ -9124,10 +9124,10 @@
         ]),
         'default': None,
         'description': '''
-          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
-          ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
-          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
-          MediaInfo's value when MediaInfo is available. ``None`` when there is none.
+          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: with a
+          Matroska ``LanguageIETF`` of ``pt-BR`` ffprobe still says ``por``. A Matroska track that
+          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take the
+          BCP 47 form of their ISO 639 code (``por`` → ``pt``). ``None`` when there is none.
           
           The effective language, which track rules match, is ``language_ietf`` if set, else
           ``language``.
@@ -9857,8 +9857,6 @@
         'enum': list([
           'ffmpeg',
           'ffprobe',
-          'mkvpropedit',
-          'mediainfo',
         ]),
         'title': 'Name',
         'type': 'string',
@@ -9972,8 +9970,6 @@
     'enum': list([
       'ffmpeg',
       'ffprobe',
-      'mkvpropedit',
-      'mediainfo',
     ]),
     'type': 'string',
   })
@@ -9988,7 +9984,6 @@
       'settings',
       'bundled',
       'path',
-      'installed',
     ]),
     'title': 'ToolOrigin',
     'type': 'string',
@@ -10050,7 +10045,7 @@
       'ToolStatus',
     ]),
     'additionalProperties': False,
-    'description': 'The discovery result for all four tools.',
+    'description': 'The discovery result for every tool.',
     'properties': dict({
       'ffmpeg': dict({
         '$ref': '#/$defs/ToolInfo',
@@ -10058,18 +10053,10 @@
       'ffprobe': dict({
         '$ref': '#/$defs/ToolInfo',
       }),
-      'mediainfo': dict({
-        '$ref': '#/$defs/ToolInfo',
-      }),
-      'mkvpropedit': dict({
-        '$ref': '#/$defs/ToolInfo',
-      }),
     }),
     'required': list([
       'ffmpeg',
       'ffprobe',
-      'mkvpropedit',
-      'mediainfo',
     ]),
     'title': 'ToolSet',
     'type': 'object',
@@ -11753,10 +11740,10 @@
         ]),
         'default': None,
         'description': '''
-          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
-          ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
-          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
-          MediaInfo's value when MediaInfo is available. ``None`` when there is none.
+          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: with a
+          Matroska ``LanguageIETF`` of ``pt-BR`` ffprobe still says ``por``. A Matroska track that
+          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take the
+          BCP 47 form of their ISO 639 code (``por`` → ``pt``). ``None`` when there is none.
           
           The effective language, which track rules match, is ``language_ietf`` if set, else
           ``language``.

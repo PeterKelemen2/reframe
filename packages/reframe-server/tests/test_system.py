@@ -33,30 +33,13 @@ async def test_system_shows_tools_mode_and_the_stores_start_up_problems(
     assert response.status_code == 200
     body = response.json()
     assert (body["mode"], body["auth"]) == ("web", "token")
+    assert set(body["tools"]) == {"ffmpeg", "ffprobe"}
     assert body["tools"]["ffprobe"]["status"] == "found"
     assert body["tools"]["ffmpeg"]["version"]
     codes = {problem["code"] for problem in body["problems"]}
     assert "settings.newer_version" in codes
     assert any(code.startswith("presets.") for code in codes)
     assert body["settings_read_only"] is True
-
-
-async def test_a_missing_optional_tool_tells_a_web_client_what_it_can_do(
-    make_api: ApiFactory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A web client cannot set a tool path in Settings: the reason must name the variable."""
-    empty = tmp_path / "empty-path"
-    empty.mkdir()
-    monkeypatch.setenv("PATH", str(empty))
-    async with make_api() as api:
-        tools = (await api.client.get("/api/system")).json()["tools"]
-    for name, variable in (
-        ("mediainfo", "REFRAME_MEDIAINFO"),
-        ("mkvpropedit", "REFRAME_MKVPROPEDIT"),
-    ):
-        assert tools[name]["status"] == "missing"
-        assert variable in tools[name]["reason"]
-        assert "Settings" not in tools[name]["reason"]
 
 
 async def test_diagnostics_names_the_logs_folder(api: Api) -> None:

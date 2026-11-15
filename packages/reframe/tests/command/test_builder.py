@@ -23,7 +23,6 @@ from reframe.models import (
     PlanStep,
     SubtitleOutputTrack,
     TimeRange,
-    ToolStatus,
     TrackHeaderEdit,
     TrackMetadata,
     resolve_argv,
@@ -194,7 +193,6 @@ def test_a_header_edit_step_for_mkv_without_any_mkvtoolnix_but_not_for_webm() ->
     src = recorded("multitrack.mkv")
     job = draft(src)
     job.audio[0].metadata = TrackMetadata(language="pt-BR")
-    assert tools().mkvpropedit.status is not ToolStatus.FOUND
     assert "header_edit" in [s.kind for s in plan_of(job, src).steps]
     webm = draft(src, container="webm", audio_encoder="libopus", video={"encoder": "libsvtav1"})
     webm.audio[0].metadata = TrackMetadata(language="pt-BR")

@@ -1,6 +1,5 @@
 # PyInstaller spec of the sidecar: one onedir with two executables, `reframe-server` and the
 # `reframe` CLI, that share one `_internal/`. Run it through build.py.
-import importlib.util
 from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
@@ -9,31 +8,22 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 DATA_PACKAGES = (
     "babelfish",
     "guessit",  # silent: every name parses to its whole stem
-    "language_data",
-    "reframe.definitions",  # silent: no encoders, every job draft fails
+    "reframe.definitions",  # silent: no encoders or language tables, every job draft fails
     "reframe.presets",
     "reframe.tools",
     "reframe_server",  # GET /api/languages answers 500
 )
 
 
-def mediainfo_libraries():
-    # The pymediainfo hook's patterns miss the wheel's libmediainfo.so.0.
-    folder = Path(importlib.util.find_spec("pymediainfo").origin).parent
-    found = [*folder.glob("libmediainfo.so*"), *folder.glob("MediaInfo.dll")]
-    return [(str(library), "pymediainfo") for library in sorted(found)]
-
-
 def analysis(script):
     return Analysis(
         [str(Path(SPECPATH) / script)],
         datas=[item for package in DATA_PACKAGES for item in collect_data_files(package)],
-        binaries=mediainfo_libraries(),
-        # babelfish loads its converters from entry-point strings; the core imports pymediainfo
-        # with importlib (silent: probes run without MediaInfo).
-        hiddenimports=[*collect_submodules("babelfish"), "pymediainfo"],
-        # pydantic's hook pulls them in through pydantic.mypy and pydantic.v1.
-        excludes=["mypy", "hypothesis"],
+        # babelfish loads its converters from entry-point strings.
+        hiddenimports=collect_submodules("babelfish"),
+        # pydantic's hook pulls mypy and hypothesis in through pydantic.mypy and pydantic.v1. The
+        # language libraries are dev dependencies that the language tables were built from.
+        excludes=["mypy", "hypothesis", "langcodes", "language_data", "marisa_trie"],
     )
 
 

@@ -293,7 +293,41 @@ For task I and the reviewers:
 
 ### Built: P (mkvpropedit leaves the product)
 
-*Placeholder.*
+1. **Tool discovery** knows `ffmpeg` and `ffprobe` only: `ToolName = Literal["ffmpeg",
+   "ffprobe"]`, `ToolSet` has two fields, `TOOL_NAMES`, `ENV_VARS` and `BUNDLED_SUBDIRS` lose
+   `mkvpropedit` (and `mediainfo`, 0081). Gone with it: `REFRAME_MKVPROPEDIT`, the bundled
+   `mkvtoolnix/` folder, the Windows MKVToolNix folder search (the App Paths registry key and
+   `%ProgramFiles%\MKVToolNix`) and `ToolOrigin.INSTALLED`, which only that search gave, the
+   "install MKVToolNix" texts and `parse_mkvpropedit_version`. `reframe tools status`,
+   `python -m reframe.tools`, the diagnostics report and `GET /api/system` list ffmpeg and
+   ffprobe only (tests: `test_status_json_is_the_toolset`,
+   `test_system_shows_tools_mode_and_the_stores_start_up_problems`, and
+   `test_mkvtoolnix_and_mediainfo_are_neither_found_nor_run`, which puts an mkvpropedit and a
+   mediainfo on `PATH`, in the old bundled folders, in the old variables and in Settings, and
+   checks that none of them is listed or started).
+2. **No down-level note**: `ToolName`, `ToolSet` and `ToolOrigin` are in API responses, the
+   `tools.changed` event and the diagnostics text only. No persisted document holds them:
+   settings hold `ToolPaths` (wave 0's bump), and presets, queue rows and the probe cache
+   hold no tool status. An old client that reads a `ToolSet` without `mkvpropedit` is the
+   frontend, which ships with the server.
+3. **The MKVToolNix scan** of `tests/queue/test_no_mkvtoolnix.py` has no `PENDING` list any
+   more: it scans every module of `reframe` and `reframe_server`; the only allowed constant
+   is the settings migration's `tools.mkvpropedit`. C-18 "Done when" 5 now covers all product
+   code.
+4. **Packaging**: the .deb and .rpm have no `Recommends` (`tauri.linux.conf.json`), and the
+   container install test checks that neither package asks for MKVToolNix or MediaInfo and
+   that `reframe tools status` lists ffmpeg and ffprobe only; the Docker image installs no
+   `mkvtoolnix`; the AppImage check no longer prints the system tools. `bundle-tools.py`
+   still removes an `mkvtoolnix/` folder that an earlier layout made, and the notices stop on
+   one that is laid out (no pin names it).
+5. **CI**: the Ubuntu Python job installs `mkvtoolnix` (`apt-get install
+   --no-install-recommends`) before pytest, for the `needs_mkvtoolnix` oracle tests; the
+   Windows job does not, so they skip there. `scripts/windows-setup.ps1` keeps MKVToolNix,
+   now as the oracle tests' tool. Ubuntu's MKVToolNix is older than the 103 the oracle tests
+   were written against here: the first CI run shows whether they hold with it.
+6. **The D-8 open item** about the system mkvpropedit that is `broken` under the AppImage's
+   `LD_LIBRARY_PATH` goes away: no product path runs it.
+7. Not touched: `desktop/spike/**` (the D-0 spike, not shipped).
 
 ### Built: U (the UI)
 

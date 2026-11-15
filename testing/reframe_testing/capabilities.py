@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from reframe.models import ToolInfo, ToolName, ToolSet, ToolStatus
+from reframe.models import ToolInfo, ToolSet, ToolStatus
 from reframe_testing import fake_tools as ft
 
 __all__ = ["PINNED_VERSION", "StubTools", "detect_rule", "ffmpeg_info", "tool_set"]
@@ -28,13 +28,9 @@ def ffmpeg_info(
 
 
 def tool_set(ffmpeg: ToolInfo) -> ToolSet:
-    """``ffmpeg`` plus a missing ffprobe, mkvpropedit and mediainfo."""
-    others: tuple[ToolName, ...] = ("ffprobe", "mkvpropedit", "mediainfo")
-    missing = {
-        name: ToolInfo(name=name, status=ToolStatus.MISSING, reason=f"{name} was not found.")
-        for name in others
-    }
-    return ToolSet(ffmpeg=ffmpeg, **missing)
+    """``ffmpeg`` plus a missing ffprobe."""
+    ffprobe = ToolInfo(name="ffprobe", status=ToolStatus.MISSING, reason="ffprobe was not found.")
+    return ToolSet(ffmpeg=ffmpeg, ffprobe=ffprobe)
 
 
 class StubTools:

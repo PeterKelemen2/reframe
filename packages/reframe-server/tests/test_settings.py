@@ -79,8 +79,8 @@ async def test_a_web_client_cannot_choose_a_program(api: Api, patch: list[dict[s
 @pytest.mark.parametrize(
     ("tools", "named"),
     [
-        (["mediainfo"], ["REFRAME_MEDIAINFO"]),
-        (["mkvpropedit", "ffmpeg"], ["REFRAME_FFMPEG", "REFRAME_MKVPROPEDIT"]),
+        (["ffprobe"], ["REFRAME_FFPROBE"]),
+        (["ffprobe", "ffmpeg"], ["REFRAME_FFMPEG", "REFRAME_FFPROBE"]),
     ],
 )
 async def test_a_refused_program_names_the_variables_of_the_tools_it_sets(
@@ -169,16 +169,16 @@ async def test_a_web_client_can_only_choose_a_vaapi_render_node(
 async def test_a_desktop_client_may_choose_a_program_and_any_device(
     make_api: ApiFactory, tmp_path: Path
 ) -> None:
-    program = str(tmp_path / "opt" / "mediainfo")
+    program = str(tmp_path / "opt" / "ffprobe")
     async with make_api(mode="desktop") as api:
         patch = [
-            {"op": "add", "path": "/tools/mediainfo", "value": program},
+            {"op": "add", "path": "/tools/ffprobe", "value": program},
             {"op": "replace", "path": VAAPI, "value": WITH_OPTIONS},
         ]
         response = await api.client.put("/api/settings", json=patch)
     assert response.status_code == 200
     settings = response.json()["settings"]
-    assert settings["tools"]["mediainfo"] == program
+    assert settings["tools"]["ffprobe"] == program
     assert settings["encoders"]["vaapi_device"] == WITH_OPTIONS
 
 

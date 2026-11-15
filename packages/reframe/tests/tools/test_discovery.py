@@ -69,8 +69,6 @@ def _env(**values: str) -> dict[str, str]:
     return env
 
 
-MKVPROPEDIT_OUT = "mkvpropedit v101.0 ('Time To Turn') 64-bit\n"
-MEDIAINFO_OUT = "MediaInfo Command line, \nMediaInfoLib - v24.06\n"
 TOO_OLD = ft.Rule(argv_has=["-version"], actions=[ft.version("n6.1.2-21-gac60bc2bb0-20250131")])
 
 
@@ -133,17 +131,15 @@ async def test_settings_path_wins_over_bundled(tmp_path: Path, empty_path: str) 
 
 
 @pytest.mark.anyio
-async def test_a_bundled_build_is_reported_per_family_while_an_override_works(
+async def test_a_bundled_build_is_reported_while_an_override_works(
     tmp_path: Path, empty_path: str
 ) -> None:
     settings_tools = _fake(tmp_path / "custom")
-    mkv = _script_tool(tmp_path / "m", "mkvpropedit", MKVPROPEDIT_OUT)
     root = tmp_path / "root"
     _fake(root / "ffmpeg" / "bin")
-    _script_tool(root / "mediainfo", "mediainfo", MEDIAINFO_OUT)
     tools = await discover_tools(
-        {"ffmpeg": str(settings_tools.ffmpeg), "mediainfo": str(tmp_path / "gone")},
-        environ=_env(REFRAME_MKVPROPEDIT=str(mkv)),
+        {"ffmpeg": str(settings_tools.ffmpeg)},
+        environ=_env(),
         bundled_roots=[root],
         search_path=empty_path,
     )
@@ -151,10 +147,6 @@ async def test_a_bundled_build_is_reported_per_family_while_an_override_works(
     assert tools.ffmpeg.status is ToolStatus.FOUND
     assert tools.ffmpeg.bundled
     assert tools.ffprobe.bundled
-    assert tools.mediainfo.status is ToolStatus.MISSING
-    assert tools.mediainfo.bundled
-    assert tools.mkvpropedit.origin is ToolOrigin.ENV
-    assert not tools.mkvpropedit.bundled
 
 
 def test_no_bundled_build_is_reported_without_one(tmp_path: Path) -> None:
@@ -247,50 +239,6 @@ async def test_damaged_bundled_build_does_not_fall_back_to_path(tmp_path: Path) 
 
 
 @pytest.mark.anyio
-async def test_mkvpropedit_from_path_next_to_a_bundled_ffmpeg(tmp_path: Path) -> None:
-    _fake(tmp_path / "root" / "ffmpeg" / "bin")
-    path_dir = tmp_path / "path"
-    _script_tool(path_dir, "mkvpropedit", MKVPROPEDIT_OUT)
-    _script_tool(path_dir, "mediainfo", MEDIAINFO_OUT)
-    tools = await discover_tools(
-        environ=_env(), bundled_roots=[tmp_path / "root"], search_path=str(path_dir)
-    )
-    assert tools.mkvpropedit.origin is ToolOrigin.PATH
-    assert tools.mkvpropedit.status is ToolStatus.FOUND
-    assert tools.mkvpropedit.version == "101.0"
-    assert tools.mediainfo.origin is ToolOrigin.PATH
-    assert tools.mediainfo.version == "24.06"
-
-
-@pytest.mark.anyio
-async def test_bundled_mkvpropedit_and_mediainfo(tmp_path: Path, empty_path: str) -> None:
-    root = tmp_path / "root"
-    _script_tool(root / "mkvtoolnix", "mkvpropedit", MKVPROPEDIT_OUT)
-    _script_tool(root / "mediainfo" / "bin", "mediainfo", MEDIAINFO_OUT)
-    tools = await discover_tools(environ=_env(), bundled_roots=[root], search_path=empty_path)
-    assert tools.mkvpropedit.origin is ToolOrigin.BUNDLED
-    assert tools.mkvpropedit.status is ToolStatus.FOUND
-    assert tools.mediainfo.origin is ToolOrigin.BUNDLED
-    assert tools.mediainfo.status is ToolStatus.FOUND
-    assert tools.ffmpeg.status is ToolStatus.MISSING
-
-
-@pytest.mark.anyio
-async def test_env_overrides_for_mkvpropedit_and_mediainfo(tmp_path: Path, empty_path: str) -> None:
-    mkv = _script_tool(tmp_path / "m", "mkvpropedit", MKVPROPEDIT_OUT)
-    mi = _script_tool(tmp_path / "i", "mediainfo", MEDIAINFO_OUT)
-    tools = await discover_tools(
-        environ=_env(REFRAME_MKVPROPEDIT=str(mkv), REFRAME_MEDIAINFO=str(mi)),
-        bundled_roots=[],
-        search_path=empty_path,
-    )
-    assert tools.mkvpropedit.origin is ToolOrigin.ENV
-    assert tools.mkvpropedit.env_var == "REFRAME_MKVPROPEDIT"
-    assert tools.mediainfo.origin is ToolOrigin.ENV
-    assert tools.mediainfo.status is ToolStatus.FOUND
-
-
-@pytest.mark.anyio
 async def test_nothing_found(tmp_path: Path, empty_path: str) -> None:
     tools = await discover_tools(environ=_env(), bundled_roots=[], search_path=empty_path)
     for name in TOOL_NAMES:
@@ -301,8 +249,35 @@ async def test_nothing_found(tmp_path: Path, empty_path: str) -> None:
         assert info.reason
     assert tools.ffmpeg.reason is not None
     assert "REFRAME_FFMPEG" in tools.ffmpeg.reason
-    assert tools.mediainfo.reason is not None
-    assert "REFRAME_MEDIAINFO" in tools.mediainfo.reason
+
+
+@pytest.mark.anyio
+async def test_mkvtoolnix_and_mediainfo_are_neither_found_nor_run(tmp_path: Path) -> None:
+    """Reframe writes Matroska headers itself and probes without MediaInfo: discovery must not
+    list or start mkvpropedit or mediainfo, wherever they are."""
+    ran = tmp_path / "ran"
+    root = tmp_path / "root"
+    _fake(root / "ffmpeg" / "bin")
+    path_dir = tmp_path / "path"
+    for folder, name in [
+        (path_dir, "mkvpropedit"),
+        (path_dir, "mediainfo"),
+        (root / "mkvtoolnix", "mkvpropedit"),
+        (root / "mediainfo", "mediainfo"),
+    ]:
+        _script_tool(folder, name, "")
+        (folder / f"_{name}_impl.py").write_text(
+            f"open({str(ran)!r}, 'a').write({name!r})\n", encoding="utf-8"
+        )
+    tools = await discover_tools(
+        {"mkvpropedit": str(path_dir / "mkvpropedit")},
+        environ=_env(REFRAME_MKVPROPEDIT=str(path_dir), REFRAME_MEDIAINFO=str(path_dir)),
+        bundled_roots=[root],
+        search_path=str(path_dir),
+    )
+    assert set(tools.model_dump()) == {"ffmpeg", "ffprobe"}
+    assert tools.ffmpeg.status is ToolStatus.FOUND
+    assert not ran.exists()
 
 
 @pytest.mark.anyio
@@ -403,15 +378,15 @@ def test_windows_accepts_only_exe(tmp_path: Path, empty_path: str) -> None:
 
 @pytest.mark.anyio
 async def test_windows_script_override_is_broken(tmp_path: Path, empty_path: str) -> None:
-    script = _exe(tmp_path / "tools" / "mkvpropedit.bat")
+    script = _exe(tmp_path / "tools" / "ffprobe.bat")
     info = await check_tool(
         locate_tools(
-            {"mkvpropedit": str(script)},
+            {"ffprobe": str(script)},
             environ=WIN_ENV,
             bundled_roots=[],
             search_path=empty_path,
             platform="win32",
-        )["mkvpropedit"]
+        )["ffprobe"]
     )
     assert info.status is ToolStatus.BROKEN
     assert info.reason is not None
@@ -420,103 +395,19 @@ async def test_windows_script_override_is_broken(tmp_path: Path, empty_path: str
 
 def test_windows_path_search_ignores_scripts(tmp_path: Path) -> None:
     only_scripts = tmp_path / "scripts"
-    _exe(only_scripts / "mkvpropedit.cmd")
-    _exe(only_scripts / "mkvpropedit.bat")
+    _exe(only_scripts / "ffprobe.cmd")
+    _exe(only_scripts / "ffprobe.bat")
     with_exe = tmp_path / "exe"
-    _exe(with_exe / "mkvpropedit.exe")
-    _exe(with_exe / "mkvpropedit.cmd")
+    _exe(with_exe / "ffprobe.exe")
+    _exe(with_exe / "ffprobe.cmd")
     located = locate_tools(
         environ=WIN_ENV,
         bundled_roots=[],
         search_path=f"{only_scripts};{with_exe}",
         platform="win32",
     )
-    assert located["mkvpropedit"].path == with_exe / "mkvpropedit.exe"
-    assert located["mkvpropedit"].origin is ToolOrigin.PATH
-
-
-@pytest.mark.parametrize(
-    ("platform", "mkvpropedit", "mediainfo"),
-    [
-        (
-            "win32",
-            "It is part of MKVToolNix: install MKVToolNix from https://mkvtoolnix.download/",
-            "Install the MediaInfo command-line program from https://mediaarea.net/en/MediaInfo",
-        ),
-        (
-            "linux",
-            "It is part of MKVToolNix: install your distribution's mkvtoolnix package",
-            "Install your distribution's mediainfo package",
-        ),
-    ],
-)
-def test_a_missing_optional_tool_says_what_to_install(
-    tmp_path: Path, empty_path: str, platform: str, mkvpropedit: str, mediainfo: str
-) -> None:
-    """No package bundles mkvpropedit: the reason must name MKVToolNix and where to get it."""
-    located = locate_tools(
-        environ=WIN_ENV, bundled_roots=[], search_path=empty_path, platform=platform
-    )
-    assert located["mkvpropedit"].problem == (
-        f"mkvpropedit was not found. {mkvpropedit}, or set REFRAME_MKVPROPEDIT to its path."
-    )
-    assert located["mediainfo"].problem == (
-        f"mediainfo was not found. {mediainfo}, or set REFRAME_MEDIAINFO to its path."
-    )
-
-
-def test_windows_finds_mkvpropedit_where_mkvtoolnixs_installer_put_it(
-    tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """MKVToolNix's installer records its folder in the registry but does not add it to PATH,
-    so a user who installs it as told would still see mkvpropedit missing."""
-    folder = tmp_path / "Programs" / "MKVToolNix"
-    exe = _exe(folder / "mkvpropedit.exe")
-    keys: list[str] = []
-
-    def registry(key: str) -> list[str]:
-        keys.append(key)
-        return [f'"{folder / "mkvtoolnix-gui.exe"}"']
-
-    monkeypatch.setattr(discovery, "_registered_app_paths", registry)
-    located = locate_tools(
-        environ=WIN_ENV, bundled_roots=[], search_path=empty_path, platform="win32"
-    )
-    assert (located["mkvpropedit"].path, located["mkvpropedit"].origin) == (
-        exe,
-        ToolOrigin.INSTALLED,
-    )
-    assert located["mkvpropedit"].problem is None
-    assert keys == [r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\mkvtoolnix-gui.exe"]
-
-    on_path = _exe(tmp_path / "path" / "mkvpropedit.exe")
-    located = locate_tools(
-        environ=WIN_ENV, bundled_roots=[], search_path=str(on_path.parent), platform="win32"
-    )
-    assert (located["mkvpropedit"].path, located["mkvpropedit"].origin) == (
-        on_path,
-        ToolOrigin.PATH,
-    )
-    located = locate_tools(environ={}, bundled_roots=[], search_path=empty_path, platform="linux")
-    assert located["mkvpropedit"].origin is None
-
-
-def test_windows_finds_mkvtoolnix_in_its_default_folder_without_a_registry_entry(
-    tmp_path: Path, empty_path: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(discovery, "_registered_app_paths", lambda key: [])
-    exe = _exe(tmp_path / "Program Files" / "MKVToolNix" / "mkvpropedit.exe")
-    located = locate_tools(
-        environ={**WIN_ENV, "ProgramW6432": str(tmp_path / "Program Files")},
-        bundled_roots=[],
-        search_path=empty_path,
-        platform="win32",
-    )
-    assert (located["mkvpropedit"].path, located["mkvpropedit"].origin) == (
-        exe,
-        ToolOrigin.INSTALLED,
-    )
-    assert located["mediainfo"].origin is None  # only MKVToolNix's folder is searched
+    assert located["ffprobe"].path == with_exe / "ffprobe.exe"
+    assert located["ffprobe"].origin is ToolOrigin.PATH
 
 
 def test_windows_script_tools_with_the_test_opt_in(tmp_path: Path, empty_path: str) -> None:
@@ -535,17 +426,17 @@ def test_windows_script_tools_with_the_test_opt_in(tmp_path: Path, empty_path: s
     assert located["ffprobe"].path == custom / "ffprobe.cmd"
     assert located["ffprobe"].next_to_ffmpeg
     scripts = tmp_path / "path"
-    _exe(scripts / "mediainfo.cmd")
+    _exe(scripts / "ffprobe.cmd")
     located = locate_tools(
         environ=env, bundled_roots=[], search_path=str(scripts), platform="win32"
     )
-    assert located["mediainfo"].path == scripts / "mediainfo.cmd"
+    assert located["ffprobe"].path == scripts / "ffprobe.cmd"
     for off in ("0", "false", "no", ""):
         off_env = {**WIN_ENV, ALLOW_SCRIPT_TOOLS_ENV: off}
         located = locate_tools(
             environ=off_env, bundled_roots=[], search_path=str(scripts), platform="win32"
         )
-        assert located["mediainfo"].path is None
+        assert located["ffprobe"].path is None
 
 
 def test_windows_folder_override_and_renamed_sibling(tmp_path: Path, empty_path: str) -> None:
@@ -599,10 +490,10 @@ def test_path_search_never_uses_the_current_folder(
 def test_path_search_skips_files_that_are_not_executable(tmp_path: Path) -> None:
     folder = tmp_path / "bin"
     folder.mkdir()
-    (folder / "mkvpropedit").write_text("#!/bin/sh\n", encoding="utf-8")
-    (folder / "mkvpropedit").chmod(0o644)
+    (folder / "ffprobe").write_text("#!/bin/sh\n", encoding="utf-8")
+    (folder / "ffprobe").chmod(0o644)
     located = locate_tools(environ={}, bundled_roots=[], search_path=str(folder))
-    assert located["mkvpropedit"].path is None
+    assert located["ffprobe"].path is None
 
 
 def _use_bundled_patch(tool: str) -> list[RemoveOp]:
@@ -635,14 +526,14 @@ async def test_missing_settings_path_offers_use_bundled(tmp_path: Path, empty_pa
 @pytest.mark.anyio
 async def test_missing_settings_path_without_bundled_build(tmp_path: Path, empty_path: str) -> None:
     tools = await discover_tools(
-        {"mkvpropedit": str(tmp_path / "x")},
+        {"ffprobe": str(tmp_path / "x")},
         environ=_env(),
         bundled_roots=[],
         search_path=empty_path,
     )
-    assert tools.mkvpropedit.status is ToolStatus.MISSING
-    assert [f.label for f in tools.mkvpropedit.fixes] == ["Remove the path override"]
-    assert tools.mkvpropedit.fixes[0].patch == _use_bundled_patch("mkvpropedit")
+    assert tools.ffprobe.status is ToolStatus.MISSING
+    assert [f.label for f in tools.ffprobe.fixes] == ["Remove the path override"]
+    assert tools.ffprobe.fixes[0].patch == _use_bundled_patch("ffprobe")
 
 
 @pytest.mark.anyio
@@ -808,17 +699,6 @@ async def test_not_executable_override(tmp_path: Path, empty_path: str) -> None:
     assert tools.ffmpeg.reason is not None
     assert "cannot run" in tools.ffmpeg.reason
     assert "PermissionError" in tools.ffmpeg.reason
-
-
-@pytest.mark.anyio
-async def test_broken_mkvpropedit(tmp_path: Path, empty_path: str) -> None:
-    junk = _script_tool(tmp_path / "j", "mkvpropedit", "something else\n")
-    tools = await discover_tools(
-        {"mkvpropedit": str(junk)}, environ=_env(), bundled_roots=[], search_path=empty_path
-    )
-    assert tools.mkvpropedit.status is ToolStatus.BROKEN
-    assert tools.mkvpropedit.reason is not None
-    assert "does not look like mkvpropedit" in tools.mkvpropedit.reason
 
 
 @pytest.mark.anyio

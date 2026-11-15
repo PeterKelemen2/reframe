@@ -107,8 +107,6 @@ def _context(
     tools = ToolSet(
         ffmpeg=_info("ffmpeg", ffmpeg, env),
         ffprobe=_info("ffprobe", ffprobe, env),
-        mkvpropedit=_info("mkvpropedit", None),
-        mediainfo=_info("mediainfo", None),
     )
     return MediaTaskContext(
         tasks=TaskManager(events),

@@ -19,7 +19,6 @@ FFMPEG_COMMIT = "2a571b606854520cf89804d8030c8b328e621689"
 SCRIPTS_COMMIT = "6c9aec5fc9a72ec3abedd1fa84db141fa18cf52b"
 X264_COMMIT = "0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee"
 MINGW_COMMIT = "57b595039040eaa15bece85b7cc71d952281b269"
-SHA_A = "a" * 64
 
 
 def _load_script() -> ModuleType:
@@ -140,7 +139,7 @@ sha256 = "{"e" * 64}"
 def _tools(
     root: Path,
     *,
-    mediainfo_sha: str = SHA_A,
+    libva_sha: str = "b" * 64,
     arm64: bool = False,
     static_builds: str = STATIC_BUILDS,
 ) -> Path:
@@ -163,17 +162,12 @@ def _tools(
         f'build_scripts_commit = "{SCRIPTS_COMMIT}"\n' + tables
     )
     (root / "bundled-tools.toml").write_text(
-        "[tools.mediainfo]\n"
-        'description = "MediaInfo CLI 26.10"\nlicense = "BSD-2-Clause"\n'
-        'source_url = "https://mediaarea.net/download/MediaInfo_CLI_26.10_GNU_FromSource.tar.xz"\n'
-        f'source_sha256 = "{mediainfo_sha}"\n'
-        '[tools.mediainfo.platforms.windows-x64]\nurl = "https://mediaarea.net/x.zip"\n'
         "[libraries.libva]\n"
         'description = "libva 2.24.1"\nlicense = "MIT"\n'
         + "".join(
             f"[libraries.libva.platforms.{platform}]\n"
             'url = "https://github.com/intel/libva/releases/download/2.24.1/libva-2.24.1.tar.bz2"\n'
-            f'sha256 = "{"b" * 64}"\n'
+            f'sha256 = "{libva_sha}"\n'
             for platform in ("linux-x64", "linux-arm64")
         )
     )
@@ -281,16 +275,11 @@ def test_a_stage_whose_commands_are_not_the_builds_is_an_error(tmp_path: Path) -
         _build(tmp_path)
 
 
-def test_the_tool_and_library_sources_have_their_pinned_checksums(tmp_path: Path) -> None:
+def test_the_library_sources_have_their_pinned_checksums(tmp_path: Path) -> None:
     entries = _entries(_build(tmp_path))
 
-    mediainfo = entries["MediaInfo_CLI_26.10_GNU_FromSource.tar.xz"]
     libva = entries["libva-2.24.1.tar.bz2"]
-    assert (mediainfo["kind"], mediainfo["sha256"], mediainfo["platforms"]) == (
-        "url",
-        SHA_A,
-        ["windows-x64"],
-    )
+    assert libva["kind"] == "url"
     assert (libva["sha256"], libva["platforms"], libva["license"]) == (
         "b" * 64,
         ["linux-arm64", "linux-x64"],
@@ -298,9 +287,9 @@ def test_the_tool_and_library_sources_have_their_pinned_checksums(tmp_path: Path
     )
 
 
-def test_a_tool_source_without_a_pinned_checksum_is_an_error(tmp_path: Path) -> None:
-    with pytest.raises(sm.ManifestError, match=r"mediainfo: the SHA-256 of .* is not pinned"):
-        _build(tmp_path, mediainfo_sha="")
+def test_a_library_source_without_a_pinned_checksum_is_an_error(tmp_path: Path) -> None:
+    with pytest.raises(sm.ManifestError, match=r"libva: the SHA-256 of .* is not pinned"):
+        _build(tmp_path, libva_sha="not a checksum")
 
 
 def test_the_appimage_libraries_give_one_entry_per_ubuntu_source_package(tmp_path: Path) -> None:
@@ -451,7 +440,6 @@ def test_the_repositorys_static_builds_name_the_gpl_and_lgpl_parts() -> None:
     }
     for part in ("libfuse 3.15.0", "squashfuse 0.5.2", "musl 1.2.5", "zstd 1.5.6", "zlib 1.3.1"):
         assert part in names["linux-x64"]
-    # The installers bundle no static build: MKVToolNix's mkvpropedit.exe is not bundled.
     assert names["windows-x64"] == set()
     trees = [e for e in entries if e["kind"] == "repository"]
     assert {(e["name"], tuple(e["platforms"])) for e in trees} == {
@@ -460,9 +448,9 @@ def test_the_repositorys_static_builds_name_the_gpl_and_lgpl_parts() -> None:
     assert len(sm.manifest(entries)["entries"]) == len(entries)
 
 
-def test_the_repositorys_windows_tool_sources_are_mediainfos_only() -> None:
-    """MKVToolNix's Windows build is not bundled, so its source is not in the release."""
-    entries = sm.tool_entries(REPO_ROOT / "tools")
+def test_the_repositorys_installers_bundle_no_library_source() -> None:
+    """The installers bundle FFmpeg only: no MKVToolNix or MediaInfo source in the release."""
+    entries = sm.library_entries(REPO_ROOT / "tools")
 
-    windows = [e["name"] for e in entries if "windows-x64" in e["platforms"]]
-    assert windows == ["MediaInfo_CLI_26.10_GNU_FromSource.tar.xz"]
+    assert [e["name"] for e in entries if "windows-x64" in e["platforms"]] == []
+    assert [e["name"] for e in entries] == ["libva-2.24.1.tar.bz2"]

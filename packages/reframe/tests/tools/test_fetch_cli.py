@@ -99,10 +99,8 @@ def test_status_prints_the_lines_of_python_m_reframe_tools(fake: ft.FakeTools, e
     lines = result.stdout.splitlines()
     assert lines[0] == f"ffmpeg       found    env      {fake.ffmpeg}  {FAKE_VERSION}"
     assert lines[1] == f"ffprobe      found    env      {fake.ffprobe}  {FAKE_VERSION}"
-    assert lines[2].startswith("mkvpropedit  missing  -        -  (")
-    assert lines[3].startswith("mediainfo    missing  -        -  (")
     install = env / "tools" / "ffmpeg"
-    assert lines[4] == f'Fetched build: none ("reframe tools fetch" installs it into {install}).'
+    assert lines[2] == f'Fetched build: none ("reframe tools fetch" installs it into {install}).'
     assert result.stderr == ""
 
 
@@ -112,7 +110,7 @@ def test_status_json_is_the_toolset(fake: ft.FakeTools) -> None:
     result = invoke("tools", "status", "--json")
     assert result.exit_code == EXIT_OK, result.output
     data = json.loads(result.stdout)
-    assert set(data) == {"ffmpeg", "ffprobe", "mkvpropedit", "mediainfo"}
+    assert set(data) == {"ffmpeg", "ffprobe"}
     assert data["ffmpeg"]["origin"] == "env"
     assert data["ffmpeg"]["status"] == "found"
 
@@ -150,7 +148,8 @@ def test_status_lines_are_shared_with_python_m_reframe_tools(fake: ft.FakeTools)
     tools = discover_tools_sync()
     lines = status_lines(tools)
     result = invoke("tools", "status")
-    assert result.stdout.splitlines()[:4] == lines
+    assert [line.split()[0] for line in lines] == ["ffmpeg", "ffprobe"]
+    assert result.stdout.splitlines()[: len(lines)] == lines
 
 
 def test_fetched_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

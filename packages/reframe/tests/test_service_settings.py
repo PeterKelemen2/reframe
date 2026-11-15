@@ -43,7 +43,7 @@ async def until(condition: Callable[[], bool], limit: float = 30.0) -> None:
 
 @pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """No tool overrides, user folders in ``tmp_path``, MediaInfo off."""
+    """No tool overrides, user folders in ``tmp_path``."""
     for var in ENV_VARS.values():
         monkeypatch.delenv(var, raising=False)
     for name in ("config", "data", "cache"):

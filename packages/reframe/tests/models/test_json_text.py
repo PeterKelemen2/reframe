@@ -133,10 +133,12 @@ def test_display_text_set_after_validation_is_dumped_with_the_replacement() -> N
     task = TaskInfo(id="t1", kind="probe_folder")
     task.error = f"cannot read {SOURCE}"
     source = MediaSource(ref=SourceRef(path=OK))
-    source.warnings.append(f"MediaInfo could not read {SOURCE}")
+    source.warnings.append(f"The Matroska reader could not read {SOURCE}")
     shown = SOURCE.parent / SHOWN
     assert json.loads(task.model_dump_json())["error"] == f"cannot read {shown}"
-    assert json.loads(source.model_dump_json())["warnings"] == [f"MediaInfo could not read {shown}"]
+    assert json.loads(source.model_dump_json())["warnings"] == [
+        f"The Matroska reader could not read {shown}"
+    ]
 
 
 DISPLAY: list[BaseModel] = [

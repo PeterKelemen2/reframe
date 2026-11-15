@@ -499,8 +499,6 @@ def origin_text(info: ToolInfo) -> str:
         where = "bundled build"
     elif info.origin is ToolOrigin.PATH:
         where = "found on PATH"
-    elif info.origin is ToolOrigin.INSTALLED:
-        where = "found where its installer put it"
     else:
         where = "not found anywhere"
     if info.next_to_ffmpeg:
@@ -4062,8 +4060,7 @@ def build_app() -> typer.Typer:
 
     tools_app = typer.Typer(
         no_args_is_help=True,
-        help="Which FFmpeg, ffprobe, mkvpropedit and MediaInfo Reframe uses; fetch the pinned "
-        "FFmpeg build.",
+        help="Which FFmpeg and ffprobe Reframe uses; fetch the pinned FFmpeg build.",
     )
     app.add_typer(tools_app, name="tools")
 
@@ -4077,9 +4074,9 @@ def build_app() -> typer.Typer:
         the reason when it cannot be used, then the build that "reframe tools fetch"
         installed.
 
-        The order of the search: the REFRAME_FFMPEG / REFRAME_FFPROBE / REFRAME_MKVPROPEDIT /
-        REFRAME_MEDIAINFO variables, Settings > Tools, the bundled build (also the fetched
-        one in <data dir>/tools/ffmpeg), then PATH (only without a bundled build)."""
+        The order of the search: the REFRAME_FFMPEG / REFRAME_FFPROBE variables, Settings >
+        Tools, the bundled build (also the fetched one in <data dir>/tools/ffmpeg), then PATH
+        (only without a bundled build)."""
         _run(run_tools_status(as_json=as_json))
 
     @tools_app.command("fetch", epilog=_EXIT_HELP_TOOLS_FETCH)

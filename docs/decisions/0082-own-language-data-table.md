@@ -170,7 +170,51 @@ Wiktionary's terms is P's and the lead's call.
 
 ### Built: P (the notices and the frozen sidecar)
 
-*Placeholder.*
+1. **The sidecar spec**: `language_data` is no longer a data package; `langcodes`,
+   `language_data` and `marisa_trie` are in `excludes` (they stay installed as dev
+   dependencies); no hidden import is needed. `collect_data_files("reframe.definitions")`
+   takes the three tables.
+2. **The frozen build** (2026-11-15): `_internal/reframe/definitions/data/` holds
+   `language-core.json.gz` (107,907 B), `language-locale-names.json.gz` (657,624 B) and
+   `language-search.json.gz` (527,230 B), byte-identical to the committed files; no
+   top-level module or folder of the executables' archives or `_internal/` is `langcodes`,
+   `language_data`, `marisa_trie` or `pymediainfo`
+   (`test_the_frozen_sidecars_modules_and_libraries_are_read`). The frozen CLI's `probe`
+   names `jpn Japanese` and `eng English` from the tables
+   (`test_the_frozen_cli_names_languages_from_its_bundled_tables`). C-20 "Done when" 3's
+   frozen part holds.
+3. **The notices** get a section "Language data (in Reframe's language tables)", in the
+   desktop and the Docker notices, from new `[data."…"]` tables in `tools/licence-texts.toml`
+   (each with version, licence, URL, where it was read and the text):
+   - **Unicode CLDR 40**: the "UNICODE, INC. LICENSE AGREEMENT - DATA FILES AND SOFTWARE"
+     text (Copyright © 1991-2021, the "(a) or (b)" notice clause) of `unicode-license.txt`
+     in `unicode-org/cldr` at tag `release-40` (SHA-256 `7467c67c…`, a UTF-8 BOM removed),
+     as SPDX `Unicode-DFS-2016`. The `cldr-json` repository's `LICENSE` at `40.0.0` is an
+     older text (1991-2019, with a third clause on modified files); CLDR's own file of the
+     release is used. The data files in language_data carry their own headers
+     (`languageInfo.xml` 1991-2020, `supplementalData.xml` 1991-2025), so the entry says
+     "as language_data 1.4.0 (CLDR 40) and langcodes 3.5.1 carry it".
+   - **IANA Language Subtag Registry**, File-Date 2021-08-06 (language_data's copy; IANA's
+     current file is 2026-09-17): IANA states no licence, copyright or terms of use for it;
+     the entry says so and links the registry.
+   - **Wiktionary: List of languages** (the owner question's default: kept): the names of
+     language_data's `data/wiktionary/codes-en.csv` in the search table, with a CC BY-SA
+     attribution (the Wiktionary contributors, the page, the modification, the licence).
+     Wiktionary:Copyrights (read 2026-11-15) dual-licenses the text under CC BY-SA 4.0 and
+     the GFDL; the list's copy dates from 2021 or earlier, so the entry names CC BY-SA and
+     "today 4.0" rather than a version for that copy.
+   - **langcodes 3.5.1** and **language_data 1.4.0**: their MIT texts from the wheels, as
+     "derived from" entries (the ported algorithms; the curated data).
+   No langcodes, language-data or marisa-trie entry comes from pip-licenses any more: the
+   sidecar does not ship them and the image's `uv export --no-dev` does not install them.
+   A run on this host (cargo-about is not installed: the Rust section was stubbed) wrote
+   38 Python packages for the sidecar (linux-x64, windows-x64) and 33 for the image, five
+   language-data entries, and no langcodes, language_data, marisa-trie, pymediainfo or
+   MediaInfoLib entry.
+4. **Tests**: the data entries carry the CLDR text and the MIT notices; their langcodes and
+   language_data versions and the registry's File-Date equal the installed libraries' (a
+   library update that rebuilds the tables fails until the notices follow); a table without
+   its text stops the notices; both notices have the section.
 
 ### The real-file check
 
