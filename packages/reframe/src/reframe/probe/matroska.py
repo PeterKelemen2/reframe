@@ -130,9 +130,10 @@ class MatroskaFile:
     """Nanoseconds per timestamp tick, as stored (``0`` in a damaged file)."""
     duration: float | None = None
     """The segment's ``Duration`` in seconds."""
-    segment: int = 0
+    # Positions, not values: a header edit that moves an element grows the segment.
+    segment: int = field(default=0, compare=False)
     """The file position of the Segment's data."""
-    segment_size: int | None = None
+    segment_size: int | None = field(default=None, compare=False)
     """``None`` for a Segment of unknown size."""
 
 
