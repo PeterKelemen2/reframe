@@ -532,3 +532,44 @@ def crc_problems(path: Path) -> list[str]:
                 if child_id == TRACK_ENTRY:
                     check(f"TrackEntry in Tracks at {top.pos}", raw[_header(raw, 0)[2] :])
     return problems
+
+
+EBML = 0x1A45DFA3
+DOC_TYPE_VERSION = 0x4287
+DOC_TYPE_READ_VERSION = 0x4285
+
+
+def doc_type_versions(data: bytes) -> tuple[int | None, int | None]:
+    """``(DocTypeVersion, DocTypeReadVersion)`` of the EBML header (``None``: absent)."""
+    _, size, header = _header(data, 0)
+    assert size is not None
+    values = {
+        child_id: int.from_bytes(raw[_header(raw, 0)[2] :], "big")
+        for child_id, raw in kids(data[header : header + size])
+    }
+    return values.get(DOC_TYPE_VERSION), values.get(DOC_TYPE_READ_VERSION)
+
+
+def with_doc_type_version(data: bytes, version: int | None, *, crc: bool = False) -> bytes:
+    """The file with another ``DocTypeVersion`` (``None``: none), and with ``crc`` a ``CRC-32``
+    in the EBML header."""
+    _, size, header = _header(data, 0)
+    assert size is not None
+    children = [
+        element(child_id, bytes([version])) if child_id == DOC_TYPE_VERSION and version else raw
+        for child_id, raw in kids(data[header : header + size])
+        if child_id != DOC_TYPE_VERSION or version is not None
+    ]
+    return with_crc(EBML, children, crc) + data[header + size :]
+
+
+def ebml_crc_ok(data: bytes) -> bool:
+    """The EBML header has no ``CRC-32``, or one that matches."""
+    _, size, header = _header(data, 0)
+    assert size is not None
+    payload = data[header : header + size]
+    children = kids(payload)
+    if not children or children[0][0] != CRC:
+        return True
+    stored = int.from_bytes(children[0][1][2:6], "little")
+    return stored == zlib.crc32(payload[len(children[0][1]) :])

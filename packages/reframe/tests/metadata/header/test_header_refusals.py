@@ -231,9 +231,11 @@ def test_a_file_that_cannot_be_written_is_a_failure_and_unchanged(tmp_path: Path
         result = apply_header_edit(edit_track(path, name="B"))
     finally:
         path.chmod(0o644)
-    assert (result.status, result.code) == ("failed", "header.io_error")
-    assert result.reason
-    assert "unchanged" in result.reason
+    assert (result.status, result.code, result.file_state) == (
+        "failed",
+        "header.io_error",
+        "unchanged",
+    )
     assert path.read_bytes() == before
 
 
