@@ -158,24 +158,24 @@ Tier A (before v1):
 
 Tier B (if there is time before v1; otherwise after it):
 
-- [ ] **Q-6.11** Settings and preset stores (X-07, MOD-01, -03, -05; a decision record). Done
+- [x] **Q-6.11** Settings and preset stores (X-07, MOD-01, -03, -05; a decision record). Done
       when: every damaged, newer and too-deep file test passes with the same warning codes.
 - [ ] **Q-6.12** Windows-only paths (X-02, TP-14, TP-15). Done when: the retry, settings, queue,
       presets, platform and owner tests pass **on the Windows test VM**.
-- [ ] **Q-6.13** Probe and metadata (X-08, X-09, PRB-02, -03, -08, -12, -14). Done when: the
+- [x] **Q-6.13** Probe and metadata (X-08, X-09, PRB-02, -03, -08, -12, -14). Done when: the
       probe snapshot diff shows only `probe_hash` and the header writer's torn-write tests pass.
-- [ ] **Q-6.14** Folder probe, language list, server leftovers (SRV-01, -02, -08; a decision
+- [x] **Q-6.14** Folder probe, language list, server leftovers (SRV-01, -02, -08; a decision
       record). Done when: `GET /api/languages` returns the same bytes, the jail tests pass and a
       cancelled probe task leaves no ffprobe running.
-- [ ] **Q-6.15** Batch API and the draft path (X-03, BAT-01, -02, -03, -12; a decision record).
+- [x] **Q-6.15** Batch API and the draft path (X-03, BAT-01, -02, -03, -12; a decision record).
       Done when: the "one issue per problem" tests and the client-mode tests pass.
-- [ ] **Q-6.16** Validation rules (VAL-03, -06, -07, -09, -12; a decision record). Done when:
+- [x] **Q-6.16** Validation rules (VAL-03, -06, -07, -09, -12; a decision record). Done when:
       the command, queue and validation tests pass and template issue order is unchanged.
-- [ ] **Q-6.17** Tool runner and platform (TP-03, -06, -09). Done when: the real-bus sleep test
+- [x] **Q-6.17** Tool runner and platform (TP-03, -06, -09). Done when: the real-bus sleep test
       passes on this machine.
-- [ ] **Q-6.18** Task manager and capability service (QJ-01, QJ-10, CMD-07). Done when: the task
+- [x] **Q-6.18** Task manager and capability service (QJ-01, QJ-10, CMD-07). Done when: the task
       order and cancel-race tests pass.
-- [ ] **Q-6.19** Definitions fields (NDP-04, NDP-11). Done when: `scripts/gen-api.sh --check` and
+- [x] **Q-6.19** Definitions fields (NDP-04, NDP-11). Done when: `scripts/gen-api.sh --check` and
       the frontend commands pass.
 
 Tier C findings are not planned; they are listed in [docs/simplify/README.md](../simplify/README.md).

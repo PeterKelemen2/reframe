@@ -412,3 +412,18 @@ choices below were taken by the agents or by the orchestrator, with the same dec
   (the limits are internal) still holds, so no record.
 - CMD-07: the capability cache write now runs on the event loop once per detection (one JSON
   file of a few KB); the finding names this trade-off.
+
+### D-41 The Tier B review's findings are all fixed
+- Question: the brief fixes blockers and majors and leaves minors as notes. The Tier B review
+  (`review-tier-b.md`) found one major (RB-1: a codec label change that record 0086 did not
+  announce) and four minors, each a leftover of the same packages (a stale status row, a hang
+  for `probe_many(concurrency=0)` where the old code raised `ValueError`, a dead helper, a wrong
+  docstring).
+- Chosen: RB-1 keeps the code (PRB-08's Change asks for it, rule 2) and gets a note in 0086 and
+  under PRB-08; the four minors are fixed in the same commit, because each is a few lines and
+  removing such leftovers is the step's goal. Rule 1 (RB-3), 4.
+- If the other option: RB-2 to RB-5 as notes in `docs/status.md`.
+
+### D-42 Q-6.12 is not done
+- Owner's scope for this run: Q-6.12 needs the Windows test VM and stays "Not started". Nothing
+  depends on it (plan.md).
