@@ -364,3 +364,26 @@ choices below were taken by the agents or by the orchestrator, with the same dec
 - `filter_test_argv` raises `ValueError` for a name not in `FILTER_TESTS` (before: `KeyError`);
   nothing calls it with another name.
 - CMD-02 drops `filter_tests` from the capability cache key: one re-detection after the update.
+
+### D-38 Wave 6 (Q-6.11, Q-6.13, Q-6.16, Q-6.17, Q-6.19): choices of the agents
+- Decision record numbers were assigned before the wave (0085 to 0088; 0089 and 0090 for
+  wave 7), so two packages could not take the same one. Q-6.19 needed none (no plan or record
+  names its fields).
+- Q-6.11: SRV-03 items 2 and 3 are done too (SRV-03 is joined fully into X-07, and X-07's
+  estimate counts them); `is_newer` is inlined into `parse_document`; record 0085 also amends
+  0049 item 11 and the `Reframe` sketch in `05-core.md`, and names the four table rows of D-34
+  (review RA-2). MOD-01's changed texts: the prefix "migration failed: " in the detail of
+  `presets.corrupt` and in the message of `presets.import_invalid`; preset warnings are logged
+  like settings warnings.
+- Q-6.13: `textfile.BYTE_ORDER_MARKS`, `models.text.shown` and `matroska.read_exactly` are public
+  instead of private names imported across modules; the probe workers' log lines share one
+  wording.
+- Q-6.16: "VAL-12 without item 2" was read as the rejected `next_free_path(limit=)` item, so every
+  listed item is done; the lint guarantee on `Definitions.containers` is a comment, not a field
+  docstring (a docstring would change the API schema); template rules now carry the job rule's
+  name (one rule written once, VAL-03).
+- Q-6.17: TP-06 keeps the reader type `b` (the real-bus test needs it; note under TP-06); the
+  streaming tests keep their hang guards with `asyncio.timeout` after `run_streaming` lost
+  `timeout=` (sent back once for this).
+- Q-6.19: NDP-11 item 3 touched Q-6.13's files in the same wave; the orchestrator made it after
+  the merge.

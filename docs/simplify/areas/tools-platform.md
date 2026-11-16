@@ -114,6 +114,7 @@ The subprocess core (`tools/runner.py`, `platform/childproc.py`) is lean for wha
 - Confidence: medium (the line counts are estimates; each deletion was checked against its callers)
 - Verdict: ADJUSTED (the `_INHIBIT` registry sub-change is dropped: `_end` looks the end call up by interface name, so a tuple would add a search loop; only the `interfaces=` parameter and its check go; the other sub-changes were checked against all callers, including `test_sleep_real.py`, and hold; size -30 source)
 - Orchestrator: Tier B, work package Q-6.17 (see ../plan.md).
+- Note (Q-6.17): the reader type `b` stays: `test_sleep_real.py` reads the boolean replies of `HasInhibit` and `HasInhibition` with this client (without `b`, 6 of its 8 tests skipped silently). Decision 0088.
 
 ### TP-07: members that only tests use
 - Kind: dead-code
