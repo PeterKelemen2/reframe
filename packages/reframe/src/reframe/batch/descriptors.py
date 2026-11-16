@@ -32,10 +32,9 @@ from reframe.models.media import (
     VideoStream,
 )
 from reframe.naming.context import audio_channels_label, resolution_label
-from reframe.probe.names import BITMAP_SUBTITLE_CODECS
+from reframe.probe.names import BITMAP_SUBTITLE_CODECS, codec_name
 
 __all__ = [
-    "CODEC_LABELS",
     "MATCH_LEVELS",
     "codec_family",
     "codec_label",
@@ -65,34 +64,6 @@ _FAMILIES = {
     "mp1": "mpeg_audio",
     "mp2": "mpeg_audio",
     "mp3": "mpeg_audio",
-}
-
-#: Short names of codecs for labels when the probe has no commercial name.
-CODEC_LABELS = {
-    "truehd": "TrueHD",
-    "dts": "DTS",
-    "ac3": "AC-3",
-    "eac3": "E-AC-3",
-    "aac": "AAC",
-    "flac": "FLAC",
-    "opus": "Opus",
-    "vorbis": "Vorbis",
-    "mp3": "MP3",
-    "mp2": "MP2",
-    "alac": "ALAC",
-    "ass": "ASS",
-    "ssa": "SSA",
-    "subrip": "SRT",
-    "webvtt": "WebVTT",
-    "mov_text": "mov_text",
-    "hdmv_pgs_subtitle": "PGS",
-    "dvd_subtitle": "VobSub",
-    "dvb_subtitle": "DVB",
-    "h264": "H.264",
-    "hevc": "HEVC",
-    "av1": "AV1",
-    "vp9": "VP9",
-    "mpeg2video": "MPEG-2",
 }
 
 #: The order in which an HDR type is named when a stream has several.
@@ -129,7 +100,7 @@ def codec_label(stream: Stream) -> str:
         return stream.display_codec
     if stream.codec is None:
         return "unknown codec"
-    return CODEC_LABELS.get(stream.codec, stream.codec)
+    return codec_name(stream.codec)
 
 
 def stream_roles(stream: AudioStream | SubtitleStream) -> list[TrackRole]:
@@ -172,7 +143,10 @@ def track_label(descriptor: TrackDescriptor) -> str:
     parts: list[str] = []
     if descriptor.kind != "video":
         parts.append(languages.to_matroska_legacy(descriptor.language))
-    parts.append(descriptor.profile or CODEC_LABELS.get(descriptor.codec or "", "unknown codec"))
+    parts.append(
+        descriptor.profile
+        or (codec_name(descriptor.codec) if descriptor.codec else "unknown codec")
+    )
     if descriptor.kind == "audio" and descriptor.channels:
         parts.append(audio_channels_label(descriptor.channels))
     if descriptor.title:
@@ -193,8 +167,7 @@ def describe_stream(stream: Stream, position: int) -> TrackDescriptor:
         kind = "video"
         bitrate = stream.bitrate.value
         profile = stream.display_codec
-        value = stream.language_ietf or stream.language
-        language = (languages.normalize(value) or value) if value else None
+        language = effective_language(stream)
     else:
         language = effective_language(stream)
         if is_undetermined(language):

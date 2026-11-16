@@ -8390,7 +8390,7 @@
           }),
         ]),
         'default': None,
-        'description': 'A hash of the probe result (stream layout); ``None`` before the file is probed.',
+        'description': 'Not written by this version; older documents may carry a value.',
         'title': 'Probe Hash',
       }),
       'size': dict({

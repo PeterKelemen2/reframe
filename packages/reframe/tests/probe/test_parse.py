@@ -272,17 +272,10 @@ def test_frames_only_for_the_main_video_stream() -> None:
     assert empty.video[0].hdr is None
 
 
-def test_fingerprint_gets_the_layout_hash() -> None:
+def test_fingerprint_is_passed_through() -> None:
     data = doc(video(), {"index": 1, "codec_type": "audio", "channels": 2})
-    first = parse_ffprobe(data, FILE, fingerprint=SourceFingerprint(size=1, mtime=2.0))
-    again = parse_ffprobe(data, FILE, fingerprint=SourceFingerprint(size=1, mtime=2.0))
-    assert first.ref.fingerprint is not None
-    assert first.ref.fingerprint.probe_hash
-    assert again.ref.fingerprint == first.ref.fingerprint
-    data["streams"][1]["channels"] = 6
-    changed = parse_ffprobe(data, FILE, fingerprint=SourceFingerprint(size=1, mtime=2.0))
-    assert changed.ref.fingerprint is not None
-    assert changed.ref.fingerprint.probe_hash != first.ref.fingerprint.probe_hash
+    given = SourceFingerprint(size=1, mtime=2.0)
+    assert parse_ffprobe(data, FILE, fingerprint=given).ref.fingerprint == given
     assert parse_ffprobe(data, FILE).ref.fingerprint is None
 
 

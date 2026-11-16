@@ -28,6 +28,7 @@ __all__ = [
     "MatroskaError",
     "MatroskaFile",
     "MatroskaTrack",
+    "read_exactly",
     "read_matroska",
     "tracks_by_kind",
 ]
@@ -72,6 +73,8 @@ _CONTENT_ENCODINGS = 0x6D80
 _CONTENT_ENCODING = 0x6240
 _CONTENT_ENCODING_TYPE = 0x5033
 _CONTENT_COMPRESSION = 0x5034
+_VOID = 0xEC
+_CRC32 = 0xBF
 
 #: The ``TimestampScale`` when ``Info`` has none (nanoseconds per tick).
 DEFAULT_TIMESTAMP_SCALE = 1_000_000
@@ -339,6 +342,20 @@ def _seek_entries(payload: bytes, budget: _Budget, room: int) -> dict[int, int]:
     return entries
 
 
+def read_exactly(handle: BinaryIO, pos: int, count: int) -> bytes:
+    """``count`` bytes from ``pos``, fewer only at the end of the file."""
+    handle.seek(pos)
+    chunks: list[bytes] = []
+    # An unbuffered file returns short reads.
+    while count > 0:
+        chunk = handle.read(count)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        count -= len(chunk)
+    return b"".join(chunks)
+
+
 class _Reader:
     def __init__(self, handle: BinaryIO, size: int) -> None:
         self.handle = handle
@@ -352,15 +369,7 @@ class _Reader:
             raise MatroskaError(f"truncated file: no element at byte {pos}")
         count = min(count, self.size - pos)
         self.budget.read(count)
-        self.handle.seek(pos)
-        chunks: list[bytes] = []
-        while count > 0:
-            chunk = self.handle.read(count)
-            if not chunk:
-                break
-            chunks.append(chunk)
-            count -= len(chunk)
-        return b"".join(chunks)
+        return read_exactly(self.handle, pos, count)
 
     def header(self, pos: int) -> tuple[int, int | None, int]:
         self.budget.element()

@@ -5,8 +5,6 @@ Expected problems become warnings on the source, not exceptions.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 import re
 from collections.abc import Mapping, Sequence
@@ -51,7 +49,6 @@ from reframe.probe.matroska import MatroskaFile, TrackKind, tracks_by_kind
 __all__ = [
     "PARSER_VERSION",
     "compressed_streams",
-    "layout_hash",
     "main_video_index",
     "main_video_stream",
     "parse_ffprobe",
@@ -587,22 +584,6 @@ def _chapters(raw: Any) -> list[Chapter]:
     return chapters
 
 
-def layout_hash(source: MediaSource) -> str:
-    """A short hash of the stream layout (for :attr:`SourceFingerprint.probe_hash`)."""
-    layout: list[Sequence[Any]] = []
-    for v in source.video:
-        layout.append(("v", v.index, v.codec, v.profile, v.width, v.height))
-    for a in source.audio:
-        layout.append(("a", a.index, a.codec, a.profile, a.channels, a.language, a.title))
-    for s in source.subtitles:
-        layout.append(("s", s.index, s.codec, s.language, s.title))
-    for t in source.attachments:
-        layout.append(("t", t.index, t.filename, t.size))
-    layout.append(("d", source.container.duration, len(source.chapters)))
-    text = json.dumps(layout, separators=(",", ":"), default=str)
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
-
-
 def parse_ffprobe(
     data: Mapping[str, Any],
     path: Path,
@@ -678,6 +659,4 @@ def parse_ffprobe(
     roles.assign_audio_roles(source.audio)
     roles.assign_subtitle_roles(source.subtitles)
     source.warnings = notes
-    if fingerprint is not None:
-        source.ref.fingerprint = fingerprint.model_copy(update={"probe_hash": layout_hash(source)})
     return source

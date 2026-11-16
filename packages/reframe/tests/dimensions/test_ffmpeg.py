@@ -28,7 +28,7 @@ from reframe.models import (
     SameAsSource,
     VideoStream,
 )
-from reframe.probe import probe_file
+from reframe.probe import Prober
 
 pytestmark = pytest.mark.needs_ffmpeg
 
@@ -72,7 +72,7 @@ def stream_info(path: Path) -> dict[str, Any]:
 
 
 async def video_stream(path: Path) -> VideoStream:
-    outcome = await probe_file(path, tools()[1])
+    outcome = await Prober(tools()[1]).probe(path)
     assert isinstance(outcome, MediaSource), outcome
     return outcome.video[0]
 

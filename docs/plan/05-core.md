@@ -112,7 +112,7 @@ Pydantic v2 models in `reframe.models`. All of them are JSON-serialisable and ha
 ```python
 class JobSettings(BaseModel):
     schema_version: int = 1
-    source: SourceRef                       # path + fingerprint (size, mtime, probe hash)
+    source: SourceRef                       # path + fingerprint (size, mtime)
     range: Range = FullRange()              # | ChapterRange | TimeRange | FrameRange
     output: OutputSettings                  # container, path, web_optimized, align_av_start, passthru_metadata
     dimensions: DimensionSettings           # rotate, flip, crop, size, pixel_aspect, modulus, scaler

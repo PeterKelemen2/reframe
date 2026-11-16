@@ -9,7 +9,7 @@ from collections.abc import Mapping
 
 from reframe import languages
 from reframe.models.job import TrackMetadata
-from reframe.models.media import AudioStream, SubtitleStream
+from reframe.models.media import AudioStream, SubtitleStream, VideoStream
 from reframe.naming.template import Value, parse_template, render
 
 __all__ = ["effective_language", "language_values", "render_track_name", "track_metadata"]
@@ -25,7 +25,7 @@ def language_values(language: str | None) -> dict[str, Value]:
     }
 
 
-def effective_language(stream: AudioStream | SubtitleStream) -> str | None:
+def effective_language(stream: AudioStream | SubtitleStream | VideoStream) -> str | None:
     """The language that rules match and that is written: ``language_ietf`` if set, else
     ``language``; canonical BCP 47 (``jpn`` → ``ja``) when it is valid.
 
@@ -41,7 +41,7 @@ def effective_language(stream: AudioStream | SubtitleStream) -> str | None:
 
 
 def track_metadata(
-    stream: AudioStream | SubtitleStream, *, name: str | None = None
+    stream: AudioStream | SubtitleStream | VideoStream, *, name: str | None = None
 ) -> TrackMetadata:
     """The source track's language, title (or ``name``) and six flags, written explicitly."""
     d = stream.disposition

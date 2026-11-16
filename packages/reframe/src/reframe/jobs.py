@@ -642,9 +642,7 @@ class JobService:
         media = source if isinstance(source, MediaSource) else await self._sources.probe(source)
         if isinstance(media, ProbeError):
             return media
-        job = metadata.remux_job(
-            draft.job, media, edit_in_place=edit_in_place, definitions=self.definitions
-        )
+        job = metadata.remux_job(draft.job, media, edit_in_place=edit_in_place)
         naming = self._naming_options(self._job_preset(job))
         issues = await self._validate(job, media, naming)
         keep = [issue for issue in draft.issues if issue.code == "preset.not_found"]

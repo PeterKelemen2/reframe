@@ -286,9 +286,9 @@ class Block(importlib.abc.MetaPathFinder):
 
 sys.meta_path.insert(0, Block())
 import reframe
-from reframe.probe import probe_file
+from reframe.probe import Prober
 
-source = asyncio.run(probe_file(sys.argv[1], sys.argv[2]))
+source = asyncio.run(Prober(sys.argv[2]).probe(sys.argv[1]))
 print(type(source).__name__, source.video[0].bitrate.source.value, "pymediainfo" in sys.modules)
 """
 

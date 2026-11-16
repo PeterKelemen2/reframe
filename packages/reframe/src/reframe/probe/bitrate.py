@@ -2,7 +2,7 @@
 
 The order is ffprobe's stream ``bit_rate``, then the Matroska statistics tags, then for Matroska
 an estimate from a sample of the clusters (:mod:`reframe.probe.sampling`, applied by
-:func:`reframe.probe.probe_file`, since it reads the file). When none gives one, the bitrate is
+:class:`reframe.probe.Prober`, since it reads the file). When none gives one, the bitrate is
 unknown.
 """
 

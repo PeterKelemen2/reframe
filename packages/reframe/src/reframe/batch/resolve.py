@@ -12,7 +12,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Literal
 
-from reframe import languages
+from reframe.batch.metadata import track_metadata
 from reframe.batch.overrides import apply_job_override, apply_template_override, split_override
 from reframe.batch.rules import (
     CompiledRule,
@@ -58,19 +58,7 @@ VIDEO_COLUMN = MatrixColumn(kind="video", label="V")
 def video_metadata(stream: VideoStream) -> TrackMetadata:
     """The source video track's language, title and flags. The default flag is always set,
     because FFmpeg's Matroska muxer leaves it off a single stream."""
-    value = stream.language_ietf or stream.language
-    language = (languages.normalize(value) or value) if value else None
-    d = stream.disposition
-    return TrackMetadata(
-        language=language,
-        name=stream.title,
-        default=True,
-        forced=d.forced,
-        commentary=d.comment,
-        hearing_impaired=d.hearing_impaired,
-        visual_impaired=d.visual_impaired,
-        original=d.original,
-    )
+    return track_metadata(stream).model_copy(update={"default": True})
 
 
 def output_size(job: JobSettings, source: MediaSource) -> tuple[int, int] | None:

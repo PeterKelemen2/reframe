@@ -61,8 +61,6 @@ def test_invalidation(
     cache = ProbeCache(tmp_path)
     cache.put(key(), source(), tool=TOOL, options={"matroska": 3})
     assert cache.get(other_key, tool=tool, options=options) is None
-    cache.forget_memory()
-    assert cache.get(other_key, tool=tool, options=options) is None
 
 
 def test_another_parser_version_is_a_miss(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -121,28 +119,6 @@ def test_entry_layout(tmp_path: Path) -> None:
     assert doc["format"] == cache_mod.CACHE_FORMAT
 
 
-def test_returned_sources_are_copies(tmp_path: Path) -> None:
-    cache = ProbeCache(tmp_path)
-    original = source()
-    cache.put(key(), original, tool=TOOL)
-    original.container.title = "changed by the caller"
-    got = cache.get(key(), tool=TOOL)
-    assert got is not None
-    assert got.container.title == "A"
-    got.container.title = "changed again"
-    again = cache.get(key(), tool=TOOL)
-    assert again is not None
-    assert again.container.title == "A"
-
-
-def test_memory_layer_is_bounded(tmp_path: Path) -> None:
-    cache = ProbeCache(tmp_path, memory_entries=2)
-    for i in range(3):
-        cache.put(key(size=i), source(), tool=TOOL)
-    assert len(cache._memory) == 2
-    assert cache.get(key(size=0), tool=TOOL) is not None  # read back from its file
-
-
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
 def test_unwritable_directory_is_not_an_error(tmp_path: Path) -> None:
     if hasattr(os, "geteuid") and os.geteuid() == 0:
@@ -151,7 +127,7 @@ def test_unwritable_directory_is_not_an_error(tmp_path: Path) -> None:
     try:
         cache = ProbeCache(tmp_path / "probe")
         assert cache.put(key(), source(), tool=TOOL) is False
-        assert cache.get(key(), tool=TOOL) == source()  # the memory layer still has it
+        assert cache.get(key(), tool=TOOL) is None
     finally:
         tmp_path.chmod(0o700)
 

@@ -1,7 +1,7 @@
 """Probing media files with ffprobe: one file, a folder, and the cache of the results.
 
-A file or tool problem is reported as a :class:`ProbeError` by :class:`Prober` and
-:func:`probe_file`, not raised as an exception.
+A file or tool problem is reported as a :class:`ProbeError` by :class:`Prober`, not raised as
+an exception.
 """
 
 from reframe.probe.cache import CacheKey, ProbeCache
@@ -27,7 +27,7 @@ from reframe.probe.names import (
     video_display_name,
 )
 from reframe.probe.parse import PARSER_VERSION, parse_ffprobe
-from reframe.probe.prober import ProbeOutcome, Prober, probe_file
+from reframe.probe.prober import ProbeOutcome, Prober
 
 __all__ = [
     "MEDIA_EXTENSIONS",
@@ -48,7 +48,6 @@ __all__ = [
     "natural_key",
     "parse_ffprobe",
     "probe_argv",
-    "probe_file",
     "probe_folder",
     "subtitle_display_name",
     "video_display_name",

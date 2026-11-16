@@ -14,7 +14,13 @@ from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, PlainSerializer
 
-__all__ = ["UNDECODABLE_REPLACEMENT", "DisplayText", "json_text", "replace_undecodable"]
+__all__ = [
+    "UNDECODABLE_REPLACEMENT",
+    "DisplayText",
+    "json_text",
+    "replace_undecodable",
+    "shown",
+]
 
 #: What a byte that is not UTF-8 becomes in display text (U+FFFD, the replacement character).
 UNDECODABLE_REPLACEMENT = "\ufffd"
@@ -27,6 +33,11 @@ def replace_undecodable(text: str) -> str:
     """``text`` with every byte that is not UTF-8 (a lone surrogate) replaced with ``�``.
     One code point becomes one code point, so positions in the text stay the same."""
     return _SURROGATE.sub(UNDECODABLE_REPLACEMENT, text)
+
+
+def shown(text: str, limit: int = 40) -> str:
+    """``text`` quoted for a message, cut to ``limit`` characters."""
+    return repr(text if len(text) <= limit else text[:limit] + "…")
 
 
 #: Free text for people: messages, reasons, notes, labels. A byte that is not UTF-8 becomes

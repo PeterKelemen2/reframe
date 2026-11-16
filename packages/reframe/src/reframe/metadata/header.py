@@ -15,7 +15,7 @@ import os
 import shutil
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import BinaryIO, Literal, cast
+from typing import BinaryIO, Literal, cast, get_args
 
 from reframe.metadata.ebml import (
     Child,
@@ -36,19 +36,24 @@ from reframe.probe import matroska
 from reframe.probe.matroska import (
     _EBML,
     _INFO,
+    _KINDS,
     _SEEK,
     _SEEK_HEAD,
     _SEEK_ID,
     _SEEK_POSITION,
+    _STRINGS,
     _TITLE,
     _TRACK_ENTRY,
     _TRACKS,
+    _UINTS,
+    _VOID,
     MatroskaError,
     MatroskaFile,
     _Budget,
     _header,
     _read,
     _Reader,
+    read_exactly,
     tracks_by_kind,
 )
 
@@ -67,21 +72,15 @@ HeaderFileState = Literal["unchanged", "old", "new", "damaged"]
 #: system also needs room for an overwrite, and a write that runs out of room stops part-way.
 SPARE_SPACE = 16 * 1024 * 1024
 
-_VOID = 0xEC
 _DOC_TYPE_VERSION = 0x4287
-_TRACK_TYPE = 0x83
-_NAME = 0x536E
-_LANGUAGE = 0x22B59C
-_LANGUAGE_IETF = 0x22B59D
-_KINDS = {1: "video", 2: "audio", 0x11: "subtitle"}
-#: Each flag's element and its value when the element is absent.
+_IDS = {name: element_id for element_id, name in (_UINTS | _STRINGS).items()}
+_TRACK_TYPE = _IDS["type"]
+_NAME = _IDS["name"]
+_LANGUAGE = _IDS["language"]
+_LANGUAGE_IETF = _IDS["language_ietf"]
+#: Each flag's element and its value when the element is absent (only ``default`` is set).
 _FLAGS: dict[HeaderFlag, tuple[int, bool]] = {
-    "default": (0x88, True),
-    "forced": (0x55AA, False),
-    "commentary": (0x55AF, False),
-    "hearing_impaired": (0x55AB, False),
-    "visual_impaired": (0x55AC, False),
-    "original": (0x55AE, False),
+    flag: (_IDS[flag], flag == "default") for flag in get_args(HeaderFlag)
 }
 _FLAG_IDS = dict(_FLAGS.values())
 
@@ -710,26 +709,15 @@ def _after_failure(
 def _put_back(handle: BinaryIO, io: _FileIO, pos: int, old: bytes) -> str | None:
     """Make the file hold ``old`` at ``pos`` again; why that failed, or ``None``."""
     try:
-        if _read_at(handle, pos, len(old)) == old:
+        if read_exactly(handle, pos, len(old)) == old:
             return None
         io.write(pos, old)
         io.sync()
-        if _read_at(handle, pos, len(old)) == old:
+        if read_exactly(handle, pos, len(old)) == old:
             return None
         return "the bytes read back differ"
     except OSError as exc:
         return str(exc)
-
-
-def _read_at(handle: BinaryIO, pos: int, count: int) -> bytes:
-    handle.seek(pos)
-    out = bytearray()
-    while len(out) < count:
-        data = handle.read(count - len(out))
-        if not data:
-            break
-        out += data
-    return bytes(out)
 
 
 def _size(handle: BinaryIO) -> int | None:
