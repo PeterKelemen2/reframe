@@ -316,6 +316,8 @@ class SourceService:
         """:meth:`probe` each file, ``concurrency`` at a time; the results in the order of
         ``files``. After ``cancel`` no new ffprobe starts: the rest are ``CANCELLED`` errors.
         ``on_progress(done, total)`` is called after each file."""
+        if concurrency < 1:
+            raise ValueError(f"concurrency must be at least 1, got {concurrency}")
         gate = asyncio.Semaphore(concurrency)
         results: list[MediaSource | ProbeError | None] = [None] * len(files)
         done = 0

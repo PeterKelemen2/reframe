@@ -37,6 +37,11 @@ decisions-taken.md` D-4 and D-13) found this.
     `probe/names.py` (`codec_name`). A codec that the names table knows and the old batch
     table did not (`vp8`, `mpeg1video`, `vc1`, `ac4`, `wmav2`, …) shows its proper name
     instead of the raw codec name or "unknown codec".
+  - (added after the Tier B review, RB-1) A codec that neither table knows (`jacosub`,
+    `pcm_s16le`, …) now shows its raw ffprobe codec name, not "unknown codec": a `jacosub`
+    subtitle is labelled `eng jacosub`, not `eng unknown codec`. Every subtitle label takes
+    this path (subtitle descriptors have no profile); audio takes it only without a profile.
+    "unknown codec" stays for a track without a codec.
   - A video stream whose `language_ietf` is not a valid tag but whose `language` is now gets
     the valid language, as audio and subtitle streams already did. This changes the video
     language in the encode command (`-metadata:s:v`) and `TrackDescriptor.language` of that

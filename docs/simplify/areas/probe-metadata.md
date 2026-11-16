@@ -150,6 +150,7 @@ No leftovers of the MediaInfo or mkvpropedit paths remain in this scope (`rg -i 
 - Confidence: high
 - Verdict: ADJUSTED (re-run: 24 of 24 entries equal, no key shared between the three `names` tables; the `__all__` entry at `descriptors.py:37` was missing from "Where"; the tests bullet is now checked)
 - Orchestrator: Tier B, work package Q-6.13 (see ../plan.md).
+- Note (Tier B review, RB-1): the Behaviour line missed a second change. A codec that neither `names` nor the old `CODEC_LABELS` knows (`jacosub`, `pcm_s16le`, …) now shows its raw ffprobe codec name in `track_label`, not "unknown codec" (`eng jacosub`, was `eng unknown codec`). The code is kept; the change is announced in the Consequences of 0086 and pinned by `test_labels` in `tests/batch/test_descriptors.py`.
 
 ### PRB-09: file checks of a probe written twice (service and prober)
 - Kind: duplication
