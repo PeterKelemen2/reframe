@@ -21,7 +21,7 @@ from reframe.batch.rules import (
     resolve_tracks,
 )
 from reframe.definitions import Definitions, load_definitions
-from reframe.dimensions import compute_geometry, source_geometry
+from reframe.dimensions import job_geometry
 from reframe.models.batch import BatchGroup, MatrixColumn, Resolution, TrackMatch
 from reframe.models.defaults import TrackDraft
 from reframe.models.geometry import CropSettings, DimensionSettings
@@ -80,11 +80,7 @@ def output_size(job: JobSettings, source: MediaSource) -> tuple[int, int] | None
     stream = source.video[0]
     if job.video.passthrough:
         return (stream.width, stream.height)
-    src = source_geometry(stream)
-    if "deinterlace" in job.filters.root:
-        # Deinterlace runs before the crop, so the crop is on the progressive grid.
-        src = src.model_copy(update={"interlaced": False})
-    geometry = compute_geometry(src, job.dimensions)
+    geometry = job_geometry(stream, job)
     return (geometry.scaled_width, geometry.scaled_height)
 
 

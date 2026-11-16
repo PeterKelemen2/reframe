@@ -8,13 +8,11 @@ writes, on the ``.part`` file.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from reframe import languages
-from reframe.command.metadata import needs_ietf
-from reframe.command.quoting import Shell, quote_posix, quote_windows
+from reframe.command.metadata import OutputTrack, needs_ietf
+from reframe.command.quoting import Shell, quoter
 from reframe.definitions import Definitions
 from reframe.definitions.models import TRACK_FLAGS, TrackFlag
 from reframe.models import (
@@ -29,7 +27,6 @@ from reframe.models import (
 )
 
 __all__ = [
-    "FixupTrack",
     "edit_line",
     "fixup_edit",
     "flag_value",
@@ -152,18 +149,7 @@ def in_place_edit(
     return HeaderEdit(path=path, tracks=[e for e in edits if e is not None], info=info)
 
 
-@dataclass(frozen=True, slots=True)
-class FixupTrack:
-    """One output track as the post-mux fix-up sees it."""
-
-    type: Literal["v", "a", "s"]
-    number: int
-    """1-based among the output tracks of its type."""
-    language: str | None
-    """The effective language written (BCP 47 or ISO 639)."""
-
-
-def fixup_edit(path: Path, tracks: Sequence[FixupTrack]) -> HeaderEdit:
+def fixup_edit(path: Path, tracks: Sequence[OutputTrack]) -> HeaderEdit:
     """What FFmpeg's Matroska muxer did not write into ``path``: ``LanguageIETF`` (with
     ``Language``) for a language that ISO 639-2 cannot say (``pt-BR``, ``yue``). FFmpeg
     writes all six track flags, so none are here."""
@@ -175,7 +161,7 @@ def fixup_edit(path: Path, tracks: Sequence[FixupTrack]) -> HeaderEdit:
         edits.append(
             TrackHeaderEdit(
                 track_type=_TRACK_TYPES[track.type],
-                number=track.number,
+                number=track.index + 1,
                 language=legacy,
                 language_ietf=ietf,
             )
@@ -190,7 +176,7 @@ def edit_line(edit: HeaderEdit, shell: Shell) -> str:
 
     ``header_edit /m/Movie.mkv audio 2: language=por language_ietf=pt-BR default=1 title='A B'``
     """
-    quote = quote_posix if shell == "posix" else quote_windows
+    quote = quoter(shell)
     words = ["header_edit", quote(str(edit.path))]
     for track in edit.tracks:
         words.append(f"{track.track_type} {track.number}:")

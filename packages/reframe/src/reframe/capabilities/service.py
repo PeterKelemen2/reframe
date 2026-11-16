@@ -19,8 +19,6 @@ from typing import TYPE_CHECKING
 
 from reframe.capabilities.cache import CacheKey, CapabilityCache, cache_key
 from reframe.capabilities.detect import (
-    LIST_TIMEOUT,
-    MAX_PARALLEL_TESTS,
     DetectionOptions,
     current_os,
     detect_capabilities,
@@ -29,7 +27,6 @@ from reframe.capabilities.detect import (
 )
 from reframe.capabilities.devices import render_nodes as list_render_nodes
 from reframe.capabilities.fingerprint import gpu_fingerprint
-from reframe.capabilities.hwtest import TEST_TIMEOUT
 from reframe.capabilities.issues import closest_available
 from reframe.definitions import Definitions, load_definitions
 from reframe.errors import ReframeClosedError
@@ -68,7 +65,6 @@ class CapabilityService:
     :param tools: tool discovery; detection waits for its result (``ToolsService.status()``).
     :param settings: the current settings (``encoders.hardware_tests``).
     :param cache_dir: the folder of the capability cache.
-    :param definitions: the encoder definitions (default :func:`load_definitions`).
     :param platform: a ``sys.platform`` value for the definitions' ``platforms`` (default:
         this one); tests use it to get the same results on every OS.
     :param render_nodes: lists the VAAPI render nodes to try (blocking; called in a worker
@@ -76,7 +72,6 @@ class CapabilityService:
         ``/dev/dri/renderD*``).
     :param gpu_fingerprint: returns the GPU fingerprint of the cache key (blocking; called
         in a worker thread once per service).
-    :param watch_tools: start a new detection when ``tools.changed`` reports another ffmpeg.
     """
 
     def __init__(
@@ -86,28 +81,19 @@ class CapabilityService:
         settings: SettingsGetter,
         *,
         cache_dir: Path,
-        definitions: Definitions | None = None,
         platform: str | None = None,
         render_nodes: Callable[[], Sequence[str]] | None = None,
-        test_timeout: float = TEST_TIMEOUT,
-        list_timeout: float = LIST_TIMEOUT,
-        max_parallel_tests: int = MAX_PARALLEL_TESTS,
         gpu_fingerprint: Callable[[], str] | None = None,
-        watch_tools: bool = True,
     ) -> None:
         self._events = events
         self._tools = tools
         self._settings = settings
-        self._definitions = definitions if definitions is not None else load_definitions()
+        self._definitions = load_definitions()
         self._cache = CapabilityCache(cache_dir)
         self._os = current_os(platform)
         self._render_nodes = render_nodes or list_render_nodes
-        self._test_timeout = test_timeout
-        self._list_timeout = list_timeout
-        self._max_parallel_tests = max_parallel_tests
         self._gpu_source = gpu_fingerprint or (lambda: _default_fingerprint(platform))
         self._gpu: str | None = None
-        self._watch_tools = watch_tools
         self._snapshot = CapabilitySnapshot(encoders=initial_statuses(self._definitions))
         self._task: asyncio.Task[CapabilitySnapshot] | None = None
         self._token: CancelToken | None = None
@@ -136,7 +122,7 @@ class CapabilityService:
     def start(self) -> None:
         """Start the first detection in the background (unless one ran). Returns at once."""
         self._check_open()
-        if self._watch_tools and self._watcher is None:
+        if self._watcher is None:
             self._subscription = self._events.subscribe(types={"tools.changed"})
             self._watcher = asyncio.get_running_loop().create_task(
                 self._watch(self._subscription), name="reframe-capabilities-tools-watch"
@@ -224,9 +210,6 @@ class CapabilityService:
             os=self._os,
             vaapi_device=forced,
             render_nodes=nodes,
-            test_timeout=self._test_timeout,
-            list_timeout=self._list_timeout,
-            max_parallel_tests=self._max_parallel_tests,
         )
 
     async def _detect(

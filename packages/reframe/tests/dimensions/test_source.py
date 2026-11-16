@@ -2,10 +2,25 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from reframe.dimensions import ASSUMED_CHROMA_STEPS, chroma_steps, source_geometry
-from reframe.models import FieldOrder, Rational, VideoStream
+from reframe.dimensions import (
+    ASSUMED_CHROMA_STEPS,
+    chroma_steps,
+    job_source_geometry,
+    source_geometry,
+)
+from reframe.models import (
+    FieldOrder,
+    FilterConfig,
+    FilterSettings,
+    JobSettings,
+    Rational,
+    SourceRef,
+    VideoStream,
+)
 
 
 @pytest.mark.parametrize(
@@ -86,6 +101,14 @@ def test_unknown_pixel_format_is_assumed_4_2_0() -> None:
 )
 def test_interlacing_from_the_field_order(order: FieldOrder, interlaced: bool) -> None:
     assert source_geometry(video(field_order=order)).interlaced is interlaced
+
+
+def test_a_job_that_deinterlaces_crops_on_the_progressive_grid() -> None:
+    stream = video(field_order=FieldOrder.TOP_FIRST)
+    job = JobSettings(source=SourceRef(path=Path("/media/a.mkv")))
+    assert job_source_geometry(stream, job).interlaced
+    job.filters = FilterSettings({"deinterlace": FilterConfig()})
+    assert not job_source_geometry(stream, job).interlaced
 
 
 def test_rotation_from_the_display_matrix() -> None:

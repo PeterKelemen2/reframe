@@ -10,7 +10,7 @@ from functools import cached_property
 from pathlib import Path
 
 from reframe.definitions import ContainerDef, Definitions
-from reframe.dimensions import compute_geometry, source_geometry
+from reframe.dimensions import compute_geometry, job_source_geometry
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.geometry import Geometry, SourceGeometry
 from reframe.models.job import JobSettings
@@ -68,15 +68,10 @@ class JobContext:
 
     @cached_property
     def source_geometry(self) -> SourceGeometry | None:
-        """The geometry of the main video stream, as the command builder sees it. A job that
-        deinterlaces encodes progressive frames (``interlaced`` off), so the crop is on the
-        frame's chroma grid, not the field's."""
+        """The geometry of the main video stream, as the command builder sees it."""
         if self.video_stream is None:
             return None
-        src = source_geometry(self.video_stream)
-        if "deinterlace" in self.job.filters.root:
-            src = src.model_copy(update={"interlaced": False})
-        return src
+        return job_source_geometry(self.video_stream, self.job)
 
     @cached_property
     def output_size(self) -> tuple[int, int] | None:

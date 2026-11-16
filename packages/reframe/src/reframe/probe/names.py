@@ -10,6 +10,7 @@ from pathlib import PurePath
 
 __all__ = [
     "BITMAP_SUBTITLE_CODECS",
+    "FORCED_ONLY_SUBTITLE_CODECS",
     "LOSSLESS_AUDIO_CODECS",
     "LOSSLESS_DTS_PROFILES",
     "audio_display_name",
@@ -168,6 +169,8 @@ _SUBTITLE_NAMES: Mapping[str, str] = {
 
 #: Subtitle codecs whose events are pictures, not text.
 BITMAP_SUBTITLE_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"})
+#: Subtitle codecs whose FFmpeg decoder has ``forced_subs_only`` (PGS, VobSub).
+FORCED_ONLY_SUBTITLE_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle"})
 
 
 def subtitle_display_name(codec: str | None) -> str | None:

@@ -32,6 +32,7 @@ from reframe.models.media import (
     VideoStream,
 )
 from reframe.naming.context import audio_channels_label, resolution_label
+from reframe.probe.names import BITMAP_SUBTITLE_CODECS
 
 __all__ = [
     "CODEC_LABELS",
@@ -103,7 +104,6 @@ Stream = VideoStream | AudioStream | SubtitleStream
 #: Subtitle codecs by family: a release may carry the same subtitles as SRT or as ASS. A codec
 #: in neither set is its own family.
 _TEXT_SUBTITLES = frozenset({"ass", "ssa", "subrip", "srt", "webvtt", "mov_text", "text"})
-_BITMAP_SUBTITLES = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"})
 
 
 def codec_family(stream: Stream) -> str | None:
@@ -115,7 +115,7 @@ def codec_family(stream: Stream) -> str | None:
     if isinstance(stream, SubtitleStream):
         if codec in _TEXT_SUBTITLES:
             return "text"
-        if codec in _BITMAP_SUBTITLES:
+        if codec in BITMAP_SUBTITLE_CODECS:
             return "bitmap"
         return codec
     if codec.startswith("pcm_"):

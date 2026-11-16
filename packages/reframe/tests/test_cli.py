@@ -25,7 +25,6 @@ from reframe.cli import (
     EXIT_NOT_FOUND,
     EXIT_OK,
     EXIT_USAGE,
-    TIMES,
     error_message,
     fmt_bitrate,
     fmt_bps,
@@ -45,6 +44,7 @@ from reframe.cli import (
     video_details,
     video_line,
 )
+from reframe.dimensions import TIMES
 from reframe.models import (
     AttachedPicture,
     Attachment,

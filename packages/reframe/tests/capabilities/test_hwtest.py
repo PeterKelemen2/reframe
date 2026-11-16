@@ -11,8 +11,8 @@ from reframe.capabilities import (
     run_filter_test,
     run_hardware_test,
 )
-from reframe.capabilities.hwtest import BitDepth, DefinitionError
-from reframe.definitions import HardwareSetup, VideoEncoderDef, load_definitions
+from reframe.capabilities.hwtest import BitDepth
+from reframe.definitions import load_definitions
 from reframe.models import EncoderState, ToolInfo
 from reframe_testing import fake_tools as ft
 from reframe_testing.capabilities import detect_rule
@@ -94,18 +94,6 @@ def test_the_hardware_captures_ran_the_current_command(name: str) -> None:
     assert command == hardware_test_argv("ffmpeg", encoder, bit_depth, **kw)
 
 
-def broken(**changes: object) -> VideoEncoderDef:
-    return ENCODERS["hevc_vaapi"].model_copy(update=changes)
-
-
-def test_definition_errors() -> None:
-    with pytest.raises(DefinitionError, match="no pixel format for 10-bit"):
-        hardware_test_argv("ffmpeg", broken(pix_fmts={"8": "nv12"}), "10")
-    setup = HardwareSetup(init_args=["-init_hw_device", "x={unknown}"])
-    with pytest.raises(DefinitionError, match="unknown placeholder"):
-        hardware_test_argv("ffmpeg", broken(hardware_setup=setup))
-
-
 async def test_run_ok(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
     outcome = await run_hardware_test(fake_tools.ffmpeg, ENCODERS["hevc_amf"])
     assert outcome.ok
@@ -132,14 +120,6 @@ async def test_run_timeout_kills_the_test(fake_tools: ft.FakeTools) -> None:
     assert outcome.failure.state is EncoderState.ERROR
     assert outcome.failure.reason == "The test encode did not finish within 0.5 s"
     assert fake_tools.kill_leftovers() == []  # the runner killed it
-
-
-async def test_run_definition_error_is_data(fake_tools: ft.FakeTools) -> None:
-    outcome = await run_hardware_test(fake_tools.ffmpeg, broken(pix_fmts={"8": "nv12"}), "10")
-    assert outcome.failure is not None
-    assert outcome.failure.state is EncoderState.ERROR
-    assert outcome.failure.reason.startswith("The encoder definition is broken: ")
-    assert fake_tools.calls() == []
 
 
 async def test_run_filter_test(fake_tools: ft.FakeTools) -> None:

@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 from reframe.chapters import chapter_export
-from reframe.dimensions import compute_geometry, source_geometry
+from reframe.dimensions import job_geometry, source_geometry
 from reframe.models import (
     AddOp,
     ChapterExport,
@@ -283,11 +283,7 @@ async def geometry(body: SingleJobRequest, reframe: ReframeDep, config: ConfigDe
     src = source_geometry(media.video[0])
     if job.video.passthrough:
         return JobGeometry(source=src, geometry=None)
-    # Deinterlace runs before the crop, so the crop snaps to the frame's grid, not the field's.
-    grid = src
-    if "deinterlace" in job.filters.root:
-        grid = src.model_copy(update={"interlaced": False})
-    return JobGeometry(source=src, geometry=compute_geometry(grid, job.dimensions))
+    return JobGeometry(source=src, geometry=job_geometry(media.video[0], job))
 
 
 @router.post("/jobs/explain")

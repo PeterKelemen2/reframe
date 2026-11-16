@@ -60,6 +60,7 @@ __all__ = [
     "has_errors",
     "is_partial_output",
     "output_size",
+    "probe_issue",
     "video_metadata",
 ]
 
@@ -224,7 +225,8 @@ def has_errors(issues: Sequence[ValidationIssue]) -> bool:
     return any(issue.severity is Severity.ERROR for issue in issues)
 
 
-def _probe_issue(error: ProbeError) -> ValidationIssue:
+def probe_issue(error: ProbeError) -> ValidationIssue:
+    """The ``source.probe_failed`` error of a source that cannot be read."""
     detail = f" ({error.detail})" if error.detail else ""
     return _issue(
         Severity.ERROR,
@@ -534,7 +536,7 @@ class JobService:
         if source is not None:
             return source
         probed = await self._sources.probe(job.source.path)
-        return [_probe_issue(probed)] if isinstance(probed, ProbeError) else probed
+        return [probe_issue(probed)] if isinstance(probed, ProbeError) else probed
 
     async def _validate(
         self, job: JobSettings, media: MediaSource, naming: NamingOptions

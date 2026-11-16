@@ -9,13 +9,13 @@ import pytest
 
 from reframe.command import build_plan, in_place_blockers, is_matroska_source, job_type
 from reframe.command.header import (
-    FixupTrack,
     edit_line,
     fixup_edit,
     in_place_edit,
     is_empty,
     language_pair,
 )
+from reframe.command.metadata import OutputTrack
 from reframe.definitions import load_definitions
 from reframe.metadata import remux_job
 from reframe.models import (
@@ -203,10 +203,10 @@ def test_ietf_of_the_source_counts() -> None:
 
 def test_fixup_writes_only_the_ietf_tags_iso_639_2_cannot_say() -> None:
     tracks = [
-        FixupTrack("a", 1, "pt-BR"),
-        FixupTrack("a", 2, "de"),
-        FixupTrack("s", 1, None),
-        FixupTrack("s", 2, "yue"),
+        OutputTrack("a", 0, TrackMetadata(), "pt-BR", None),
+        OutputTrack("a", 1, TrackMetadata(), "de", None),
+        OutputTrack("s", 0, TrackMetadata(), None, None),
+        OutputTrack("s", 1, TrackMetadata(), "yue", None),
     ]
     edit = fixup_edit(Path("/out/x.part.mkv"), tracks)
     assert edit == HeaderEdit(

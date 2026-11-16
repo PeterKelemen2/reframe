@@ -25,7 +25,7 @@ from typing import Protocol, cast
 from reframe.batch.derive import derive_template, merge_template
 from reframe.batch.grouping import episode_key, episode_labels, group_sources
 from reframe.batch.resolve import matrix_columns, resolve, row_status
-from reframe.jobs import file_key
+from reframe.jobs import file_key, probe_issue
 from reframe.models.batch import (
     BatchGroup,
     BatchGrouping,
@@ -136,16 +136,6 @@ def _ordered(
     )
 
 
-def _probe_issue(error: ProbeError) -> ValidationIssue:
-    detail = f" ({error.detail})" if error.detail else ""
-    return ValidationIssue(
-        severity=Severity.ERROR,
-        code="source.probe_failed",
-        path="source",
-        message=f"{error.path.name} cannot be read: {error.message}{detail}",
-    )
-
-
 class BatchService:
     """Batch / season mode.
 
@@ -207,7 +197,7 @@ class BatchService:
         differences; a file that cannot be probed is an issue."""
         probed = await self._probe_all(sources)
         media = [found for _, found in probed if isinstance(found, MediaSource)]
-        issues = [_probe_issue(found) for _, found in probed if isinstance(found, ProbeError)]
+        issues = [probe_issue(found) for _, found in probed if isinstance(found, ProbeError)]
         groups = await asyncio.to_thread(group_sources, media, level)
         return BatchGrouping(groups=groups, issues=issues)
 
@@ -295,7 +285,7 @@ class BatchService:
         rows: list[Resolution] = []
         for key, path, found in ordered:
             if isinstance(found, ProbeError):
-                issues = [*template_issues, _probe_issue(found)]
+                issues = [*template_issues, probe_issue(found)]
                 rows.append(Resolution(path=path, issues=issues, status="error"))
                 continue
             first = list(template_issues)
@@ -359,7 +349,7 @@ class BatchService:
             found for key, _, found in keyed if isinstance(found, MediaSource) and key not in owners
         ]
         groups = await asyncio.to_thread(group_sources, kept, level)
-        issues = [_probe_issue(found) for _, found in probed if isinstance(found, ProbeError)]
+        issues = [probe_issue(found) for _, found in probed if isinstance(found, ProbeError)]
         issues += [
             _already_encoded(files[key], owner, planned[key]) for key, owner in owners.items()
         ]

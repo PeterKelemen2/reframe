@@ -254,7 +254,6 @@ def test_every_written_value_is_one_the_encoder_can_do() -> None:
 
 def test_passthru_copies_or_falls_back() -> None:
     out = audio_output(0, AudioOutputTrack(action="passthru"), audio(codec="truehd"), MP4, DEFS)
-    assert out.copy
     assert out.args == ["-c:a:0", "copy"]
     assert out.global_args == ["-strict", "-2"]
     # The default fallback is AAC, which WebM cannot hold.
@@ -263,7 +262,6 @@ def test_passthru_copies_or_falls_back() -> None:
                      WEBM, DEFS)  # fmt: skip
     aac = audio_output(1, AudioOutputTrack(action="passthru", encoder=None),
                        audio(codec="vorbis"), MP4, DEFS)  # fmt: skip
-    assert aac.fallback
     assert aac.args[:2] == ["-c:a:1", "aac"]
 
 

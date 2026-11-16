@@ -16,38 +16,32 @@ from reframe.definitions import ContainerDef
 from reframe.models import (
     ExternalSubtitle,
     MediaSource,
-    SubtitleFormat,
+    SubtitleKind,
     SubtitleOutputTrack,
     SubtitleStream,
 )
+from reframe.probe.names import BITMAP_SUBTITLE_CODECS
 
 __all__ = [
-    "EXTERNAL_CODECS",
-    "FORMAT_ENCODERS",
+    "EXTERNAL_FORMATS",
     "ExternalInput",
     "SubtitleOut",
     "SubtitlePlan",
     "plan_subtitles",
 ]
 
-#: ffprobe codec name of an external subtitle file, by extension.
-EXTERNAL_CODECS = {
-    ".srt": "subrip",
-    ".ass": "ass",
-    ".ssa": "ass",
-    ".vtt": "webvtt",
-    ".sup": "hdmv_pgs_subtitle",
+#: External subtitle files by extension: (ffprobe codec name, kind). Validation reads these
+#: too; any other file is refused.
+EXTERNAL_FORMATS: dict[str, tuple[str, SubtitleKind]] = {
+    ".srt": ("subrip", "text"),
+    ".ass": ("ass", "text"),
+    ".ssa": ("ass", "text"),
+    ".vtt": ("webvtt", "text"),
+    ".sup": ("hdmv_pgs_subtitle", "bitmap"),
 }
-_BITMAP_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"})
-#: FFmpeg encoder of each subtitle format.
-FORMAT_ENCODERS: dict[SubtitleFormat, str] = {
-    "srt": "srt",
-    "ass": "ass",
-    "webvtt": "webvtt",
-    "mov_text": "mov_text",
-}
-#: The encoder that writes a text codec again (to apply ``-sub_charenc``).
-_SAME_FORMAT = {"subrip": "srt", "ass": "ass", "webvtt": "webvtt", "mov_text": "mov_text"}
+#: The encoder that writes a text codec again (to apply ``-sub_charenc``), where its name
+#: is not the codec's.
+_SAME_FORMAT = {"subrip": "srt"}
 
 
 @dataclass(slots=True)
@@ -101,15 +95,11 @@ class SubtitlePlan:
         return any(o.ass and o.map.startswith("0:") for o in self.outputs)
 
 
-def _is_bitmap(codec: str) -> bool:
-    return codec in _BITMAP_CODECS
-
-
 def _external_codec(ext: ExternalSubtitle) -> str:
-    codec = EXTERNAL_CODECS.get(ext.path.suffix.lower())
-    if codec is None:
+    known = EXTERNAL_FORMATS.get(ext.path.suffix.lower())
+    if known is None:
         raise PlanError(f"unknown subtitle file type {ext.path.suffix!r} (validation reports it)")
-    return codec
+    return known[0]
 
 
 def _external_args(ext: ExternalSubtitle, start: float, bitmap: bool) -> list[str]:
@@ -126,7 +116,7 @@ def _external_args(ext: ExternalSubtitle, start: float, bitmap: bool) -> list[st
 def _output_codec(
     track: SubtitleOutputTrack, codec: str, container: ContainerDef, *, recode: bool
 ) -> str:
-    bitmap = _is_bitmap(codec)
+    bitmap = codec in BITMAP_SUBTITLE_CODECS
     if track.action == "convert":
         if track.convert_to is None:
             raise PlanError("a subtitle conversion needs a target format")
@@ -134,11 +124,11 @@ def _output_codec(
             raise PlanError("FFmpeg cannot convert bitmap subtitles to text (validation)")
         if track.convert_to not in container.subtitles.encode:
             raise PlanError(f"{track.convert_to} cannot be written into {container.label}")
-        return FORMAT_ENCODERS[track.convert_to]
+        return track.convert_to
     if container.subtitles.can_copy(codec):
-        return _SAME_FORMAT[codec] if recode and codec in _SAME_FORMAT else "copy"
+        return _SAME_FORMAT.get(codec, codec) if recode else "copy"
     if not bitmap and container.text_subtitle_target is not None:
-        return FORMAT_ENCODERS[container.text_subtitle_target]
+        return container.text_subtitle_target
     raise PlanError(f"{codec} subtitles cannot go into {container.label} (validation reports it)")
 
 
@@ -171,7 +161,7 @@ def plan_subtitles(
         if isinstance(track.source, ExternalSubtitle):
             ext = track.source
             codec = _external_codec(ext)
-            bitmap = _is_bitmap(codec)
+            bitmap = codec in BITMAP_SUBTITLE_CODECS
             if track.action == "burn" and not bitmap:
                 plan.text_burn = TextBurn(
                     path=ext.path, stream=None, charenc=ext.charset,
@@ -203,7 +193,7 @@ def plan_subtitles(
             continue
         stream = _source_stream(source, track.source)
         codec = stream.codec or ""
-        bitmap = stream.subtitle_kind == "bitmap" or _is_bitmap(codec)
+        bitmap = stream.subtitle_kind == "bitmap" or codec in BITMAP_SUBTITLE_CODECS
         if track.action == "burn":
             if bitmap:
                 canvas = (
