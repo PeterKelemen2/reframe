@@ -295,6 +295,8 @@ Estimated total (after verify): about -180 Python source lines (plus -17 TOML li
 - Q-6.19 note: items 1, 2 and 4 done. Item 3 (`analysis/subtitlefile.py` and
   `tests/analysis/test_subtitlefile.py`) skipped: both files belong to Q-6.13, which ran in the
   same wave. Do it after Q-6.13 is merged.
+- Follow-up after the wave 6 merge: item 3 done (Q-6.13 had already removed `detect_charset`
+  from the re-export; `ENCODING_SAMPLE` left the import and `__all__`).
 
 ## Looked at and kept
 
