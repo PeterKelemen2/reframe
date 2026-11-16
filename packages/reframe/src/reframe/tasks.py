@@ -2,7 +2,8 @@
 returns its :class:`~reframe.models.TaskInfo` at once, and the work reports ``task.progress``
 and ``task.done`` on the event bus, in that order. Each event carries a copy of the
 ``TaskInfo``, so a later change does not alter an event that is already queued. Tasks of one
-kind run at most ``DEFAULT_LIMITS[kind]`` at the same time; the others wait in state ``queued``.
+kind run at most their limit at the same time (``DEFAULT_LIMITS`` with the ``limits=`` overrides,
+``DEFAULT_LIMIT`` for any other kind); the others wait in state ``queued``.
 """
 
 from __future__ import annotations

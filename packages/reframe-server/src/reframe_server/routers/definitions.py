@@ -28,10 +28,7 @@ class StaticBody:
 
     @classmethod
     def of(cls, value: BaseModel) -> StaticBody:
-        return cls.of_content(json_text(value).encode("ascii"))
-
-    @classmethod
-    def of_content(cls, content: bytes) -> StaticBody:
+        content = json_text(value).encode("ascii")
         return cls(content, f'"{hashlib.sha256(content).hexdigest()[:32]}"')
 
     def respond(self, request: Request) -> Response:

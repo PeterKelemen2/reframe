@@ -306,6 +306,12 @@ async def test_probe_many_keeps_the_order_and_the_limit(
         assert seen["max_running"] == 2
 
 
+async def test_probe_many_refuses_a_concurrency_below_one(env: Path) -> None:
+    async with await Reframe.create() as app:
+        with pytest.raises(ValueError, match="at least 1"):
+            await app.sources.probe_many([], concurrency=0)
+
+
 async def test_probe_many_starts_no_probe_after_a_cancel(
     env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

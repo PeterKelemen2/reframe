@@ -189,6 +189,8 @@ def test_labels() -> None:
     (d,) = describe_tracks(source(subtitle(3, "subrip", title="Full")))
     assert d.label == 'und SRT "Full"'
     assert track_label(d.model_copy(update={"codec": None, "title": None})) == "und unknown codec"
+    (j,) = describe_tracks(source(subtitle(3, "jacosub", language="eng")))
+    assert j.label == "eng jacosub"
     (v,) = describe_tracks(source(video(0, display_codec="HEVC Main 10", language="eng")))
     assert v.label == "HEVC Main 10 1920x1080"
     assert v.language == "en"
