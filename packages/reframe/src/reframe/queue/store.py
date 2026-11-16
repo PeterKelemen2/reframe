@@ -16,7 +16,7 @@
   (:func:`row_of`).
 - **The file** is created at the first write, not at start-up. A file of a newer Reframe is
   never written. Only the process that holds the owner lock writes it; another process keeps
-  its jobs in memory (:meth:`QueueStore.use_memory`).
+  its jobs in memory only (:attr:`QueueStore.read_only`).
 """
 
 from __future__ import annotations
@@ -264,9 +264,8 @@ class QueueStore:
         )
         self._db: sqlite3.Connection | None = None
         self.read_only = False
-        """The file is newer than this Reframe or cannot be opened: nothing is written."""
-        self.memory = False
-        """A private store in memory (another process owns the file)."""
+        """Nothing is written: the file is newer than this Reframe, cannot be opened, or
+        another process owns it."""
         self._failed = False
         self._refused: set[str] = set()
         """Jobs whose ``queue.job_not_saved`` warning was given."""
@@ -275,11 +274,6 @@ class QueueStore:
 
     def submit[T](self, call: Callable[[], T]) -> concurrent.futures.Future[T]:
         return self._executor.submit(call)
-
-    def use_memory(self) -> None:
-        """Keep the jobs in a private SQLite database in memory, never the file (call it
-        before the first write)."""
-        self.memory = True
 
     def load(self) -> StoreLoad:
         """Read every job (runs on the store thread). Never raises for a bad file."""
@@ -360,7 +354,7 @@ class QueueStore:
                 kept.append(row)
                 continue
             log.error("queue job %s not saved: %s", row[0], reason)
-            if row[0] not in self._refused and not self.read_only and not self.memory:
+            if row[0] not in self._refused and not self.read_only:
                 self._refused.add(row[0])
                 self.warnings.append(
                     AppWarningEvent(
@@ -382,18 +376,12 @@ class QueueStore:
     def delete(self, job_id: str) -> None:
         self._write("DELETE FROM jobs WHERE id = ?", [(job_id,)])
 
-    def positions(self, pairs: Sequence[tuple[int, str]]) -> None:
-        """Set ``position`` of each ``(position, id)`` in one transaction."""
-        self._write("UPDATE jobs SET position = ? WHERE id = ?", pairs)
-
     def close(self) -> None:
         """Wait for the pending writes, then close the file (any thread but the store's)."""
         self._executor.submit(self._close_quietly).result()
         self._executor.shutdown(wait=True)
 
     def _connect(self, *, configure: bool = True) -> sqlite3.Connection:
-        if self.memory:
-            return sqlite3.connect(":memory:", isolation_level=None, check_same_thread=False)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         db = sqlite3.connect(self.path, isolation_level=None, check_same_thread=False)
         try:

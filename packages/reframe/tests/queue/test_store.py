@@ -74,8 +74,7 @@ def test_round_trip_keeps_unknown_fields(tmp_path: Path) -> None:
     data["future_field"] = {"kept": True}
     data["video"]["future_option"] = 7
     first.settings = JobSettings.model_validate(data)
-    run(store, lambda: store.upsert([row_of(first), row_of(job("b", 1))]))
-    run(store, lambda: store.positions([(5, "b")]))
+    run(store, lambda: store.upsert([row_of(first), row_of(job("b", 5))]))
     run(store, lambda: store.delete("missing"))
     store.close()
     again = store_at(path)

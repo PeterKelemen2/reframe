@@ -38,6 +38,7 @@ from reframe.probe import ProbeError, Prober, parse_ffprobe
 from reframe.tasks import TaskManager
 from reframe.tools import CancelToken
 from reframe_testing import media
+from reframe_testing.capabilities import StubTools
 
 ROOT = Path(__file__).resolve().parents[4]
 PROBES = ROOT / "testdata" / "probes"
@@ -85,14 +86,6 @@ def real_tools() -> ToolSet:
         ffmpeg=tool("ffmpeg", media.find_ffmpeg()),
         ffprobe=tool("ffprobe", media.find_ffprobe()),
     )
-
-
-class Tools:
-    def __init__(self, tools: ToolSet) -> None:
-        self.tools = tools
-
-    async def status(self) -> ToolSet:
-        return self.tools
 
 
 class Sources:
@@ -181,11 +174,10 @@ def make_env(
     current = settings if settings is not None else AppSettings()
     ctx = MediaTaskContext(
         tasks=tasks,
-        tools=Tools(toolset),
+        tools=StubTools(toolset),
         sources=sources,
         capabilities=capabilities,
         settings=lambda: current,
-        events=events,
         cache_dir=cache_dir,
         definitions=load_definitions,
     )

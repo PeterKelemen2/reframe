@@ -182,13 +182,12 @@ async def test_cancel_from_a_coroutine(fake_tools: ft.FakeTools) -> None:
     task = asyncio.ensure_future(run([str(fake_tools.ffmpeg), "-hang"], timeout=60, cancel=token))
     await wait_until(lambda: len(fake_tools.pids()) == 2)
     cancelled_at = time.monotonic()
-    token.cancel("user")
+    token.cancel()
     result = await task
     latency = time.monotonic() - cancelled_at
     assert result.cancelled
     assert not result.timed_out
     assert token.cancelled
-    assert token.reason == "user"
     assert latency < 1.0, f"cancel took {latency:.3f} s"
     for pid in fake_tools.pids():
         assert not _alive(pid)
@@ -240,8 +239,7 @@ async def test_token_reaction_time_is_below_100_ms() -> None:
 async def test_cancelled_token_does_not_start_the_process(fake_tools: ft.FakeTools) -> None:
     token = CancelToken()
     token.cancel()
-    token.cancel("again")  # idempotent; the first reason stays
-    assert token.reason is None
+    token.cancel()  # idempotent
     result = await run([str(fake_tools.ffmpeg), "-version"], timeout=10, cancel=token)
     assert result.cancelled
     assert result.returncode is None

@@ -14,7 +14,7 @@ from reframe.command import build_plan
 from reframe.metadata import remux_job
 from reframe.models import JobSettings, JobState, QueueJob, SourceRef
 from reframe.queue.runner import ActiveJob
-from reframe.queue.service import _conflicts, _output_key, _source_key
+from reframe.queue.service import _conflicts, _job_keys
 from reframe_testing import fake_tools as ft
 
 from .conftest import Harness, all_caps, encode_rule, restore_together, tool_set
@@ -33,10 +33,11 @@ def queued(job: JobSettings, job_id: str = "j") -> QueueJob:
 
 
 def active_for(job: QueueJob) -> ActiveJob:
+    keys = _job_keys(job)
     return ActiveJob(
         job_id=job.id,
-        output_key=_output_key(job),
-        source_key=_source_key(job),
+        output_key=keys.output,
+        source_key=keys.source,
         in_place=job.settings.output.edit_in_place,
     )
 
@@ -57,7 +58,7 @@ async def test_conflict_rule(harness: Harness, tmp_path: Path) -> None:
     encode = queued(h.job("Encode"), "encode")
     other = queued(h.job("Other"), "other")
     other.settings.source = SourceRef(path=tmp_path / "media" / "Another.mkv")
-    assert _output_key(edit) == _source_key(edit)  # an in-place edit writes its source
+    assert _job_keys(edit).output == _job_keys(edit).source  # an in-place edit writes its source
     assert _conflicts(encode, [active_for(edit)])  # its source is being edited
     assert _conflicts(edit, [active_for(encode)])  # its source is being read
     assert _conflicts(edit, [active_for(queued(in_place_job(h, "X"), "edit2"))])

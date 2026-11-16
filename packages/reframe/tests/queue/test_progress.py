@@ -195,7 +195,6 @@ def test_paused_time_is_not_counted() -> None:
     assert after.speed == pytest.approx(2.0, rel=0.01)
     assert before.eta is not None
     assert after.eta == pytest.approx(before.eta - 5.0 / 2.0, abs=0.5)  # 5 s more media at 2x
-    assert tracker.active_time == pytest.approx(62.0, abs=0.6)
 
 
 def test_ffmpeg_averages_are_not_used_after_a_pause() -> None:

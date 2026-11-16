@@ -14,7 +14,6 @@ __all__ = [
     "JobStateError",
     "QueueError",
     "UnknownJobError",
-    "closed_error",
     "exit_text",
     "printable",
     "stderr_reason",
@@ -38,13 +37,6 @@ class UnknownJobError(QueueError, KeyError):
 
 class JobStateError(QueueError):
     """The job is in a state that does not allow the call (``remove`` of a running job)."""
-
-
-def closed_error() -> type[Exception]:
-    """``reframe.service.ReframeClosedError``: what a queue call after ``close()`` raises."""
-    from reframe.service import ReframeClosedError  # reframe.service imports this package
-
-    return ReframeClosedError
 
 
 #: Causes that say more than any other line; the first one found wins.

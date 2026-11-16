@@ -25,9 +25,9 @@ from reframe.definitions import Definitions, EncoderOption, load_definitions
 from reframe.definitions import hdr_options as _hdr_options
 from reframe.definitions import search_options as _search_options
 from reframe.jsonpatch import escape_token
-from reframe.mediatask import MediaTaskContext
+from reframe.mediatask import CapabilitiesLookup, MediaTaskContext, ToolsLookup
 from reframe.models.capabilities import CapabilitySnapshot
-from reframe.models.defaults import TrackDecision, TrackDraft
+from reframe.models.defaults import TrackDraft
 from reframe.models.draft import JobDraft
 from reframe.models.issues import AddOp, JsonPatchOp, Severity, ValidationIssue
 from reframe.models.job import Container, JobNaming, JobSettings
@@ -39,7 +39,6 @@ from reframe.models.preset import Preset
 from reframe.models.settings import AppSettings, LanguageSettings
 from reframe.models.tasks import TaskInfo
 from reframe.models.template import JobTemplate
-from reframe.models.tools import ToolSet
 from reframe.naming import resolve_output_name
 from reframe.probe import ProbeError
 from reframe.probe.folder import list_media_files
@@ -50,19 +49,16 @@ from reframe.validation.dryrun import dry_run as _dry_run
 __all__ = [
     "DETECTION_WAIT",
     "WAIT_CODES",
-    "Capabilities",
     "JobService",
     "MediaFiles",
     "OutputClaims",
     "PresetLookup",
     "SourceProber",
-    "ToolDiscovery",
     "draft_from_preset",
     "file_key",
     "find_media_files",
     "has_errors",
     "is_partial_output",
-    "job_from_preset",
     "output_size",
     "video_metadata",
 ]
@@ -89,21 +85,6 @@ class PresetLookup(Protocol):
     def find(self, name_or_id: str) -> Preset | None: ...
 
     def default(self) -> Preset: ...
-
-
-class ToolDiscovery(Protocol):
-    """What the jobs service needs from ``Reframe.tools``."""
-
-    async def status(self) -> ToolSet: ...
-
-
-class Capabilities(Protocol):
-    """What the jobs service needs from ``Reframe.capabilities``."""
-
-    @property
-    def snapshot(self) -> CapabilitySnapshot: ...
-
-    async def wait(self) -> CapabilitySnapshot: ...
 
 
 def file_key(path: str | os.PathLike[str]) -> str:
@@ -253,22 +234,6 @@ def _probe_issue(error: ProbeError) -> ValidationIssue:
     )
 
 
-def job_from_preset(
-    source: MediaSource,
-    preset: Preset,
-    *,
-    definitions: Definitions | None = None,
-    languages: LanguageSettings | None = None,
-) -> tuple[JobSettings, list[TrackDecision], list[str]]:
-    """The job settings of ``source`` encoded with ``preset`` (without the output path), the
-    audio track decisions, and notes about how preset options were applied. ``languages``:
-    the preferred languages of the track selection. Pure."""
-    job, tracks, notes = draft_from_preset(
-        source, preset, definitions=definitions, languages=languages
-    )
-    return job, tracks.decisions, notes
-
-
 def draft_from_preset(
     source: MediaSource,
     preset: Preset,
@@ -277,8 +242,10 @@ def draft_from_preset(
     languages: LanguageSettings | None = None,
     container_codecs: bool = True,
 ) -> tuple[JobSettings, TrackDraft, list[str]]:
-    """:func:`job_from_preset` with the whole :class:`~reframe.models.TrackDraft`: the audio and
-    subtitle decisions and the issues of the track stage. Pure.
+    """The job settings of ``source`` encoded with ``preset`` (without the output path), the
+    :class:`~reframe.models.TrackDraft` (the audio and subtitle decisions and the issues of the
+    track stage), and notes about how preset options were applied. ``languages``: the
+    preferred languages of the track selection. Pure.
 
     ``container_codecs=False`` leaves out the defaults lint's ``defaults.codec_not_in_container``,
     for a job that is validated later, which reports ``container.codec_unsupported`` instead.
@@ -322,8 +289,8 @@ class JobService:
         *,
         sources: SourceProber,
         presets: PresetLookup,
-        tools: ToolDiscovery,
-        capabilities: Capabilities,
+        tools: ToolsLookup,
+        capabilities: CapabilitiesLookup,
         settings: Callable[[], AppSettings],
         definitions: Definitions | None = None,
         fs: FileSystemView | None = None,
@@ -347,10 +314,6 @@ class JobService:
         if self._definitions is None:
             self._definitions = load_definitions()
         return self._definitions
-
-    @property
-    def detection_wait(self) -> float:
-        return self._detection_wait
 
     async def draft(
         self,

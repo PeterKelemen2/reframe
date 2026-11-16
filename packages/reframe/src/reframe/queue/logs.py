@@ -67,12 +67,11 @@ class JobLog:
             self._fail(exc)
         self.write(header)
 
-    def write(self, text: str, *, event: bool = True) -> None:
-        """One or more lines: to the file, and (``event``) to the next ``job.log`` event."""
+    def write(self, text: str) -> None:
+        """One or more lines: to the file, and to the next ``job.log`` event."""
         for line in text.splitlines() or [""]:
             self._to_file(line)
-            if event:
-                self._to_event(line)
+            self._to_event(line)
 
     def note(self, text: str) -> None:
         """A line of Reframe's own, with the local time in front."""

@@ -166,8 +166,6 @@ class ProgressTracker:
         self._ffmpeg_speed: float | None = None
         self._ffmpeg_fps: float | None = None
         self._size: int | None = None
-        self.active_time = 0.0
-        """Seconds of the intervals used for the rate (not paused, no sleep)."""
 
     @property
     def percent(self) -> float:
@@ -231,7 +229,6 @@ class ProgressTracker:
         if interval <= 0 or interval > MAX_INTERVAL or slept:
             self._clean = False  # a gap: keep the old estimates, measure from here
             return self.snapshot()
-        self.active_time += interval
         if block.out_time is not None and anchor.media is not None:
             speed = max(block.out_time - anchor.media, 0.0) / interval
             self._speed = _smooth(self._speed, speed, interval)

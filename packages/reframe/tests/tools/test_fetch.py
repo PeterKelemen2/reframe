@@ -873,7 +873,7 @@ async def test_a_cancel_stops_a_slow_download_at_once(tmp_path: Path, server: Lo
         await asyncio.sleep(0.02)
     await asyncio.sleep(0.6)
     started = time.monotonic()
-    tasks.cancel(info.id, "interrupted")
+    tasks.cancel(info.id)
     final = await asyncio.wait_for(tasks.wait(info.id), 60)
     elapsed = time.monotonic() - started
     assert final.state is TaskState.CANCELLED
@@ -910,7 +910,7 @@ async def test_a_cancel_after_the_swap_finishes_and_says_so(
 
         def swap_then_cancel(new: Path, install_dir: Path, aside: Path) -> None:
             swap(new, install_dir, aside)
-            loop.call_soon_threadsafe(tasks.cancel, task_id[0], "interrupted")
+            loop.call_soon_threadsafe(tasks.cancel, task_id[0])
 
         monkeypatch.setattr(fetch_module, "_swap_into_place", swap_then_cancel)
 
@@ -919,7 +919,7 @@ async def test_a_cancel_after_the_swap_finishes_and_says_so(
     task_id.append(info.id)
     if when == "during discovery":
         await asyncio.wait_for(in_rescan.wait(), 60)
-        tasks.cancel(info.id, "interrupted")  # what Ctrl+C in `reframe tools fetch` does
+        tasks.cancel(info.id)  # what Ctrl+C in `reframe tools fetch` does
     final = await asyncio.wait_for(tasks.wait(info.id), 60)
     marker = installed_build(data_dir / "tools" / "ffmpeg")
     assert final.state is TaskState.CANCELLED

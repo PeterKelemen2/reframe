@@ -20,7 +20,9 @@ from pathlib import Path
 from typing import Literal
 
 from reframe.definitions import Definitions, load_definitions
+from reframe.errors import ReframeClosedError
 from reframe.events import EventBus
+from reframe.mediatask import CapabilitiesLookup, SourceProber, ToolsLookup
 from reframe.models.events import (
     AppWarningEvent,
     JobProgressEvent,
@@ -37,18 +39,11 @@ from reframe.platform.power import PowerService
 from reframe.platform.sleep import SleepInhibitor, create_sleep_inhibitor
 from reframe.queue import files
 from reframe.queue.clock import Clock, SystemClock
-from reframe.queue.errors import JobStateError, UnknownJobError, closed_error, printable
+from reframe.queue.errors import JobStateError, UnknownJobError, printable
 from reframe.queue.lock import LOCK_FILE, LockBackend, StoreLock
 from reframe.queue.logs import EVENT_INTERVAL, JobLog, log_file
 from reframe.queue.process import resume_tree, suspend_tree
-from reframe.queue.runner import (
-    ActiveJob,
-    CapabilitiesSource,
-    JobRunner,
-    Outcome,
-    SourceProber,
-    ToolsSource,
-)
+from reframe.queue.runner import ActiveJob, JobRunner, Outcome
 from reframe.queue.store import STORE_FILE, QueueStore, row_of
 from reframe.queue.watchdog import STALL_AFTER, STEP_TIME_LIMIT, TICK
 from reframe.queue.whendone import WhenDoneActions
@@ -79,20 +74,6 @@ def _path_key(path: str | os.PathLike[str]) -> files.FileKey:
     """The :class:`~reframe.queue.files.FileKey` of ``path``. Blocking: never call it on the
     event loop."""
     return files.file_key(path)
-
-
-def _source_key(job: QueueJob) -> files.FileKey:
-    return _path_key(job.settings.source.path)
-
-
-def _output_key(job: QueueJob) -> files.FileKey | None:
-    """The file the job writes: its output path, or its source for an in-place edit."""
-    if job.settings.output.edit_in_place:
-        return _source_key(job)
-    path = job.settings.output.path
-    if path is None:
-        return None
-    return _path_key(path)
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,8 +181,8 @@ class QueueService:
         settings: Callable[[], AppSettings],
         *,
         data_dir: Path,
-        tools: ToolsSource,
-        capabilities: CapabilitiesSource,
+        tools: ToolsLookup,
+        capabilities: CapabilitiesLookup,
         sources: SourceProber,
         naming: Callable[[JobSettings], NamingOptions | None] | None = None,
         inhibitor: SleepInhibitor | None = None,
@@ -611,7 +592,7 @@ class QueueService:
         try:
             owner = self._owner.acquire()
         except OSError as exc:
-            self._store.use_memory()
+            self._store.read_only = True
             self._events.publish(
                 AppWarningEvent(
                     code="queue.unreadable",
@@ -623,7 +604,7 @@ class QueueService:
             return
         if not owner.owned:
             self._store_busy = True
-            self._store.use_memory()
+            self._store.read_only = True
             who = f" (pid {owner.owner})" if owner.owner is not None else ""
             self._events.publish(
                 AppWarningEvent(
@@ -837,7 +818,7 @@ class QueueService:
             return
         try:
             if active.token.cancelled:  # cancelled before it started
-                outcome = Outcome(JobState.CANCELLED, stop_reason=active.stop_reason)
+                outcome = Outcome(JobState.CANCELLED)
             else:
                 job.started_at = self._clock.now()
                 job.finished_at = None
@@ -985,7 +966,7 @@ class QueueService:
 
     def _check_open(self) -> None:
         if self._closed:
-            raise closed_error()
+            raise ReframeClosedError
 
     def _job(self, job_id: str) -> QueueJob:
         job = self._jobs.get(job_id)
