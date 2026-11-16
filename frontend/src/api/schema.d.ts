@@ -6850,7 +6850,7 @@ export interface components {
             id: string;
             /**
              * Kind
-             * @description ``probe_folder``, ``cropdetect``, ``bitrate_scan``, ``frames``, …
+             * @description ``probe_sources``, ``cropdetect``, ``bitrate_scan``, ``frames``, …
              */
             kind: string;
             /** @default queued */

@@ -142,8 +142,6 @@ export function taskName(kind: string, t: Translate): string {
   switch (kind) {
     case 'probe_sources':
       return t('queue.activity.taskKind.probe_sources')
-    case 'probe_folder':
-      return t('queue.activity.taskKind.probe_folder')
     case 'encoders_rescan':
       return t('queue.activity.taskKind.encoders_rescan')
     case 'tools_fetch':

@@ -25,13 +25,13 @@ from reframe.probe import (
     ProbeError,
     ProbeErrorKind,
     Prober,
+    list_media_files,
     matroska,
     parse_ffprobe,
     sampling,
 )
 from reframe.probe import prober as prober_mod
 from reframe.probe.cache import ProbeCache
-from reframe.probe.folder import probe_folder
 from reframe.probe.matroska import MatroskaFile, MatroskaTrack, read_matroska
 from reframe.probe.sampling import ClusterSample, estimate_bitrates, sample_clusters
 from reframe.tools import CancelToken
@@ -593,10 +593,15 @@ async def test_a_huge_timestamp_scale_does_not_fail_the_folder(
     good = write(folder, mkv([cluster(i * 1000, [(1, 50_000), (2, 8_000)]) for i in range(4)]),
                  "e02.mkv")  # fmt: skip
     probe = _probe_json(tmp_path, good, _video(0), _audio(1), duration=4.0)
-    result = await probe_folder(_fake_prober(fake_tools, probe), folder)
-    assert result.errors == []
-    assert [s.ref.path.name for s in result.sources] == [damaged.name, good.name]
-    assert result.sources[1].audio[0].bitrate.source is BitrateSource.ESTIMATED
+    prober = _fake_prober(fake_tools, probe)
+    sources = [await prober.probe(path) for path in list_media_files(folder)]
+    assert all(isinstance(s, MediaSource) for s in sources), sources
+    assert [s.ref.path.name for s in sources if isinstance(s, MediaSource)] == [
+        damaged.name,
+        good.name,
+    ]
+    assert isinstance(sources[1], MediaSource)
+    assert sources[1].audio[0].bitrate.source is BitrateSource.ESTIMATED
 
 
 def _first_sample_times_out(path: Path, info: MatroskaFile, *, stop: Callable[[], bool]) -> None:

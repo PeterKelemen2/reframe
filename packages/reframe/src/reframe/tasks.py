@@ -41,7 +41,6 @@ log = logging.getLogger(__name__)
 DEFAULT_LIMIT = 2
 #: Built-in limits per kind.
 DEFAULT_LIMITS: Mapping[str, int] = {
-    "probe_folder": 2,
     # Decodes compete for the CPU; encodes even more.
     "bitrate_scan": 2,
     "subtitle_scan": 2,

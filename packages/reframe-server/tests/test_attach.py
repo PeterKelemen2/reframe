@@ -141,8 +141,8 @@ async def test_a_detach_keeps_the_jobs_of_its_own_connection(api: Api) -> None:
             async with connected(server, api) as (connection, kept_id):
                 [kept] = await api.add_jobs("Kept.mkv", attach=kept_id)
                 await connection.send(json.dumps({"type": "detach"}))
-            await wait_until(lambda: not api.hub.client_open(kept_id))
-            assert api.hub.client_open(dropped_id)
+            await wait_until(lambda: api.hub.attachment(kept_id) is None)
+            assert api.hub.attachment(dropped_id) is not None
         await ended(api, dropped)
     assert await states(api) == {kept: "waiting", dropped: "cancelled"}
 
@@ -165,8 +165,8 @@ async def test_attach_with_the_id_of_a_closed_connection_is_refused(api: Api) ->
     job = await api.draft_job()
     async with live(api) as server:
         async with connected(server, api) as (_, client_id):
-            assert api.hub.client_open(client_id)
-        await wait_until(lambda: not api.hub.client_open(client_id))
+            assert api.hub.attachment(client_id) is not None
+        await wait_until(lambda: api.hub.attachment(client_id) is None)
         response = await api.client.post("/api/queue", json={"jobs": [job], "attach": client_id})
     assert response.status_code == 409
     assert response.headers["content-type"] == "application/problem+json"
@@ -201,7 +201,7 @@ async def test_a_client_that_goes_away_while_its_job_is_added(
             await entered.wait()
             if detach:
                 await connection.send(json.dumps({"type": "detach"}))
-        await wait_until(lambda: not api.hub.client_open(client_id))
+        await wait_until(lambda: api.hub.attachment(client_id) is None)
         release.set()
         response = await posting
     assert response.status_code == 201
@@ -238,7 +238,7 @@ async def test_the_hub_closes_once_a_gone_clients_jobs_are_cancelled(api: Api) -
         await encoding(api, job)
         connection.transport.abort()
         async with asyncio.timeout(10):
-            while api.hub.client_open(client_id):  # noqa: ASYNC110 - the hub has no event
+            while api.hub.attachment(client_id) is not None:  # noqa: ASYNC110 - the hub has no event
                 await asyncio.sleep(0)
         await api.hub.close()
         cancelled = api.reframe.queue.get(job)
@@ -294,7 +294,7 @@ async def test_a_job_that_another_front_end_retried_runs_on_when_its_client_goes
         await api.client.post("/api/queue/start", json={"job_ids": [job]})
         await encoding(api, job)
         connection.transport.abort()
-        await wait_until(lambda: not api.hub.client_open(client_id))
+        await wait_until(lambda: api.hub.attachment(client_id) is None)
         await api.hub.close()  # waits for the cancels that the end started
         assert await states(api) == {job: "running"}
         await api.reframe.queue.cancel(job)
@@ -332,7 +332,7 @@ async def test_a_job_retried_just_after_its_client_went_away_is_not_cancelled(
     async with live(api) as server, connected(server, api) as (connection, client_id):
         job = await failed_job(api, client_id)
         connection.transport.abort()
-        await wait_until(lambda: not api.hub.client_open(client_id))
+        await wait_until(lambda: api.hub.attachment(client_id) is None)
         assert (await api.client.post(f"/api/queue/{job}/retry")).status_code == 200
         gate.set()
         await api.hub.close()

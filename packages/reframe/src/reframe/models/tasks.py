@@ -31,7 +31,7 @@ class TaskInfo(ReframeModel):
 
     id: str
     kind: str
-    """``probe_folder``, ``cropdetect``, ``bitrate_scan``, ``frames``, …"""
+    """``probe_sources``, ``cropdetect``, ``bitrate_scan``, ``frames``, …"""
     state: TaskState = TaskState.QUEUED
     progress: Annotated[float, Field(ge=0.0, le=100.0)] | None = None
     """Percent; ``None`` = indeterminate."""

@@ -210,10 +210,6 @@ class EventHub:
         """Open, authenticated connections."""
         return len(self._clients)
 
-    def client_open(self, client_id: str) -> bool:
-        """A connection that was given ``client_id`` is open (for ``attach``)."""
-        return client_id in self._clients
-
     def release(self, job_id: str) -> None:
         """The job leaves every open connection that it was attached to (it is retried)."""
         for client in self._clients.values():

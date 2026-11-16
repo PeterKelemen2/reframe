@@ -11,7 +11,6 @@ DATA_PACKAGES = (
     "reframe.definitions",  # silent: no encoders or language tables, every job draft fails
     "reframe.presets",
     "reframe.tools",
-    "reframe_server",  # GET /api/languages answers 500
 )
 
 

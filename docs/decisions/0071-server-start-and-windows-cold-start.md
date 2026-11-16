@@ -1,6 +1,6 @@
 # 0071 — The server's start, and the desktop cold start on Windows
 
-- Status: accepted
+- Status: accepted; item 2 (the shipped language list) and its Consequences bullet superseded in part by [0089](0089-folder-probe-and-language-list-removed.md)
 - Date: 2026-11-10
 - Steps: Q-3, C-16, S-2, D-2
 

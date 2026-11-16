@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
+from typing import Any
 
 import psutil
 import pytest
@@ -13,23 +14,20 @@ import reframe
 from reframe.models import (
     AppSettings,
     MediaSource,
-    TaskDoneEvent,
-    TaskProgressEvent,
-    TaskState,
+    SourceRef,
     ToolOrigin,
     ToolPaths,
     ToolsChangedEvent,
     ToolStatus,
 )
 from reframe.service import (
-    FolderProbeResult,
     ProbeError,
     ProbeErrorKind,
     Reframe,
     ReframeClosedError,
     tool_usable,
 )
-from reframe.tools import ENV_VARS
+from reframe.tools import ENV_VARS, CancelToken
 from reframe_testing import fake_tools as ft
 from reframe_testing.helpers import drain
 from reframe_testing.waiting import wait_until
@@ -135,23 +133,6 @@ async def test_close_kills_a_hanging_discovery(fake: ft.FakeTools) -> None:
     await app.close()  # a second close does nothing
 
 
-async def test_close_cancels_folder_probe_and_kills_ffprobe(fake: ft.FakeTools, env: Path) -> None:
-    folder = env / "season"
-    folder.mkdir()
-    for n in range(1, 4):
-        (folder / f"Show.S01E0{n}.mkv").write_bytes(b"x")
-    fake.set_scenario(ft.Scenario([probe_rule(ft.hang())]))
-    app = await Reframe.create()
-    info = app.sources.probe_folder(folder)
-    await wait_until(lambda: len(fake.calls("ffprobe")) >= 4)  # -version + 3 probes
-    pids = fake.pids()
-    await app.close()
-    assert alive(pids) == []
-    final = app.tasks.get(info.id)
-    assert final is not None
-    assert final.state is TaskState.CANCELLED
-
-
 async def test_close_cancels_a_running_probe(fake: ft.FakeTools, media: Path) -> None:
     fake.set_scenario(ft.Scenario([probe_rule(ft.hang())]))
     app = await Reframe.create()
@@ -187,8 +168,6 @@ async def test_async_with_closes(fake: ft.FakeTools, media: Path) -> None:
     assert app.closed
     with pytest.raises(ReframeClosedError):
         await app.sources.probe(media)
-    with pytest.raises(ReframeClosedError):
-        app.sources.probe_folder(media.parent)
     with pytest.raises(ReframeClosedError):
         await app.sources.get(media)
     with pytest.raises(ReframeClosedError):
@@ -264,14 +243,6 @@ async def test_missing_ffprobe_is_a_tool_error(
         folder = await app.sources.probe(env)
         assert isinstance(folder, ProbeError)
         assert folder.kind is ProbeErrorKind.NOT_A_FILE
-        # A folder probe gives one tool error for the folder.
-        info = app.sources.probe_folder(env)
-        final = await app.tasks.wait(info.id)
-        assert final.state is TaskState.DONE
-        assert isinstance(final.result, dict)
-        errors = final.result["errors"]
-        assert isinstance(errors, list)
-        assert [e["kind"] for e in errors if isinstance(e, dict)] == ["tool_failed"]
 
 
 async def test_probe_errors_are_values(fake: ft.FakeTools, media: Path, env: Path) -> None:
@@ -290,56 +261,115 @@ async def test_probe_errors_are_values(fake: ft.FakeTools, media: Path, env: Pat
         assert missing.kind is ProbeErrorKind.NOT_FOUND
 
 
-async def test_probe_folder_emits_task_events(fake: ft.FakeTools, env: Path) -> None:
-    folder = env / "season"
-    folder.mkdir()
-    files = [folder / f"Show.S01E{n:02d}.mkv" for n in range(1, 4)]
-    for path in files:
-        path.write_bytes(b"x")
-    (folder / "notes.txt").write_text("not media", encoding="utf-8")
+def touch(folder: Path, *names: str) -> list[Path]:
+    folder.mkdir(exist_ok=True)
+    for name in names:
+        (folder / name).write_bytes(b"x")
+    return [folder / name for name in names]
+
+
+def counting_probe(app: Reframe, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Replaces ``app.sources.probe``: records how many run at once; ``*.bad.mkv`` fail."""
+    seen: dict[str, Any] = {"running": 0, "max_running": 0, "names": []}
+
+    async def probe(path: Any, *, cancel: Any = None) -> MediaSource | ProbeError:
+        seen["running"] += 1
+        seen["max_running"] = max(seen["max_running"], seen["running"])
+        seen["names"].append(Path(path).name)
+        try:
+            await asyncio.sleep(0.02)
+        finally:
+            seen["running"] -= 1
+        if str(path).endswith(".bad.mkv"):
+            return ProbeError(Path(path), ProbeErrorKind.FAILED, "bad")
+        return MediaSource(ref=SourceRef(path=Path(path)))
+
+    monkeypatch.setattr(app.sources, "probe", probe)
+    return seen
+
+
+async def test_probe_many_keeps_the_order_and_the_limit(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    files = touch(env / "season", *(f"E{i:02d}.mkv" for i in range(1, 13)), "E13.bad.mkv")
     async with await Reframe.create() as app:
-        events = app.events.subscribe(types={"task.progress", "task.done"})
-        info = app.sources.probe_folder(folder)
-        assert info.kind == "probe_folder"
-        assert info.state is TaskState.QUEUED
-        final = await app.tasks.wait(info.id)
-        assert final.state is TaskState.DONE
-        received = drain(events)
-        progress = [e for e in received if isinstance(e, TaskProgressEvent)]
-        done = [e for e in received if isinstance(e, TaskDoneEvent)]
-        assert len(progress) + len(done) == len(received)
-        assert all(e.task.id == info.id for e in progress)
-        assert all(e.task.id == info.id for e in done)
-        # The bus coalesces the progress of one task (only the latest is queued), and this
-        # test reads after the task ended: the last progress is always there.
-        messages = [e.task.message for e in progress]
-        assert set(messages) <= {
-            "Waiting for tool discovery",
-            "1/3 files",
-            "2/3 files",
-            "3/3 files",
-        }
-        assert messages[-1] == "3/3 files"
-        assert progress[-1].task.progress == 100.0
-        assert len(done) == 1
-        assert done[0].task.result == {
-            "folder": str(folder),
-            "total": 3,
-            "probed": [str(p) for p in files],
-            "errors": [],
-        }
-        value = app.tasks.value(info.id)
-        assert isinstance(value, FolderProbeResult)
-        assert [s.ref.path for s in value.sources] == files
-        # Every probed source is known now, without another ffprobe run.
-        calls = len(fake.calls("ffprobe"))
-        for path in files:
-            source = await app.sources.get(path)
-            assert source is not None
-            assert source.ref.path == path
-        assert len(fake.calls("ffprobe")) == calls
-        with pytest.raises(ValueError, match="concurrency"):
-            app.sources.probe_folder(folder, concurrency=0)
+        seen = counting_probe(app, monkeypatch)
+        progress: list[tuple[int, int]] = []
+        results = await app.sources.probe_many(
+            files, on_progress=lambda done, total: progress.append((done, total))
+        )
+        assert seen["max_running"] == 4
+        assert [r.ref.path if isinstance(r, MediaSource) else r.path for r in results] == files
+        assert isinstance(results[-1], ProbeError)
+        assert progress == [(i, 13) for i in range(1, 14)]
+        seen["max_running"] = 0
+        await app.sources.probe_many(files[:6], concurrency=2)
+        assert seen["max_running"] == 2
+
+
+async def test_probe_many_starts_no_probe_after_a_cancel(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    files = touch(env / "season", *(f"E{i}.mkv" for i in range(5)))
+    token = CancelToken()
+    async with await Reframe.create() as app:
+        seen = counting_probe(app, monkeypatch)
+        progress: list[int] = []
+
+        def on_progress(done: int, total: int) -> None:
+            progress.append(done)
+            token.cancel()
+
+        results = await app.sources.probe_many(
+            files, concurrency=1, cancel=token, on_progress=on_progress
+        )
+        assert seen["names"] == ["E0.mkv"]
+        assert isinstance(results[0], MediaSource)
+        assert [r.kind for r in results[1:] if isinstance(r, ProbeError)] == [
+            ProbeErrorKind.CANCELLED
+        ] * 4
+        assert progress == [1, 2, 3, 4, 5]
+
+
+def probe_calls(fake: ft.FakeTools) -> int:
+    return len([c for c in fake.calls("ffprobe") if "-show_streams" in c])
+
+
+async def test_a_cancelled_probe_many_kills_every_ffprobe(fake: ft.FakeTools, env: Path) -> None:
+    files = touch(env / "season", *(f"E{i}.mkv" for i in range(8)))
+    fake.set_scenario(ft.Scenario([probe_rule(ft.hang())]))
+    token = CancelToken()
+    async with await Reframe.create() as app:
+        await app.tools.status()
+        before = set(fake.pids())
+        task = asyncio.create_task(app.sources.probe_many(files, cancel=token))
+        await wait_until(lambda: probe_calls(fake) >= 4)
+        pids = [p for p in fake.pids() if p not in before]
+        assert probe_calls(fake) == 4  # the limit: the rest wait
+        token.cancel()
+        results = await task
+        assert [r.kind for r in results if isinstance(r, ProbeError)] == [
+            ProbeErrorKind.CANCELLED
+        ] * 8
+        assert alive(pids) == []
+        assert probe_calls(fake) == 4  # no ffprobe started after the cancel
+
+
+async def test_cancelling_the_probe_many_task_reaps_every_ffprobe(
+    fake: ft.FakeTools, env: Path
+) -> None:
+    files = touch(env / "season", *(f"E{i}.mkv" for i in range(8)))
+    fake.set_scenario(ft.Scenario([probe_rule(ft.hang())]))
+    async with await Reframe.create() as app:
+        await app.tools.status()
+        before = set(fake.pids())
+        task = asyncio.create_task(app.sources.probe_many(files))
+        await wait_until(lambda: probe_calls(fake) >= 4)
+        pids = [p for p in fake.pids() if p not in before]
+        task.cancel()
+        await asyncio.wait({task})
+        assert alive(pids) == []
+        assert probe_calls(fake) == 4
 
 
 async def test_get_returns_known_unchanged_sources(fake: ft.FakeTools, media: Path) -> None:

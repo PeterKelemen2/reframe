@@ -20,8 +20,6 @@ from reframe_server.errors import ProblemError
 
 router = api_router("sources")
 
-PROBES_AT_ONCE = 4
-
 
 class ProbeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
@@ -100,21 +98,13 @@ async def probe(
     async def work(ctx: TaskContext) -> ProbeSummary:
         found = await reframe.jobs.media_files(paths, recursive=body.recursive)
         files, refused = await asyncio.to_thread(_jailed, config, found.files)
-        total = len(files)
-        outcomes: dict[int, MediaSource | ProbeError] = {}
-        gate = asyncio.Semaphore(PROBES_AT_ONCE)
-        done = 0
-
-        async def one(position: int, file: Path) -> None:
-            nonlocal done
-            async with gate:
-                outcomes[position] = await reframe.sources.probe(file)
-            done += 1
-            ctx.progress(done=done, total=total, message=f"{done}/{total} files")
-
-        async with asyncio.TaskGroup() as group:
-            for position, file in enumerate(files):
-                group.create_task(one(position, file))
+        outcomes = await reframe.sources.probe_many(
+            files,
+            cancel=ctx.cancel,
+            on_progress=lambda done, total: ctx.progress(
+                done=done, total=total, message=f"{done}/{total} files"
+            ),
+        )
         errors = [
             _failure(
                 ProbeError(
@@ -130,7 +120,7 @@ async def probe(
         ]
         errors += refused
         sources: list[ProbedSource] = []
-        for _, outcome in sorted(outcomes.items()):
+        for outcome in outcomes:
             if isinstance(outcome, MediaSource):
                 path = outcome.ref.path
                 sources.append(ProbedSource(id=registry.add(path), path=path))

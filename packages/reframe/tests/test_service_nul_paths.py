@@ -13,7 +13,6 @@ from reframe.models import (
     MediaSource,
     Severity,
     SourceRef,
-    TaskState,
     ValidationIssue,
 )
 from reframe.service import ProbeError, ProbeErrorKind, Reframe
@@ -100,27 +99,6 @@ async def test_get_store_and_update_of_a_nul_path(
         await app.sources.update(bad, lambda latest: latest)
         assert await app.sources.get(nul) is None
         assert await app.sources.get(media) == probed
-
-
-async def test_folder_probe_of_a_nul_path_is_one_error(fake: ft.FakeTools, env: Path) -> None:
-    nul = env / "Sea\0son"
-    async with await Reframe.create() as app:
-        info = app.sources.probe_folder(nul)
-        final = await app.tasks.wait(info.id)
-        assert final.state is TaskState.DONE
-        assert final.result == {
-            "folder": str(nul),
-            "total": 1,
-            "probed": [],
-            "errors": [
-                {
-                    "path": str(nul),
-                    "kind": "not_found",
-                    "message": NUL_MESSAGE,
-                    "detail": None,
-                }
-            ],
-        }
 
 
 def _errors(issues: object) -> list[ValidationIssue]:

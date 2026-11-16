@@ -45,7 +45,7 @@ async def test_group_at_a_level(api: Api) -> None:
 
 async def test_derive_takes_the_chosen_sections(api: Api) -> None:
     [sid] = await add_sources(api, 1)
-    path = api.app.state.sources.path(sid)
+    path = dict(api.app.state.sources.items())[sid]
     draft = await api.reframe.jobs.draft(path)
     assert isinstance(draft, JobDraft)
     job = draft.job.model_dump(mode="json")

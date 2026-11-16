@@ -19,7 +19,7 @@ async def _done(_ctx: TaskContext) -> dict[str, int]:
 
 
 async def test_a_finished_task_is_listed_with_its_result(api: Api) -> None:
-    task = api.reframe.tasks.start("probe_folder", _done)
+    task = api.reframe.tasks.start("probe_sources", _done)
     await api.reframe.tasks.wait(task.id)
     listed = (await api.client.get("/api/tasks")).json()
     assert [(t["id"], t["state"]) for t in listed if t["id"] == task.id] == [(task.id, "done")]
