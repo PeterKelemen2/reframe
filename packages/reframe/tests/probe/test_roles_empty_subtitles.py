@@ -69,5 +69,5 @@ async def test_an_empty_subtitle_track_is_not_forced(tmp_path: Path) -> None:
     found = foreign_audio_search(
         source.subtitles, audio_language="en", user_language="en", can_burn=False
     )
-    assert found.searched
+    assert found.note.startswith("Foreign audio search: no forced")
     assert found.track is None

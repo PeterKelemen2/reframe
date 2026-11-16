@@ -20,8 +20,8 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from reframe import languages
-from reframe.batch.audio_rules import apply_codec_rules
-from reframe.batch.descriptors import CODEC_LABELS, codec_label, language_code
+from reframe.batch.audio_rules import apply_codec_rules, describe_output, layout_label
+from reframe.batch.descriptors import CODEC_LABELS, codec_label
 from reframe.batch.explain import (
     AudioStage,
     ForeignAudio,
@@ -30,14 +30,18 @@ from reframe.batch.explain import (
     audio_stage,
     subtitle_stage,
 )
-from reframe.batch.lint import lint_rules
-from reframe.batch.metadata import effective_language, render_track_name, track_metadata
+from reframe.batch.lint import lint_defaults
+from reframe.batch.metadata import (
+    effective_language,
+    language_values,
+    render_track_name,
+    track_metadata,
+)
 from reframe.batch.selection import (
     _EXTRA_ROLES,
     Selection,
     effective_languages,
     extra_role,
-    language_label,
     language_slot,
 )
 from reframe.batch.selectors import RulePick, Track, describe_kind, match_rules
@@ -48,7 +52,6 @@ from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.job import (
     AudioOutputTrack,
     Container,
-    Mixdown,
     SubtitleOutputTrack,
     TrackMetadata,
 )
@@ -115,7 +118,7 @@ def _selector_source(selector: TrackSelector) -> str:
         return "no track"
     parts = []
     if selector.languages:
-        parts.append("/".join(language_code(tag) for tag in selector.languages))
+        parts.append("/".join(languages.to_matroska_legacy(tag) for tag in selector.languages))
     else:
         parts.append("any")
     if selector.kind == "audio":
@@ -133,11 +136,6 @@ def _selector_source(selector: TrackSelector) -> str:
     return " ".join(parts)
 
 
-def _layout(mixdown: Mixdown, defs: Definitions) -> str:
-    mix = defs.mixdowns.get(mixdown)
-    return f"{mix.channels - mix.lfe}.{mix.lfe}" if mix is not None else mixdown
-
-
 def _target(rule: OutputTrackRule, defs: Definitions) -> str:
     settings = rule.settings
     if isinstance(settings, AudioCodecRules):
@@ -148,7 +146,7 @@ def _target(rule: OutputTrackRule, defs: Definitions) -> str:
         encoder = defs.audio_encoders.get(settings.encoder or "")
         text = encoder.label if encoder is not None else str(settings.encoder)
         if settings.mixdown is not None:
-            text += f" {_layout(settings.mixdown, defs)}"
+            text += f" {layout_label(settings.mixdown, defs)}"
         return text
     if settings.action == "burn":
         return "burn in"
@@ -228,7 +226,12 @@ def compile_defaults(
             multiple = selection.tracks_per_language == "all"
             compiled.append(
                 CompiledRule(
-                    kind, "language", rule(selector, multiple), language_code(tag), slot, tag
+                    kind,
+                    "language",
+                    rule(selector, multiple),
+                    languages.to_matroska_legacy(tag),
+                    slot,
+                    tag,
                 )
             )
     if selection.no_match != "none":
@@ -296,7 +299,7 @@ def _attribute(
             elif taken:
                 message = f"{len(taken)} tracks"
             elif rule.group == "language":
-                message = f"no {language_label(rule.language)} track"
+                message = f"no {languages.english_name(rule.language)} track"
             else:
                 message = _SKIPPED[rule.group]
         status: MatchStatus = "exact" if streams else "skipped"
@@ -362,7 +365,7 @@ def _audio_values(
         bitrate: int | None = None
     else:
         channels = (
-            _layout(output.mixdown, defs)
+            layout_label(output.mixdown, defs)
             if output.mixdown is not None
             else audio_channels_label(stream.channels, stream.channel_layout)
         )
@@ -370,9 +373,7 @@ def _audio_values(
         codec = encoder.label if encoder is not None else str(output.encoder)
         bitrate = output.bitrate
     return {
-        "lang": language,
-        "lang_name": languages.english_name(language),
-        "lang_native": languages.native_name(language, capitalize=True),
+        **language_values(language),
         "channels": channels,
         "codec": codec,
         "bitrate": bitrate,
@@ -384,9 +385,7 @@ def _audio_values(
 def _subtitle_values(track: Track, language: str | None) -> dict[str, Value]:
     stream = track.stream
     return {
-        "lang": language,
-        "lang_name": languages.english_name(language),
-        "lang_native": languages.native_name(language, capitalize=True),
+        **language_values(language),
         "codec": codec_label(stream),
         "title": stream.title,
         "source_codec": codec_label(stream),
@@ -405,9 +404,7 @@ def _metadata(
         update["language"] = template.language
         values = {
             **values,
-            "lang": template.language,
-            "lang_name": languages.english_name(template.language),
-            "lang_native": languages.native_name(template.language, capitalize=True),
+            **language_values(template.language),
         }
     if template.name_template is not None:
         update["name"] = render_track_name(template.name_template, values)
@@ -445,18 +442,6 @@ def _defaults_flag[T: (AudioOutputTrack, SubtitleOutputTrack)](
         else:
             result.append(output.output)
     return result
-
-
-def _describe_audio(output: AudioOutputTrack, defs: Definitions) -> str:
-    if output.action == "passthru":
-        return "Passthru"
-    encoder = defs.audio_encoders.get(output.encoder or "")
-    text = encoder.label if encoder is not None else str(output.encoder)
-    if output.mixdown is not None:
-        text += f" {defs.mixdowns[output.mixdown].label}"
-    if output.bitrate is not None:
-        text += f" · {output.bitrate} kb/s"
-    return text
 
 
 def _settings_issue(kind: Kind, n: int, label: str, list_path: str) -> ValidationIssue:
@@ -540,7 +525,7 @@ def _explicit_audio(
                     {**data, "source_stream": stream.index, "metadata": track_metadata(stream)}
                 )
                 outputs = [output]
-                described = _describe_audio(output, defs)
+                described = describe_output(output, defs)
                 state.reasons.append(f"Fixed settings of rule {label}: {described}")
                 state.codec_rule.append(None)
             for position, output in enumerate(outputs):
@@ -761,7 +746,7 @@ def resolve_tracks(
     if audio_stage_result is not None:
         selected = [d for d in audio_stage_result.decisions if d.selected]
         used = {d.rule for d in selected if d.rule is not None} if selected else None
-        issues += lint_rules(
+        issues += lint_defaults(
             template.audio_defaults,
             container=container,
             definitions=defs,

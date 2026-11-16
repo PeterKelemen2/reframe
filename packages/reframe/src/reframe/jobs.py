@@ -18,7 +18,7 @@ from typing import Protocol
 
 from reframe import metadata, preview
 from reframe.batch import draft_tracks, output_size, video_metadata
-from reframe.batch.resolve import resolve_with_tracks
+from reframe.batch.resolve import resolve
 from reframe.command import PlanError, build_plan, job_type_info, output_chapters
 from reframe.command.metadata import rendered_tags
 from reframe.definitions import Definitions, EncoderOption, load_definitions
@@ -283,7 +283,7 @@ def draft_from_preset(
     ``container_codecs=False`` leaves out the defaults lint's ``defaults.codec_not_in_container``,
     for a job that is validated later, which reports ``container.codec_unsupported`` instead.
     """
-    resolution, tracks = resolve_with_tracks(
+    resolution = resolve(
         preset,
         source,
         definitions=definitions,
@@ -291,7 +291,14 @@ def draft_from_preset(
         container_codecs=container_codecs,
     )
     assert resolution.job is not None  # resolve always makes a job
-    return resolution.job, tracks.draft, resolution.notes
+    draft = TrackDraft(
+        audio=resolution.job.audio,
+        subtitles=resolution.job.subtitles,
+        decisions=resolution.decisions,
+        subtitle_decisions=resolution.subtitle_decisions,
+        issues=resolution.issues,
+    )
+    return resolution.job, draft, resolution.notes
 
 
 class JobService:

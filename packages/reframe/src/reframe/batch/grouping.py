@@ -31,7 +31,6 @@ __all__ = [
     "compare",
     "episode_info",
     "episode_key",
-    "episode_label",
     "episode_labels",
     "group_name",
     "group_sources",
@@ -92,11 +91,6 @@ def _label(path: Path, info: EpisodeInfo, season: bool) -> str:
     if season and info.season is not None:
         return f"S{info.season:02d}E{info.episode:02d}"
     return f"E{info.episode:02d}"
-
-
-def episode_label(path: Path, *, season: bool = False) -> str:
-    """``E05`` (``S01E05`` with ``season``), else the file name."""
-    return _label(path, episode_info(path), season)
 
 
 def episode_labels(paths: Sequence[Path], *, season: bool | None = None) -> list[str]:

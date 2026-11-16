@@ -19,7 +19,7 @@ from typing import Literal
 
 from reframe import languages
 from reframe.batch.metadata import effective_language
-from reframe.batch.selection import _EXTRA_ROLES, is_undetermined
+from reframe.batch.selection import _EXTRA_ROLES, flag_extra_role, is_undetermined
 from reframe.models.batch import Fingerprint, MatchLevel, TrackDescriptor
 from reframe.models.job import TrackFlags
 from reframe.models.media import (
@@ -42,7 +42,6 @@ __all__ = [
     "describe_tracks",
     "fingerprint",
     "hdr_type",
-    "language_code",
     "stream_roles",
     "track_key",
     "track_label",
@@ -133,20 +132,6 @@ def codec_label(stream: Stream) -> str:
     return CODEC_LABELS.get(stream.codec, stream.codec)
 
 
-def _flag_extra_role(stream: AudioStream | SubtitleStream) -> TrackRole | None:
-    """The extra role that the disposition flags alone give, for a source built without the
-    prober."""
-    d = stream.disposition
-    audio = isinstance(stream, AudioStream)
-    if d.comment:
-        return TrackRole.COMMENTARY
-    if (audio and d.visual_impaired) or d.descriptions:
-        return TrackRole.DESCRIPTION
-    if audio and d.clean_effects:
-        return TrackRole.MUSIC
-    return None
-
-
 def stream_roles(stream: AudioStream | SubtitleStream) -> list[TrackRole]:
     """The track's roles: the prober's roles with flag or title evidence (not the heuristic
     ones, which vary per episode), plus the roles that the disposition flags give a source built
@@ -156,9 +141,9 @@ def stream_roles(stream: AudioStream | SubtitleStream) -> list[TrackRole]:
     ]
     extras = _EXTRA_ROLES["audio" if isinstance(stream, AudioStream) else "subtitle"]
     if not any(role in extras for role in found):
-        extra = _flag_extra_role(stream)
+        extra = flag_extra_role(stream)
         if extra is not None:
-            found.append(extra)
+            found.append(extra[0])
     if isinstance(stream, SubtitleStream):
         d = stream.disposition
         if d.forced and TrackRole.FORCED not in found:
@@ -168,11 +153,6 @@ def stream_roles(stream: AudioStream | SubtitleStream) -> list[TrackRole]:
     if len(found) > 1 and TrackRole.MAIN in found:
         found.remove(TrackRole.MAIN)
     return found or [TrackRole.MAIN]
-
-
-def language_code(language: str | None) -> str:
-    """The three-letter ISO 639-2 code used in labels; ``und`` for none."""
-    return languages.to_matroska_legacy(language)
 
 
 def _flags(stream: Stream) -> TrackFlags:
@@ -191,7 +171,7 @@ def track_label(descriptor: TrackDescriptor) -> str:
     """``eng AC-3 2.0 "Commentary"``, ``eng ASS "Signs & Songs"``, ``H.264 320x180``."""
     parts: list[str] = []
     if descriptor.kind != "video":
-        parts.append(language_code(descriptor.language))
+        parts.append(languages.to_matroska_legacy(descriptor.language))
     parts.append(descriptor.profile or CODEC_LABELS.get(descriptor.codec or "", "unknown codec"))
     if descriptor.kind == "audio" and descriptor.channels:
         parts.append(audio_channels_label(descriptor.channels))

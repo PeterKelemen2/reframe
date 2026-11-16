@@ -17,7 +17,6 @@ from reframe.batch.overrides import apply_job_override, apply_template_override,
 from reframe.batch.rules import (
     CompiledRule,
     Kind,
-    TrackResolution,
     compile_defaults,
     resolve_tracks,
 )
@@ -169,28 +168,6 @@ def resolve(
     the language settings, whose preferred languages the defaults use. ``container_codecs=False``
     leaves out the ``defaults.codec_not_in_container`` lint, for a caller that reports those
     codecs itself."""
-    resolution, _ = resolve_with_tracks(
-        template,
-        source,
-        override,
-        definitions=definitions,
-        languages=languages,
-        container_codecs=container_codecs,
-    )
-    return resolution
-
-
-def resolve_with_tracks(
-    template: JobTemplate,
-    source: MediaSource,
-    override: Sequence[JsonPatchOp] | None = None,
-    *,
-    definitions: Definitions | None = None,
-    languages: LanguageSettings | None = None,
-    container_codecs: bool = True,
-) -> tuple[Resolution, TrackResolution]:
-    """:func:`resolve`, with the :class:`~reframe.batch.rules.TrackResolution` (the matrix
-    columns of the patched template and the track draft)."""
     defs = definitions or load_definitions()
     template_ops, job_ops, issues = split_override(override)
     patched, found = apply_template_override(template, template_ops)
@@ -209,7 +186,7 @@ def resolve_with_tracks(
     job, notes = build_job(patched, source, tracks.draft)
     job, found = apply_job_override(job, job_ops)
     issues = [*tracks.draft.issues, *issues, *found]
-    resolution = Resolution(
+    return Resolution(
         path=source.ref.path,
         job=job,
         matches=tracks.matches,
@@ -220,7 +197,6 @@ def resolve_with_tracks(
         subtitle_decisions=tracks.draft.subtitle_decisions,
         notes=notes,
     )
-    return resolution, tracks
 
 
 def _part(rule: CompiledRule) -> tuple[str, int | None]:

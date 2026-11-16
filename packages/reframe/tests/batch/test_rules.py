@@ -16,7 +16,7 @@ from reframe.batch import (
     rule_label,
 )
 from reframe.batch.explain import audio_stage, subtitle_stage
-from reframe.batch.lint import lint_rules
+from reframe.batch.lint import lint_defaults
 from reframe.batch.rules import literal_title, title_text
 from reframe.definitions import load_definitions
 from reframe.models import (
@@ -428,7 +428,7 @@ def test_presets_resolve_as_the_selection_stage(languages: LanguageSettings | No
             issues = [
                 *audio.issues,
                 *subtitles.issues,
-                *lint_rules(
+                *lint_defaults(
                     preset.audio_defaults, container=container, definitions=DEFS, used=used
                 ),
             ]
