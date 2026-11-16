@@ -379,8 +379,8 @@ class SessionInhibitBackend:
     """The desktop session's inhibit for automatic suspend, on a connection kept open.
 
     Tries ``org.freedesktop.PowerManagement.Inhibit`` first (it shows "Reframe" and the
-    reason in KDE's battery applet), then the XDG desktop portal with the suspend flag
-    (``interfaces`` changes the list). The inhibit lasts while the connection is open.
+    reason in KDE's battery applet), then the XDG desktop portal with the suspend flag.
+    The inhibit lasts while the connection is open.
     :meth:`free` ends it explicitly, then closes the connection. No session bus (a headless
     server, a system service) is :class:`Skipped`: there is no desktop that could suspend on
     idle.
@@ -395,15 +395,10 @@ class SessionInhibitBackend:
         address: str | None = None,
         timeout: float = 5.0,
         connect: Callable[[str, float], _BusConnection] = _open_connection,
-        interfaces: Sequence[str] = (PM_INTERFACE, PORTAL_INTERFACE),
     ) -> None:
-        unknown = [i for i in interfaces if i not in _INHIBIT]
-        if unknown:
-            raise ValueError(f"unknown session inhibit interfaces: {unknown}")
         self._address = address
         self._timeout = timeout
         self._connect = connect
-        self._interfaces = tuple(interfaces)
         self._connection: _BusConnection | None = None
         self._token: str | int | None = None
         self.interface: str | None = None
@@ -444,7 +439,7 @@ class SessionInhibitBackend:
             return f"session bus: {type(exc).__name__}: {exc}"
         errors: list[str] = []
         try:
-            for interface in self._interfaces:
+            for interface in (PM_INTERFACE, PORTAL_INTERFACE):
                 inhibit, _ = _INHIBIT[interface]
                 assert connection is not None
                 try:

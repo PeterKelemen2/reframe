@@ -182,9 +182,8 @@ def _unescape(value: str) -> str:
 class _Writer:
     """Marshals values; alignment counts from the start of the message."""
 
-    def __init__(self, endian: str = "<") -> None:
+    def __init__(self) -> None:
         self.buf = bytearray()
-        self.endian = endian
 
     def align(self, n: int) -> None:
         self.buf += b"\0" * (-len(self.buf) % n)
@@ -194,7 +193,7 @@ class _Writer:
 
     def uint32(self, value: int) -> None:
         self.align(4)
-        self.buf += struct.pack(self.endian + "I", value)
+        self.buf += struct.pack("<I", value)
 
     def string(self, value: str) -> None:  # also object paths
         data = value.encode()
@@ -219,7 +218,7 @@ class _Writer:
                 self.string(key)
                 self.signature("s")
                 self.string(item)
-            struct.pack_into(self.endian + "I", self.buf, length_at, len(self.buf) - start)
+            struct.pack_into("<I", self.buf, length_at, len(self.buf) - start)
         elif sig in ("s", "o") and isinstance(value, str):
             self.string(value)
         elif sig == "g" and isinstance(value, str):
@@ -237,11 +236,10 @@ def encode(
     body: Sequence[tuple[str, Value]] = (),
     *,
     flags: int = 0,
-    endian: str = "<",
 ) -> bytes:
-    """A complete message. ``body`` is a list of ``(type, value)`` with the types of
+    """A complete little-endian message. ``body`` is a list of ``(type, value)`` with the types of
     :data:`Value` only; the ``SIGNATURE`` field is added from it."""
-    writer = _Writer(endian)
+    writer = _Writer()
     # The fixed header is 12 bytes and the header-field array length is at offset 12, so
     # the array content starts at offset 16 (already 8-aligned).
     writer.buf = bytearray(16)
@@ -260,9 +258,8 @@ def encode(
     for body_sig, body_value in body:
         writer.value(body_sig, body_value)
     body_len = len(writer.buf) - body_start
-    flag = b"l" if endian == "<" else b"B"
     writer.buf[0:16] = struct.pack(
-        endian + "cBBBIII", flag, msg_type, flags, 1, body_len, serial, fields_len
+        "<cBBBIII", b"l", msg_type, flags, 1, body_len, serial, fields_len
     )
     return bytes(writer.buf)
 
@@ -314,10 +311,9 @@ class Message:
 
 
 class _Reader:
-    def __init__(self, data: bytes, endian: str) -> None:
+    def __init__(self, data: bytes) -> None:
         self.data = data
         self.pos = 0
-        self.endian = endian
 
     def align(self, n: int) -> None:
         self.pos += -self.pos % n
@@ -334,12 +330,7 @@ class _Reader:
 
     def uint32(self) -> int:
         self.align(4)
-        value: int = struct.unpack(self.endian + "I", self.take(4))[0]
-        return value
-
-    def int32(self) -> int:
-        self.align(4)
-        value: int = struct.unpack(self.endian + "i", self.take(4))[0]
+        value: int = struct.unpack("<I", self.take(4))[0]
         return value
 
     def string(self) -> str:
@@ -356,14 +347,8 @@ class _Reader:
             return self.string()
         if sig == "g":
             return self.signature()
-        if sig in ("u", "h"):
+        if sig in ("u", "h", "b"):
             return self.uint32()
-        if sig == "i":
-            return self.int32()
-        if sig == "b":
-            return self.uint32()
-        if sig == "y":
-            return self.byte()
         if sig == "v":  # a variant of one simple type (a property value)
             inner = self.signature()
             if len(inner) != 1 or inner == "v":
@@ -374,8 +359,8 @@ class _Reader:
 
 def message_length(header: bytes) -> int:
     """Total length of a message from its first 16 bytes."""
-    endian = _endian(header[0:1])
-    body_len, _serial, fields_len = struct.unpack(endian + "III", header[4:16])
+    _check_endian(header[0:1])
+    body_len, _serial, fields_len = struct.unpack("<III", header[4:16])
     head = 16 + fields_len
     total = head + (-head % 8) + body_len
     if total > MAX_MESSAGE:
@@ -383,12 +368,10 @@ def message_length(header: bytes) -> int:
     return int(total)
 
 
-def _endian(flag: bytes) -> str:
-    if flag == b"l":
-        return "<"
-    if flag == b"B":
-        return ">"
-    raise DBusProtocolError(f"bad endianness flag {flag!r}")
+def _check_endian(flag: bytes) -> None:
+    # The bus daemon writes in its host's byte order; every target platform is little-endian.
+    if flag != b"l":
+        raise DBusProtocolError(f"bad endianness flag {flag!r}")
 
 
 def decode_message(data: bytes, fds: list[int]) -> Message:
@@ -427,7 +410,6 @@ def _malformed_is_protocol_error() -> Iterator[None]:
 
 
 class _Header(NamedTuple):
-    endian: str
     msg_type: int
     serial: int
     fields: dict[int, str | int]
@@ -438,11 +420,11 @@ class _Header(NamedTuple):
 def _decode_header(data: bytes) -> _Header:
     if len(data) < 16:
         raise DBusProtocolError("message ends early")
-    endian = _endian(data[0:1])
+    _check_endian(data[0:1])
     msg_type, _flags, version = data[1], data[2], data[3]
     if version != 1:
         raise DBusProtocolError(f"unsupported protocol version {version}")
-    reader = _Reader(data, endian)
+    reader = _Reader(data)
     reader.pos = 4
     body_len = reader.uint32()
     serial = reader.uint32()
@@ -460,14 +442,14 @@ def _decode_header(data: bytes) -> _Header:
         fields[code] = value
     reader.pos = end
     reader.align(8)
-    return _Header(endian, msg_type, serial, fields, reader.pos, body_len)
+    return _Header(msg_type, serial, fields, reader.pos, body_len)
 
 
 def _decode_body(data: bytes, header: _Header) -> list[str | int]:
     sig = str(header.fields.get(FIELD_SIGNATURE, ""))
-    if not sig or not all(c in "sogyuhibv" for c in sig):
+    if not sig or not all(c in "sogubhv" for c in sig):
         return []
-    reader = _Reader(data[: header.body_start + header.body_len], header.endian)
+    reader = _Reader(data[: header.body_start + header.body_len])
     reader.pos = header.body_start
     return [reader.value(c) for c in sig]
 
@@ -596,10 +578,9 @@ class Connection:
     to the connection) until :meth:`close`.
     """
 
-    def __init__(self, conn: _Connection, unique_name: str) -> None:
+    def __init__(self, conn: _Connection) -> None:
         self._conn = conn
         self._serial = 1  # Hello was serial 1
-        self.unique_name = unique_name
 
     @classmethod
     def open(cls, address: str, *, timeout: float = 5.0) -> Connection:
@@ -622,8 +603,7 @@ class Connection:
             conn.close()
             raise
         _close_all(reply.fds)
-        name = reply.body[0] if reply.body else ""
-        return cls(conn, str(name))
+        return cls(conn)
 
     @property
     def closed(self) -> bool:
@@ -662,12 +642,6 @@ class Connection:
     def close(self) -> None:
         """Close the connection (idempotent). The bus then drops what it tied to it."""
         self._conn.close()
-
-    def __enter__(self) -> Connection:
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        self.close()
 
 
 def _wait_reply(conn: _Connection, serial: int) -> Reply:
