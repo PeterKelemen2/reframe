@@ -387,3 +387,18 @@ choices below were taken by the agents or by the orchestrator, with the same dec
   `timeout=` (sent back once for this).
 - Q-6.19: NDP-11 item 3 touched Q-6.13's files in the same wave; the orchestrator made it after
   the merge.
+
+### D-39 Wave 7 (Q-6.14, Q-6.15): choices of the agents
+- Q-6.14: `SourceService` keeps one cancel token per running probe call (a list), so the first
+  call to end no longer takes the shared token away from the others; this fixes the shared-token
+  risk SRV-01 names (rule 1). `test_folder_task_events` is deleted after all (D-31's other
+  option): SRV-01 ports the folder tests and the server's `test_sources.py` guards the task
+  result. The real-media tests that used a bare `Prober` probe with a small local helper. The
+  task kind is `probe_sources` (one line in the schema snapshot and `schema.d.ts`). Not done:
+  SRV-01 Change item 4 (`BatchService._probe_all` on `probe_many`), because `batch/` belonged to
+  Q-6.15 in the same wave; record 0089 says the batch loop stays. Open: the Windows VM timing of
+  the first `/api/languages` request (0089). Records 0071 and 0057 got status-line notes only.
+- Q-6.15: the old breakdown documents (`docs/core-breakdown.md`, `docs/m2-breakdown.md`) still
+  name removed functions; they are history and stay as written. The S-2 and audio-track rows of
+  `docs/status.md` were updated too. The E05 near-match checks of `test_batch_service.py` moved
+  to a `resolve_batch` call instead of being dropped.
