@@ -288,3 +288,44 @@ choices below were taken by the agents or by the orchestrator, with the same dec
   Rule 5.
 - `capabilities/hwtest.py` and `detect.py` (named for NDP-03 item 4) do not refer to
   `supported_options`; not touched.
+
+### D-29 Q-6.3: where the shared CLI test helper and `ACTIVE` live
+- `invoke` and `WIDTH` moved to `testing/reframe_testing/cli.py`, not `tests/conftest.py`:
+  `tests/` is not a package, so its subfolders cannot import from that conftest. The finding
+  allows either place. Rule 4.
+- `reframe.queue.ACTIVE` is defined in `queue/service.py` next to `ENDED`, not in
+  `models/queue.py`: it keeps the change in the package's files. Rule 5.
+- The inline `CliRunner` call in `tests/capabilities/test_recheck.py` stays (outside the
+  package's files); noted in the status row.
+
+### D-30 Q-6.5: `encoder_issues(target=)` stays
+- VAL-05 allowed keeping or dropping the `target` keyword of `capabilities.encoder_issues`. Kept:
+  the smaller change. Rule 6. Fix targets were compared before and after over the validation,
+  batch and presets tests (18,823 issues, the same).
+
+### D-31 Q-6.8: `test_folder_task_events` is kept
+- Question: PRB-04's "Tests" bullet deletes `test_folder_task_events`; the package's Done-when
+  says it must pass, and the verdict notes it is the only exact event-sequence check.
+- Chosen: keep it under the same name, pointed at `Reframe.sources.probe_folder` (the copy that
+  stays). The test-line saving is about 60 lines smaller than estimated.
+- Rule: 2 (the plan's Done-when), 6.
+- If the other option: delete it; Q-6.14 (SRV-01) ports the folder tests anyway.
+
+### D-32 A teardown error in `test_subtitles.py` under load
+- `packages/reframe-server/tests/test_subtitles.py::test_a_sup_file_is_a_bitmap_counted_in_display_sets`
+  got an error in setup or teardown in four package runs (a `ResourceWarning` for an unclosed
+  asyncio transport left by an earlier test, raised when it was collected). Each run had three
+  suites on the machine at once; the file passes alone and the server suite passes. Not in the
+  baseline or the wave 1 merged run.
+- Chosen: not blamed on a package while it does not show in the merged-wave run; watched in each
+  merged run. Rule 6.
+
+### D-33 Parallel test runs; agents run focused tests
+- Question: a full run took about 35 minutes, three times per wave in the agents and once after
+  the merge.
+- Chosen (by the owner, 2026-11-16): pytest-xdist for every test run, in `addopts` (decision
+  0084; a full run about 6 minutes),
+  and the agents run only their package's focused tests and the static checks from wave 3 on;
+  the orchestrator runs the full suite after each merge. See "How to run the tests" in
+  [plan.md](plan.md).
+- If the other option: each agent also runs the full suite (now about 6 minutes with `-n auto`).
