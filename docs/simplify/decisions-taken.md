@@ -233,3 +233,58 @@ They are not findings. A later session can look at them.
   `fetch-tools.py`.
 - `tests/validation/scenario.py:345` `FIXES_CHECKED` is written and never read.
 - `command/filtergraph.py:116, 150`: private and public twin functions that only call each other.
+
+## Implementation (Q-6)
+
+The packages were made unattended (2026-11-16) by one agent each, in the waves of
+[plan.md](plan.md). Owner answers to D-1 to D-23: none changed, the defaults are used. The
+choices below were taken by the agents or by the orchestrator, with the same decision rules.
+
+### D-24 Worktrees start from `main`
+- Question: the agents' isolated worktrees are created from `main`, not from `m10-hardening`.
+- Chosen: each agent first resets its worktree branch to the `m10-hardening` commit of the last
+  merge and checks `git rev-parse HEAD`. Nothing else changes.
+- Rule: 2 (the packages are built on `m10-hardening`).
+- If the other option: none; a worktree on `main` lacks M10.
+
+### D-25 Baseline tests that fail under load
+- Question: the baseline run at `8bf1df6` (while three agents ran their own suites) failed
+  `tests/probe/test_live.py::test_probe_budgets` (5.95 s against a 5 s budget) and
+  `tests/remote/test_cli_client.py::test_a_client_drafts_as_the_in_process_draft[default]`.
+  Both pass when run alone.
+- Chosen: count them as load-dependent baseline failures, not a package's fault. A package is
+  blamed for them only if they also fail alone. `test_desktop_server_prints_the_ready_line_and_answers_health`
+  passed in this run (not under coverage).
+- Rule: 6.
+- If the other option: a separate fix step for the two tests.
+
+### D-26 Q-6.1: two by-path loaders stay
+- Question: `tests/jobs/test_cli_batch.py::_load_anime` and
+  `tests/validation/test_command_agreement.py::_load_command_tests` load a module from another
+  test folder. A relative import cannot leave the test package (pytest names the module after the
+  topmost folder with an `__init__.py`).
+- Options: keep the two loaders; move `anime.py` into `reframe_testing` (BAT-06's fallback).
+- Chosen: keep them; a note is under X-04. The other 33 loaders are gone.
+- Rule: 5, 6 (the smaller diff).
+- If the other option: move `anime.py` and the command-test module into `reframe_testing`.
+
+### D-27 Q-6.2: shared helper defaults
+- `wait_until` and `wait_until_sync` default to 30 s (SRV-05 said 10 s for the async one): no wait
+  is shorter than before, so no test gets flakier; the longer old waits (60 s, 120 s) stay at their
+  calls. Rule 5.
+- `Api.add_source` returns the id only, not `(id, path)`: every caller but one needs only the id.
+  Rule 4.
+- The shared `ebml.element` keeps the fixed 8-byte size field by default, so tests that count byte
+  offsets do not change; `corpus.element` passes the shortest width. Rule 5.
+- Not done: `SeasonFs` in `tests/batch/test_anime_season.py` (in Q-6.1's file at the same time)
+  and the six cross-area `app` fixture copies the finding does not count. Note under NDP-05.
+
+### D-28 Q-6.4: OpenAPI description, optional parts
+- NDP-03 item 2 moved a comment into the docstring of `Condition.field`; `Condition` is in the API,
+  so the OpenAPI description and `frontend/src/api/schema.d.ts` changed (comments only). Accepted:
+  no field or type changes. Rule 3 holds (nothing a user sees).
+- Not done: NDP-03 item 10 (`AudioBitrateDef.values`) and NDP-01's optional move of tests-only
+  imports: outside the package estimate, and in preset tests that Q-6.2 edited at the same time.
+  Rule 5.
+- `capabilities/hwtest.py` and `detect.py` (named for NDP-03 item 4) do not refer to
+  `supported_options`; not touched.
