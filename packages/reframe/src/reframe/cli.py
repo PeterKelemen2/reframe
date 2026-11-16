@@ -37,6 +37,7 @@ from reframe import __version__, languages, paths
 from reframe.batch.grouping import episode_labels
 from reframe.batch.report import ROW_ASCII, ROW_MARKS, matrix_lines
 from reframe.batch.service import BatchService
+from reframe.dimensions import TIMES
 from reframe.events import EventBus, Subscription
 from reframe.jobs import OutputClaims, draft_from_preset, find_media_files, has_errors
 from reframe.models.batch import BatchGroup, BatchResolution, MatchLevel
@@ -235,8 +236,6 @@ _EXIT_BY_KIND = {
 
 #: The dash for "no value".
 NONE = "—"
-#: Between width and height.
-TIMES = "\N{MULTIPLICATION SIGN}"
 
 _BITRATE_SOURCE = {
     BitrateSource.STREAM: "stream",
@@ -244,13 +243,6 @@ _BITRATE_SOURCE = {
     BitrateSource.ESTIMATED: "estimated",
     BitrateSource.MEASURED: "measured",
     BitrateSource.UNKNOWN: "unknown",
-}
-
-_HDR_NAMES = {
-    HdrFormat.HDR10: "HDR10",
-    HdrFormat.HDR10_PLUS: "HDR10+",
-    HdrFormat.HLG: "HLG",
-    HdrFormat.DOLBY_VISION: "Dolby Vision",
 }
 
 _PRIMARIES = {
@@ -405,7 +397,7 @@ def fmt_hdr(hdr: HdrInfo | None) -> str:
         return "SDR"
     names = []
     for fmt in hdr.formats:
-        name = _HDR_NAMES[fmt]
+        name = fmt.label
         dovi = hdr.dolby_vision
         if fmt is HdrFormat.DOLBY_VISION and dovi is not None:
             name += f" {dovi.profile}"

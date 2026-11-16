@@ -14,12 +14,14 @@ from fractions import Fraction
 from pathlib import Path, PureWindowsPath
 
 from reframe.command.errors import PlanError
-from reframe.command.filtergraph import escape_value, filter_path
+from reframe.command.filtergraph import escape_value, filter_path, known_colour
 from reframe.definitions import (
     ChoiceSetting,
+    Definitions,
     EncoderOption,
     OptionMapping,
     VideoEncoderDef,
+    fill_placeholders,
     mapping_supported,
     option_context,
     option_default,
@@ -28,6 +30,7 @@ from reframe.definitions.hdr import content_light_text, svt_mastering_display, x
 from reframe.models import (
     ConstantQuality,
     EncoderStatus,
+    JobSettings,
     OptionValue,
     Rational,
     VideoSettings,
@@ -37,6 +40,7 @@ from reframe.models import (
 __all__ = [
     "PassMode",
     "VideoArgs",
+    "encoder_and_pix_fmt",
     "format_number",
     "frame_rate_args",
     "hdr_params",
@@ -102,12 +106,6 @@ def split_params(text: str) -> list[tuple[str, str]]:
     return result
 
 
-def _fill(template: str, values: Mapping[str, str]) -> str:
-    for name, value in values.items():
-        template = template.replace("{" + name + "}", value)
-    return template
-
-
 @dataclass(slots=True)
 class VideoArgs:
     """The encoder arguments of one run."""
@@ -121,11 +119,11 @@ class VideoArgs:
         """Pairs of ``-option value`` with placeholders; options get the ``v:0`` specifier."""
         for i in range(0, len(setting_args), 2):
             option, value = setting_args[i], setting_args[i + 1]
-            self.args += [spec(option, V0), _fill(value, values)]
+            self.args += [spec(option, V0), fill_placeholders(value, values)]
 
     def add_params(self, params: Mapping[str, str], values: Mapping[str, str]) -> None:
         for name, value in params.items():
-            self.params[name] = _fill(value, values)
+            self.params[name] = fill_placeholders(value, values)
 
     def mapped(self, mapping: OptionMapping, value: str) -> None:
         if mapping.kind == "x26x_param":
@@ -232,10 +230,6 @@ def _options(
         out.params[name] = ",".join(values)
 
 
-def encoder_option_keys(encoder: VideoEncoderDef) -> list[str]:
-    return [o.key for o in encoder.options]
-
-
 def _choice_value(option: EncoderOption, value: OptionValue) -> str:
     if option.choices is not None and isinstance(value, str):
         found = next((c for c in option.choices if c.value == value), None)
@@ -248,16 +242,12 @@ def _choice_value(option: EncoderOption, value: OptionValue) -> str:
 _SVT_MATRIX = {"bt2020nc": "bt2020-ncl", "bt2020c": "bt2020-cl", "smpte170m": "bt601"}
 _SVT_TRANSFER = {"arib-std-b67": "hlg", "smpte170m": "bt601", "iec61966-2-1": "srgb"}
 _SVT_PRIMARIES = {"smpte170m": "bt601"}
-_UNKNOWN = frozenset({"unknown", "unspecified", "reserved", ""})
 
 
 def hdr_params(encoder: VideoEncoderDef, stream: VideoStream) -> dict[str, str]:
     """Colour and HDR10 metadata for the params argument when the output stays HDR."""
     c = stream.color
-    colour = [
-        (v if v not in _UNKNOWN else None)
-        for v in (c.primaries, c.transfer, c.matrix)
-    ]  # fmt: skip
+    colour = [known_colour(v) for v in (c.primaries, c.transfer, c.matrix)]
     hdr = stream.hdr
     md = hdr.mastering_display if hdr is not None else None
     cll = hdr.content_light if hdr is not None else None
@@ -361,6 +351,18 @@ def frame_rate_args(
     if rate is not None:
         return [spec("-fpsmax", V0), _rate(rate)]
     return []
+
+
+def encoder_and_pix_fmt(job: JobSettings, defs: Definitions) -> tuple[VideoEncoderDef, str]:
+    """The job's video encoder and the pixel format of its bit depth."""
+    settings = job.video
+    encoder = defs.video_encoders.get(settings.encoder)
+    if encoder is None:
+        raise PlanError(f"unknown video encoder {settings.encoder!r} (validation reports it)")
+    pix_fmt = encoder.pix_fmts.get("10" if settings.bit_depth == 10 else "8")
+    if pix_fmt is None:
+        raise PlanError(f"{encoder.label} has no {settings.bit_depth}-bit mode")
+    return encoder, pix_fmt
 
 
 def video_encoder_args(

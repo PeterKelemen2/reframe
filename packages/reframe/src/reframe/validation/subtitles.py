@@ -6,7 +6,9 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path, PurePath
 
+from reframe.command.subtitles import EXTERNAL_FORMATS
 from reframe.models.issues import Fix, ValidationIssue
+from reframe.probe.names import FORCED_ONLY_SUBTITLE_CODECS
 from reframe.validation.common import (
     containers_for,
     error,
@@ -17,8 +19,6 @@ from reframe.validation.common import (
 from reframe.validation.context import JobContext
 from reframe.validation.registry import job_rule
 from reframe.validation.tracks import (
-    EXTERNAL_FORMATS,
-    FORCED_ONLY_CODECS,
     subtitle_input,
     switch_container,
 )
@@ -272,7 +272,7 @@ def forced_only(ctx: JobContext) -> Iterator[ValidationIssue]:
                 "forced-only works only when the track is burned in (a copied or converted "
                 "track keeps every event)"
             )
-        elif source.codec not in FORCED_ONLY_CODECS:
+        elif source.codec not in FORCED_ONLY_SUBTITLE_CODECS:
             reason = f"forced-only needs PGS or VobSub subtitles; {source.label} keeps every event"
         else:
             continue

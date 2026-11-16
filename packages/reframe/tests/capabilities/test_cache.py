@@ -63,7 +63,6 @@ def test_key_parts(binary: Path) -> None:
         "os": "linux",
         "vaapi_device": None,
         "render_nodes": None,
-        "filter_tests": ["libplacebo"],
     }
     assert key.definitions == definitions_fingerprint(DEFS)
     assert key.detector == detector_fingerprint()
@@ -78,7 +77,6 @@ def test_key_changes(binary: Path) -> None:
     nodes = key_for(binary, render_nodes=("/dev/dri/renderD128",))
     assert nodes != key
     assert key_for(binary, render_nodes=("/dev/dri/renderD128", "/dev/dri/renderD129")) != nodes
-    assert key_for(binary, filter_tests=()) != key
     env = cache_key(
         ffmpeg_info(binary, env={"LIBVA_DRIVERS_PATH": "/usr/lib/dri"}),
         gpu=key.gpu,

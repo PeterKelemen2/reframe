@@ -31,12 +31,6 @@ CODES = (
 )
 #: Colorspace presets that convert to an SDR transfer (BT.2020 uses ``bt2020-10``, SDR).
 _SDR_PRESETS = frozenset({"bt709", "bt2020", "bt601-6-525", "bt601-6-625"})
-_HDR_LABELS = {
-    HdrFormat.HDR10: "HDR10",
-    HdrFormat.HDR10_PLUS: "HDR10+",
-    HdrFormat.HLG: "HLG",
-    HdrFormat.DOLBY_VISION: "Dolby Vision",
-}
 #: Transfer characteristics of HDR video (ffprobe ``color_transfer``).
 _HDR_TRANSFERS = frozenset({"smpte2084", "arib-std-b67"})
 
@@ -229,7 +223,7 @@ def is_hdr(stream: VideoStream) -> bool:
 def _hdr_label(stream: VideoStream) -> str:
     """``HDR10``, ``HDR10, Dolby Vision``; ``HDR (PQ)`` when only the transfer says it."""
     if stream.hdr is not None and stream.hdr.formats:
-        return ", ".join(_HDR_LABELS[f] for f in stream.hdr.formats)
+        return ", ".join(f.label for f in stream.hdr.formats)
     return f"HDR ({_transfer(stream)})"
 
 

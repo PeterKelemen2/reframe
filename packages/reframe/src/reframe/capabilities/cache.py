@@ -123,7 +123,6 @@ def cache_key(
         "os": options.os or current_os(),
         "vaapi_device": options.vaapi_device,
         "render_nodes": list(options.render_nodes) if options.render_nodes is not None else None,
-        "filter_tests": list(options.filter_tests),
     }
     return CacheKey(
         ffmpeg=str(path),

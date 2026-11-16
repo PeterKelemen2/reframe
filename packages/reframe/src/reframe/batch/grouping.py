@@ -225,8 +225,7 @@ def _size(fp: Fingerprint) -> str:
 
 
 def _hdr(fp: Fingerprint) -> str:
-    names = {"hdr10": "HDR10", "hdr10plus": "HDR10+", "hlg": "HLG", "dolby_vision": "Dolby Vision"}
-    return names[fp.hdr.value] if fp.hdr is not None else "SDR"
+    return fp.hdr.label if fp.hdr is not None else "SDR"
 
 
 @dataclass(slots=True)

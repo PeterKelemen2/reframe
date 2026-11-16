@@ -46,10 +46,10 @@ from reframe.models.media import (
     SubtitleStream,
     TrackRole,
 )
+from reframe.probe.names import FORCED_ONLY_SUBTITLE_CODECS
 from reframe.probe.roles import FORCED_MAX_RATIO
 
 __all__ = [
-    "FORCED_ONLY_CODECS",
     "AudioStage",
     "ForeignAudio",
     "SubtitleStage",
@@ -61,9 +61,6 @@ __all__ = [
     "foreign_audio_search",
     "subtitle_stage",
 ]
-
-#: Subtitle codecs whose FFmpeg decoder has ``forced_subs_only`` (PGS, VobSub).
-FORCED_ONLY_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle"})
 
 
 def _with_default[T: (AudioOutputTrack, SubtitleOutputTrack)](track: T, value: bool) -> T:
@@ -314,7 +311,7 @@ def forced_evidence(
                 f"{count} events, {round(100 * count / top)} % of the {top} events of "
                 f"track #{biggest.index}"
             )
-    if forced and stream.codec in FORCED_ONLY_CODECS:
+    if forced and stream.codec in FORCED_ONLY_SUBTITLE_CODECS:
         return 4, f"{forced} forced events in a full track"
     return None
 

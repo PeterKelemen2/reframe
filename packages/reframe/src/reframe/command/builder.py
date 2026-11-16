@@ -17,7 +17,7 @@ from reframe.command.filtergraph import (
     filter_available,
     keeps_hdr,
 )
-from reframe.command.header import FixupTrack, edit_line, fixup_edit, in_place_edit, is_empty
+from reframe.command.header import edit_line, fixup_edit, in_place_edit, is_empty
 from reframe.command.jobtype import job_type
 from reframe.command.metadata import (
     OutputTrack,
@@ -28,10 +28,11 @@ from reframe.command.metadata import (
     stream_metadata_args,
     tag_args,
 )
-from reframe.command.quoting import Shell, command_line, default_shell, quote_posix, quote_windows
+from reframe.command.quoting import Shell, command_line, default_shell, quoter
 from reframe.command.subtitles import SubtitlePlan, plan_subtitles
 from reframe.command.video import (
     V0,
+    encoder_and_pix_fmt,
     format_number,
     frame_rate_args,
     pass_log_files,
@@ -39,8 +40,14 @@ from reframe.command.video import (
     spec,
     video_encoder_args,
 )
-from reframe.definitions import ContainerDef, Definitions, VideoEncoderDef, load_definitions
-from reframe.dimensions import compute_geometry, source_geometry
+from reframe.definitions import (
+    DEFAULT_VAAPI_DEVICE,
+    ContainerDef,
+    Definitions,
+    VideoEncoderDef,
+    load_definitions,
+)
+from reframe.dimensions import job_geometry
 from reframe.models import (
     AverageBitrate,
     CapabilitySnapshot,
@@ -67,7 +74,6 @@ from reframe.models import (
 )
 
 __all__ = [
-    "DEFAULT_VAAPI_DEVICE",
     "GLOBAL_ARGS",
     "STEP_WEIGHTS",
     "build_plan",
@@ -76,8 +82,6 @@ __all__ = [
 ]
 
 GLOBAL_ARGS = ("-hide_banner", "-nostdin", "-y", "-progress", "pipe:1", "-nostats")
-#: ``{vaapi_device}`` when the encoder status names no render node (the definitions' default).
-DEFAULT_VAAPI_DEVICE = "/dev/dri/renderD128"
 #: Relative progress weights; the runner normalises them.
 STEP_WEIGHTS: dict[StepKind, float] = {
     "analyse": 0.05,
@@ -154,12 +158,6 @@ class _Video:
     label: str
 
 
-def _fill(text: str, values: dict[str, str]) -> str:
-    for name, value in values.items():
-        text = text.replace("{" + name + "}", value)
-    return text
-
-
 def _video_plan(
     job: JobSettings,
     video: VideoStream,
@@ -178,33 +176,20 @@ def _video_plan(
         if codec in container.codec_tags:
             args += [spec("-tag:v", V0), container.codec_tags[codec]]
         return _Video({None: args}, None, [], None, False, None, False, "Remux")
-    encoder = defs.video_encoders.get(settings.encoder)
-    if encoder is None:
-        raise PlanError(f"unknown video encoder {settings.encoder!r} (validation reports it)")
+    encoder, pix_fmt = encoder_and_pix_fmt(job, defs)
     if encoder.codec not in container.video.encode:
         raise PlanError(f"{encoder.codec_label} cannot be written into {container.label}")
-    pix_fmt = encoder.pix_fmts.get("10" if settings.bit_depth == 10 else "8")
-    if pix_fmt is None:
-        raise PlanError(f"{encoder.label} has no {settings.bit_depth}-bit mode")
     status = caps.status(encoder.id)
-    geometry_src = source_geometry(video)
-    if "deinterlace" in job.filters.root:
-        geometry_src = geometry_src.model_copy(update={"interlaced": False})
-    geometry = compute_geometry(geometry_src, job.dimensions)
+    geometry = job_geometry(video, job)
     values = {"vaapi_device": status.device or DEFAULT_VAAPI_DEVICE, "sw_pix_fmt": pix_fmt}
     setup = encoder.hardware_setup
-    hw_init = [_fill(a, values) for a in setup.init_args] if setup else []
-    tail = (
-        [_fill(f, values) for f in setup.filter_tail]
-        if setup and setup.filter_tail
-        else [f"format={pix_fmt}"]
-    )
+    hw_init, tail = setup.resolve(values) if setup else ([], [])
     graph = build_video_graph(
         video=video,
         filters=job.filters.root,
         geometry=geometry,
         scaler=job.dimensions.scaler,
-        tail=tail,
+        tail=tail or [f"format={pix_fmt}"],
         definitions=defs,
         available=filter_available(caps, defs),
         text_burn=subs.text_burn,
@@ -495,7 +480,7 @@ def _fixup_step(tracks: list[OutputTrack], container: ContainerDef, tmp: Path) -
     that FFmpeg's muxer does not write."""
     if container.id != "mkv":
         return None
-    edit = fixup_edit(tmp, [FixupTrack(t.type, t.index + 1, t.language) for t in tracks])
+    edit = fixup_edit(tmp, tracks)
     if is_empty(edit):
         return None
     return PlanStep(
@@ -620,7 +605,7 @@ def _program(tools: ToolSet, name: ToolName) -> str:
 
 def _display(steps: list[PlanStep], tools: ToolSet, tmp: Path, final: Path, shell: Shell) -> str:
     lines: list[str] = []
-    quote = quote_posix if shell == "posix" else quote_windows
+    quote = quoter(shell)
     for step in steps:
         if step.header_edit is not None:
             lines.append(edit_line(step.header_edit, shell))

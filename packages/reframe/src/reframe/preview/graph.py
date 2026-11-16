@@ -20,9 +20,9 @@ from reframe.command.filtergraph import (
     is_hdr,
     tonemap_filters,
 )
-from reframe.command.video import format_number
+from reframe.command.video import encoder_and_pix_fmt, format_number
 from reframe.definitions import Definitions
-from reframe.dimensions import compute_geometry, source_geometry
+from reframe.dimensions import job_geometry
 from reframe.models import CapabilitySnapshot, JobSettings, MediaSource, VideoStream
 from reframe.models.preview import FrameKind
 
@@ -86,8 +86,7 @@ def _hdr_display(
 
 def _hdr_name(video: VideoStream) -> str:
     formats = video.hdr.formats if video.hdr is not None else []
-    names = {"hdr10": "HDR10", "hdr10plus": "HDR10+", "hlg": "HLG", "dolby_vision": "Dolby Vision"}
-    return ", ".join(names.get(f.value, f.value) for f in formats) or "HDR"
+    return ", ".join(f.label for f in formats) or "HDR"
 
 
 def _prefix(video: VideoStream) -> list[str]:
@@ -125,21 +124,11 @@ def job_video_graph(
     if job.video.passthrough:
         return None
     video = source.video[0]
-    settings = job.video
-    encoder = definitions.video_encoders.get(settings.encoder)
-    if encoder is None:
-        raise PlanError(f"unknown video encoder {settings.encoder!r} (validation reports it)")
-    pix_fmt = encoder.pix_fmts.get("10" if settings.bit_depth == 10 else "8")
-    if pix_fmt is None:
-        raise PlanError(f"{encoder.label} has no {settings.bit_depth}-bit mode")
-    geometry_src = source_geometry(video)
-    if "deinterlace" in job.filters.root:
-        geometry_src = geometry_src.model_copy(update={"interlaced": False})
-    geometry = compute_geometry(geometry_src, job.dimensions)
+    _, pix_fmt = encoder_and_pix_fmt(job, definitions)
     return build_video_graph(
         video=video,
         filters=job.filters.root,
-        geometry=geometry,
+        geometry=job_geometry(video, job),
         scaler=job.dimensions.scaler,
         tail=[f"format={pix_fmt}"],
         definitions=definitions,

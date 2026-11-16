@@ -34,6 +34,7 @@ __all__ = [
     "filter_path",
     "is_hdr",
     "keeps_hdr",
+    "known_colour",
     "quote_value",
     "subtitles_filter",
     "tonemap_filters",
@@ -109,18 +110,20 @@ def filter_available(caps: CapabilitySnapshot, definitions: Definitions) -> dict
     return result
 
 
-def _known(value: str | None) -> str | None:
+def known_colour(value: str | None) -> str | None:
+    """An ffprobe colour value, or ``None`` when it means "not known"."""
     return None if value is None or value in _UNKNOWN_COLOUR else value
 
 
-def _is_hdr(video: VideoStream) -> bool:
+def is_hdr(video: VideoStream) -> bool:
+    """Whether the probe found an HDR format for the source."""
     return video.hdr is not None and bool(video.hdr.formats)
 
 
 def assumed_colour(video: VideoStream) -> tuple[str, str, str]:
     """``(primaries, transfer, matrix)``: the probed values, with what is unknown filled in by
     the usual standard for the picture (HDR, SD or HD)."""
-    if _is_hdr(video):
+    if is_hdr(video):
         assert video.hdr is not None
         hlg = HdrFormat.HLG in video.hdr.formats
         defaults = ("bt2020", "arib-std-b67" if hlg else "smpte2084", "bt2020nc")
@@ -132,30 +135,20 @@ def assumed_colour(video: VideoStream) -> tuple[str, str, str]:
         defaults = ("bt709", "bt709", "bt709")
     c = video.color
     return (
-        _known(c.primaries) or defaults[0],
-        _known(c.transfer) or defaults[1],
-        _known(c.matrix) or defaults[2],
+        known_colour(c.primaries) or defaults[0],
+        known_colour(c.transfer) or defaults[1],
+        known_colour(c.matrix) or defaults[2],
     )
-
-
-def _setparams(video: VideoStream) -> str | None:
-    """``setparams`` for the colour values the source does not say (``None``: it says all)."""
-    c = video.color
-    if _known(c.primaries) and _known(c.transfer) and _known(c.matrix):
-        return None
-    primaries, transfer, matrix = assumed_colour(video)
-    return f"setparams=color_primaries={primaries}:color_trc={transfer}:colorspace={matrix}"
-
-
-def is_hdr(video: VideoStream) -> bool:
-    """Whether the probe found an HDR format for the source."""
-    return _is_hdr(video)
 
 
 def colour_params(video: VideoStream) -> str | None:
     """The ``setparams`` filter that gives a source with unknown colour values its assumed colour
     (:func:`assumed_colour`); ``None`` when the source says all three values."""
-    return _setparams(video)
+    c = video.color
+    if known_colour(c.primaries) and known_colour(c.transfer) and known_colour(c.matrix):
+        return None
+    primaries, transfer, matrix = assumed_colour(video)
+    return f"setparams=color_primaries={primaries}:color_trc={transfer}:colorspace={matrix}"
 
 
 def tonemap_filters(
@@ -171,7 +164,7 @@ def tonemap_filters(
     fdef = definitions.filters["tonemap"]
     impl, chain = _chain(fdef, config if config is not None else FilterConfig(), available)
     filters: list[str] = []
-    setparams = _setparams(video) if impl.requires_tagged_input else None
+    setparams = colour_params(video) if impl.requires_tagged_input else None
     if setparams is not None:
         filters.append(setparams)
     filters.append(chain)
@@ -181,7 +174,7 @@ def tonemap_filters(
 def keeps_hdr(video: VideoStream, filters: Mapping[str, FilterConfig], bit_depth: int) -> bool:
     """The output stays HDR: an HDR source with no tone mapping or colour conversion, at 10 bits."""
     return (
-        _is_hdr(video) and "tonemap" not in filters and "colorspace" not in filters
+        is_hdr(video) and "tonemap" not in filters and "colorspace" not in filters
         and bit_depth == 10
     )  # fmt: skip
 
@@ -321,7 +314,7 @@ def build_video_graph(
     graph = VideoGraph()
     before: list[str] = []  # up to the crop (a bitmap overlay comes after these)
     after: list[str] = []  # from the rotation on
-    hdr_source = _is_hdr(video)
+    hdr_source = is_hdr(video)
 
     def add(target: list[str], filter_id: str) -> None:
         config = filters.get(filter_id)
@@ -336,7 +329,7 @@ def build_video_graph(
         if impl.combed_only and "interlace_detection" in filters:
             chain = _with_option(chain, impl.combed_only)
         if impl.requires_tagged_input:
-            setparams = _setparams(video)
+            setparams = colour_params(video)
             if setparams is not None:
                 target.append(setparams)
         target.append(chain)

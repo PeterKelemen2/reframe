@@ -323,6 +323,18 @@ class FastDecodeDef(ReframeModel):
     params: dict[str, str] = Field(default_factory=dict)
 
 
+#: ``{vaapi_device}`` when no render node is known.
+DEFAULT_VAAPI_DEVICE = "/dev/dri/renderD128"
+
+
+def fill_placeholders(text: str, values: Mapping[str, str]) -> str:
+    """Replace each ``{name}`` of ``values`` in ``text``. The definitions linter refuses a
+    placeholder that no caller fills."""
+    for name, value in values.items():
+        text = text.replace("{" + name + "}", value)
+    return text
+
+
 class HardwareSetup(ReframeModel):
     """How to drive a hardware encoder from FFmpeg."""
 
@@ -330,6 +342,13 @@ class HardwareSetup(ReframeModel):
     """Global arguments before ``-i``."""
     filter_tail: list[str] = Field(default_factory=list)
     """Filters appended to the end of the video filter chain."""
+
+    def resolve(self, values: Mapping[str, str]) -> tuple[list[str], list[str]]:
+        """``init_args`` and ``filter_tail`` with their placeholders filled."""
+        return (
+            [fill_placeholders(a, values) for a in self.init_args],
+            [fill_placeholders(f, values) for f in self.filter_tail],
+        )
 
 
 class VideoEncoderDef(ReframeModel):

@@ -7,6 +7,7 @@ The data lives in ``definitions/data/*.toml``. Pydantic validates it when
 from reframe.definitions.hdr import hdr_options
 from reframe.definitions.loader import load_definitions
 from reframe.definitions.models import (
+    DEFAULT_VAAPI_DEVICE,
     OPTION_CATEGORIES,
     AudioBitrateDef,
     AudioEncoderDef,
@@ -30,6 +31,7 @@ from reframe.definitions.models import (
     VideoEncoderDef,
     X26xParam,
     channels_mixdown,
+    fill_placeholders,
 )
 from reframe.definitions.options import (
     describe_condition,
@@ -43,6 +45,7 @@ from reframe.definitions.search import search_options
 from reframe.definitions.support import mapping_supported, supported_presets
 
 __all__ = [
+    "DEFAULT_VAAPI_DEVICE",
     "OPTION_CATEGORIES",
     "AudioBitrateDef",
     "AudioEncoderDef",
@@ -69,6 +72,7 @@ __all__ = [
     "convert_quality",
     "describe_condition",
     "effective_option",
+    "fill_placeholders",
     "hdr_options",
     "load_definitions",
     "mapping_supported",

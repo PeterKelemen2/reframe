@@ -9,19 +9,14 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Literal
 
 __all__ = [
     "EncoderHelp",
-    "EncoderListing",
     "parse_encoder_help",
     "parse_encoders",
     "parse_filters",
 ]
 
-MediaKind = Literal["video", "audio", "subtitle"]
-
-_KINDS: dict[str, MediaKind] = {"V": "video", "A": "audio", "S": "subtitle"}
 _ENCODER_LINE = re.compile(r"^\s*(?P<flags>[VAS][A-Z.]{5})\s+(?P<name>\S+)(?:\s+(?P<desc>.*))?$")
 _FILTER_LINE = re.compile(r"^\s*(?P<flags>[A-Z.|]{2,3})\s+(?P<name>\S+)\s+(?P<io>\S*->\S*)(?:\s|$)")
 _SEPARATOR = re.compile(r"^\s*-{6}\s*$")
@@ -35,22 +30,9 @@ MAX_RANGE_PRESETS = 64
 
 
 @dataclass(frozen=True)
-class EncoderListing:
-    """One line of ``ffmpeg -encoders``."""
-
-    name: str
-    kind: MediaKind
-    description: str = ""
-    experimental: bool = False
-    """The ``X`` flag: FFmpeg needs ``-strict experimental`` for it."""
-
-
-@dataclass(frozen=True)
 class EncoderHelp:
     """What ``ffmpeg -h encoder=<name>`` says about one encoder."""
 
-    name: str
-    description: str = ""
     private_options: list[str] = field(default_factory=list)
     """Every option of the ``AVOptions`` sections, in order, without the ``-``."""
     presets: list[str] = field(default_factory=list)
@@ -59,30 +41,21 @@ class EncoderHelp:
     pix_fmts: list[str] = field(default_factory=list)
     """``Supported pixel formats`` (``vaapi`` alone for VAAPI encoders, which take hardware
     frames)."""
-    hardware_devices: list[str] = field(default_factory=list)
-    """``Supported hardware devices``, without repeats."""
 
 
-def parse_encoders(text: str) -> dict[str, EncoderListing]:
-    """The encoders of ``ffmpeg -hide_banner -encoders`` by name; ``{}`` if the text has no
+def parse_encoders(text: str) -> frozenset[str]:
+    """The encoder names of ``ffmpeg -hide_banner -encoders``; empty if the text has no
     list (not FFmpeg output)."""
-    result: dict[str, EncoderListing] = {}
+    names: set[str] = set()
     started = False
     for line in text.splitlines():
         if not started:
             started = bool(_SEPARATOR.match(line))
             continue
         match = _ENCODER_LINE.match(line)
-        if match is None:
-            continue
-        flags = match["flags"]
-        result[match["name"]] = EncoderListing(
-            name=match["name"],
-            kind=_KINDS[flags[0]],
-            description=(match["desc"] or "").strip(),
-            experimental=flags[3] == "X",
-        )
-    return result
+        if match is not None:
+            names.add(match["name"])
+    return frozenset(names)
 
 
 def parse_filters(text: str) -> list[str]:
@@ -103,26 +76,21 @@ def parse_encoder_help(text: str) -> EncoderHelp | None:
     """Parse ``ffmpeg -hide_banner -h encoder=<name>``; ``None`` when FFmpeg does not know the
     encoder or the text is not encoder help."""
     help_name: str | None = None
-    description = ""
     options: list[str] = []
     presets: list[str] = []
     preset_range: tuple[int, int] | None = None
     pix_fmts: list[str] = []
-    devices: list[str] = []
     current: str | None = None
     for raw in text.splitlines():
         line = raw.rstrip()
         if _NOT_RECOGNIZED.match(line):
             return None
         if (header := _HEADER.match(line)) is not None:
-            help_name, description = header["name"], header["desc"]
+            help_name = header["name"]
             continue
         stripped = line.strip()
         if stripped.startswith("Supported pixel formats:"):
             pix_fmts = stripped.split(":", 1)[1].split()
-            continue
-        if stripped.startswith("Supported hardware devices:"):
-            devices = list(dict.fromkeys(stripped.split(":", 1)[1].split()))
             continue
         if (option := _OPTION.match(line)) is not None:
             current = option["name"]
@@ -145,11 +113,4 @@ def parse_encoder_help(text: str) -> EncoderHelp | None:
         low, high = preset_range
         if 0 <= high - low < MAX_RANGE_PRESETS:
             presets = [str(value) for value in range(low, high + 1)]
-    return EncoderHelp(
-        name=help_name,
-        description=description,
-        private_options=options,
-        presets=presets,
-        pix_fmts=pix_fmts,
-        hardware_devices=devices,
-    )
+    return EncoderHelp(private_options=options, presets=presets, pix_fmts=pix_fmts)

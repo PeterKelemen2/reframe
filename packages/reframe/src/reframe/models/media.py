@@ -193,6 +193,19 @@ class HdrFormat(StrEnum):
     HLG = "hlg"
     DOLBY_VISION = "dolby_vision"
 
+    @property
+    def label(self) -> str:
+        """The display name: ``HDR10``, ``HDR10+``, ``HLG``, ``Dolby Vision``."""
+        return _HDR_LABELS[self]
+
+
+_HDR_LABELS = {
+    HdrFormat.HDR10: "HDR10",
+    HdrFormat.HDR10_PLUS: "HDR10+",
+    HdrFormat.HLG: "HLG",
+    HdrFormat.DOLBY_VISION: "Dolby Vision",
+}
+
 
 class MasteringDisplay(DocumentModel):
     """SMPTE ST 2086 mastering display colour volume: CIE 1931 xy chromaticities and cd/m²."""

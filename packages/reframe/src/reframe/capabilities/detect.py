@@ -18,7 +18,6 @@ from pathlib import Path
 
 from reframe.capabilities.devices import render_nodes
 from reframe.capabilities.hwtest import (
-    DEFAULT_VAAPI_DEVICE,
     FILTER_TESTS,
     TEST_TIMEOUT,
     BitDepth,
@@ -29,13 +28,12 @@ from reframe.capabilities.hwtest import (
 )
 from reframe.capabilities.parse import (
     EncoderHelp,
-    EncoderListing,
     parse_encoder_help,
     parse_encoders,
     parse_filters,
 )
 from reframe.capabilities.reasons import normalise_line
-from reframe.definitions import Definitions, OperatingSystem, VideoEncoderDef
+from reframe.definitions import DEFAULT_VAAPI_DEVICE, Definitions, OperatingSystem, VideoEncoderDef
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe.models.tools import ToolInfo, ToolStatus
 from reframe.tools import CancelToken, RunResult, run
@@ -93,12 +91,8 @@ class DetectionOptions:
     render_nodes: tuple[str, ...] | None = None
     """The render nodes to try, in order; ``None``: list ``/dev/dri/renderD*`` when a VAAPI
     encoder is tested (:func:`reframe.capabilities.devices.render_nodes`)."""
-    filter_tests: tuple[str, ...] = tuple(FILTER_TESTS)
-    """Filters that get a run test when the build lists them (``libplacebo``)."""
     test_timeout: float = TEST_TIMEOUT
     list_timeout: float = LIST_TIMEOUT
-    max_parallel_tests: int = MAX_PARALLEL_TESTS
-    max_parallel_help: int = MAX_PARALLEL_HELP
 
 
 def _now() -> datetime:
@@ -198,8 +192,8 @@ class _Detection:
         self.cancel = cancel
         self.on_update = on_update
         self.statuses = initial_statuses(definitions, EncoderState.CHECKING)
-        self.tests = asyncio.Semaphore(max(1, options.max_parallel_tests))
-        self.helps = asyncio.Semaphore(max(1, options.max_parallel_help))
+        self.tests = asyncio.Semaphore(MAX_PARALLEL_TESTS)
+        self.helps = asyncio.Semaphore(MAX_PARALLEL_HELP)
         self.filter_failures: dict[str, str] = {}
         self.untested_filters: list[str] = []
         self.nodes: list[str] = []
@@ -228,10 +222,10 @@ class _Detection:
             filters_task = group.create_task(self.ffmpeg_run("-filters", timeout=timeout))
         encoders_result, filters_result = encoders_task.result(), filters_task.result()
         filters = self.filters(filters_result)
-        self.untested_filters = [f for f in self.options.filter_tests if f in (filters or ())]
+        self.untested_filters = [f for f in FILTER_TESTS if f in (filters or ())]
 
         problem = _list_problem(encoders_result, "encoders", timeout)
-        listing = parse_encoders(encoders_result.stdout_text) if problem is None else {}
+        listing = parse_encoders(encoders_result.stdout_text) if problem is None else frozenset()
         if problem is None and not listing:
             problem = "ffmpeg -encoders printed no encoder list"
         if problem is not None:
@@ -268,12 +262,12 @@ class _Detection:
             return None
         return names
 
-    def classify(self, listing: dict[str, EncoderListing]) -> list[VideoEncoderDef]:
+    def classify(self, listing: frozenset[str]) -> list[VideoEncoderDef]:
         """Set every status that needs no test; return the hardware encoders to test."""
         when = _now()
         pending: list[VideoEncoderDef] = []
         for encoder in self.definitions.video_encoders.values():
-            in_build = listing.get(encoder.id) is not None
+            in_build = encoder.id in listing
             update: dict[str, object] = {"in_build": in_build, "checked_at": when}
             if self.os not in encoder.platforms:
                 update |= {
@@ -301,13 +295,13 @@ class _Detection:
                 update["supports_10bit"] = False
             self.set(encoder.id, **update)
         for audio in self.definitions.audio_encoders.values():
-            in_build = listing.get(audio.id) is not None
+            in_build = audio.id in listing
             state = EncoderState.AVAILABLE if in_build else EncoderState.UNAVAILABLE
             reason = None if in_build else NOT_IN_BUILD
             self.set(audio.id, in_build=in_build, state=state, reason=reason, checked_at=when)
         return pending
 
-    async def read_help(self, listing: dict[str, EncoderListing]) -> None:
+    async def read_help(self, listing: frozenset[str]) -> None:
         """``-h encoder=<id>`` for every known encoder in the build (statuses updated, not
         published)."""
         ids = [key for key in self.statuses if key in listing]
