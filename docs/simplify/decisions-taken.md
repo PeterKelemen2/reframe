@@ -357,3 +357,10 @@ choices below were taken by the agents or by the orchestrator, with the same dec
 - QJ-06: the one `SourceProber` protocol moved into `mediatask.py` as the base of
   `SourceAccess`, so `mediatask` stays a leaf module (no import of `queue.runner`). Rule 5.
 - QJ-05 removed `JobService.detection_wait`; its row left the "Not exposed" table (D-34).
+
+### D-37 Q-6.10: small choices of the agent
+- `encoder_and_pix_fmt` takes the job (CMD-01's signature); in `_video_plan` the container-codec
+  check now runs after the pixel-format check, as CMD-01 says.
+- `filter_test_argv` raises `ValueError` for a name not in `FILTER_TESTS` (before: `KeyError`);
+  nothing calls it with another name.
+- CMD-02 drops `filter_tests` from the capability cache key: one re-detection after the update.
