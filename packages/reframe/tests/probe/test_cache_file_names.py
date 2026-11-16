@@ -79,7 +79,6 @@ def test_an_entry_that_cannot_be_serialised_is_not_an_error(
     key = CacheKey(POSIX_NAME, 10, 123)
     assert cache.put(key, _source(POSIX_NAME), tool=TOOL) is False
     assert list(tmp_path.iterdir()) == []
-    assert cache.get(key, tool=TOOL) == _source(POSIX_NAME)  # the memory layer has it
 
 
 @pytest.mark.anyio

@@ -67,7 +67,7 @@ class SourceFingerprint(DocumentModel):
     size: NonNegativeInt
     mtime: float
     probe_hash: str | None = None
-    """A hash of the probe result (stream layout); ``None`` before the file is probed."""
+    """Not written by this version; older documents may carry a value."""
 
 
 class SourceRef(DocumentModel):

@@ -20,7 +20,6 @@ from reframe.probe import (
     Prober,
     ProbeTool,
     probe_argv,
-    probe_file,
 )
 from reframe.probe import prober as prober_mod
 from reframe.probe.prober import MATROSKA_READER
@@ -74,7 +73,6 @@ async def test_probe_parses_the_output(fake_tools: ft.FakeTools, media_file: Pat
     assert source.ref.path == media_file
     assert source.ref.fingerprint is not None
     assert source.ref.fingerprint.size == os.stat(media_file).st_size
-    assert source.ref.fingerprint.probe_hash
     assert source.probe_tool == "n-fake"
     assert source.probed_at is not None
     assert probe_calls(fake_tools) == [
@@ -264,7 +262,7 @@ async def test_parser_failure_is_an_error_value(
 
 
 async def test_missing_tool(tmp_path: Path, media_file: Path) -> None:
-    result = await probe_file(media_file, tmp_path / "no-ffprobe")
+    result = await Prober(tmp_path / "no-ffprobe").probe(media_file)
     assert isinstance(result, ProbeError)
     assert result.kind is ProbeErrorKind.TOOL_FAILED
     assert result.detail is not None

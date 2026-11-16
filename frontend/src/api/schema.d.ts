@@ -6436,7 +6436,7 @@ export interface components {
             mtime: number;
             /**
              * Probe Hash
-             * @description A hash of the probe result (stream layout); ``None`` before the file is probed.
+             * @description Not written by this version; older documents may carry a value.
              */
             probe_hash?: string | null;
         };

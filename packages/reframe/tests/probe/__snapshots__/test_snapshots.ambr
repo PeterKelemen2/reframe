@@ -204,7 +204,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'dd9470c5b62eb6a9',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'anime-ass-fonts.mkv',
@@ -530,7 +530,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'c9594df883363b89',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'song-cover.m4a',
@@ -708,7 +708,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '6645449807a7b55f',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-dts-hd-ma.mkv',
@@ -1033,7 +1033,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '8398e1b212f5657b',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-dts-x.mkv',
@@ -1163,7 +1163,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '980fdcf8dafffb4c',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-dv-p8.mkv',
@@ -1436,7 +1436,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '98d92b515ceba50c',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'dvd-title-interlaced.vob',
@@ -1812,7 +1812,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '1706453431c1d241',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'dvd-title-interlaced.mkv',
@@ -2131,7 +2131,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'c2f413efc6e3e8f1',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'show-eac3-atmos.mkv',
@@ -2569,7 +2569,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv',
@@ -2932,7 +2932,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv',
@@ -3295,7 +3295,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E03.Storm.BluRay.x264-GRP.mkv',
@@ -3658,7 +3658,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E04.Signal.BluRay.x264-GRP.mkv',
@@ -4082,7 +4082,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ca1ddc39d9d34b3c',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E05.Echoes.BluRay.x264-GRP.mkv',
@@ -4445,7 +4445,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E06.Harbor.BluRay.x264-GRP.mkv',
@@ -4808,7 +4808,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E07.Embers.BluRay.x264-GRP.mkv',
@@ -5171,7 +5171,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E08.Drift.BluRay.x264-GRP.mkv',
@@ -5534,7 +5534,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E09.Lantern.BluRay.x264-GRP.mkv',
@@ -5897,7 +5897,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E10.Tides.BluRay.x264-GRP.mkv',
@@ -6200,7 +6200,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'e2d0f30873bda1f9',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E11.Static.BluRay.x264-GRP.mkv',
@@ -6563,7 +6563,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E12.Homecoming.BluRay.x264-GRP.mkv',
@@ -6926,7 +6926,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S02.BluRay.x264-GRP/Anime.Show.S02E01.Return.BluRay.x264-GRP.mkv',
@@ -7289,7 +7289,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S02.BluRay.x264-GRP/Anime.Show.S02E02.Ashes.BluRay.x264-GRP.mkv',
@@ -7652,7 +7652,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S02.BluRay.x264-GRP/Anime.Show.S02E03.Northbound.BluRay.x264-GRP.mkv',
@@ -7893,7 +7893,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '9ee537eb9a03436d',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'anamorphic.mkv',
@@ -8114,7 +8114,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '313573079ad47e78',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'chapters.mkv',
@@ -8420,7 +8420,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '28fd6cd75b9ae47d',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'dts-hd-ma.mkv',
@@ -8544,7 +8544,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'e4a103dc2b3edb97',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'hdr10-4k.mkv',
@@ -8690,7 +8690,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '16909152e3ab639a',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'hdr10.mkv',
@@ -8836,7 +8836,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'b464dca7c6d3783b',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'interlaced.mkv',
@@ -8960,7 +8960,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '7e74121c4d798800',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'letterbox.mkv',
@@ -9268,7 +9268,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'multitrack.mkv',
@@ -9565,7 +9565,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '542eb0746cc26721',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'pgs.mkv',
@@ -9983,7 +9983,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E01.Title.mkv',
@@ -10464,7 +10464,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E02.Title.mkv',
@@ -10945,7 +10945,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E03.Title.mkv',
@@ -11426,7 +11426,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E04.Title.mkv',
@@ -11968,7 +11968,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '3d3bc2ec50ae6508',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E05.Title.mkv',
@@ -12449,7 +12449,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E06.Title.mkv',
@@ -12930,7 +12930,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E07.Title.mkv',
@@ -13411,7 +13411,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E08.Title.mkv',
@@ -13831,7 +13831,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '1a30e7aad8566369',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E09.Title.mkv',
@@ -14312,7 +14312,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E10.Title.mkv',
@@ -14793,7 +14793,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E11.Title.mkv',
@@ -15274,7 +15274,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E12.Title.mkv',
@@ -15570,7 +15570,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'fe51ae599319ed62',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'text-subs.en.ass',
@@ -15667,7 +15667,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ee9bee065a674fd9',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'text-subs.en.srt',
@@ -15836,7 +15836,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ce2ea698d72d33ee',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'text-subs.mkv',
@@ -16072,7 +16072,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'f0c7dd4145bb19ee',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'vfr.mkv',
@@ -16196,7 +16196,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'f0c7dd4145bb19ee',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'vfr.mp4',
@@ -16321,7 +16321,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'bd089c15b01ada82',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'vobsub.mkv',
@@ -16557,7 +16557,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '980fdcf8dafffb4c',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-hdr10-sei.mkv',
@@ -16775,7 +16775,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'bb01091f216c942f',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-hdr10-2160p.mkv',
@@ -16993,7 +16993,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '20b85e0303050edc',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'broadcast-hlg.mkv',
@@ -17197,7 +17197,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4ce7bef83ddd37f2',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'phone-vfr-mkvmerge.mkv',
@@ -17392,7 +17392,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'a22126e93801e301',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-pgs.mkv',
@@ -17844,7 +17844,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '55769fdd6e4569cf',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'phone-rotated.mov',
@@ -18161,7 +18161,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'f12b9a5415e52876',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'mkvmerge15-episode-pgs.mkv',
@@ -18879,7 +18879,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '7a293a5450d111b5',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'mkvmerge93-remux-pgs.mkv',
@@ -19129,7 +19129,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '976b392befe2afee',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-stale-stats.mkv',
@@ -19461,7 +19461,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '9829bf9a8bb53b5c',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-truehd-atmos.mkv',
@@ -19657,7 +19657,7 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '6b2d2707086411cf',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'phone-vfr.mkv',

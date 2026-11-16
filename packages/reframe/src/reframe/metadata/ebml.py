@@ -11,6 +11,8 @@ import zlib
 from dataclasses import dataclass
 
 from reframe.probe import matroska
+from reframe.probe.matroska import _CRC32 as CRC32
+from reframe.probe.matroska import _VOID as VOID
 from reframe.probe.matroska import MatroskaError, _Budget, _header
 
 __all__ = [
@@ -27,9 +29,6 @@ __all__ = [
     "split_crc",
     "void",
 ]
-
-VOID = 0xEC
-CRC32 = 0xBF
 
 
 def encode_id(element_id: int) -> bytes:

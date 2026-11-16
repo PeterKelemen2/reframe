@@ -1,4 +1,4 @@
-"""Probe results by file version: JSON files in ``<cache dir>/probe/`` and a small memory layer.
+"""Probe results by file version: JSON files in ``<cache dir>/probe/``.
 
 The key is the absolute path, size and mtime in nanoseconds, so a changed file gets a new key.
 An entry also records the ffprobe identity, the probe options and :func:`parser_fingerprint`,
@@ -11,12 +11,11 @@ from __future__ import annotations
 import contextlib
 import functools
 import hashlib
+import itertools
 import json
 import os
 import tempfile
-import threading
 import time
-from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,7 +32,6 @@ __all__ = [
     "CACHE_FORMAT",
     "DEFAULT_MAX_AGE",
     "DEFAULT_MAX_ENTRIES",
-    "MEMORY_ENTRIES",
     "PRUNE_EVERY",
     "CacheKey",
     "ProbeCache",
@@ -42,7 +40,6 @@ __all__ = [
 
 #: Version of the entry layout.
 CACHE_FORMAT = 1
-MEMORY_ENTRIES = 512
 DEFAULT_MAX_ENTRIES = 10_000
 DEFAULT_MAX_AGE = 180 * 24 * 3600.0
 PRUNE_EVERY = 200
@@ -118,17 +115,14 @@ class ProbeCache:
         self,
         directory: Path | None = None,
         *,
-        memory_entries: int = MEMORY_ENTRIES,
         max_entries: int = DEFAULT_MAX_ENTRIES,
         max_age: float = DEFAULT_MAX_AGE,
     ):
         self.directory = directory if directory is not None else paths.cache_dir() / "probe"
         self.max_entries = max_entries
         self.max_age = max_age
-        self._memory: OrderedDict[CacheKey, _Entry] = OrderedDict()
-        self._memory_entries = memory_entries
-        self._lock = threading.Lock()
-        self._puts = 0
+        # next() on a count is atomic under the GIL, so concurrent puts need no lock.
+        self._puts = itertools.count()
 
     def entry_path(self, key: CacheKey) -> Path:
         return self.directory / f"{key.digest()}.json"
@@ -136,20 +130,11 @@ class ProbeCache:
     def get(
         self, key: CacheKey, *, tool: str, options: Mapping[str, Any] | None = None
     ) -> MediaSource | None:
-        """The cached source for ``key`` made by ``tool`` with ``options``, else ``None``.
-        The source is a copy: changing it does not change the cache."""
-        opts = dict(options or {})
-        with self._lock:
-            entry = self._memory.get(key)
-            if entry is not None:
-                self._memory.move_to_end(key)
-        if entry is None:
-            entry = self._read(key)
-            if entry is not None:
-                self._remember(key, entry)
-        if entry is None or entry.tool != tool or dict(entry.options) != opts:
+        """The cached source for ``key`` made by ``tool`` with ``options``, else ``None``."""
+        entry = self._read(key)
+        if entry is None or entry.tool != tool or dict(entry.options) != dict(options or {}):
             return None
-        return entry.source.model_copy(deep=True)
+        return entry.source
 
     def _read(self, key: CacheKey) -> _Entry | None:
         try:
@@ -186,9 +171,8 @@ class ProbeCache:
         tool: str,
         options: Mapping[str, Any] | None = None,
     ) -> bool:
-        """Store ``source``. Returns ``False`` if the file could not be written (the memory
-        layer still has it), or if the entry would be nested more than ``MAX_DEPTH`` levels
-        deep (then it is not cached at all)."""
+        """Store ``source``. Returns ``False`` if the file could not be written, or if the entry
+        would be nested more than ``MAX_DEPTH`` levels deep."""
         opts = dict(options or {})
         try:
             dumped = source.model_dump(mode="json")
@@ -204,8 +188,6 @@ class ProbeCache:
         }
         if too_deep(doc):
             return False
-        entry = _Entry(tool, opts, source.model_copy(deep=True))
-        self._remember(key, entry)
         try:
             # ASCII escapes: a path with a lone surrogate cannot be written as UTF-8.
             text = json.dumps(doc, ensure_ascii=True, separators=(",", ":"))
@@ -228,10 +210,7 @@ class ProbeCache:
             with contextlib.suppress(OSError):
                 tmp.unlink()
             return False
-        with self._lock:
-            due = self._puts % PRUNE_EVERY == 0
-            self._puts += 1
-        if due:
+        if next(self._puts) % PRUNE_EVERY == 0:
             self.prune()
         return True
 
@@ -267,21 +246,8 @@ class ProbeCache:
             removed += _unlink(path)
         return removed
 
-    def _remember(self, key: CacheKey, entry: _Entry) -> None:
-        with self._lock:
-            self._memory[key] = entry
-            self._memory.move_to_end(key)
-            while len(self._memory) > self._memory_entries:
-                self._memory.popitem(last=False)
-
-    def forget_memory(self) -> None:
-        """Drop the in-memory layer (the files stay)."""
-        with self._lock:
-            self._memory.clear()
-
     def clear(self) -> None:
-        """Remove every entry (memory and files)."""
-        self.forget_memory()
+        """Remove every entry."""
         if not self.directory.is_dir():
             return
         for path in self.directory.glob("*.json"):

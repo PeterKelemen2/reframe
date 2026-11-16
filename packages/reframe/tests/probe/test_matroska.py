@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import shutil
 import struct
@@ -247,3 +248,14 @@ async def test_probe_shows_language_ietf(
 
 def _raise(path: object) -> matroska.MatroskaFile:
     raise MatroskaError("damaged")
+
+
+class _ShortReads(io.BytesIO):
+    def read(self, size: int | None = -1, /) -> bytes:
+        return super().read(min(3, size if size is not None and size >= 0 else 3))
+
+
+def test_read_exactly_joins_short_reads_and_stops_at_the_end() -> None:
+    handle = _ShortReads(bytes(range(20)))
+    assert matroska.read_exactly(handle, 2, 10) == bytes(range(2, 12))
+    assert matroska.read_exactly(handle, 15, 10) == bytes(range(15, 20))

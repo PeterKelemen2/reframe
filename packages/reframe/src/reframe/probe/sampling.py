@@ -24,7 +24,15 @@ from reframe.models.media import (
     VideoStream,
 )
 from reframe.probe import matroska
-from reframe.probe.matroska import MatroskaError, MatroskaFile, TrackKind
+from reframe.probe.matroska import (
+    _CLUSTER,
+    _CRC32,
+    _VOID,
+    MatroskaError,
+    MatroskaFile,
+    TrackKind,
+    read_exactly,
+)
 
 __all__ = [
     "MAX_CLUSTER",
@@ -52,13 +60,10 @@ MAX_SPAN = 60.0
 _FIRST = 0.02
 _LAST = 0.98
 _CLUSTER_MAGIC = b"\x1f\x43\xb6\x75"
-_CLUSTER = 0x1F43B675
 _TIMESTAMP = 0xE7
 _SIMPLE_BLOCK = 0xA3
 _BLOCK_GROUP = 0xA0
 _BLOCK = 0xA1
-_CRC32 = 0xBF
-_VOID = 0xEC
 #: Enough for a cluster's header and its first children up to the Timestamp.
 _CLUSTER_HEAD = 64
 
@@ -99,15 +104,7 @@ class _File:
         if self.stop() or count > self.left:
             raise _Stop
         self.left -= count
-        self.handle.seek(pos)
-        chunks: list[bytes] = []
-        while count > 0:
-            chunk = self.handle.read(count)
-            if not chunk:
-                break
-            chunks.append(chunk)
-            count -= len(chunk)
-        return b"".join(chunks)
+        return read_exactly(self.handle, pos, count)
 
     def load_window(self, pos: int) -> bytes:
         self.window = b""
@@ -310,9 +307,8 @@ def sample_clusters(
     info: MatroskaFile,
     *,
     stop: Callable[[], bool] = _never,
-    samples: int = SAMPLES,
 ) -> ClusterSample | None:
-    """Read ``samples`` clusters at evenly spaced offsets of the file (blocking). A segment no
+    """Read :data:`SAMPLES` clusters at evenly spaced offsets of the file (blocking). A segment no
     larger than the windows together is read whole instead, and when no offset finds a cluster
     (a file of few large clusters), the clusters from the first one on are read in a row.
     ``None`` when no cluster could be used. ``stop`` is checked before each read; when it
@@ -330,16 +326,16 @@ def sample_clusters(
         file = _File(handle, size, stop)
         sampler = _Sampler(file, limit, info)
         try:
-            if limit - info.segment <= samples * WINDOW:
+            if limit - info.segment <= SAMPLES * WINDOW:
                 sampler.walk(info.segment, None)
                 if sampler.complete:
                     return sampler.result()
                 sampler = _Sampler(file, limit, info)
-            for k in range(samples):
-                fraction = _FIRST + (_LAST - _FIRST) * k / max(samples - 1, 1)
+            for k in range(SAMPLES):
+                fraction = _FIRST + (_LAST - _FIRST) * k / max(SAMPLES - 1, 1)
                 sampler.from_window(int(size * fraction))
             if not sampler.clusters:
-                sampler.walk(info.segment, samples)
+                sampler.walk(info.segment, SAMPLES)
         except _Stop:
             pass
     return sampler.result()

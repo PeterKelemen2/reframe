@@ -15,10 +15,10 @@ from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.media import SubtitleFileInfo
 from reframe.probe.ffprobe import PROBE_TIMEOUT, ProbeError, ProbeErrorKind, ProbeTool, run_json
 from reframe.probe.names import BITMAP_SUBTITLE_CODECS
-from reframe.textfile import ENCODING_SAMPLE, detect_charset, open_regular, read_charset
+from reframe.textfile import ENCODING_SAMPLE, open_regular, read_charset
 from reframe.tools import CancelToken
 
-__all__ = ["ENCODING_SAMPLE", "detect_charset", "inspect_subtitle_file"]
+__all__ = ["ENCODING_SAMPLE", "inspect_subtitle_file"]
 
 
 def _display_sets(path: Path) -> int | None:

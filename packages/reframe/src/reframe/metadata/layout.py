@@ -20,6 +20,7 @@ from reframe.probe.matroska import (
     _SEEK_POSITION,
     _SEGMENT,
     _TRACKS,
+    _VOID,
     MatroskaError,
     _doc_type,
     _Reader,
@@ -28,7 +29,6 @@ from reframe.probe.matroska import (
 
 __all__ = ["Element", "Layout", "Refusal", "SeekHead", "read_layout"]
 
-_VOID = 0xEC
 _EBML_MAX_SIZE_LENGTH = 0x42F3
 
 
@@ -73,7 +73,6 @@ class Layout:
     """The file size."""
     max_size_width: int
     """``EBMLMaxSizeLength``: the widest size field allowed."""
-    segment_pos: int
     size_pos: int
     size_width: int
     base: int
@@ -249,7 +248,6 @@ def read_layout(reader: _Reader) -> Layout:
     return Layout(
         size=reader.size,
         max_size_width=max_width,
-        segment_pos=pos,
         size_pos=pos + id_len,
         size_width=size_width,
         base=layout_base,

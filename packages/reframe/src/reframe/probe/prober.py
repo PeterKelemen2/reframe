@@ -1,8 +1,6 @@
 """Probing one file: ffprobe, the HDR frame fallback, the Matroska track headers, the sampled
 bit rates, the VFR check and the cache.
 
-:class:`Prober` holds the configuration. :func:`probe_file` is the one-call form.
-
 Cancelling (the token or the calling task) stops the probe at once: ffprobe is killed by
 ``reframe.tools.run``, and a worker thread (``stat``, the Matroska reader, the cluster sample) is
 left to finish on its own while the probe returns ``ProbeErrorKind.CANCELLED``; the sample stops
@@ -16,7 +14,7 @@ import contextlib
 import logging
 import os
 import threading
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -34,7 +32,7 @@ from reframe.models.media import (
     SubtitleStream,
     VideoStream,
 )
-from reframe.models.text import replace_undecodable
+from reframe.models.text import replace_undecodable, shown
 from reframe.models.tools import ToolInfo
 from reframe.platform.longpath import missing_text
 from reframe.probe import matroska, roles, sampling
@@ -70,7 +68,6 @@ __all__ = [
     "ProbeOutcome",
     "Prober",
     "apply_matroska",
-    "probe_file",
     "stat_regular",
 ]
 
@@ -165,12 +162,10 @@ class Prober:
         *,
         cache: ProbeCache | None = None,
         timeout: float = PROBE_TIMEOUT,
-        frame_timeout: float = FRAME_TIMEOUT,
     ) -> None:
         self.tool = ProbeTool.of(ffprobe)
         self.cache = cache
         self.timeout = timeout
-        self.frame_timeout = frame_timeout
         self._flights: dict[tuple[CacheKey, bool], _Flight] = {}
 
     def cache_options(self) -> dict[str, Any]:
@@ -347,7 +342,7 @@ class Prober:
             frames_argv(self.tool.path, str(file), index),
             file,
             tool=self.tool,
-            timeout=self.frame_timeout,
+            timeout=FRAME_TIMEOUT,
             cancel=cancel,
             what="reading the first frames",
         )
@@ -374,7 +369,7 @@ class Prober:
             packets_argv(self.tool.path, str(file), index),
             file,
             tool=self.tool,
-            timeout=self.frame_timeout,
+            timeout=FRAME_TIMEOUT,
             cancel=cancel,
             what="reading packet timestamps",
         )
@@ -418,21 +413,18 @@ async def _sample(
     def stopped() -> bool:
         return stop.is_set() or cancel.cancelled
 
-    work = asyncio.to_thread(sampling.sample_clusters, file, tracks, stop=stopped)
     try:
-        return await _race(work, cancel, SAMPLE_TIMEOUT)
-    except TimeoutError:
-        log.info("%s: the clusters were not sampled within %g s", file, SAMPLE_TIMEOUT)
-        return _NOT_RUN
-    except OSError as exc:
-        log.info("%s: the clusters could not be sampled: %s", file, exc)
-        return _NOT_RUN
-    except (ArithmeticError, ValueError) as exc:
         # A damaged file can hold values the arithmetic cannot take: the rates stay unknown.
-        log.info("%s: the clusters could not be sampled: %r", file, exc)
+        return await _worker(
+            file,
+            lambda: sampling.sample_clusters(file, tracks, stop=stopped),
+            SAMPLE_TIMEOUT,
+            cancel,
+            (ArithmeticError, ValueError),
+            "the clusters",
+        )
     finally:
         stop.set()
-    return None
 
 
 async def _read_matroska(
@@ -441,23 +433,37 @@ async def _read_matroska(
     """The track headers; ``None`` when they are damaged, ``_NOT_RUN`` when the file could not
     be read within :data:`MATROSKA_TIMEOUT`. Neither is a warning: ffprobe read the file, and
     only ``language_ietf`` and the sampled rates stay unknown."""
+    return await _worker(
+        file,
+        lambda: matroska.read_matroska(file),
+        MATROSKA_TIMEOUT,
+        cancel,
+        (matroska.MatroskaError,),
+        "the Matroska track headers",
+    )
+
+
+async def _worker[T](
+    file: Path,
+    call: Callable[[], T],
+    timeout: float,  # noqa: ASYNC109
+    cancel: CancelToken,
+    damaged: tuple[type[Exception], ...],
+    what: str,
+) -> T | _Cancelled | _NotRun | None:
+    """``call`` in a worker thread, raced with ``cancel`` and ``timeout``: ``_NOT_RUN`` when it
+    timed out or the file could not be read, ``None`` when it raised one of ``damaged``."""
     try:
-        return await _race(
-            asyncio.to_thread(matroska.read_matroska, file), cancel, MATROSKA_TIMEOUT
-        )
+        return await _race(asyncio.to_thread(call), cancel, timeout)
     except TimeoutError:
-        log.info("%s: the Matroska track headers were not read within %g s", file, MATROSKA_TIMEOUT)
+        log.info("%s: %s were not read within %g s", file, what, timeout)
         return _NOT_RUN
     except OSError as exc:
-        log.info("%s: the Matroska track headers could not be read: %s", file, exc)
+        log.info("%s: %s could not be read: %s", file, what, exc)
         return _NOT_RUN
-    except matroska.MatroskaError as exc:
-        log.info("%s: the Matroska track headers could not be read: %s", file, exc)
+    except damaged as exc:
+        log.info("%s: %s could not be read: %r", file, what, exc)
     return None
-
-
-def _shown(value: str, limit: int = 40) -> str:
-    return repr(value if len(value) <= limit else value[:limit] + "…")
 
 
 def apply_matroska(source: MediaSource, info: matroska.MatroskaFile) -> bool:
@@ -483,21 +489,8 @@ def apply_matroska(source: MediaSource, info: matroska.MatroskaFile) -> bool:
             if value is not None and not is_language_tag(value):
                 source.warnings.append(
                     f"Stream {stream.index}: the BCP 47 language (LanguageIETF) "
-                    f"{_shown(value)} is not a language tag; not used."
+                    f"{shown(value)} is not a language tag; not used."
                 )
                 value = None
             stream.language_ietf = value
     return True
-
-
-async def probe_file(
-    path: str | os.PathLike[str],
-    ffprobe: ToolInfo | ProbeTool | str | os.PathLike[str],
-    *,
-    cache: ProbeCache | None = None,
-    cancel: CancelToken | None = None,
-    timeout: float = PROBE_TIMEOUT,  # noqa: ASYNC109
-) -> ProbeOutcome:
-    """Probe one file: ``Prober(ffprobe, cache=cache, …).probe(path, cancel=cancel)``."""
-    prober = Prober(ffprobe, cache=cache, timeout=timeout)
-    return await prober.probe(path, cancel=cancel)

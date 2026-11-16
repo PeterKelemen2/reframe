@@ -7,7 +7,6 @@ value, never an exception.
 
 from __future__ import annotations
 
-import codecs
 import csv
 import io
 import os
@@ -28,8 +27,9 @@ from reframe.models import (
     Severity,
     ValidationIssue,
 )
+from reframe.models.text import shown
 from reframe.platform.longpath import missing_text
-from reframe.textfile import NotARegularFileError, open_regular
+from reframe.textfile import BYTE_ORDER_MARKS, NotARegularFileError, open_regular
 
 __all__ = [
     "EXTENSIONS",
@@ -86,19 +86,8 @@ def _warning(code: str, message: str) -> ValidationIssue:
     return ValidationIssue(severity=Severity.WARNING, code=code, path="", message=message)
 
 
-def _shown(text: str, limit: int = 40) -> str:
-    return repr(text if len(text) <= limit else text[:limit] + "…")
-
-
 def _decode(data: bytes) -> tuple[str, list[ValidationIssue]]:
-    # UTF-32LE's mark starts with UTF-16LE's, so it is tested first.
-    for bom, encoding in (
-        (codecs.BOM_UTF32_LE, "utf-32"),
-        (codecs.BOM_UTF32_BE, "utf-32"),
-        (codecs.BOM_UTF8, "utf-8-sig"),
-        (codecs.BOM_UTF16_LE, "utf-16"),
-        (codecs.BOM_UTF16_BE, "utf-16"),
-    ):
+    for bom, _, encoding in BYTE_ORDER_MARKS:
         if data.startswith(bom):
             return data.decode(encoding, errors="replace"), []
     try:
@@ -152,9 +141,7 @@ def _parse_csv(text: str) -> _Read | ChapterFileError:
             try:
                 numbers.append(int(row[0].strip()))
             except ValueError:
-                return ChapterFileError(
-                    "invalid", f"{_shown(row[0])} is not a chapter number", line
-                )
+                return ChapterFileError("invalid", f"{shown(row[0])} is not a chapter number", line)
             found.chapters.append(ImportedChapter(start=None, name=row[1].strip()))
     except csv.Error as exc:
         return ChapterFileError("invalid", str(exc), reader.line_num)
@@ -292,7 +279,7 @@ def _parse_xml(text: str) -> _Read | ChapterFileError:
         time = _XML_TIME.match(start_node.text.strip())
         if time is None:
             return ChapterFileError(
-                "invalid", f"{_shown(start_node.text.strip())} is not a time (hh:mm:ss.nnnnnnnnn)",
+                "invalid", f"{shown(start_node.text.strip())} is not a time (hh:mm:ss.nnnnnnnnn)",
                 start_node.line,
             )  # fmt: skip
         display = atom.child("ChapterDisplay")
@@ -411,9 +398,8 @@ def chapter_export(
     chapters: Sequence[OutputChapter], chapter_format: ChapterFormat, name_of: PurePath
 ) -> ChapterExport:
     """:func:`write_chapters` with a file name from ``name_of`` (the output path)."""
-    stem = name_of.name[: -len(name_of.suffix)] if name_of.suffix else name_of.name
     return ChapterExport(
         format=chapter_format,
-        file_name=f"{stem}.chapters{EXTENSIONS[chapter_format]}",
+        file_name=f"{name_of.stem}.chapters{EXTENSIONS[chapter_format]}",
         content=write_chapters(chapters, chapter_format),
     )

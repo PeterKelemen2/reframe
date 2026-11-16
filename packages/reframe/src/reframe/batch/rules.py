@@ -21,7 +21,7 @@ from typing import Literal
 
 from reframe import languages
 from reframe.batch.audio_rules import apply_codec_rules, describe_output, layout_label
-from reframe.batch.descriptors import CODEC_LABELS, codec_label
+from reframe.batch.descriptors import codec_label
 from reframe.batch.explain import (
     AudioStage,
     ForeignAudio,
@@ -68,6 +68,7 @@ from reframe.models.template import (
 )
 from reframe.naming.context import audio_channels_label
 from reframe.naming.template import Value
+from reframe.probe.names import codec_name
 
 __all__ = [
     "CompiledRule",
@@ -125,14 +126,14 @@ def _selector_source(selector: TrackSelector) -> str:
         if selector.profiles:
             parts.append(selector.profiles[0])
         elif selector.codecs:
-            parts.append(CODEC_LABELS.get(selector.codecs[0], selector.codecs[0]))
+            parts.append(codec_name(selector.codecs[0]))
     else:
         if selector.title_pattern is not None:
             parts.append(title_text(selector.title_pattern))
         elif selector.roles:
             parts.append("/".join(role.value for role in selector.roles))
         elif selector.codecs:
-            parts.append(CODEC_LABELS.get(selector.codecs[0], selector.codecs[0]))
+            parts.append(codec_name(selector.codecs[0]))
     return " ".join(parts)
 
 

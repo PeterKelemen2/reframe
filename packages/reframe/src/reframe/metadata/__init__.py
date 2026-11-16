@@ -3,10 +3,8 @@ nothing from disk."""
 
 from __future__ import annotations
 
-from reframe import languages
 from reframe.batch import track_metadata
 from reframe.command.jobtype import is_matroska_source
-from reframe.definitions import Definitions
 from reframe.models.job import (
     AudioOutputTrack,
     ChapterSettings,
@@ -14,28 +12,10 @@ from reframe.models.job import (
     JobSettings,
     SubtitleOutputTrack,
     TagSettings,
-    TrackMetadata,
 )
-from reframe.models.media import MediaSource, VideoStream
+from reframe.models.media import MediaSource
 
-__all__ = ["remux_job", "source_video_metadata"]
-
-
-def source_video_metadata(stream: VideoStream) -> TrackMetadata:
-    """The video track's language, title and flags as the source has them, so that an in-place
-    edit changes only what the user changes."""
-    value = stream.language_ietf or stream.language
-    d = stream.disposition
-    return TrackMetadata(
-        language=(languages.normalize(value) or value) if value else None,
-        name=stream.title,
-        default=d.default,
-        forced=d.forced,
-        commentary=d.comment,
-        hearing_impaired=d.hearing_impaired,
-        visual_impaired=d.visual_impaired,
-        original=d.original,
-    )
+__all__ = ["remux_job"]
 
 
 def remux_job(
@@ -43,7 +23,6 @@ def remux_job(
     source: MediaSource,
     *,
     edit_in_place: bool = True,
-    definitions: Definitions | None = None,
 ) -> JobSettings:
     """``job`` turned into a remux-only job: video passthrough, every source audio and subtitle
     track copied in source order with its metadata, and ``output.edit_in_place`` set to
@@ -55,10 +34,8 @@ def remux_job(
     on, no tag overrides of the preset). For an in-place edit of an MKV the output is MKV and the
     output path is the source; the video track keeps its flags as they are. Otherwise the
     preset's container and output path stay (a remux writes a new file), and the video track
-    keeps the draft's metadata. ``definitions`` is unused; the parameter is kept for the
-    callers' contract.
+    keeps the draft's metadata.
     """
-    del definitions
     result = job.model_copy(deep=True)
     in_place = edit_in_place and is_matroska_source(source)
     previous = {t.source_stream: t for t in job.audio if t.source_stream is not None}
@@ -88,5 +65,5 @@ def remux_job(
         result.output.container = "mkv"
         result.output.path = source.ref.path
         if source.video:
-            result.video.metadata = source_video_metadata(source.video[0])
+            result.video.metadata = track_metadata(source.video[0])
     return result
