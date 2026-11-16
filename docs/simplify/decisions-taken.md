@@ -402,3 +402,13 @@ choices below were taken by the agents or by the orchestrator, with the same dec
   name removed functions; they are history and stay as written. The S-2 and audio-track rows of
   `docs/status.md` were updated too. The E05 near-match checks of `test_batch_service.py` moved
   to a `resolve_batch` call instead of being dropped.
+
+### D-40 Wave 8 (Q-6.18): choices of the agent
+- Two more tests in `tests/test_tasks.py` read a plain-value result
+  (`test_start_returns_at_once_and_progress_events_are_in_order` and the guard
+  `test_cancel_slot_handover_race`); they pass `result_json=lambda value: value`, like the four
+  server tests the plan names. Their assertions are unchanged. Rule 2, 6.
+- The `tasks.limit`, `tasks.set_limit` row left the "Not exposed" table (D-34); decision 0048
+  (the limits are internal) still holds, so no record.
+- CMD-07: the capability cache write now runs on the event loop once per detection (one JSON
+  file of a few KB); the finding names this trade-off.
