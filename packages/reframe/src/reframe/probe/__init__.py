@@ -19,7 +19,6 @@ from reframe.probe.folder import (
     list_media_files,
     natural_key,
     probe_folder,
-    start_probe_folder,
 )
 from reframe.probe.names import (
     audio_display_name,
@@ -51,7 +50,6 @@ __all__ = [
     "probe_argv",
     "probe_file",
     "probe_folder",
-    "start_probe_folder",
     "subtitle_display_name",
     "video_display_name",
 ]

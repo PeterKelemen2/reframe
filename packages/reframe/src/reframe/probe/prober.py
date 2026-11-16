@@ -23,9 +23,9 @@ from pathlib import Path
 from stat import S_ISREG
 from typing import Any
 
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ValidationError
 
-from reframe.models.base import LanguageTag
+from reframe.models.base import is_language_tag
 from reframe.models.media import (
     AudioStream,
     BitrateSource,
@@ -71,6 +71,7 @@ __all__ = [
     "Prober",
     "apply_matroska",
     "probe_file",
+    "stat_regular",
 ]
 
 #: Seconds to wait for the Matroska track reader (a slow network share).
@@ -82,11 +83,23 @@ SAMPLE_TIMEOUT = 30.0
 #: on this number.
 MATROSKA_READER = 4
 
-#: The shape of a ``language_ietf`` value (the model's own type; assignment does not check it).
-_LANGUAGE_TAG: TypeAdapter[str] = TypeAdapter(LanguageTag)
-
 #: The result of probing one file.
 ProbeOutcome = MediaSource | ProbeError
+
+
+def stat_regular(file: Path) -> os.stat_result | ProbeError:
+    """``os.stat`` of a regular file, or the probe error for a missing file, an unreadable one
+    or something that is not a file."""
+    try:
+        stat = os.stat(file)
+    except FileNotFoundError:
+        message = missing_text(file, "The file does not exist.")
+        return ProbeError(file, ProbeErrorKind.NOT_FOUND, message)
+    except OSError as exc:
+        return ProbeError(file, ProbeErrorKind.UNREADABLE, "The file cannot be read.", str(exc))
+    if not S_ISREG(stat.st_mode):
+        return ProbeError(file, ProbeErrorKind.NOT_A_FILE, "The path is not a file.")
+    return stat
 
 
 class _Cancelled:
@@ -232,15 +245,9 @@ class Prober:
     ) -> tuple[Path, os.stat_result, CacheKey] | ProbeError | MediaSource:
         """Check the file and look it up in the cache (blocking)."""
         file = Path(os.path.abspath(path))
-        try:
-            stat = os.stat(file)
-        except FileNotFoundError:
-            message = missing_text(file, "The file does not exist.")
-            return ProbeError(file, ProbeErrorKind.NOT_FOUND, message)
-        except OSError as exc:
-            return ProbeError(file, ProbeErrorKind.UNREADABLE, "The file cannot be read.", str(exc))
-        if not S_ISREG(stat.st_mode):
-            return ProbeError(file, ProbeErrorKind.NOT_A_FILE, "The path is not a file.")
+        stat = stat_regular(file)
+        if isinstance(stat, ProbeError):
+            return stat
         key = CacheKey.for_file(file, stat)
         if self.cache is not None and use_cache:
             cached = self.cache.get(key, tool=identity, options=options)
@@ -449,15 +456,6 @@ async def _read_matroska(
     return None
 
 
-def _is_language_tag(value: str) -> bool:
-    """``value`` is a valid :data:`~reframe.models.LanguageTag` (shape and length)."""
-    try:
-        _LANGUAGE_TAG.validate_python(value)
-    except ValidationError:
-        return False
-    return True
-
-
 def _shown(value: str, limit: int = 40) -> str:
     return repr(value if len(value) <= limit else value[:limit] + "…")
 
@@ -482,7 +480,7 @@ def apply_matroska(source: MediaSource, info: matroska.MatroskaFile) -> bool:
     for kind, found in streams.items():
         for stream, track in zip(found, kinds[kind], strict=True):
             value = track.language_ietf or None
-            if value is not None and not _is_language_tag(value):
+            if value is not None and not is_language_tag(value):
                 source.warnings.append(
                     f"Stream {stream.index}: the BCP 47 language (LanguageIETF) "
                     f"{_shown(value)} is not a language tag; not used."

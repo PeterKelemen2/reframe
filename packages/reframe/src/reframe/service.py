@@ -15,7 +15,6 @@ import os
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from pathlib import Path
-from stat import S_ISREG
 from types import TracebackType
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -40,7 +39,6 @@ from reframe.models.settings import AppSettings, LogLevel
 from reframe.models.tasks import TaskInfo
 from reframe.models.template import JobTemplate
 from reframe.models.tools import ToolInfo, ToolName, ToolSet, ToolStatus
-from reframe.platform.longpath import missing_text
 from reframe.platform.power import PowerService, create_power_service
 from reframe.presets import (
     ConflictPolicy,
@@ -64,6 +62,7 @@ from reframe.probe.folder import (
     FolderProbeResult,
     probe_folder,
 )
+from reframe.probe.prober import stat_regular
 from reframe.queue import QueueService
 from reframe.settings import MAX_DEPTH, SettingsStore, SettingsUpdate, too_deep, validation_detail
 from reframe.tasks import TaskContext, TaskManager
@@ -649,21 +648,15 @@ _NUL_PATH = "The path has a NUL character, which no file system allows: no file 
 
 
 def _check_file(path: str | os.PathLike[str]) -> ProbeError | None:
-    """The file checks of :meth:`Prober.probe` (missing, not a file), plus a real open. A path
-    with a NUL character is ``NOT_FOUND``: ``os.stat`` raises ``ValueError`` for it, not
-    ``OSError``."""
+    """The file checks of :func:`stat_regular` (missing, unreadable, not a file), plus a real
+    open. A path with a NUL character is ``NOT_FOUND``: ``os.stat`` raises ``ValueError`` for
+    it, not ``OSError``."""
     file = _absolute(path)
     if has_nul(file):
         return ProbeError(file, ProbeErrorKind.NOT_FOUND, _NUL_PATH)
-    try:
-        stat = os.stat(file)
-    except FileNotFoundError:
-        message = missing_text(file, "The file does not exist.")
-        return ProbeError(file, ProbeErrorKind.NOT_FOUND, message)
-    except OSError as exc:
-        return ProbeError(file, ProbeErrorKind.UNREADABLE, "The file cannot be read.", str(exc))
-    if not S_ISREG(stat.st_mode):
-        return ProbeError(file, ProbeErrorKind.NOT_A_FILE, "The path is not a file.")
+    stat = stat_regular(file)
+    if isinstance(stat, ProbeError):
+        return stat
     try:  # stat() works without read permission; open() tells
         with open(file, "rb"):
             pass

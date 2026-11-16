@@ -1,4 +1,4 @@
-"""Folder probe: media files only, natural order, concurrency limit, progress, task."""
+"""Folder probe: media files only, natural order, concurrency limit, progress, task events."""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from typing import Any
 import psutil
 import pytest
 
-from reframe.events import EventBus
 from reframe.models import MediaSource, SourceRef, TaskState
 from reframe.probe import (
     FolderProbeResult,
@@ -21,17 +20,19 @@ from reframe.probe import (
     list_media_files,
     natural_key,
     probe_folder,
-    start_probe_folder,
 )
-from reframe.tasks import TaskManager
-from reframe.tools import CancelToken
+from reframe.service import Reframe
+from reframe.tools import ENV_VARS, CancelToken
 from reframe_testing import fake_tools as ft
 from reframe_testing.waiting import wait_until
+
+from .conftest import make_prober, stdout_file, streams_rule
 
 pytestmark = pytest.mark.anyio
 
 
 PROBES = Path(__file__).resolve().parents[4] / "testdata" / "probes"
+MULTITRACK = PROBES / "fixtures" / "multitrack.mkv.json"
 
 
 def touch(folder: Path, *names: str) -> None:
@@ -170,60 +171,61 @@ async def test_probe_folder_problems(tmp_path: Path, monkeypatch: pytest.MonkeyP
     assert empty.to_json() == {"folder": str(tmp_path), "total": 0, "probed": [], "errors": []}
 
 
-async def test_folder_task_events(tmp_path: Path) -> None:
-    touch(tmp_path, "E1.mkv", "E2.mkv", "E3.mkv")
-    bus = EventBus()
-    events: list[Any] = []  # every published event (a late subscriber gets them coalesced)
-    publish = bus.publish
+async def test_folder_task_events(
+    fake_tools: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exact event sequence of the service's folder task."""
+    for var in ENV_VARS.values():
+        monkeypatch.delenv(var, raising=False)
+    for name in ("config", "data", "cache"):
+        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
+    monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
+    monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
+    fake_tools.set_scenario(ft.Scenario([streams_rule(stdout_file(MULTITRACK))]))
+    media = tmp_path / "season"
+    touch(media, "E1.mkv", "E2.mkv", "E3.mkv")
+    async with await Reframe.create() as app:
+        events: list[Any] = []  # every published event (a late subscriber gets them coalesced)
+        publish = app.events.publish
 
-    def record(event: Any) -> None:
-        events.append(event)
-        publish(event)
+        def record(event: Any) -> None:
+            events.append(event)
+            publish(event)
 
-    bus.publish = record  # type: ignore[method-assign]
-    tasks = TaskManager(bus)
-    info = start_probe_folder(tasks, FakeProber(), tmp_path)
-    assert info.kind == "probe_folder"
-    assert info.state is TaskState.QUEUED
-    final = await tasks.wait(info.id)
-    assert final.state is TaskState.DONE
-    summary = [(e.type, e.task.state.value, e.task.progress, e.task.message) for e in events]
-    assert summary == [
-        ("task.progress", "queued", None, f"Probing {tmp_path.name}"),
-        ("task.progress", "running", None, f"Probing {tmp_path.name}"),
-        ("task.progress", "running", 0.0, "Listing files"),
-        ("task.progress", "running", pytest.approx(100 / 3), "1/3 files"),
-        ("task.progress", "running", pytest.approx(200 / 3), "2/3 files"),
-        ("task.progress", "running", 100.0, "3/3 files"),
-        ("task.done", "done", 100.0, "3/3 files"),
-    ]
-    assert isinstance(final.result, dict)
-    assert final.result["total"] == 3
-    value = tasks.value(info.id)
-    assert isinstance(value, FolderProbeResult)
-    assert len(value.sources) == 3
-
-
-def _fake_prober(fake: ft.FakeTools) -> Prober:
-    return Prober(ProbeTool(str(fake.ffprobe), version="n-fake"))
+        monkeypatch.setattr(app.events, "publish", record)
+        info = app.sources.probe_folder(media)
+        assert info.kind == "probe_folder"
+        assert info.state is TaskState.QUEUED
+        final = await app.tasks.wait(info.id)
+        assert final.state is TaskState.DONE
+        summary = [
+            (e.type, e.task.state.value, e.task.progress, e.task.message)
+            for e in events
+            if e.type.startswith("task.") and e.task.id == info.id
+        ]
+        assert summary == [
+            ("task.progress", "queued", None, "Probing season"),
+            ("task.progress", "running", None, "Probing season"),
+            ("task.progress", "running", None, "Waiting for tool discovery"),
+            ("task.progress", "running", 0.0, "Listing files"),
+            ("task.progress", "running", pytest.approx(100 / 3), "1/3 files"),
+            ("task.progress", "running", pytest.approx(200 / 3), "2/3 files"),
+            ("task.progress", "running", 100.0, "3/3 files"),
+            ("task.done", "done", 100.0, "3/3 files"),
+        ]
+        assert isinstance(final.result, dict)
+        assert final.result["total"] == 3
+        value = app.tasks.value(info.id)
+        assert isinstance(value, FolderProbeResult)
+        assert len(value.sources) == 3
 
 
 async def test_folder_task_with_fake_ffprobe(fake_tools: ft.FakeTools, tmp_path: Path) -> None:
     """24 files through the fake ffprobe (multi-track JSON), 4 at a time."""
-    rule = ft.Rule(
-        tool="ffprobe",
-        argv_has=["-show_streams"],
-        actions=[{"stdout_file": str(PROBES / "fixtures" / "multitrack.mkv.json")}],
-    )
-    fake_tools.set_scenario(ft.Scenario([rule]))
+    fake_tools.set_scenario(ft.Scenario([streams_rule(stdout_file(MULTITRACK))]))
     media = tmp_path / "season"
     touch(media, *(f"Show.S01E{i:02d}.mkv" for i in range(1, 25)))
-    tasks = TaskManager()
-    info = start_probe_folder(tasks, _fake_prober(fake_tools), media)
-    final = await tasks.wait(info.id)
-    assert final.state is TaskState.DONE, final.error
-    value = tasks.value(info.id)
-    assert isinstance(value, FolderProbeResult)
+    value = await probe_folder(make_prober(fake_tools), media)
     assert len(value.sources) == 24
     assert value.errors == []
     assert all(len(s.audio) == 3 for s in value.sources)
@@ -231,19 +233,17 @@ async def test_folder_task_with_fake_ffprobe(fake_tools: ft.FakeTools, tmp_path:
 
 
 async def test_cancel_folder_task_kills_ffprobe(fake_tools: ft.FakeTools, tmp_path: Path) -> None:
-    fake_tools.set_scenario(
-        ft.Scenario([ft.Rule(tool="ffprobe", argv_has=["-show_streams"], actions=[ft.hang()])])
-    )
+    fake_tools.set_scenario(ft.Scenario([streams_rule(ft.hang())]))
     touch(tmp_path, *(f"E{i}.mkv" for i in range(8)))
-    tasks = TaskManager()
-    info = start_probe_folder(tasks, _fake_prober(fake_tools), tmp_path)
+    token = CancelToken()
+    task = asyncio.ensure_future(probe_folder(make_prober(fake_tools), tmp_path, cancel=token))
     await wait_until(lambda: len(fake_tools.pids()) >= 4)
     pids = fake_tools.pids()
     assert len(pids) == 4  # the folder limit: 4 ffprobe processes, the rest wait
     started = time.monotonic()
-    assert tasks.cancel(info.id)
-    final = await tasks.wait(info.id)
-    assert final.state is TaskState.CANCELLED
+    token.cancel()
+    result = await task
+    assert [e.kind for e in result.errors] == [ProbeErrorKind.CANCELLED] * 8
     _, alive = psutil.wait_procs([_proc(p) for p in pids if _proc(p)], timeout=1.0)
     assert not [p for p in alive if p.status() != psutil.STATUS_ZOMBIE]
     assert time.monotonic() - started < 1.5
@@ -261,11 +261,9 @@ async def test_cancelling_probe_folder_reaps_every_ffprobe(
     fake_tools: ft.FakeTools, tmp_path: Path
 ) -> None:
     """A cancelled probe_folder() returns only after every running ffprobe is gone."""
-    fake_tools.set_scenario(
-        ft.Scenario([ft.Rule(tool="ffprobe", argv_has=["-show_streams"], actions=[ft.hang()])])
-    )
+    fake_tools.set_scenario(ft.Scenario([streams_rule(ft.hang())]))
     touch(tmp_path, *(f"E{i}.mkv" for i in range(8)))
-    task = asyncio.ensure_future(probe_folder(_fake_prober(fake_tools), tmp_path))
+    task = asyncio.ensure_future(probe_folder(make_prober(fake_tools), tmp_path))
     await wait_until(lambda: len(fake_tools.pids()) >= 4)
     pids = fake_tools.pids()
     task.cancel()
