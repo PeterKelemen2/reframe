@@ -14,8 +14,9 @@ from reframe.models import JobState, QueueJob
 from reframe.queue import JobStateError, QueueLike, UnknownJobError
 from reframe.queue.service import OUTPUT_CLAIMED
 from reframe.remote import RemoteQueue
+from reframe_testing.waiting import wait_until
 
-from .conftest import HANG, Server, poll, watch_requests
+from .conftest import HANG, Server, watch_requests
 
 pytestmark = pytest.mark.anyio
 
@@ -36,7 +37,7 @@ class Contract:
         return await asyncio.wait_for(self.queue.wait(job_ids), 30)
 
     async def running(self, *job_ids: str) -> None:
-        await poll(lambda: all(self.state(j) is JobState.RUNNING for j in job_ids))
+        await wait_until(lambda: all(self.state(j) is JobState.RUNNING for j in job_ids))
 
     async def start_while_removed(self, removed: str, job_ids: list[str]) -> None:
         """``start(job_ids)`` while another front end removes ``removed``: in-process the
@@ -152,7 +153,7 @@ async def test_cancel_returns_once_the_running_job_stopped(contract: Contract) -
     job = await contract.add("A.mkv")
     contract.queue.start(job_ids=[job.id])
     await contract.running(job.id)
-    await poll(lambda: bool(list(contract.server.api.output.glob("A.part.*"))))
+    await wait_until(lambda: bool(list(contract.server.api.output.glob("A.part.*"))))
     await contract.queue.cancel(job.id)
     assert contract.state(job.id) is JobState.CANCELLED
     assert not list(contract.server.api.output.glob("A.part.*"))

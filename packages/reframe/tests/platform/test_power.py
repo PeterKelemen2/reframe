@@ -8,13 +8,14 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from reframe.events import EventBus, Subscription
-from reframe.models.events import AppWarningEvent, Event, PowerCountdownEvent
+from reframe.models.events import AppWarningEvent, PowerCountdownEvent
 from reframe.platform.power import (
     COUNTDOWN_SECONDS,
     WARNING_CODE,
     OsAction,
     PowerService,
 )
+from reframe_testing.helpers import drain
 
 pytestmark = pytest.mark.anyio
 
@@ -70,13 +71,6 @@ async def instant(delay: float) -> None:
 async def settle() -> None:
     for _ in range(20):
         await asyncio.sleep(0)
-
-
-def drain(subscription: Subscription) -> list[Event]:
-    events: list[Event] = []
-    while (event := subscription.get_nowait()) is not None:
-        events.append(event)
-    return events
 
 
 def countdown_events(subscription: Subscription) -> list[PowerCountdownEvent]:

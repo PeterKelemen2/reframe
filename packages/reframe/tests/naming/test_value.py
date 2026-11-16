@@ -14,8 +14,9 @@ from reframe.models import (
 )
 from reframe.naming import FileTimes, render_value
 from reframe.naming.value import NoFiles
+from reframe_testing.naming import FakeFs
 
-from .conftest import FakeFs, FsFactory
+from .conftest import FsFactory
 
 
 def job(path: str, **naming: object) -> JobSettings:

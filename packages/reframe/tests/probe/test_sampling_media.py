@@ -23,9 +23,8 @@ from reframe.tools import discover_tools
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
 from reframe_testing.blockscan import scan_blocks
+from reframe_testing.ebml import element, header, track, tracks
 from reframe_testing.mkvtoolnix import mkvtoolnix_tool
-
-from .test_matroska import element, header, track, tracks
 
 pytestmark = pytest.mark.anyio
 

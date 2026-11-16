@@ -6,7 +6,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -106,13 +105,6 @@ async def serving(make_api: ApiFactory) -> AsyncIterator[Server]:
 async def server(make_api: ApiFactory) -> AsyncIterator[Server]:
     async with serving(make_api) as found:
         yield found
-
-
-async def poll(condition: Callable[[], bool], limit: float = 20.0) -> None:
-    deadline = time.monotonic() + limit
-    while not condition():
-        assert time.monotonic() < deadline, "condition not met in time"
-        await asyncio.sleep(0.01)
 
 
 class Requests(httpx.AsyncBaseTransport):

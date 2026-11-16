@@ -26,6 +26,7 @@ from reframe.models import ServerEndpoint
 from reframe.platform.power import DRY_RUN_ENV
 from reframe.remote.owner import ENDPOINT_FILE
 from reframe_testing import media, processes
+from reframe_testing.waiting import wait_until_sync
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.slow]
 
@@ -241,14 +242,6 @@ def home(tmp_path: Path) -> Iterator[Home]:
         found.stop_everything()
 
 
-def wait_until(check: Callable[[], Any], limit: float = WAIT) -> Any:
-    deadline = time.monotonic() + limit
-    while not (result := check()):
-        assert time.monotonic() < deadline, "not in time"
-        time.sleep(0.1)
-    return result
-
-
 def read_until(process: subprocess.Popen[str], check: Callable[[str], bool]) -> list[str]:
     """``process``'s stdout lines up to the first line for which ``check`` holds."""
     assert process.stdout is not None
@@ -333,11 +326,11 @@ def test_kill_9_of_a_client_cancels_its_jobs_and_a_detached_job_runs_on(home: Ho
     assert result.returncode == EXIT_OK, (result.stdout, result.stderr)
     job = home.job(detached)
     assert f"[1/1] job {job['id']}" in result.stdout
-    wait_until(lambda: home.state(detached) == "running")
+    wait_until_sync(lambda: home.state(detached) == "running", WAIT)
     assert list(home.out.glob("Attached.part.*")), seen
     client.kill()
     client.wait(WAIT)
-    wait_until(lambda: home.state(attached) == "cancelled")
+    wait_until_sync(lambda: home.state(attached) == "cancelled", WAIT)
     assert not list(home.out.glob("Attached.part.*"))
     time.sleep(1.0)
     assert home.job(detached)["state"] == "running"
@@ -435,7 +428,7 @@ def test_a_server_of_another_api_version_is_not_used_and_the_client_says_why(hom
         text=True,
     )
     home.clients.append(server)
-    wait_until(lambda: (home.data / ENDPOINT_FILE).exists())
+    wait_until_sync(lambda: (home.data / ENDPOINT_FILE).exists(), WAIT)
     assert home.endpoint().api_version == 2
     source = home.source("a/Show.mkv", 2)
     result = home.run("encode", str(source), "-o", str(home.out / "Show.mkv"))
@@ -479,7 +472,7 @@ def test_ctrl_z_pauses_the_job_and_fg_resumes_it(home: Home) -> None:
     port = home.endpoint().port
     client.send_signal(STOP)
     process = psutil.Process(client.pid)
-    wait_until(lambda: process.status() == psutil.STATUS_STOPPED, 30)
+    wait_until_sync(lambda: process.status() == psutil.STATUS_STOPPED, 30)
     assert home.job(source)["state"] == "paused"
     held = [c for c in process.net_connections() if c.raddr and c.raddr.port == port]
     assert held == []
@@ -527,7 +520,7 @@ def test_a_stop_by_another_front_end_is_reported_and_the_jobs_wait_for_a_start(
     first, second = home.source("b/First.mkv", 2), home.source("c/Second.mkv", 2)
     result = home.run("encode", "--detach", str(busy), "-o", str(home.out / "Busy.mkv"))
     assert result.returncode == EXIT_OK, (result.stdout, result.stderr)
-    wait_until(lambda: home.state(busy) == "running")
+    wait_until_sync(lambda: home.state(busy) == "running", WAIT)
     clients = [
         home.start("encode", str(source), "-o", str(home.out / source.name))
         for source in (first, second)
@@ -541,7 +534,7 @@ def test_a_stop_by_another_front_end_is_reported_and_the_jobs_wait_for_a_start(
             ids = {j["id"] for j in body["jobs"] if j["settings"]["source"]["path"] in paths}
             return len(ids) == 2 and body["processing"] and ids <= set(body["only"] or ())
 
-        wait_until(started)
+        wait_until_sync(started, WAIT)
         assert api.post("/api/queue/stop").status_code == 204
         seen = [read_within(client, lambda line: line == STOPPED_BY_OTHERS) for client in clients]
         assert home.run("queue", "cancel", home.job(busy)["id"][:8]).returncode == EXIT_OK

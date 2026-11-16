@@ -13,6 +13,7 @@ from reframe.metadata.header import apply_header_edit
 from reframe.metadata.layout import read_layout
 from reframe.models.plan import HeaderEdit, InfoHeaderEdit, TrackHeaderEdit
 from reframe.probe.matroska import MatroskaError, _Reader, read_matroska, tracks_by_kind
+from reframe_testing.ebml import encode_size
 
 from . import corpus
 from .corpus import Track
@@ -115,7 +116,7 @@ def front_seek_heads(*, crc: bool = False) -> bytes:
         + tracks
         + corpus.element(corpus.CLUSTER, corpus.element(0xE7, b"\x00"))
     )
-    return ebml + corpus.SEGMENT.to_bytes(4, "big") + corpus.encode_size(len(body), 8) + body
+    return ebml + corpus.SEGMENT.to_bytes(4, "big") + encode_size(len(body), 8) + body
 
 
 @pytest.mark.parametrize("crc", [False, True])
@@ -153,9 +154,7 @@ def test_a_linked_seek_head_that_lists_no_moved_element_stays(tmp_path: Path) ->
         data, head.pos, gap.end, new_head + corpus.any_void(gap.end - head.pos - len(new_head))
     )
     data = (
-        data[: seg.size_pos]
-        + corpus.encode_size(len(data) - seg.base + len(linked), 8)
-        + data[seg.base :]
+        data[: seg.size_pos] + encode_size(len(data) - seg.base + len(linked), 8) + data[seg.base :]
     )
     path = write(tmp_path, data + linked)
     linked_at = len(data)
@@ -243,7 +242,7 @@ def test_tracks_behind_the_clusters_use_the_void_after_them(tmp_path: Path) -> N
 
 def grow_segment(data: bytes, extra: bytes) -> bytes:
     seg = corpus.segment(data)
-    size = corpus.encode_size(len(data) - seg.base + len(extra), 8)
+    size = encode_size(len(data) - seg.base + len(extra), 8)
     return data[: seg.size_pos] + size + data[seg.base :] + extra
 
 

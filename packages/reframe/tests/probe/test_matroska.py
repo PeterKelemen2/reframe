@@ -15,62 +15,9 @@ from reframe.models import MediaSource
 from reframe.probe import matroska
 from reframe.probe.matroska import MatroskaError, read_matroska, tracks_by_kind
 from reframe.probe.prober import Prober, apply_matroska
+from reframe_testing.ebml import cluster, element, header, info, track, tracks, uint
 
 from .conftest import parse_probe
-
-
-def vint_size(size: int) -> bytes:
-    return bytes([0x01]) + size.to_bytes(7, "big")
-
-
-def element(element_id: int, payload: bytes, *, unknown: bool = False) -> bytes:
-    raw_id = element_id.to_bytes((element_id.bit_length() + 7) // 8, "big")
-    size = (
-        bytes([0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
-        if unknown
-        else vint_size(len(payload))
-    )
-    return raw_id + size + payload
-
-
-def uint(element_id: int, value: int) -> bytes:
-    return element(element_id, value.to_bytes(1, "big"))
-
-
-def text(element_id: int, value: str) -> bytes:
-    return element(element_id, value.encode())
-
-
-def header(doc_type: str = "matroska") -> bytes:
-    return element(0x1A45DFA3, text(0x4282, doc_type))
-
-
-def track(number: int, kind: int, **values: object) -> bytes:
-    body = uint(0xD7, number) + uint(0x83, kind)
-    if "name" in values:
-        body += text(0x536E, str(values["name"]))
-    if "language" in values:
-        body += text(0x22B59C, str(values["language"]))
-    if "ietf" in values:
-        body += text(0x22B59D, str(values["ietf"]))
-    if "default" in values:
-        body += uint(0x88, int(bool(values["default"])))
-    if "commentary" in values:
-        body += uint(0x55AF, int(bool(values["commentary"])))
-    body += element(0xEC, b"\0\0")  # a Void inside the entry is skipped
-    return element(0xAE, body)
-
-
-def tracks(*entries: bytes) -> bytes:
-    return element(0x1654AE6B, b"".join(entries))
-
-
-def info(title: str) -> bytes:
-    return element(0x1549A966, text(0x7BA9, title))
-
-
-def cluster() -> bytes:
-    return element(0x1F43B675, b"\0" * 16)
 
 
 def write(tmp_path: Path, data: bytes, name: str = "t.mkv") -> Path:

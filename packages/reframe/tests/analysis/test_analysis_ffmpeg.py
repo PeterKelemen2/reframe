@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -17,40 +15,16 @@ from reframe.models import (
     MediaSource,
     SubtitleScan,
     SubtitleScanTrack,
-    TaskInfo,
     TaskState,
     TrackRole,
 )
 from reframe.service import Reframe
 from reframe_testing import dts, media, vobsub
+from reframe_testing.helpers import finish
 
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
 
 FixtureMedia = Callable[[str], Path]
-
-
-@pytest.fixture
-async def app(tmp_path: Path) -> AsyncIterator[Reframe]:
-    reframe = await Reframe.create(
-        tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "cache"
-    )
-    try:
-        yield reframe
-    finally:
-        await reframe.close()
-
-
-async def _finish(app: Reframe, info: TaskInfo) -> TaskInfo:
-    done = await app.tasks.wait(info.id)
-    assert done.state is TaskState.DONE, done.error
-    return done
-
-
-def _copy(fixture_media: FixtureMedia, name: str, tmp_path: Path) -> Path:
-    source = fixture_media(name)
-    target = tmp_path / source.name
-    shutil.copy(source, target)
-    return target
 
 
 def _dts_bitrate() -> float:
@@ -62,7 +36,7 @@ def _dts_bitrate() -> float:
 async def test_measure_the_bit_rate_of_a_dts_hd_ma_track(
     tmp_path: Path, fixture_media: FixtureMedia
 ) -> None:
-    path = _copy(fixture_media, "dts-hd-ma", tmp_path)
+    path = media.copy_fixture(fixture_media, "dts-hd-ma", tmp_path)
     app = await Reframe.create(tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "cache")
     try:
         probed = await app.sources.probe(path)
@@ -73,7 +47,7 @@ async def test_measure_the_bit_rate_of_a_dts_hd_ma_track(
 
         info = app.sources.bitrate_scan(path, 1)
         assert (info.kind, info.state) == ("bitrate_scan", TaskState.QUEUED)
-        done = await _finish(app, info)
+        done = await finish(app, info)
         scan = app.tasks.value(done.id)
         assert isinstance(scan, BitrateScan)
         assert scan.bitrate.source is BitrateSource.MEASURED
@@ -107,8 +81,8 @@ async def test_measure_the_bit_rate_of_a_dts_hd_ma_track(
 async def test_bitrate_scan_of_a_video_stream(
     app: Reframe, tmp_path: Path, fixture_media: FixtureMedia
 ) -> None:
-    path = _copy(fixture_media, "chapters", tmp_path)
-    done = await _finish(app, app.sources.bitrate_scan(path, 0))
+    path = media.copy_fixture(fixture_media, "chapters", tmp_path)
+    done = await finish(app, app.sources.bitrate_scan(path, 0))
     scan = app.tasks.value(done.id)
     assert isinstance(scan, BitrateScan)
     assert scan.packets == 125  # 5 s at 25 fps
@@ -123,11 +97,11 @@ async def test_bitrate_scan_of_a_video_stream(
 async def test_subtitle_scan_of_pgs_counts_the_forced_display_sets(
     tmp_path: Path, fixture_media: FixtureMedia
 ) -> None:
-    path = _copy(fixture_media, "pgs", tmp_path)
+    path = media.copy_fixture(fixture_media, "pgs", tmp_path)
     events = media.PGS_EVENTS
     app = await Reframe.create(tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "cache")
     try:
-        done = await _finish(app, app.sources.subtitle_scan(path))
+        done = await finish(app, app.sources.subtitle_scan(path))
         assert app.tasks.value(done.id) == SubtitleScan(
             path=path,
             tracks=[
@@ -171,7 +145,7 @@ async def test_subtitle_scan_of_text_and_vobsub_tracks(
     app: Reframe, fixture_media: FixtureMedia
 ) -> None:
     multitrack = fixture_media("multitrack")
-    done = await _finish(app, app.sources.subtitle_scan(multitrack, [6, 4]))
+    done = await finish(app, app.sources.subtitle_scan(multitrack, [6, 4]))
     assert app.tasks.value(done.id) == SubtitleScan(
         path=multitrack,
         tracks=[
@@ -180,25 +154,17 @@ async def test_subtitle_scan_of_text_and_vobsub_tracks(
         ],
     )
     text = fixture_media("text-subs")
-    done = await _finish(app, app.sources.subtitle_scan(text))
+    done = await finish(app, app.sources.subtitle_scan(text))
     assert [(t.event_count, t.forced_event_count) for t in app.tasks.value(done.id).tracks] == [
         (2, None),  # SRT
         (3, None),  # ASS: one packet per Dialogue line
     ]
     vob = fixture_media("vobsub")
-    done = await _finish(app, app.sources.subtitle_scan(vob))
+    done = await finish(app, app.sources.subtitle_scan(vob))
     assert [(t.event_count, t.forced_event_count) for t in app.tasks.value(done.id).tracks] == [
         (len(media.VOBSUB_EVENTS["eng"]), 0),
         (len(media.VOBSUB_EVENTS["fre"]), 0),  # forced disposition, no forced subpictures
     ]
-
-
-def _ffmpeg(cwd: Path, *args: str) -> None:
-    ffmpeg = media.find_ffmpeg()
-    assert ffmpeg
-    subprocess.run(
-        [ffmpeg, "-v", "error", "-y", *args], cwd=cwd, check=True, capture_output=True, timeout=60
-    )
 
 
 def _forced_vobsub(tmp_path: Path, forced: set[int]) -> Path:
@@ -218,13 +184,13 @@ def _forced_vobsub(tmp_path: Path, forced: set[int]) -> Path:
         data[i * vobsub.PACK_SIZE + pos] = 0x00
     (tmp_path / "v.idx").write_text(idx, encoding="utf-8")
     (tmp_path / "v.sub").write_bytes(bytes(data))
-    _ffmpeg(tmp_path, "-i", "v.idx", "-map", "0:s", "-c:s", "copy", "v.mkv")
+    media.run_ffmpeg(tmp_path, "-i", "v.idx", "-map", "0:s", "-c:s", "copy", "v.mkv")
     return tmp_path / "v.mkv"
 
 
 async def test_subtitle_scan_counts_forced_vobsub_subpictures(app: Reframe, tmp_path: Path) -> None:
     path = _forced_vobsub(tmp_path, {0, 2})
-    done = await _finish(app, app.sources.subtitle_scan(path))
+    done = await finish(app, app.sources.subtitle_scan(path))
     assert app.tasks.value(done.id).tracks == [
         SubtitleScanTrack(stream_index=0, event_count=3, forced_event_count=2)
     ]
@@ -232,7 +198,7 @@ async def test_subtitle_scan_counts_forced_vobsub_subpictures(app: Reframe, tmp_
 
 async def test_loudness_of_a_track(app: Reframe, fixture_media: FixtureMedia) -> None:
     path = fixture_media("multitrack")
-    done = await _finish(app, app.sources.loudness_scan(path, 2))
+    done = await finish(app, app.sources.loudness_scan(path, 2))
     result = app.tasks.value(done.id)
     assert isinstance(result, LoudnessMeasurement)
     # A 660 Hz sine at FFmpeg's default amplitude (1/8: -18 dBFS), upmixed from mono to
@@ -248,22 +214,22 @@ async def test_loudness_of_a_track(app: Reframe, fixture_media: FixtureMedia) ->
 
 async def test_loudness_of_a_part(app: Reframe, fixture_media: FixtureMedia) -> None:
     path = fixture_media("dts-hd-ma")
-    done = await _finish(app, app.sources.loudness_scan(path, 1, start=1.0, duration=1.0))
+    done = await finish(app, app.sources.loudness_scan(path, 1, start=1.0, duration=1.0))
     result = app.tasks.value(done.id)
     assert isinstance(result, LoudnessMeasurement)
     assert (result.start, result.duration) == (1.0, 1.0)
     assert result.integrated is not None  # the second second of the DTS-HD MA track (-6 dB)
-    whole = app.tasks.value((await _finish(app, app.sources.loudness_scan(path, 1))).id)
+    whole = app.tasks.value((await finish(app, app.sources.loudness_scan(path, 1))).id)
     assert whole.integrated is not None
     assert result.integrated < whole.integrated
 
 
 async def test_loudness_of_silence_is_none(app: Reframe, tmp_path: Path) -> None:
-    _ffmpeg(
+    media.run_ffmpeg(
         tmp_path, "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo", "-t", "2", "-c:a", "flac",
         "silence.mka",
     )  # fmt: skip
-    done = await _finish(app, app.sources.loudness_scan(tmp_path / "silence.mka", 0))
+    done = await finish(app, app.sources.loudness_scan(tmp_path / "silence.mka", 0))
     result = app.tasks.value(done.id)
     assert isinstance(result, LoudnessMeasurement)
     assert (result.integrated, result.true_peak) == (None, None)  # loudnorm says -inf
@@ -286,7 +252,7 @@ async def test_measured_counts_feed_the_forced_heuristic(app: Reframe, tmp_path:
     signs = [(2.1, 2.9, "A SIGN")]
     (tmp_path / "full.srt").write_text(media.srt(full), encoding="utf-8")
     (tmp_path / "signs.srt").write_text(media.srt(signs), encoding="utf-8")
-    _ffmpeg(
+    media.run_ffmpeg(
         tmp_path, "-i", "full.srt", "-i", "signs.srt", "-map", "0", "-map", "1", "-c:s", "srt",
         "-metadata:s:s:0", "language=eng", "-metadata:s:s:1", "language=eng", "subs.mkv",
     )  # fmt: skip
@@ -295,7 +261,7 @@ async def test_measured_counts_feed_the_forced_heuristic(app: Reframe, tmp_path:
     assert isinstance(before, MediaSource)
     assert [s.event_count for s in before.subtitles] == [None, None]
     assert [r.role for r in before.subtitles[1].roles] == [TrackRole.MAIN]
-    await _finish(app, app.sources.subtitle_scan(path))
+    await finish(app, app.sources.subtitle_scan(path))
     after = await app.sources.get(path)
     assert after is not None
     assert [s.event_count for s in after.subtitles] == [12, 1]

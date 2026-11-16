@@ -26,8 +26,9 @@ from reframe.queue.lock import (
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
 from reframe_testing.processes import interpreter
+from reframe_testing.waiting import wait_until
 
-from .conftest import Harness, draft, encode_rule, poll, queue_at, recorded
+from .conftest import Harness, draft, encode_rule, queue_at, recorded
 from .test_facade import PROBE, env  # noqa: F401  (the fixture)
 
 pytestmark = pytest.mark.anyio
@@ -110,7 +111,7 @@ async def test_a_second_process_leaves_a_running_encode_alone(
         async for _ in progress:
             break
         part = env / "out" / "First.part.mkv"
-        await poll(part.exists)
+        await wait_until(part.exists)
         quiet = await asyncio.to_thread(child, "create")
         assert quiet == {"state": None, "warnings": []}
         assert part.exists()
@@ -184,7 +185,7 @@ async def test_after_the_owner_is_killed_a_new_process_restores(
         assert restored.state is JobState.INTERRUPTED
         assert restored.error == "Reframe stopped while the job was running."
         assert lock.read_text().strip() == str(os.getpid())
-        await poll(lambda: not (env / "out" / "Killed.part.mkv").exists())
+        await wait_until(lambda: not (env / "out" / "Killed.part.mkv").exists())
     finally:
         await app.close()
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -27,17 +26,9 @@ from reframe.probe import (
 from reframe.tasks import TaskManager
 from reframe.tools import CancelToken
 from reframe_testing import fake_tools as ft
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
-
-
-async def until(condition: Callable[[], bool], limit: float = 30.0) -> None:
-    """Wait (polling) until ``condition()`` is true."""
-    deadline = time.monotonic() + limit
-    while not condition():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.02)
 
 
 PROBES = Path(__file__).resolve().parents[4] / "testdata" / "probes"
@@ -246,7 +237,7 @@ async def test_cancel_folder_task_kills_ffprobe(fake_tools: ft.FakeTools, tmp_pa
     touch(tmp_path, *(f"E{i}.mkv" for i in range(8)))
     tasks = TaskManager()
     info = start_probe_folder(tasks, _fake_prober(fake_tools), tmp_path)
-    await until(lambda: len(fake_tools.pids()) >= 4)
+    await wait_until(lambda: len(fake_tools.pids()) >= 4)
     pids = fake_tools.pids()
     assert len(pids) == 4  # the folder limit: 4 ffprobe processes, the rest wait
     started = time.monotonic()
@@ -275,7 +266,7 @@ async def test_cancelling_probe_folder_reaps_every_ffprobe(
     )
     touch(tmp_path, *(f"E{i}.mkv" for i in range(8)))
     task = asyncio.ensure_future(probe_folder(_fake_prober(fake_tools), tmp_path))
-    await until(lambda: len(fake_tools.pids()) >= 4)
+    await wait_until(lambda: len(fake_tools.pids()) >= 4)
     pids = fake_tools.pids()
     task.cancel()
     await asyncio.wait({task})

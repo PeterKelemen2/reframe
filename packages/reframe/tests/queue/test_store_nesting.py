@@ -27,6 +27,7 @@ from reframe.models import (
 from reframe.queue import QueueService
 from reframe.queue.store import QueueStore, row_of
 from reframe.settings import MAX_DEPTH, TOO_DEEP, too_deep
+from reframe_testing.helpers import nested
 
 from .conftest import Harness
 
@@ -36,14 +37,6 @@ NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
 PARSER_DEPTH = 200_000
 #: A depth that Pydantic's serializer still dumps (pydantic-core's limit is 100 on Windows).
 DUMP_DEPTH = 100 if sys.platform == "win32" else 255
-
-
-def nested(levels: int) -> list[Any]:
-    """A list nested ``levels`` deep (``[]`` is one level)."""
-    value: list[Any] = []
-    for _ in range(levels - 1):
-        value = [value]
-    return value
 
 
 def deep_text(levels: int) -> str:

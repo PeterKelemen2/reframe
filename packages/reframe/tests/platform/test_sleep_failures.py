@@ -4,15 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import gc
 import os
 import socket
 import sys
-import tempfile
 import threading
-import warnings
 from collections.abc import Callable, Iterator
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -28,12 +24,19 @@ from reframe.platform.sleep import (
     SleepInhibitor,
     create_sleep_inhibitor,
 )
+from reframe_testing.fake_dbus import (
+    AUTH_OK,
+    handshake,
+    read_line,
+    read_message,
+    serve_unix,
+    unclosed_resources,
+)
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
 linux_only = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux only")
-
-AF_UNIX: int = vars(socket).get("AF_UNIX", 0)
 
 
 def _sockets() -> dict[int, str]:
@@ -54,10 +57,7 @@ def no_leaked_sockets() -> Iterator[None]:
     before = set(_sockets())
     yield
     leaked = {fd: what for fd, what in _sockets().items() if fd not in before}
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        gc.collect()
-    unclosed = [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)]
+    unclosed = unclosed_resources()
     assert not leaked, f"sockets left open: {leaked}"
     assert not unclosed, f"sockets left to the garbage collector: {unclosed}"
 
@@ -146,44 +146,8 @@ def test_parse_address_rejects_bad_escapes_with_value_error() -> None:
 Peer = Callable[[socket.socket], None]
 
 
-def _read_line(conn: socket.socket, buf: bytearray) -> bytes:
-    while b"\r\n" not in buf:
-        chunk = conn.recv(4096)
-        if not chunk:
-            raise ConnectionError
-        buf.extend(chunk)
-    line, _, rest = bytes(buf).partition(b"\r\n")
-    buf[:] = rest
-    return line
-
-
-def _read_message(conn: socket.socket, buf: bytearray) -> dbus.Message:
-    while len(buf) < 16:
-        chunk = conn.recv(4096)
-        if not chunk:
-            raise ConnectionError
-        buf.extend(chunk)
-    total = dbus.message_length(bytes(buf[:16]))
-    while len(buf) < total:
-        chunk = conn.recv(4096)
-        if not chunk:
-            raise ConnectionError
-        buf.extend(chunk)
-    message = dbus.decode_message(bytes(buf[:total]), [])
-    del buf[:total]
-    return message
-
-
-def _handshake(conn: socket.socket, buf: bytearray) -> None:
-    _read_line(conn, buf)  # AUTH EXTERNAL
-    conn.sendall(b"OK 0123456789abcdef0123456789abcdef\r\n")
-    _read_line(conn, buf)  # NEGOTIATE_UNIX_FD
-    conn.sendall(b"AGREE_UNIX_FD\r\n")
-    _read_line(conn, buf)  # BEGIN
-
-
 def _hello(conn: socket.socket, buf: bytearray) -> None:
-    hello = _read_message(conn, buf)
+    hello = read_message(conn, buf)
     conn.sendall(
         dbus.encode(
             dbus.METHOD_RETURN, 1, [(dbus.FIELD_REPLY_SERIAL, hello.serial)], [("s", ":1.9")]
@@ -210,56 +174,56 @@ def peer_closes_at_once(conn: socket.socket) -> None:
 
 
 def peer_closes_after_auth(conn: socket.socket) -> None:
-    _read_line(conn, bytearray())
+    read_line(conn, bytearray())
 
 
 def peer_closes_mid_negotiation(conn: socket.socket) -> None:
     buf = bytearray()
-    _read_line(conn, buf)
-    conn.sendall(b"OK 0123456789abcdef0123456789abcdef\r\n")
-    _read_line(conn, buf)
+    read_line(conn, buf)
+    conn.sendall(AUTH_OK.encode() + b"\r\n")
+    read_line(conn, buf)
 
 
 def peer_sends_endless_garbage_line(conn: socket.socket) -> None:
-    _read_line(conn, bytearray())
+    read_line(conn, bytearray())
     conn.sendall(b"\xff\xfe" * 10000)
 
 
 def peer_sends_bad_endianness(conn: socket.socket) -> None:
     buf = bytearray()
-    _handshake(conn, buf)
-    _read_message(conn, buf)
+    handshake(conn, buf)
+    read_message(conn, buf)
     conn.sendall(b"X" * 32)
 
 
 def peer_hello_reply_serial_is_a_string(conn: socket.socket) -> None:
     buf = bytearray()
-    _handshake(conn, buf)
-    _read_message(conn, buf)
+    handshake(conn, buf)
+    read_message(conn, buf)
     conn.sendall(_string_field_reply(dbus.FIELD_REPLY_SERIAL, None))
 
 
 def peer_inhibit_reply_unix_fds_is_a_string(conn: socket.socket) -> None:
     buf = bytearray()
-    _handshake(conn, buf)
+    handshake(conn, buf)
     _hello(conn, buf)
-    message = _read_message(conn, buf)
+    message = read_message(conn, buf)
     conn.sendall(_string_field_reply(dbus.FIELD_UNIX_FDS, message.serial))
 
 
 def peer_inhibit_reply_serial_is_a_string(conn: socket.socket) -> None:
     buf = bytearray()
-    _handshake(conn, buf)
+    handshake(conn, buf)
     _hello(conn, buf)
-    _read_message(conn, buf)
+    read_message(conn, buf)
     conn.sendall(_string_field_reply(dbus.FIELD_REPLY_SERIAL, None))
 
 
 def peer_inhibit_reply_is_cut_short(conn: socket.socket) -> None:
     buf = bytearray()
-    _handshake(conn, buf)
+    handshake(conn, buf)
     _hello(conn, buf)
-    message = _read_message(conn, buf)
+    message = read_message(conn, buf)
     reply = dbus.encode(
         dbus.METHOD_RETURN, 7, [(dbus.FIELD_REPLY_SERIAL, message.serial)], [("s", "abc")]
     )
@@ -268,9 +232,9 @@ def peer_inhibit_reply_is_cut_short(conn: socket.socket) -> None:
 
 def peer_closes_during_the_inhibit_call(conn: socket.socket) -> None:
     buf = bytearray()
-    _handshake(conn, buf)
+    handshake(conn, buf)
     _hello(conn, buf)
-    _read_message(conn, buf)
+    read_message(conn, buf)
 
 
 PEERS = [
@@ -287,38 +251,9 @@ PEERS = [
 ]
 
 
-@contextlib.contextmanager
-def bad_bus(peer: Peer) -> Iterator[str]:
+def bad_bus(peer: Peer) -> contextlib.AbstractContextManager[str]:
     """A unix socket whose every connection is served by ``peer`` (then closed)."""
-    with tempfile.TemporaryDirectory(prefix="rfbad") as tmp:
-        path = str(Path(tmp) / "bus")
-        server = socket.socket(AF_UNIX, socket.SOCK_STREAM)
-        server.bind(path)
-        server.listen(8)
-        server.settimeout(0.1)
-        stop = threading.Event()
-
-        def serve() -> None:
-            while not stop.is_set():
-                try:
-                    conn, _ = server.accept()
-                except TimeoutError:
-                    continue
-                except OSError:
-                    return
-                with conn:
-                    conn.settimeout(5)
-                    with contextlib.suppress(OSError):
-                        peer(conn)
-
-        thread = threading.Thread(target=serve, daemon=True)
-        thread.start()
-        try:
-            yield f"unix:path={path}"
-        finally:
-            stop.set()
-            thread.join(timeout=10)
-            server.close()
+    return serve_unix(lambda conn, _stop: peer(conn), many=True)
 
 
 @linux_only
@@ -421,14 +356,6 @@ class Gated:
         self.calls.append("freed")
 
 
-async def _until(check: Callable[[], bool]) -> None:
-    for _ in range(200):
-        if check():
-            return
-        await asyncio.sleep(0.005)
-    raise AssertionError("timed out")
-
-
 @pytest.mark.parametrize("how", ["release", "close"])
 async def test_cancelled_release_keeps_the_lock_until_the_free_is_done(how: str) -> None:
     backend = Gated()
@@ -436,7 +363,7 @@ async def test_cancelled_release_keeps_the_lock_until_the_free_is_done(how: str)
     assert await inhibitor.acquire("a") is InhibitState.ACTIVE
     backend.free_gate.clear()
     ending = asyncio.ensure_future(inhibitor.release() if how == "release" else inhibitor.close())
-    await _until(lambda: backend.calls[-1] == "free")
+    await wait_until(lambda: backend.calls[-1] == "free")
     ending.cancel()
     with pytest.raises(asyncio.CancelledError):
         await ending
@@ -465,7 +392,7 @@ async def test_acquire_cancelled_while_waiting_for_another_leaves_no_count() -> 
     backend.hold_gate.clear()
     inhibitor = SleepInhibitor([backend])
     first = asyncio.ensure_future(inhibitor.acquire("a"))
-    await _until(lambda: backend.calls == ["hold"])
+    await wait_until(lambda: backend.calls == ["hold"])
     second = asyncio.ensure_future(inhibitor.acquire("b"))
     await asyncio.sleep(0.01)
     second.cancel()
@@ -498,7 +425,7 @@ class SlowConnection:
 
 
 async def _cancel_when(task: asyncio.Future[Any], check: Callable[[], bool]) -> None:
-    await _until(check)
+    await wait_until(check)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
@@ -511,7 +438,7 @@ async def test_cancelled_session_hold_closes_the_connection_it_opened() -> None:
     hold = asyncio.ensure_future(backend.hold("x"))
     await _cancel_when(hold, lambda: conn.members == ["Inhibit"])
     go.set()  # the inhibit succeeds after the caller gave up
-    await _until(lambda: conn.closed == 1)
+    await wait_until(lambda: conn.closed == 1)
     assert not backend.held
 
 
@@ -525,7 +452,7 @@ async def test_cancelled_session_free_still_ends_and_closes() -> None:
     free = asyncio.ensure_future(backend.free())
     await _cancel_when(free, lambda: conn.members == ["Inhibit", "UnInhibit"])
     go.set()
-    await _until(lambda: conn.closed == 1)
+    await wait_until(lambda: conn.closed == 1)
 
 
 @linux_only
@@ -552,7 +479,7 @@ async def test_cancelled_logind_hold_closes_the_lock_fd() -> None:
             return True
         return False
 
-    await _until(closed)
+    await wait_until(closed)
     assert backend.fd is None
     os.close(write_end)
 
@@ -577,7 +504,7 @@ async def test_cancelled_windows_hold_clears_the_state_and_ends_the_thread() -> 
     hold = asyncio.ensure_future(backend.hold("x"))
     await _cancel_when(hold, lambda: flags == [ES_CONTINUOUS | ES_SYSTEM_REQUIRED])
     go.set()
-    await _until(lambda: flags == [ES_CONTINUOUS | ES_SYSTEM_REQUIRED, ES_CONTINUOUS])
+    await wait_until(lambda: flags == [ES_CONTINUOUS | ES_SYSTEM_REQUIRED, ES_CONTINUOUS])
     assert backend.thread is None
     for thread in threading.enumerate():
         if thread.name == "reframe-sleep-inhibit":
@@ -621,7 +548,7 @@ async def test_take_cut_short_by_loop_shutdown_keeps_what_it_holds_until_close()
     second.hold_gate.clear()
     inhibitor = SleepInhibitor([first, second])
     caller = asyncio.ensure_future(inhibitor.acquire("a"))
-    await _until(lambda: second.calls == ["hold"])
+    await wait_until(lambda: second.calls == ["hold"])
     (task,) = [t for t in sleep_module._background if not t.done()]
     task.cancel()  # what asyncio.run does to the remaining tasks at shutdown
     with pytest.raises(asyncio.CancelledError):

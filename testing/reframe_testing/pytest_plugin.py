@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
 
@@ -25,6 +25,7 @@ from reframe_testing.mkvtoolnix import mkvtoolnix_problem
 
 if TYPE_CHECKING:
     from reframe.platform.power import Win32Libraries
+    from reframe.service import Reframe
     from reframe.tools import RunResult
 
 REQUIRE_ENV = "REFRAME_REQUIRE_FFMPEG"
@@ -166,6 +167,20 @@ def fake_tools(tmp_path: Path) -> Iterator[FakeTools]:
     tools = make_fake_tools(tmp_path / "fake-tools")
     yield tools
     tools.kill_leftovers()
+
+
+@pytest.fixture
+async def app(tmp_path: Path) -> AsyncIterator[Reframe]:
+    """A core with its folders under ``tmp_path``, closed after the test."""
+    from reframe.service import Reframe
+
+    reframe = await Reframe.create(
+        tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "cache"
+    )
+    try:
+        yield reframe
+    finally:
+        await reframe.close()
 
 
 class PowerGuard:

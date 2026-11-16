@@ -14,7 +14,6 @@ from typing import Any, Literal
 
 import pytest
 
-from reframe.models import MediaSource
 from reframe_server.app import create_app
 from reframe_server.config import ServerConfig
 from reframe_testing.server import Api
@@ -361,15 +360,6 @@ def symlink(link: Path, target: Path) -> None:
         pytest.skip(f"cannot make a symbolic link: {exc}")
 
 
-async def probed_sources(api: Api) -> list[str]:
-    ids = []
-    for name in ("Show S01E01.mkv", "Show S01E02.mkv"):
-        path = api.media_file(name)
-        assert isinstance(await api.reframe.sources.probe(path), MediaSource)
-        ids.append(api.app.state.sources.add(path))
-    return ids
-
-
 async def send(api: Api, request: Request) -> Any:
     if request.raw:
         return await api.client.request(
@@ -409,7 +399,8 @@ def state(api: Api, escape: Path) -> dict[str, Any]:
 async def test_a_link_out_of_a_root_is_refused_and_changes_nothing(
     api: Api, outside_film: Path, item: PathInput
 ) -> None:
-    sids = await probed_sources(api) if item.source else []
+    names = ("Show S01E01.mkv", "Show S01E02.mkv") if item.source else ()
+    sids = [await api.add_source(name) for name in names]
     escape = (api.media if item.root == "media" else api.output) / "escape"
     symlink(escape, api.outside)
     path = escape / outside_film.name

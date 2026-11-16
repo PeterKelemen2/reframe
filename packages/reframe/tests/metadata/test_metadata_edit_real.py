@@ -41,6 +41,7 @@ from reframe.service import Reframe
 from reframe.tools import ENV_VARS
 from reframe_testing import media
 from reframe_testing.mkvtoolnix import mkvpropedit_args, mkvtoolnix_tool
+from reframe_testing.waiting import wait_until
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.anyio]
 
@@ -482,7 +483,7 @@ async def test_cancelling_an_in_place_edit_lets_the_writer_finish(
                 active = app.queue._active.get(queued.id)
                 return active is None or active.token.cancelled
 
-            await poll(stop_requested)
+            await wait_until(stop_requested)
         finally:
             gate.set()
         assert cancel is not None
@@ -502,13 +503,6 @@ async def test_cancelling_an_in_place_edit_lets_the_writer_finish(
         assert "Clean-up" not in log
     finally:
         await app.close()
-
-
-async def poll(condition: Callable[[], bool], limit: float = 20.0) -> None:
-    deadline = asyncio.get_running_loop().time() + limit
-    while not condition():
-        assert asyncio.get_running_loop().time() < deadline, "condition not met in time"
-        await asyncio.sleep(0.01)
 
 
 def changed_under_the_writer(monkeypatch: pytest.MonkeyPatch) -> None:

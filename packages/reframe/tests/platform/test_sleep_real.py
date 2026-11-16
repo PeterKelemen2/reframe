@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import gc
 import json
 import os
 import shutil
 import sys
 import time
 import uuid
-import warnings
 from collections.abc import AsyncIterator, Awaitable, Callable
 
 import pytest
@@ -26,6 +24,7 @@ from reframe.platform.sleep import (
     create_sleep_inhibitor,
 )
 from reframe.tools import run
+from reframe_testing.fake_dbus import assert_no_new_fds_or_unclosed, open_fds
 
 pytestmark = [
     pytest.mark.anyio,
@@ -203,30 +202,6 @@ async def _check_can_suspend(why: str, before: str) -> None:
     raise AssertionError(f"CanSuspend is {during!r} and only Reframe holds a lock")
 
 
-def _open_fds() -> set[int]:
-    """Only new fds count as a leak: other tests' objects may close theirs meanwhile."""
-    return {int(name) for name in os.listdir("/proc/self/fd")}
-
-
-def _new_fds(before: set[int]) -> dict[int, str]:
-    new: dict[int, str] = {}
-    for fd in sorted(_open_fds() - before):
-        try:
-            new[fd] = os.readlink(f"/proc/self/fd/{fd}")
-        except OSError:
-            continue  # closed meanwhile
-    return new
-
-
-def _assert_nothing_left(fds_before: set[int]) -> None:
-    assert not _new_fds(fds_before)
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        gc.collect()
-    unclosed = [str(w.message) for w in caught if issubclass(w.category, ResourceWarning)]
-    assert not unclosed
-
-
 @contextlib.asynccontextmanager
 async def _closing(inhibitor: SleepInhibitor) -> AsyncIterator[SleepInhibitor]:
     """Close the inhibitor at the end whatever happens: a failing check never leaks a lock
@@ -274,7 +249,7 @@ def kde() -> None:
 @pytest.mark.usefixtures("logind")
 async def test_logind_idle_lock_appears_and_disappears() -> None:
     why = _why("logind")
-    fds_before = _open_fds()
+    fds_before = open_fds()
     can_before = await _can_suspend()
     assert await _logind_ours(why) == []
 
@@ -294,14 +269,14 @@ async def test_logind_idle_lock_appears_and_disappears() -> None:
         after = await _logind_ours(why)
         print(f"logind after: {after}")
         assert after == []
-    _assert_nothing_left(fds_before)
+    assert_no_new_fds_or_unclosed(fds_before)
 
 
 @pytest.mark.slow
 @pytest.mark.usefixtures("power_management", "kde")
 async def test_session_inhibit_appears_and_disappears() -> None:
     why = _why("session")
-    fds_before = _open_fds()
+    fds_before = open_fds()
     can_before = await _can_suspend() if _logind_reachable() is None else None
     assert await _kde_ours(why) == []
     await _print_flags("before")
@@ -324,7 +299,7 @@ async def test_session_inhibit_appears_and_disappears() -> None:
         assert await _kde_gone(why)
         print(f"KDE after: {await _kde_ours(why)}")
         await _print_flags("after")
-    _assert_nothing_left(fds_before)  # the session connection is closed
+    assert_no_new_fds_or_unclosed(fds_before)  # the session connection is closed
 
 
 @pytest.mark.slow
@@ -333,7 +308,7 @@ async def test_default_inhibitor_on_this_desktop() -> None:
     why = _why("default")
     bus = EventBus()
     sub = bus.subscribe()
-    fds_before = _open_fds()
+    fds_before = open_fds()
     can_before = await _can_suspend()
     idle_action = await LogindBackend().idle_action()
     async with _closing(create_sleep_inhibitor(bus)) as inhibitor:
@@ -356,7 +331,7 @@ async def test_default_inhibitor_on_this_desktop() -> None:
         assert await _kde_gone(why)
         assert await _logind_ours(why) == []
     assert sub.get_nowait() is None  # no warning
-    _assert_nothing_left(fds_before)
+    assert_no_new_fds_or_unclosed(fds_before)
 
 
 @pytest.mark.usefixtures("logind")
@@ -366,7 +341,7 @@ async def test_without_a_desktop_session_the_logind_idle_lock_is_taken(
     monkeypatch.delenv("DBUS_SESSION_BUS_ADDRESS", raising=False)
     monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
     why = _why("headless")
-    fds_before = _open_fds()
+    fds_before = open_fds()
     async with _closing(create_sleep_inhibitor()) as inhibitor:
         assert await inhibitor.acquire(why) is InhibitState.ACTIVE
         during = await _logind_ours(why)
@@ -377,7 +352,7 @@ async def test_without_a_desktop_session_the_logind_idle_lock_is_taken(
         assert entry[0] == "idle"
         await inhibitor.close()
         assert await _logind_ours(why) == []
-    _assert_nothing_left(fds_before)
+    assert_no_new_fds_or_unclosed(fds_before)
 
 
 async def _fail_while_the_inhibitor_holds(inhibitor: SleepInhibitor, why: str) -> None:
@@ -396,17 +371,17 @@ async def _fail_while_a_connection_holds(why: str) -> None:
 @pytest.mark.usefixtures("logind", "power_management")
 async def test_a_failing_check_inside_the_hold_frees_everything() -> None:
     why = _why("failing")
-    fds_before = _open_fds()
+    fds_before = open_fds()
     inhibitor = SleepInhibitor([SessionInhibitBackend(), LogindBackend()])
     with pytest.raises(AssertionError, match="deliberate"):
         await _fail_while_the_inhibitor_holds(inhibitor, why)
     assert inhibitor.backends == ()
     assert await _logind_ours(why) == []
-    _assert_nothing_left(fds_before)
+    assert_no_new_fds_or_unclosed(fds_before)
 
     with pytest.raises(AssertionError, match="deliberate"):
         await _fail_while_a_connection_holds(why)
-    _assert_nothing_left(fds_before)
+    assert_no_new_fds_or_unclosed(fds_before)
 
 
 @pytest.mark.slow
@@ -414,7 +389,7 @@ async def test_a_failing_check_inside_the_hold_frees_everything() -> None:
 async def test_portal_inhibit_with_this_client() -> None:
     """The portal fallback (GNOME and others), checked through KDE's portal backend."""
     why = _why("portal")
-    fds_before = _open_fds()
+    fds_before = open_fds()
     async with _session_connection() as connection:
         try:
             reply = await asyncio.to_thread(sleep._portal_inhibit, connection, why, 5.0)
@@ -431,14 +406,14 @@ async def test_portal_inhibit_with_this_client() -> None:
         assert await _kde_gone(why)
         print(f"portal after Request.Close (connection open): {await _kde_ours(why)}")
     assert connection.closed
-    _assert_nothing_left(fds_before)
+    assert_no_new_fds_or_unclosed(fds_before)
 
 
 @pytest.mark.slow
 @pytest.mark.usefixtures("power_management", "kde")
 async def test_closing_the_connection_alone_ends_the_power_management_inhibit() -> None:
     why = _why("close")
-    fds_before = _open_fds()
+    fds_before = open_fds()
     async with _session_connection() as connection:
         reply = await asyncio.to_thread(sleep._pm_inhibit, connection, why, 5.0)
         print(f"PowerManagement cookie: {reply.signature} {reply.body}")
@@ -448,14 +423,14 @@ async def test_closing_the_connection_alone_ends_the_power_management_inhibit() 
         connection.close()  # no UnInhibit: as if Reframe crashed
         assert await _kde_gone(why)
         print(f"PowerManagement after the connection closed: {await _kde_ours(why)}")
-    _assert_nothing_left(fds_before)
+    assert_no_new_fds_or_unclosed(fds_before)
 
 
 @pytest.mark.slow
 @pytest.mark.usefixtures("logind", "kde")
 async def test_kde_turns_a_logind_idle_lock_into_an_idle_inhibition() -> None:
     why = _why("mirror")
-    fds_before = _open_fds()
+    fds_before = open_fds()
     async with _closing(SleepInhibitor([LogindBackend()])) as inhibitor:
         assert await inhibitor.acquire(why) is InhibitState.ACTIVE
         during = await _kde_appears(why)
@@ -466,4 +441,4 @@ async def test_kde_turns_a_logind_idle_lock_into_an_idle_inhibition() -> None:
         await inhibitor.close()
         assert await _kde_gone(why)
         print(f"logind idle lock only, KDE after: {await _kde_ours(why)}")
-    _assert_nothing_left(fds_before)
+    assert_no_new_fds_or_unclosed(fds_before)

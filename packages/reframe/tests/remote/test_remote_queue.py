@@ -26,8 +26,9 @@ from reframe.queue import JobStateError, UnknownJobError
 from reframe.remote import OwnerStopping, RemoteError
 from reframe.remote import queue as queue_module
 from reframe_testing.server import ApiFactory
+from reframe_testing.waiting import wait_until
 
-from .conftest import HANG, Server, Wire, event_message, poll, watch_requests
+from .conftest import HANG, Server, Wire, event_message, watch_requests
 
 pytestmark = pytest.mark.anyio
 
@@ -46,7 +47,7 @@ async def test_its_jobs_end_with_its_connection_unless_it_detaches(
     remote = await server.connect()
     job = await remote.add(await server.job())
     await remote.close(detach=detach)
-    await poll(lambda: server.api.reframe.queue.get(job.id).state == state)  # type: ignore[union-attr]
+    await wait_until(lambda: server.api.reframe.queue.get(job.id).state == state)  # type: ignore[union-attr]
 
 
 class SlowStart(httpx.AsyncBaseTransport):
@@ -104,7 +105,7 @@ async def test_a_job_another_client_adds_shows_in_the_list(server: Server) -> No
     remote = await server.connect()
     try:
         other = await server.api.reframe.queue.add(await server.job("Other.mkv"))
-        await poll(lambda: remote.get(other.id) is not None)
+        await wait_until(lambda: remote.get(other.id) is not None)
         listed = remote.get(other.id)
         assert listed is not None
         assert listed.settings.output.path == server.api.output / "Other.mkv"
@@ -127,9 +128,9 @@ async def test_a_server_that_stops_interrupts_its_running_and_paused_jobs(
             paused = await remote.add(await Server(api, live).job("Paused.mkv"))
             waiting = await remote.add(await Server(api, live).job("Waiting.mkv"))
             remote.start(job_ids=[job.id, paused.id, waiting.id])
-            await poll(lambda: remote.get(paused.id).state is JobState.RUNNING)  # type: ignore[union-attr]
+            await wait_until(lambda: remote.get(paused.id).state is JobState.RUNNING)  # type: ignore[union-attr]
             await remote.pause(paused.id)
-            await poll(lambda: remote.get(job.id).state is JobState.RUNNING)  # type: ignore[union-attr]
+            await wait_until(lambda: remote.get(job.id).state is JobState.RUNNING)  # type: ignore[union-attr]
         # uvicorn's shutdown closed the connection (1012); the jobs run on in the facade.
         ids = [job.id, paused.id, waiting.id]
         assert len(await asyncio.wait_for(remote.wait(ids), 10)) == 3
@@ -216,13 +217,13 @@ async def test_the_owners_countdown_is_followed_and_cancelled(server: Server) ->
     remote = await server.connect()
     try:
         countdown = server.api.reframe.power.schedule("shutdown")
-        await poll(lambda: remote.power.pending is not None)
+        await wait_until(lambda: remote.power.pending is not None)
         assert remote.power.pending is not None
         assert remote.power.pending.countdown_id == countdown
         assert not await remote.power.cancel("another-countdown")
         assert await remote.power.cancel(countdown)
         assert server.api.reframe.power.pending is None
-        await poll(lambda: remote.power.pending is None)  # the client stops showing it
+        await wait_until(lambda: remote.power.pending is None)  # the client stops showing it
     finally:
         await remote.close()
 
@@ -377,7 +378,7 @@ async def test_a_job_that_only_a_queue_change_names_is_read(server: Server, wire
     try:
         wire.drop = lambda message: event_type(message) == "job.state"
         other = await server.api.reframe.queue.add(await server.job("Other.mkv"))
-        await poll(lambda: remote.get(other.id) is not None, 5)
+        await wait_until(lambda: remote.get(other.id) is not None, 5)
     finally:
         await remote.close()
 
@@ -557,7 +558,7 @@ async def test_events_it_cannot_read_end_nothing(server: Server, wire: Wire) -> 
     ]
     remote = await server.connect()
     try:
-        await poll(lambda: remote.get(job.id).progress is not None, 5)  # type: ignore[union-attr]
+        await wait_until(lambda: remote.get(job.id).progress is not None, 5)  # type: ignore[union-attr]
         assert remote.get(job.id).progress.percent == 42.0  # type: ignore[union-attr]
         assert remote.lost is None
         await remote.cancel(job.id)
@@ -579,7 +580,7 @@ async def test_progress_does_not_change_a_job_that_ended(server: Server, wire: W
     ]
     remote = await server.connect()
     try:
-        await poll(lambda: remote.get(waiting.id).progress is not None, 5)  # type: ignore[union-attr]
+        await wait_until(lambda: remote.get(waiting.id).progress is not None, 5)  # type: ignore[union-attr]
         assert remote.get(ended.id).progress is None  # type: ignore[union-attr]
     finally:
         await remote.close()
@@ -601,12 +602,12 @@ async def test_the_copy_says_what_the_owners_queue_takes(server: Server) -> None
     try:
         assert (remote.processing, remote.only) == (True, [first.id])
         queue.start(job_ids=[second.id])
-        await poll(lambda: remote.only == [first.id, second.id], 5)
+        await wait_until(lambda: remote.only == [first.id, second.id], 5)
         await queue.stop()
-        await poll(lambda: not remote.processing, 5)
+        await wait_until(lambda: not remote.processing, 5)
         assert remote.only is None
         queue.start()
-        await poll(lambda: remote.processing, 5)
+        await wait_until(lambda: remote.processing, 5)
         assert remote.only is None
     finally:
         await remote.close()
@@ -637,7 +638,7 @@ async def test_a_processing_event_it_cannot_read_reads_the_whole_queue(
             else message
         )
         server.api.reframe.queue.start()
-        await poll(lambda: remote.processing, 5)
+        await wait_until(lambda: remote.processing, 5)
         assert remote.lost is None
     finally:
         await remote.close()
@@ -684,7 +685,7 @@ async def test_a_resync_reads_the_whole_queue(server: Server, wire: Wire) -> Non
         wire.drop = lambda message: event_type(message) in ("job.state", "queue.changed")
         other = await server.api.reframe.queue.add(await server.job("Other.mkv"))
         server.api.reframe.events.publish(ResyncEvent())
-        await poll(lambda: remote.get(other.id) is not None, 5)
+        await wait_until(lambda: remote.get(other.id) is not None, 5)
     finally:
         await remote.close()
 
@@ -700,7 +701,7 @@ async def test_a_reader_that_cannot_go_on_ends_the_connection(
     try:
         job = await remote.add(await server.job())
         remote.start(job_ids=[job.id])
-        await poll(lambda: remote.get(job.id).state is JobState.RUNNING)  # type: ignore[union-attr]
+        await wait_until(lambda: remote.get(job.id).state is JobState.RUNNING)  # type: ignore[union-attr]
         if failure == "read refused":
             requests = await watch_requests(remote)
             broken = {"title": "Broken", "status": 500, "code": "server.broken"}

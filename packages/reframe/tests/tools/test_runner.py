@@ -22,6 +22,7 @@ from hypothesis import strategies as st
 from reframe.tools import CancelToken, kill_process_tree, run, run_streaming
 from reframe.tools import runner as runner_mod
 from reframe_testing import fake_tools as ft
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
@@ -33,15 +34,6 @@ def _alive(pid: int) -> bool:
         return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
     except psutil.Error:
         return False
-
-
-async def _wait_for(predicate: object, limit: float = 10.0) -> None:
-    assert callable(predicate)
-    deadline = time.monotonic() + limit
-    while not predicate():
-        if time.monotonic() > deadline:
-            raise AssertionError("condition not met in time")
-        await asyncio.sleep(0.02)
 
 
 def _scenario(tools: ft.FakeTools, *rules: ft.Rule) -> None:
@@ -188,7 +180,7 @@ async def test_cancel_from_a_coroutine(fake_tools: ft.FakeTools) -> None:
     _scenario(fake_tools, ft.Rule(argv_has=["-hang"], actions=[ft.spawn_grandchild(), ft.hang()]))
     token = CancelToken()
     task = asyncio.ensure_future(run([str(fake_tools.ffmpeg), "-hang"], timeout=60, cancel=token))
-    await _wait_for(lambda: len(fake_tools.pids()) == 2)
+    await wait_until(lambda: len(fake_tools.pids()) == 2)
     cancelled_at = time.monotonic()
     token.cancel("user")
     result = await task
@@ -264,7 +256,7 @@ async def test_one_token_cancels_several_runs(fake_tools: ft.FakeTools) -> None:
         asyncio.ensure_future(run([str(fake_tools.ffmpeg), "-hang"], timeout=60, cancel=token))
         for _ in range(3)
     ]
-    await _wait_for(lambda: len(fake_tools.pids()) == 3)
+    await wait_until(lambda: len(fake_tools.pids()) == 3)
     token.cancel()
     results = await asyncio.gather(*tasks)
     assert all(r.cancelled for r in results)
@@ -273,11 +265,11 @@ async def test_one_token_cancels_several_runs(fake_tools: ft.FakeTools) -> None:
 async def test_cancelling_the_calling_task_kills_the_tree(fake_tools: ft.FakeTools) -> None:
     _scenario(fake_tools, ft.Rule(argv_has=["-hang"], actions=[ft.spawn_grandchild(), ft.hang()]))
     task = asyncio.ensure_future(run([str(fake_tools.ffmpeg), "-hang"], timeout=60))
-    await _wait_for(lambda: len(fake_tools.pids()) == 2)
+    await wait_until(lambda: len(fake_tools.pids()) == 2)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    await _wait_for(lambda: not any(_alive(pid) for pid in fake_tools.pids()), limit=10)
+    await wait_until(lambda: not any(_alive(pid) for pid in fake_tools.pids()), limit=10)
 
 
 async def test_cancel_after_exit_is_a_normal_result(fake_tools: ft.FakeTools) -> None:
@@ -476,7 +468,7 @@ async def test_streaming_callback_error_kills_and_propagates(fake_tools: ft.Fake
             cancel=None,
             timeout=60,
         )
-    await _wait_for(lambda: not any(_alive(pid) for pid in fake_tools.pids()))
+    await wait_until(lambda: not any(_alive(pid) for pid in fake_tools.pids()))
 
 
 async def test_streaming_keeps_the_tail(fake_tools: ft.FakeTools) -> None:
@@ -666,7 +658,7 @@ async def test_the_pid_lets_the_caller_suspend_and_resume_the_tree() -> None:
             on_start=pids.append,
         )
     )
-    await _wait_for(lambda: len(lines) > 5)
+    await wait_until(lambda: len(lines) > 5)
     proc = psutil.Process(pids[0])
     proc.suspend()
     await asyncio.sleep(0.3)  # let the pipe drain what was printed before the suspend
@@ -695,7 +687,7 @@ async def test_a_raising_on_start_kills_the_process_and_propagates() -> None:
             on_start=on_start,
         )
     assert pids
-    await _wait_for(lambda: not _alive(pids[0]))
+    await wait_until(lambda: not _alive(pids[0]))
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="a frozen Linux app's library path")

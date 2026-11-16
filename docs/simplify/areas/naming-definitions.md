@@ -136,6 +136,7 @@ Estimated total (after verify): about -180 Python source lines (plus -17 TOML li
 - Confidence: medium (the line count depends on how many of the six cross-area copies the next session also converts)
 - Verdict: CONFIRMED (anchors and the three fake-file-system classes checked; `SeasonFs` sources all sit in one folder per season, so `FakeFs({folder: names})` is equivalent; no `app` fixture exists in the plugin or in a `conftest.py` today)
 - Orchestrator: Tier A, work package Q-6.2 (see ../plan.md).
+- Q-6.2 note: `SeasonFs` in `tests/batch/test_anime_season.py` was left as it is, because Q-6.1 edits `tests/batch/` at the same time; replace it after Q-6.1 is merged.
 
 ### NDP-06: The analysis tasks repeat the "run the tool, check the result" block five times
 - Kind: duplication

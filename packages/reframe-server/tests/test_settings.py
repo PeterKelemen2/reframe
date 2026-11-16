@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-import time
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +14,7 @@ from reframe.models import AppSettings
 from reframe.service import SettingsUpdate
 from reframe.tools import ENV_VARS
 from reframe_testing.server import Api, ApiFactory
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
@@ -26,14 +25,6 @@ WITH_OPTIONS = "/dev/dri/renderD128,driver=../../tmp/x"
 def _start_with(tmp_path: Path, settings: dict[str, Any]) -> None:
     file = tmp_path / "config" / "settings.json"
     file.write_text(json.dumps(json.loads(file.read_text("utf-8")) | settings), encoding="utf-8")
-
-
-async def _until(check: Callable[[], bool], limit: float = 10.0) -> None:
-    deadline = time.monotonic() + limit
-    while not check():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.01)
 
 
 async def test_get_answers_the_settings_in_effect(api: Api) -> None:
@@ -120,13 +111,13 @@ async def test_a_concurrent_change_cannot_slip_a_program_past_the_check(
     monkeypatch.setattr(service, "update", update)
     frames = [{"op": "replace", "path": "/preview/sample_frames", "value": 4}]
     first = asyncio.ensure_future(api.client.put("/api/settings", json=frames))
-    await _until(entered.is_set)
+    await wait_until(entered.is_set)
     program = [
         {"op": "test", "path": "/preview/sample_frames", "value": 4},
         {"op": "add", "path": "/tools/ffmpeg", "value": "/bin/sh"},
     ]
     second = asyncio.ensure_future(api.client.put("/api/settings", json=program))
-    await _until(lambda: len(calls) == 2)  # the second request waits for the store's lock
+    await wait_until(lambda: len(calls) == 2)  # the second request waits for the store's lock
     release.set()
     assert (await first).status_code == 200
     response = await second

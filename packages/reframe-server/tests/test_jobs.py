@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from reframe.models import JobDraft, JobSettings, MediaSource
+from reframe.models import JobDraft, JobSettings
 from reframe_testing import fake_tools as ft
 from reframe_testing.server import PROBE_RULE, ROOT, Api
 
@@ -39,11 +39,10 @@ def serve(api: Api, path: Path, recording: str) -> None:
 async def add_source(
     api: Api, name: str = "Show S01E01.mkv", recording: str | None = None
 ) -> tuple[str, Path]:
-    path = api.media_file(name)
+    path = api.media / name
     if recording is not None:
         serve(api, path, recording)
-    assert isinstance(await api.reframe.sources.probe(path), MediaSource)
-    return api.app.state.sources.add(path), path
+    return await api.add_source(name), path
 
 
 async def job_of(api: Api, path: Path, preset: str | None = None) -> dict[str, Any]:

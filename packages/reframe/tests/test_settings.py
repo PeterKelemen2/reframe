@@ -12,8 +12,8 @@ from typing import Any
 import pytest
 
 from reframe import settings as settings_module
-from reframe.events import EventBus, Subscription
-from reframe.models import AppSettings, AppWarningEvent, Event
+from reframe.events import EventBus
+from reframe.models import AppSettings, AppWarningEvent
 from reframe.models import migrations as migrations_module
 from reframe.models.migrations import MigrationRegistry, current_version
 from reframe.settings import (
@@ -23,6 +23,7 @@ from reframe.settings import (
     migrate_document,
     replace_file,
 )
+from reframe_testing.helpers import drain, nested
 
 #: A made-up settings.json at schema version 1. Its ``from_the_future`` field is unknown to
 #: this Reframe and must survive a load and a save.
@@ -48,13 +49,6 @@ def registry_v2() -> MigrationRegistry:
         return data
 
     return registry
-
-
-def drain(subscription: Subscription) -> list[Event]:
-    events = []
-    while (event := subscription.get_nowait()) is not None:
-        events.append(event)
-    return events
 
 
 def write_json(path: Path, data: object) -> None:
@@ -415,14 +409,6 @@ def test_backup_names_do_not_collide(tmp_path: Path, monkeypatch: pytest.MonkeyP
         "presets.corrupt-20261013-120000-2.json",
         "presets.corrupt-20261013-120000-3.json",
     ]
-
-
-def nested(depth: int) -> list[Any]:
-    """A list nested ``depth`` levels deep (built without recursion)."""
-    value: list[Any] = []
-    for _ in range(depth - 1):
-        value = [value]
-    return value
 
 
 @pytest.mark.parametrize("depth", [100, 600, 100_000])

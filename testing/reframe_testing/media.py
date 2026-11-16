@@ -73,6 +73,23 @@ def find_ffprobe() -> str | None:
     return _discovered("ffprobe")
 
 
+def run_ffmpeg(cwd: Path, *args: str) -> None:
+    """Run the discovered ffmpeg quietly in ``cwd``; raises when it fails."""
+    ffmpeg = find_ffmpeg()
+    assert ffmpeg
+    subprocess.run(
+        [ffmpeg, "-v", "error", "-y", *args], cwd=cwd, check=True, capture_output=True, timeout=60
+    )
+
+
+def copy_fixture(fixture_media: Callable[[str], Path], name: str, folder: Path) -> Path:
+    """A copy of media fixture ``name`` in ``folder``, for a test that writes next to it."""
+    source = fixture_media(name)
+    target = folder / source.name
+    shutil.copy(source, target)
+    return target
+
+
 @functools.cache
 def _version_line(ffmpeg: str, size: int, mtime_ns: int) -> str:
     out = subprocess.run(

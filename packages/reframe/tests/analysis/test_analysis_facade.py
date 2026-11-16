@@ -5,9 +5,7 @@ keep each value, and ``mov_text`` tracks count their cues, not the muxer's empty
 from __future__ import annotations
 
 import asyncio
-import shutil
-import subprocess
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -17,47 +15,14 @@ from reframe.models import (
     BitrateSource,
     MediaSource,
     SubtitleScanTrack,
-    TaskInfo,
-    TaskState,
 )
 from reframe.service import Reframe
 from reframe_testing import media
+from reframe_testing.helpers import finish
 
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
 
 FixtureMedia = Callable[[str], Path]
-
-
-@pytest.fixture
-async def app(tmp_path: Path) -> AsyncIterator[Reframe]:
-    reframe = await Reframe.create(
-        tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "cache"
-    )
-    try:
-        yield reframe
-    finally:
-        await reframe.close()
-
-
-async def _finish(app: Reframe, info: TaskInfo) -> TaskInfo:
-    done = await app.tasks.wait(info.id)
-    assert done.state is TaskState.DONE, done.error
-    return done
-
-
-def _copy(fixture_media: FixtureMedia, name: str, tmp_path: Path) -> Path:
-    source = fixture_media(name)
-    target = tmp_path / source.name
-    shutil.copy(source, target)
-    return target
-
-
-def _ffmpeg(cwd: Path, *args: str) -> None:
-    ffmpeg = media.find_ffmpeg()
-    assert ffmpeg
-    subprocess.run(
-        [ffmpeg, "-v", "error", "-y", *args], cwd=cwd, check=True, capture_output=True, timeout=60
-    )
 
 
 async def test_two_bitrate_scans_keep_both_measurements(
@@ -65,7 +30,7 @@ async def test_two_bitrate_scans_keep_both_measurements(
 ) -> None:
     """Both scans run at once (the ``bitrate_scan`` limit is 2) and each probed the source
     before the other stored its value."""
-    path = _copy(fixture_media, "dts-hd-ma", tmp_path)
+    path = media.copy_fixture(fixture_media, "dts-hd-ma", tmp_path)
     probed = await app.sources.probe(path)
     assert isinstance(probed, MediaSource)
     assert [(a.index, a.bitrate.source) for a in probed.audio[:2]] == [
@@ -75,7 +40,7 @@ async def test_two_bitrate_scans_keep_both_measurements(
     first = app.sources.bitrate_scan(path, 1)
     second = app.sources.bitrate_scan(path, 2)
     for info in (first, second):
-        await _finish(app, info)
+        await finish(app, info)
     known = await app.sources.get(path)
     assert known is not None
     assert [(a.index, a.bitrate.source) for a in known.audio[:2]] == [
@@ -90,14 +55,14 @@ async def test_two_bitrate_scans_keep_both_measurements(
 async def test_subtitle_scan_and_bitrate_scan_keep_both(
     app: Reframe, tmp_path: Path, fixture_media: FixtureMedia
 ) -> None:
-    path = _copy(fixture_media, "multitrack", tmp_path)
+    path = media.copy_fixture(fixture_media, "multitrack", tmp_path)
     probed = await app.sources.probe(path)
     assert isinstance(probed, MediaSource)
     assert probed.subtitles
     first = app.sources.bitrate_scan(path, probed.audio[0].index)
     second = app.sources.subtitle_scan(path)
     for info in (first, second):
-        await _finish(app, info)
+        await finish(app, info)
     known = await app.sources.get(path)
     assert known is not None
     assert known.audio[0].bitrate.source is BitrateSource.MEASURED
@@ -109,7 +74,7 @@ async def test_concurrent_updates_are_serialised(
 ) -> None:
     """``SourceService.update`` reads the latest known source under a per-file lock: two
     updates started together both land."""
-    path = _copy(fixture_media, "dts-hd-ma", tmp_path)
+    path = media.copy_fixture(fixture_media, "dts-hd-ma", tmp_path)
     probed = await app.sources.probe(path)
     assert isinstance(probed, MediaSource)
 
@@ -137,7 +102,7 @@ async def test_update_after_the_file_changed_stores_nothing(
     app: Reframe, tmp_path: Path, fixture_media: FixtureMedia
 ) -> None:
     """A value measured on an older version of the file is not applied to the new one."""
-    path = _copy(fixture_media, "dts-hd-ma", tmp_path)
+    path = media.copy_fixture(fixture_media, "dts-hd-ma", tmp_path)
     old = await app.sources.probe(path)
     assert isinstance(old, MediaSource)
     with path.open("ab") as handle:  # the file changes (a new size)
@@ -166,12 +131,12 @@ async def test_mov_text_event_count(app: Reframe, tmp_path: Path, extension: str
     before the first cue and in each gap, ``testdata/README.md``); the scan counts 3."""
     (tmp_path / "three.srt").write_text(media.srt(CUES), encoding="utf-8")
     name = f"three.{extension}"
-    _ffmpeg(
+    media.run_ffmpeg(
         tmp_path, "-f", "lavfi", "-i", "color=c=black:s=64x64:r=10:d=8", "-i", "three.srt",
         "-map", "0", "-map", "1", "-c:v", "libx264", "-c:s", "mov_text", name,
     )  # fmt: skip
     path = tmp_path / name
-    done = await _finish(app, app.sources.subtitle_scan(path))
+    done = await finish(app, app.sources.subtitle_scan(path))
     assert app.tasks.value(done.id).tracks == [SubtitleScanTrack(stream_index=1, event_count=3)]
     known = await app.sources.get(path)
     assert known is not None
@@ -204,6 +169,6 @@ async def test_mov_text_cues_without_text_are_not_events(app: Reframe, tmp_path:
     its time is covered by an empty 2-byte sample. A styled cue has style boxes after its
     text and counts."""
     (tmp_path / "cues.ass").write_text(EMPTY_CUES_ASS, encoding="utf-8")
-    _ffmpeg(tmp_path, "-i", "cues.ass", "-c:s", "mov_text", "-f", "mp4", "cues.mp4")
-    done = await _finish(app, app.sources.subtitle_scan(tmp_path / "cues.mp4"))
+    media.run_ffmpeg(tmp_path, "-i", "cues.ass", "-c:s", "mov_text", "-f", "mp4", "cues.mp4")
+    done = await finish(app, app.sources.subtitle_scan(tmp_path / "cues.mp4"))
     assert app.tasks.value(done.id).tracks == [SubtitleScanTrack(stream_index=0, event_count=2)]

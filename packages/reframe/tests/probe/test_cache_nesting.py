@@ -8,25 +8,17 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 import pytest
 
 from reframe.models import MediaSource, SourceRef
 from reframe.probe.cache import CacheKey, ProbeCache
 from reframe.settings import MAX_DEPTH, too_deep
+from reframe_testing.helpers import nested
 
 TOOL = "ffprobe n9.0.2"
 #: Deep enough for CPython's ``json.loads`` to raise ``RecursionError`` (a C-stack check).
 PARSER_DEPTH = 200_000
-
-
-def nested(levels: int) -> list[Any]:
-    """A list nested ``levels`` deep (``[]`` is one level)."""
-    value: list[Any] = []
-    for _ in range(levels - 1):
-        value = [value]
-    return value
 
 
 def key() -> CacheKey:

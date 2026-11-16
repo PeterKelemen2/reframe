@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -22,6 +21,7 @@ from reframe.models import EncoderState, EncoderStatus, ToolInfo, ToolStatus
 from reframe.tools import CancelToken, RunResult, run
 from reframe_testing import fake_tools as ft
 from reframe_testing.capabilities import detect_rule, ffmpeg_info
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
@@ -45,14 +45,6 @@ ERROR = EncoderState.ERROR
 AUTO_SELECTED = (
     "Incompatible pixel format 'p010le' for codec 'hevc_amf', auto-selecting format 'nv12'\n"
 )
-
-
-async def until(condition: Callable[[], bool], limit: float = 10.0) -> None:
-    deadline = time.monotonic() + limit
-    while not condition():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.02)
 
 
 def encode_calls(fake: ft.FakeTools) -> list[tuple[str, ...]]:
@@ -368,7 +360,7 @@ async def test_cancel_kills_the_tests(fake_tools: ft.FakeTools, fake_ffmpeg: Too
     fake_tools.set_scenario(ft.Scenario([ft.Rule(argv_has=["-c:v"], actions=[ft.hang()])]))
     token = CancelToken()
     task = asyncio.create_task(detect_capabilities(fake_ffmpeg, DEFS, LINUX, cancel=token))
-    await until(lambda: len(encode_calls(fake_tools)) >= 3)
+    await wait_until(lambda: len(encode_calls(fake_tools)) >= 3)
     token.cancel("test")
     snap = await asyncio.wait_for(task, 10)
     assert snap.status("hevc_vaapi").state is EncoderState.CHECKING
@@ -378,7 +370,7 @@ async def test_cancel_kills_the_tests(fake_tools: ft.FakeTools, fake_ffmpeg: Too
 async def test_task_cancel_kills_the_tests(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
     fake_tools.set_scenario(ft.Scenario([ft.Rule(argv_has=["-c:v"], actions=[ft.hang()])]))
     task = asyncio.create_task(detect_capabilities(fake_ffmpeg, DEFS, LINUX))
-    await until(lambda: len(encode_calls(fake_tools)) >= 3)
+    await wait_until(lambda: len(encode_calls(fake_tools)) >= 3)
     task.cancel()
     await asyncio.wait({task})
     assert task.cancelled()

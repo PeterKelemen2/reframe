@@ -6,17 +6,10 @@ from typing import Any
 
 import pytest
 
-from reframe.models import JobSettings, MediaSource
+from reframe.models import JobSettings
 from reframe_testing.server import Api
 
 pytestmark = pytest.mark.anyio
-
-
-async def add_source(api: Api, name: str) -> str:
-    path = api.media_file(name)
-    assert isinstance(await api.reframe.sources.probe(path), MediaSource)
-    sid: str = api.app.state.sources.add(path)
-    return sid
 
 
 def naming(api: Api, template: str) -> dict[str, Any]:
@@ -29,8 +22,8 @@ def naming(api: Api, template: str) -> dict[str, Any]:
 
 
 async def test_preview_from_the_paths(api: Api) -> None:
-    first = await add_source(api, "Show S01E01.mkv")
-    second = await add_source(api, "Show S01E02.mkv")
+    first = await api.add_source("Show S01E01.mkv")
+    second = await api.add_source("Show S01E02.mkv")
     response = await api.client.post(
         "/api/naming/preview",
         json={
@@ -51,7 +44,7 @@ async def test_preview_from_the_paths(api: Api) -> None:
 
 async def test_preview_of_a_job(api: Api) -> None:
     """The job's per-file overrides and its output size are in the name."""
-    sid = await add_source(api, "Show S01E01.mkv")
+    sid = await api.add_source("Show S01E01.mkv")
     job = JobSettings.model_validate(
         {
             "source": {"path": str(api.media / "Show S01E01.mkv")},
@@ -69,7 +62,7 @@ async def test_preview_of_a_job(api: Api) -> None:
 
 @pytest.mark.parametrize("with_job", [False, True])
 async def test_a_name_beside_the_source_has_the_settings_fix(api: Api, with_job: bool) -> None:
-    sid = await add_source(api, "Show S01E01.mkv")
+    sid = await api.add_source("Show S01E01.mkv")
     body: dict[str, Any] = {"source_ids": [sid]}
     if with_job:
         body["job"] = {
