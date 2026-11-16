@@ -219,10 +219,7 @@ class PlannedAudio:
 def _container(container: ContainerDef | Container, defs: Definitions) -> ContainerDef:
     if isinstance(container, ContainerDef):
         return container
-    found = defs.containers.get(container)
-    if found is None:
-        raise PlanError(f"unknown container {container!r}")
-    return found
+    return defs.containers[container]
 
 
 def _bitrate(

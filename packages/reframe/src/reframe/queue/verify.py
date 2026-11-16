@@ -189,9 +189,7 @@ def check_output(
 ) -> list[str]:
     """What differs between the plan and the re-probed ``output`` (empty: it matches). With a
     ``plan`` that has a ``header_edit`` step, the metadata is checked too."""
-    container = definitions.containers.get(job.output.container)
-    if container is None:
-        return [f"unknown container {job.output.container!r}"]
+    container = definitions.containers[job.output.container]
     expected = expected_streams(job, source, container)
     found = _streams(output)
     problems: list[str] = []

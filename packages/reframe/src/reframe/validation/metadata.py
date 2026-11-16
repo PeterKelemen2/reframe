@@ -15,17 +15,22 @@ from reframe.validation.context import JobContext
 from reframe.validation.registry import job_rule
 
 
-def _blocks(ctx: JobContext) -> Iterator[tuple[str, TrackMetadata]]:
+def metadata_blocks(
+    ctx: JobContext, *, written_only: bool = False
+) -> Iterator[tuple[str, TrackMetadata]]:
+    """The metadata of each output track and its path; ``written_only`` skips burned-in
+    subtitles, which have no track to write it to."""
     yield "video.metadata", ctx.job.video.metadata
     for index, audio in enumerate(ctx.job.audio):
         yield f"audio[{index}].metadata", audio.metadata
     for index, subtitle in enumerate(ctx.job.subtitles):
-        yield f"subtitles[{index}].metadata", subtitle.metadata
+        if not (written_only and subtitle.action == "burn"):
+            yield f"subtitles[{index}].metadata", subtitle.metadata
 
 
 @job_rule("metadata", "metadata.language_invalid")
 def track_languages(ctx: JobContext) -> Iterator[ValidationIssue]:
-    for prefix, metadata in _blocks(ctx):
+    for prefix, metadata in metadata_blocks(ctx):
         if metadata.language is None:
             continue
         problem = languages.validate(metadata.language)
@@ -45,7 +50,7 @@ def track_languages(ctx: JobContext) -> Iterator[ValidationIssue]:
 @job_rule("metadata", "metadata.nul_character")
 def track_names(ctx: JobContext) -> Iterator[ValidationIssue]:
     """A track name is a process argument, which cannot hold a NUL character."""
-    names = [(f"{prefix}.name", metadata.name) for prefix, metadata in _blocks(ctx)]
+    names = [(f"{prefix}.name", metadata.name) for prefix, metadata in metadata_blocks(ctx)]
     names += [
         (f"subtitles[{index}].source.name", track.source.name)
         for index, track in enumerate(ctx.job.subtitles)
@@ -78,8 +83,6 @@ def default_tracks(ctx: JobContext) -> Iterator[ValidationIssue]:
     """More than one output track of a kind marked default is allowed, so a warning, with a fix
     that keeps only the first one default. A burned-in subtitle is not an output track."""
     container = ctx.container
-    if container is None:
-        return
     audio = [
         index
         for index, track in enumerate(ctx.job.audio)

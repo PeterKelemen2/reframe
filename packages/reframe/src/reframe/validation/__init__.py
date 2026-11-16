@@ -90,7 +90,6 @@ def validate(
     settings: AppSettings | None = None,
     definitions: Definitions | None = None,
     naming: NamingOptions | None = None,
-    rules: Iterable[Rule[JobContext]] | None = None,
 ) -> list[ValidationIssue]:
     """Every issue of ``job``. It never raises for a bad job: everything is an issue.
 
@@ -98,7 +97,6 @@ def validate(
 
     :param settings: ``None`` means ``AppSettings()``.
     :param naming: replaces ``settings.output.naming``, for a preset's ``JobTemplate.naming``.
-    :param rules: only these rules; ``None`` means all of :data:`JOB_RULES`.
     """
     settings = settings if settings is not None else AppSettings()
     context = JobContext(
@@ -113,7 +111,7 @@ def validate(
     )
     return [
         *_source_path_issues(job, source),
-        *_run(JOB_RULES if rules is None else rules, context),
+        *_run(JOB_RULES, context),
     ]
 
 
@@ -150,7 +148,6 @@ def validate_template(
     *,
     subject: str | None = None,
     definitions: Definitions | None = None,
-    rules: Iterable[Rule[TemplateContext]] | None = None,
 ) -> list[ValidationIssue]:
     """The issues a preset or batch template has without a source (fixes target
     ``"template"``).
@@ -161,15 +158,14 @@ def validate_template(
         subject = f'Preset "{template.name}"'
     defs = definitions if definitions is not None else load_definitions()
     context = TemplateContext(template=template, caps=caps, definitions=defs, subject=subject)
-    issues = [_for_template(i) for i in _run(TEMPLATE_RULES if rules is None else rules, context)]
-    if rules is None:
-        # The lint finds shadowed or unreachable codec rules and bitrates out of range.
-        # The container rule reports codecs the container cannot hold, so the lint skips those.
-        issues += lint_defaults(
-            template.audio_defaults,
-            container=template.output.container,
-            definitions=defs,
-            container_codecs=False,
-        )
-        issues += lint_track_rules(template)
+    issues = [_for_template(i) for i in _run(TEMPLATE_RULES, context)]
+    # The lint finds shadowed or unreachable codec rules and bitrates out of range.
+    # The container rule reports codecs the container cannot hold, so the lint skips those.
+    issues += lint_defaults(
+        template.audio_defaults,
+        container=template.output.container,
+        definitions=defs,
+        container_codecs=False,
+    )
+    issues += lint_track_rules(template)
     return issues

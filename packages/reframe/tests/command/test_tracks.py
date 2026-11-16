@@ -142,8 +142,6 @@ def test_planned_audio_copies_and_containers() -> None:
         bitrate=700, samplerate=48000,
     )  # fmt: skip
     assert planned_audio(passthru, audio(sample_rate=44100), "webm") == fallback
-    with pytest.raises(PlanError, match="unknown container"):
-        planned_audio(passthru, audio(), "avi")  # type: ignore[arg-type]
 
 
 def test_bitrate_without_a_table_for_the_layout() -> None:

@@ -346,6 +346,22 @@ CASES: list[Case] = [
         video(encoder="libsvtav1", advanced={"min-qp": 40, "max-qp": 20}),
         video(encoder="libsvtav1", advanced={"min-qp": 20, "max-qp": 40}),
     ),
+    Case(
+        "custom parameter names a file",
+        "encoder.custom_param_file",
+        "video.custom_params",
+        ERR,
+        video(custom_params="aq-mode=3:analysis-save=/home/u/x"),
+        video(custom_params="aq-mode=3"),
+    ),
+    Case(
+        "custom parameter overrides an option",
+        "encoder.custom_param_overrides",
+        "video.advanced.psy-rd",
+        WARN,
+        video(custom_params="psy-rd=0.75", advanced={"psy-rd": 1.5}),
+        video(advanced={"psy-rd": 1.5}),
+    ),
 ]
 
 
@@ -377,13 +393,14 @@ def test_negative(case: Case) -> None:
 
 
 @pytest.mark.parametrize("registered", TEMPLATE_RULES, ids=[r.name for r in TEMPLATE_RULES])
-def test_every_template_rule_has_a_positive_case(registered: Any) -> None:
+def test_every_template_rule_has_a_positive_case(registered: Any, monkeypatch: Any) -> None:
+    monkeypatch.setattr("reframe.validation.TEMPLATE_RULES", [registered])
     for case in CASES:
         scenario = build(case.positive)
         found = validate_template(
-            scenario.template, scenario.caps, definitions=scenario.definitions, rules=[registered]
+            scenario.template, scenario.caps, definitions=scenario.definitions
         )
-        if found:
+        if any(i.code in registered.codes for i in found):
             return
     pytest.fail(f"no positive case for the template rule {registered.name}")
 
@@ -418,7 +435,7 @@ def test_subject_names_the_template() -> None:
     assert issue.message == "Batch group 2 uses the unknown encoder 'libx999'."
 
 
-def test_template_fixes_target_the_template_but_settings_fixes_stay() -> None:
+def test_template_fixes_target_the_template_but_settings_fixes_stay(monkeypatch: Any) -> None:
     def both_targets(ctx: TemplateContext) -> list[ValidationIssue]:
         return [
             error(
@@ -433,5 +450,6 @@ def test_template_fixes_target_the_template_but_settings_fixes_stay() -> None:
         ]
 
     rule = Rule("output", "both_targets", both_targets, ("output.example",))
-    (issue,) = validate_template(preset(), sc.make_caps(), rules=[rule])
+    monkeypatch.setattr("reframe.validation.TEMPLATE_RULES", [rule])
+    (issue,) = validate_template(preset(), sc.make_caps())
     assert [f.target for f in issue.fixes] == ["template", "settings"]

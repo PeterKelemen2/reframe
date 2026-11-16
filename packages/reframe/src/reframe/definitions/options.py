@@ -19,6 +19,7 @@ __all__ = [
     "option_context",
     "option_default",
     "unmet_conditions",
+    "value_text",
 ]
 
 
@@ -79,7 +80,8 @@ def unmet_conditions(
     return [c for c in option.requires if not c.matches(context)]
 
 
-def _value_text(option: EncoderOption | None, value: OptionValue) -> str:
+def value_text(option: EncoderOption | None, value: OptionValue) -> str:
+    """``value`` as a message shows it: on or off, the choice's label, else the value."""
     if isinstance(value, bool):
         return "on" if value else "off"
     if option is not None and option.choices is not None:
@@ -116,7 +118,7 @@ def describe_condition(condition: Condition, encoder: VideoEncoderDef) -> str:
     elif condition.field == "two_pass":
         texts = ["on" if v else "off" for v in values]
     else:
-        texts = [_value_text(other, v) for v in values]
+        texts = [value_text(other, v) for v in values]
     joined = " or ".join(texts)
     if condition.op in ("ne", "not_in"):
         return f"{subject} not {joined}"

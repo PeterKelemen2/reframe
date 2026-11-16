@@ -451,6 +451,18 @@ class AudioQualityDef(ReframeModel):
     help: str = ""
 
 
+def drop_upmix(
+    requested: Mixdown | None, source_channels: int, mixdowns: Mapping[Mixdown, MixdownDef]
+) -> Mixdown | None:
+    """``requested``, or ``None`` when it would upmix a source of ``source_channels`` (0:
+    unknown, never dropped). Dolby Pro Logic II needs more than two source channels."""
+    if requested is not None and source_channels > 0:
+        wanted = mixdowns[requested].channels
+        if source_channels < wanted or (requested == "dpl2" and source_channels <= wanted):
+            return None
+    return requested
+
+
 class AudioEncoderDef(ReframeModel):
     """One FFmpeg audio encoder that Reframe knows."""
 
@@ -490,10 +502,7 @@ class AudioEncoderDef(ReframeModel):
         known source. Dolby Pro Logic II is a matrix encoding, not a channel count, so it is
         never a fallback layout.
         """
-        if requested is not None and source_channels > 0:
-            wanted = mixdowns[requested].channels
-            if source_channels < wanted or (requested == "dpl2" and source_channels <= wanted):
-                requested = None
+        requested = drop_upmix(requested, source_channels, mixdowns)
         if requested is not None:
             if not self.mixdowns or requested in self.mixdowns:
                 return requested
@@ -731,6 +740,7 @@ class Definitions(ReframeModel):
 
     mixdowns: dict[Mixdown, MixdownDef] = Field(default_factory=dict)
     passthru_codecs: dict[PassthruCodec, PassthruCodecDef] = Field(default_factory=dict)
+    # Every Container has one (the definitions lint checks it), so callers index it.
     containers: dict[Container, ContainerDef] = Field(default_factory=dict)
     track_flags: dict[TrackFlag, TrackFlagDef] = Field(default_factory=dict)
     filters: dict[FilterId, FilterDef] = Field(default_factory=dict)

@@ -14,6 +14,7 @@ from reframe.definitions import (
     Definitions,
     EncoderOption,
     PresetDefault,
+    QualityMode,
     VideoEncoderDef,
     convert_quality,
     describe_condition,
@@ -33,7 +34,8 @@ from reframe.definitions.custom_params import (
     split_custom_params,
     whole_param,
 )
-from reframe.definitions.options import effective_preset
+from reframe.definitions.models import BitrateMode
+from reframe.definitions.options import effective_preset, value_text
 from reframe.definitions.quality import round_to_step
 from reframe.jsonpatch import format_pointer
 from reframe.models.capabilities import CapabilitySnapshot, EncoderStatus
@@ -67,6 +69,7 @@ __all__ = [
     "CUSTOM_PARAM_CODES",
     "OPTION_RULE_CODES",
     "OVERRIDE_CODE",
+    "option_int",
     "remove_option_fix",
     "remove_param_fix",
     "switch_video_encoder",
@@ -110,7 +113,7 @@ def switch_video_encoder(
     video: VideoSettings,
     new_id: str,
     definitions: Definitions,
-    caps: CapabilitySnapshot | None = None,
+    caps: CapabilitySnapshot,
 ) -> tuple[list[JsonPatchOp], str | None]:
     """The patch that switches ``video`` to the encoder ``new_id``, and a note on the quality.
 
@@ -127,7 +130,7 @@ def switch_video_encoder(
         old_quality = old.rate_control.quality if old is not None else None
         if new_quality is None:
             if new_bitrate is not None:
-                ops.append(replace("video.rate_control", AverageBitrate().model_dump(mode="json")))
+                ops.append(_to_bitrate_patch())
         elif old is not None and old_quality is not None:
             value = convert_quality(rc.value, old.id, new.id, definitions=definitions)
             ops.append(replace("video.rate_control.value", value))
@@ -141,14 +144,9 @@ def switch_video_encoder(
                 ops.append(replace("video.rate_control.value", value))
     elif new_bitrate is None:
         if new_quality is not None:
-            ops.append(
-                replace(
-                    "video.rate_control",
-                    ConstantQuality(value=new_quality.default).model_dump(mode="json"),
-                )
-            )
+            ops.append(_to_quality_patch(new_quality))
     else:
-        kbps = min(max(rc.kbps, new_bitrate.min_kbps), new_bitrate.max_kbps)
+        kbps = _clamp_kbps(rc.kbps, new_bitrate)
         if kbps != rc.kbps:
             ops.append(replace("video.rate_control.kbps", kbps))
         if rc.two_pass and new_bitrate.two_pass is None:
@@ -159,16 +157,10 @@ def switch_video_encoder(
         setting = _setting(new, def_field)
         if value is not None and (setting is None or setting.get(value) is None):
             ops.append(replace(f"video.{field}", None))
-    status = _status(caps, new_id) if caps is not None else None
+    status = _status(caps, new_id)
     if video.bit_depth == 10 and _no_10bit_reason(new, status, rechecking=_rechecking(caps)):
         # Also what detection found (a GPU without 10-bit), not only the definition.
-        ops.append(replace("video.bit_depth", 8))
-        profiles = new.profiles
-        choice = profiles.get(video.profile) if video.profile and profiles else None
-        reset = replace("video.profile", None)
-        depths = choice.bit_depths if choice is not None else None
-        if depths is not None and 8 not in depths and reset not in ops:
-            ops.append(reset)
+        ops += [op for op in _bit_depth_ops(video, new, 8) if op not in ops]
     if video.fast_decode and new.fast_decode is None:
         ops.append(replace("video.fast_decode", False))
     kept = {
@@ -186,7 +178,7 @@ def _switch_fix(
     new_id: str,
     definitions: Definitions,
     *,
-    caps: CapabilitySnapshot | None = None,
+    caps: CapabilitySnapshot,
 ) -> Fix:
     ops, note = switch_video_encoder(video, new_id, definitions, caps)
     return fix(f"Use {new_id}" + (f" ({note})" if note else ""), *ops)
@@ -211,9 +203,9 @@ def video_availability_issues(
     )
 
 
-def _rechecking(caps: CapabilitySnapshot | None) -> bool:
+def _rechecking(caps: CapabilitySnapshot) -> bool:
     """A cached snapshot that detection is checking again: its results are not final."""
-    return caps is not None and caps.from_cache and caps.detecting
+    return caps.from_cache and caps.detecting
 
 
 def _no_10bit_reason(
@@ -479,6 +471,20 @@ def video_option_issues(
     return issues
 
 
+def _to_bitrate_patch() -> JsonPatchOp:
+    return replace("video.rate_control", AverageBitrate().model_dump(mode="json"))
+
+
+def _to_quality_patch(quality: QualityMode) -> JsonPatchOp:
+    return replace(
+        "video.rate_control", ConstantQuality(value=quality.default).model_dump(mode="json")
+    )
+
+
+def _clamp_kbps(kbps: int, bitrate: BitrateMode) -> int:
+    return min(max(kbps, bitrate.min_kbps), bitrate.max_kbps)
+
+
 def video_rate_control_issues(
     video: VideoSettings,
     definitions: Definitions,
@@ -492,16 +498,7 @@ def video_rate_control_issues(
     issues: list[ValidationIssue] = []
     if isinstance(rc, ConstantQuality):
         if quality is None:
-            fixes = (
-                [
-                    fix(
-                        "Use average bitrate",
-                        replace("video.rate_control", AverageBitrate().model_dump(mode="json")),
-                    )
-                ]
-                if bitrate is not None
-                else []
-            )
+            fixes = [fix("Use average bitrate", _to_bitrate_patch())] if bitrate is not None else []
             issues.append(
                 error(
                     "encoder.rate_control_unsupported",
@@ -527,17 +524,7 @@ def video_rate_control_issues(
         return issues
     if bitrate is None:
         fixes = (
-            [
-                fix(
-                    "Use constant quality",
-                    replace(
-                        "video.rate_control",
-                        ConstantQuality(value=quality.default).model_dump(mode="json"),
-                    ),
-                )
-            ]
-            if quality is not None
-            else []
+            [fix("Use constant quality", _to_quality_patch(quality))] if quality is not None else []
         )
         issues.append(
             error(
@@ -549,7 +536,7 @@ def video_rate_control_issues(
         )
         return issues
     if not bitrate.min_kbps <= rc.kbps <= bitrate.max_kbps:
-        clamped = min(max(rc.kbps, bitrate.min_kbps), bitrate.max_kbps)
+        clamped = _clamp_kbps(rc.kbps, bitrate)
         issues.append(
             error(
                 "encoder.bitrate_out_of_range",
@@ -704,16 +691,6 @@ def remove_option_fix(key: str, label: str | None = None) -> Fix:
     return fix(label or f"Remove {key}", RemoveOp(path=_option_pointer(key)))
 
 
-def _value_label(option: EncoderOption, value: OptionValue) -> str:
-    if isinstance(value, bool):
-        return "on" if value else "off"
-    if option.choices is not None:
-        found = next((c for c in option.choices if c.value == str(value)), None)
-        if found is not None:
-            return found.label
-    return _num(value) if isinstance(value, int | float) else str(value)
-
-
 def _condition_fix(condition: Condition, encoder: VideoEncoderDef) -> Fix | None:
     """A fix that makes an ``option:<key>`` condition hold (``eq`` or ``in``); ``None`` for the
     others."""
@@ -724,10 +701,10 @@ def _condition_fix(condition: Condition, encoder: VideoEncoderDef) -> Fix | None
     if other is None:  # pragma: no cover - the linter checks the condition's option
         return None
     value = condition.value[0] if isinstance(condition.value, list) else condition.value
-    return _set_option(key, value, f"Set {other.label} to {_value_label(other, value)}")
+    return _set_option(key, value, f"Set {other.label} to {value_text(other, value)}")
 
 
-def _int(value: OptionValue | None) -> int | None:
+def option_int(value: OptionValue | None) -> int | None:
     if value is None or isinstance(value, bool):
         return None
     try:
@@ -796,8 +773,12 @@ def _inactive_issues(opts: _Options) -> list[ValidationIssue]:
 
 
 def _vbv_rules(video: VideoSettings, opts: _Options) -> list[ValidationIssue]:
-    maxrate, bufsize = (_int(opts.written.get(key)) or 0 for key in ("vbv-maxrate", "vbv-bufsize"))
-    used_max, used_buf = (_int(opts.effective(key)) or 0 for key in ("vbv-maxrate", "vbv-bufsize"))
+    maxrate, bufsize = (
+        option_int(opts.written.get(key)) or 0 for key in ("vbv-maxrate", "vbv-bufsize")
+    )
+    used_max, used_buf = (
+        option_int(opts.effective(key)) or 0 for key in ("vbv-maxrate", "vbv-bufsize")
+    )
     name = opts.encoder.label
     issues: list[ValidationIssue] = []
     if maxrate > 0 and used_buf == 0:
@@ -830,7 +811,7 @@ def _x264_rules(opts: _Options) -> list[ValidationIssue]:
         return []
     limits: tuple[tuple[str, OptionValue, bool], ...] = (
         # (key, Blu-ray value, the job's value is above it)
-        ("bframes", 3, (_int(opts.written.get("bframes")) or 0) > 3),
+        ("bframes", 3, (option_int(opts.written.get("bframes")) or 0) > 3),
         ("weightp", "1", opts.written.get("weightp") == "2"),
         ("b-pyramid", "strict", opts.written.get("b-pyramid") == "normal"),
     )
@@ -840,13 +821,13 @@ def _x264_rules(opts: _Options) -> list[ValidationIssue]:
             continue
         option = opts.encoder.option(key)
         assert option is not None
-        shown = _value_label(option, value)
+        shown = value_text(option, value)
         issues.append(
             warning(
                 "encoder.option_ignored",
                 f"video.advanced.{key}",
                 f"With Blu-ray compatibility x264 uses {opts.label(key)} {shown}, not "
-                f"{_value_label(option, opts.written[key])}.",
+                f"{value_text(option, opts.written[key])}.",
                 _set_option(key, value, f"Use {shown}"),
                 remove_option_fix(key),
             )
@@ -855,12 +836,12 @@ def _x264_rules(opts: _Options) -> list[ValidationIssue]:
 
 
 def _x265_rules(opts: _Options) -> list[ValidationIssue]:
-    ctu = _int(opts.effective("ctu"))
+    ctu = option_int(opts.effective("ctu"))
     if ctu is None:
         return []
     issues: list[ValidationIssue] = []
     # The presets' own minimum (8 or 16) never exceeds a CTU size: only a set value can.
-    min_cu = _int(opts.written.get("min-cu-size"))
+    min_cu = option_int(opts.written.get("min-cu-size"))
     if min_cu is not None and min_cu > ctu:
         issues.append(
             error(
@@ -885,7 +866,7 @@ def _x265_rules(opts: _Options) -> list[ValidationIssue]:
             )
         )
     for key, what in (("max-tu-size", "maximum TU size"), ("qg-size", "quantisation group")):
-        size = _int(opts.written.get(key))
+        size = option_int(opts.written.get(key))
         if size is not None and size > ctu:
             issues.append(
                 warning(
@@ -910,7 +891,7 @@ def _svt_rules(opts: _Options) -> list[ValidationIssue]:
             "encoder.option_ignored",
             "video.advanced.hierarchical-levels",
             f"With forward keyframes SVT-AV1 uses hierarchical levels 4 "
-            f"({_value_label(option, '4')}), not {_value_label(option, levels)}.",
+            f"({value_text(option, '4')}), not {value_text(option, levels)}.",
             _set_option("hierarchical-levels", "4", "Use 16 frames"),
             remove_option_fix("hierarchical-levels"),
         )
@@ -924,7 +905,7 @@ def _min_max_conflict(
     message: str,
 ) -> list[ValidationIssue]:
     """``low_key`` above ``high_key`` (both as the encoder uses them) stops the encoder."""
-    low, high = _int(opts.effective(low_key)), _int(opts.effective(high_key))
+    low, high = option_int(opts.effective(low_key)), option_int(opts.effective(high_key))
     if low is None or high is None or low <= high:
         return []
     if low_key not in opts.written and high_key not in opts.written:
@@ -953,7 +934,7 @@ def _vp9_rules(video: VideoSettings, opts: _Options) -> list[ValidationIssue]:
         "libvpx stops when the minimum quantiser ({low}) is above the maximum ({high}).",
     )
     rc = video.rate_control
-    qmin, qmax = _int(opts.effective("qmin")), _int(opts.effective("qmax"))
+    qmin, qmax = option_int(opts.effective("qmin")), option_int(opts.effective("qmax"))
     if issues or not isinstance(rc, ConstantQuality) or qmin is None or qmax is None:
         return issues
     crf = round(rc.value)
@@ -1162,7 +1143,7 @@ def video_custom_param_override_issues(
         remove = remove_param_fix(params, param)
         path = f"video.advanced.{key}"
         if key in video.advanced:
-            shown = _value_label(option, video.advanced[key])
+            shown = value_text(option, video.advanced[key])
             message = (
                 f"The custom parameter {typed} sets {label}: {encoder.label} uses it, not the "
                 f"{shown} set here."
@@ -1230,28 +1211,22 @@ def video_container_issues(
     *,
     source_codec: str | None = None,
     switch: SwitchContainer | None = None,
-    passthrough_known: bool = False,
 ) -> list[ValidationIssue]:
     """``container.codec_unsupported`` for the video track: the encoder's codec (or, for
     passthrough, the source codec) cannot go into the container. Fixes: another encoder,
     another container, or (passthrough) encode the video (with an encoder the container
     holds).
 
-    ``passthrough_known``: a job (the source is known), where a source codec that ffprobe
-    could not name cannot be copied either (the command builder refuses it). A template has
-    no source and is not checked for passthrough."""
+    For passthrough, a source codec that ffprobe could not name cannot be copied either (the
+    command builder refuses it)."""
 
     def switch_to(allowed: Sequence[Container]) -> list[Fix]:
         if switch is not None:
             return switch(allowed)
         return switch_container_fixes(allowed, container_id, definitions)
 
-    container = definitions.containers.get(container_id)
-    if container is None:
-        return []
+    container = definitions.containers[container_id]
     if video.passthrough:
-        if source_codec is None and not passthrough_known:
-            return []
         if source_codec is not None and container.video.can_copy(source_codec):
             return []
         fixes = (

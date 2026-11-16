@@ -174,10 +174,13 @@ def scenario(stream: AudioStream, track: AudioOutputTrack) -> Any:
     return dataclasses.replace(base, job=job)
 
 
+@pytest.fixture(autouse=True)
+def _only_track_rules(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("reframe.validation.JOB_RULES", RULES)
+
+
 def issues_of(s: Any) -> list[ValidationIssue]:
-    return validate(
-        s.job, s.source, CAPS, TOOLS, s.fs, settings=s.settings, definitions=DEFS, rules=RULES
-    )
+    return validate(s.job, s.source, CAPS, TOOLS, s.fs, settings=s.settings, definitions=DEFS)
 
 
 def bitrate_for(category: str, encoder_id: str, table: Mixdown) -> int | None:

@@ -223,7 +223,7 @@ def output_path_issues(
     source: PurePath,
     fs: FileSystemView,
     *,
-    container: ContainerDef | None,
+    container: ContainerDef,
     collision: CollisionPolicy,
 ) -> list[ValidationIssue]:
     """The checks of one output path. A path with a NUL character is one error and no
@@ -235,7 +235,7 @@ def output_path_issues(
 
     if has_nul(path):
         return [_nul_issue(path)]
-    if container is not None and path.suffix.lower() not in container.extensions:
+    if path.suffix.lower() not in container.extensions:
         default = container.extensions[0]
         issues.append(
             warning(
