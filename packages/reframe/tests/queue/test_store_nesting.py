@@ -277,10 +277,10 @@ def test_deep_issues_are_never_written(tmp_path: Path) -> None:
 
 
 def test_a_store_that_saves_nothing_gives_no_warning(tmp_path: Path) -> None:
-    """A private store in memory (another process owns the file) never says "not saved" for
+    """A store that writes nothing (another process owns the file) never says "not saved" for
     one job: nothing of it is saved anyway."""
     store = store_at(tmp_path / "queue.sqlite3")
-    store.use_memory()
+    store.read_only = True
     run(store, lambda: store.upsert([row_of(job("deep", extra=nested(MAX_DEPTH)))]))
     assert store.warnings == []
     store.close()

@@ -227,12 +227,12 @@ class TaskManager:
         task = self._tasks.get(task_id)
         return None if task is None else task.value
 
-    def cancel(self, task_id: str, reason: str | None = None) -> bool:
+    def cancel(self, task_id: str) -> bool:
         """Cancel a queued or running task. ``False`` if it is unknown or already finished."""
         task = self._tasks.get(task_id)
         if task is None or task.info.state in FINISHED_STATES:
             return False
-        task.cancel.cancel(reason or "cancelled")
+        task.cancel.cancel()
         if task.handle is not None:
             task.handle.cancel()
         return True
@@ -250,7 +250,7 @@ class TaskManager:
         """Cancel every unfinished task and wait for all of them."""
         pending = [t for t in self._tasks.values() if t.info.state not in FINISHED_STATES]
         for task in pending:
-            self.cancel(task.info.id, "shutting down")
+            self.cancel(task.info.id)
         handles = [t.handle for t in pending if t.handle is not None]
         if handles:
             await asyncio.gather(*handles, return_exceptions=True)
@@ -276,7 +276,7 @@ class TaskManager:
             if task.info.progress is not None:
                 task.info.progress = 100.0
         except asyncio.CancelledError:
-            task.cancel.cancel("cancelled")
+            task.cancel.cancel()
             task.info.state = TaskState.CANCELLED
         except TaskFailed as exc:
             log.info("task %s (%s) failed: %s", task.info.id, task.info.kind, exc)
@@ -299,7 +299,7 @@ class TaskManager:
         """A task cancelled before its coroutine ran never enters ``_run``'s ``try``."""
         if task.finished.is_set():
             return
-        task.cancel.cancel("cancelled")
+        task.cancel.cancel()
         task.info.state = TaskState.CANCELLED
         task.info.finished_at = _now()
         self._publish_done(task)

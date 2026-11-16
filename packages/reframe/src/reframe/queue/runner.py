@@ -18,7 +18,7 @@ from collections import deque
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Literal
 
 import psutil
 
@@ -26,7 +26,9 @@ from reframe.command import PlanError, build_plan
 from reframe.command.header import edit_line
 from reframe.command.quoting import Shell, command_line, default_shell
 from reframe.definitions import Definitions
+from reframe.errors import ReframeClosedError
 from reframe.events import EventBus
+from reframe.mediatask import CapabilitiesLookup, SourceProber, ToolsLookup
 from reframe.metadata import header
 from reframe.metadata.own_thread import OwnThread
 from reframe.models.capabilities import CapabilitySnapshot
@@ -42,7 +44,7 @@ from reframe.models.tools import ToolInfo, ToolSet, ToolStatus
 from reframe.probe import ProbeError, matroska
 from reframe.queue import files, loudnorm
 from reframe.queue.clock import Clock
-from reframe.queue.errors import closed_error, exit_text, printable, stderr_reason
+from reframe.queue.errors import exit_text, printable, stderr_reason
 from reframe.queue.logs import JobLog
 from reframe.queue.process import suspend_tree
 from reframe.queue.progress import ProgressBlock, ProgressParser, ProgressTracker
@@ -54,12 +56,9 @@ from reframe.validation.output import output_path_issues
 
 __all__ = [
     "ActiveJob",
-    "CapabilitiesSource",
     "JobRunner",
     "Outcome",
-    "SourceProber",
     "StopReason",
-    "ToolsSource",
 ]
 
 log = logging.getLogger(__name__)
@@ -75,33 +74,6 @@ _WHAT = {
     "header_edit": "Writing the Matroska header",
     "finalize": "Finalizing",
 }
-
-
-class ToolsSource(Protocol):
-    """Tool discovery (``Reframe.tools``)."""
-
-    async def status(self) -> ToolSet: ...
-
-
-class CapabilitiesSource(Protocol):
-    """Encoder detection (``Reframe.capabilities``)."""
-
-    @property
-    def snapshot(self) -> CapabilitySnapshot: ...
-
-    async def wait(self) -> CapabilitySnapshot: ...
-
-
-class SourceProber(Protocol):
-    """Probing (``Reframe.sources``)."""
-
-    async def probe(
-        self,
-        path: str | os.PathLike[str],
-        *,
-        use_cache: bool = True,
-        cancel: CancelToken | None = None,
-    ) -> MediaSource | ProbeError: ...
 
 
 @dataclass(eq=False)
@@ -142,7 +114,7 @@ class ActiveJob:
         """Stop the job (the first reason wins): the running step's tree is killed."""
         if self.stop_reason is None:
             self.stop_reason = reason
-        self.token.cancel(reason)
+        self.token.cancel()
         self.resumed.set()  # a job paused between steps must see the stop
 
 
@@ -159,7 +131,6 @@ class Outcome:
     output_path: Path | None = None
     keep_part: bool = False
     """The ``.part`` file is complete and must be kept (``ask`` collision)."""
-    stop_reason: StopReason | None = None
     progress: JobProgress | None = None
 
 
@@ -194,8 +165,8 @@ class JobRunner:
         *,
         events: EventBus,
         settings: Callable[[], AppSettings],
-        tools: ToolsSource,
-        capabilities: CapabilitiesSource,
+        tools: ToolsLookup,
+        capabilities: CapabilitiesLookup,
         sources: SourceProber,
         clock: Clock,
         fs: FileSystemView,
@@ -206,8 +177,7 @@ class JobRunner:
         step_time_limit: float | None,
         tick: float,
         log_interval: float,
-        shell: Shell | None = None,
-        resumed: Callable[[QueueJob, ActiveJob], Awaitable[None]] | None = None,
+        resumed: Callable[[QueueJob, ActiveJob], Awaitable[None]],
     ) -> None:
         """``resumed``: called with ``active.control`` held when a paused in-place step is
         resumed, so that a cancel or ``close()`` can let it finish. The queue shows the job
@@ -227,7 +197,7 @@ class JobRunner:
         self._step_time_limit = step_time_limit
         self._tick = tick
         self.log_interval = log_interval
-        self._shell: Shell = shell or default_shell()
+        self._shell: Shell = default_shell()
 
     async def check(self, job: JobSettings) -> list[ValidationIssue]:
         """Validate ``job`` now: probe, tools and the capability snapshot as it is, without
@@ -250,7 +220,6 @@ class JobRunner:
         return outcome
 
     async def _run(self, job: QueueJob, active: ActiveJob, joblog: JobLog) -> Outcome:
-        closed = closed_error()
         plan: EncodePlan | None = None
         try:
             prepared = await self._prepare(job, active, joblog)
@@ -260,7 +229,7 @@ class JobRunner:
             return await self._steps(job, active, joblog, prepared)
         except _Stopped:
             return self._stopped(active, plan)
-        except closed:
+        except ReframeClosedError:
             active.stop("close")
             return self._stopped(active, plan)
 
@@ -587,11 +556,10 @@ class JobRunner:
                 active.paused = False
                 if active.tracker is not None:
                     active.tracker.resume()
-                if self._resumed is not None:
-                    try:
-                        await self._resumed(job, active)
-                    except Exception:  # only what the job shows: the step still ends first
-                        log.exception("queue job %s: showing the resumed edit failed", job.id)
+                try:
+                    await self._resumed(job, active)
+                except Exception:  # only what the job shows: the step still ends first
+                    log.exception("queue job %s: showing the resumed edit failed", job.id)
 
     async def _to_its_end(
         self,
@@ -790,7 +758,7 @@ class JobRunner:
             )
             if active.token.cancelled:
                 raise _Stopped
-        except (_Stopped, closed_error()):
+        except (_Stopped, ReframeClosedError):
             if not written:
                 raise
             if active.stop_reason is None:  # Reframe closed under the check
@@ -818,13 +786,12 @@ class JobRunner:
     def _stopped(self, active: ActiveJob, plan: EncodePlan | None) -> Outcome:
         reason = active.stop_reason or "cancel"
         if reason == "cancel":
-            return Outcome(JobState.CANCELLED, plan=plan, stop_reason=reason)
+            return Outcome(JobState.CANCELLED, plan=plan)
         if reason == "close":
             return Outcome(
                 JobState.INTERRUPTED,
                 error="Reframe was closed while the job was running.",
                 plan=plan,
-                stop_reason=reason,
             )
         if reason == "stalled":
             error = (
@@ -835,7 +802,7 @@ class JobRunner:
             error = (
                 f"A step did not finish within {_duration(self._step_time_limit)} and was stopped."
             )
-        return Outcome(JobState.FAILED, error=error, plan=plan, stop_reason=reason)
+        return Outcome(JobState.FAILED, error=error, plan=plan)
 
 
 def _stopped_after_edit(
@@ -863,7 +830,6 @@ def _stopped_after_edit(
         "write into the source. The check of the edited file did not run.",
         plan=plan,
         output_path=source,
-        stop_reason=reason,
     )
 
 

@@ -352,7 +352,6 @@ def test_a_time_limit_is_never_reported_as_a_cancel(tmp_path: Path) -> None:
     plan: Any = None
     outcome = runner._stopped_after_edit(active, tmp_path / "Show.mkv", plan, 1, 1)
     assert outcome.state is JobState.FAILED
-    assert outcome.stop_reason == "timeout"
     assert "when the job was cancelled" not in (outcome.error or "")
     assert (outcome.error or "").startswith("The edit was already written to Show.mkv")
     for reason, state in (("cancel", JobState.CANCELLED), ("close", JobState.INTERRUPTED)):

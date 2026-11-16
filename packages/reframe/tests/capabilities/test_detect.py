@@ -361,7 +361,7 @@ async def test_cancel_kills_the_tests(fake_tools: ft.FakeTools, fake_ffmpeg: Too
     token = CancelToken()
     task = asyncio.create_task(detect_capabilities(fake_ffmpeg, DEFS, LINUX, cancel=token))
     await wait_until(lambda: len(encode_calls(fake_tools)) >= 3)
-    token.cancel("test")
+    token.cancel()
     snap = await asyncio.wait_for(task, 10)
     assert snap.status("hevc_vaapi").state is EncoderState.CHECKING
     assert fake_tools.kill_leftovers() == []

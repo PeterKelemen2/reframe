@@ -3343,7 +3343,7 @@ async def run_tools_fetch(*, build: str, platform: str | None) -> int:
             _uncancel()
             view.close()
             print("Interrupted: stopping the download…", file=sys.stderr)
-            app.tasks.cancel(info.id, "interrupted")
+            app.tasks.cancel(info.id)
             ended = await app.tasks.wait(info.id)
             marker = installed_build(install_dir)
             replaced = _marker_identity(install_dir) != before

@@ -212,7 +212,7 @@ async def _wait(request: Request, reframe: Reframe, task: TaskInfo) -> FrameSet:
         gone.cancel()
         if not finished.done():
             finished.cancel()
-            reframe.tasks.cancel(task.id, "the client went away")
+            reframe.tasks.cancel(task.id)
     if finished not in done:
         raise ProblemError(409, "preview.cancelled", "The client went away")
     info = finished.result()

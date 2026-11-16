@@ -15,9 +15,9 @@ import pytest
 from reframe.batch import draft_tracks
 from reframe.jobs import (
     JobService,
+    draft_from_preset,
     find_media_files,
     is_partial_output,
-    job_from_preset,
     output_size,
     video_metadata,
 )
@@ -300,7 +300,7 @@ def test_generated_chapter_names(tmp_path: Path) -> None:
     source = recorded("chapters", tmp_path / "x.mkv")
     assert source.chapters
     template = preset("h265-mkv-1080p").model_copy(update={"chapter_name_policy": "generated"})
-    job, _decisions, notes = job_from_preset(source, template)
+    job, _tracks, notes = draft_from_preset(source, template)
     assert job.chapters.names == [f"Chapter {i}" for i in range(1, len(source.chapters) + 1)]
     assert notes
 
@@ -366,7 +366,7 @@ async def test_detection_wait_default_is_read_at_creation(
     import reframe.jobs as jobs_module
 
     monkeypatch.setattr(jobs_module, "DETECTION_WAIT", 1.5)
-    assert service(Stubs()).detection_wait == 1.5
+    assert service(Stubs())._detection_wait == 1.5
 
 
 async def test_plan_of_a_drafted_job(movie: tuple[Stubs, Path]) -> None:
@@ -488,7 +488,7 @@ def test_output_size_of_a_deinterlaced_job_matches_the_builder(tmp_path: Path) -
 
     source = recorded("interlaced", tmp_path / "interlaced.mkv")
     stream = source.video[0]
-    job, _decisions, _notes = job_from_preset(source, preset("h265-mkv-1080p"))
+    job, _tracks, _notes = draft_from_preset(source, preset("h265-mkv-1080p"))
     job.dimensions.crop = CropSettings(mode="manual", rect=CropRect(top=2))
     job.dimensions.size = SameAsSource()
     job.filters.root["deinterlace"] = FilterConfig()

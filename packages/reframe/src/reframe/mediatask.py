@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from reframe.definitions import Definitions
-from reframe.events import EventBus
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.media import MediaSource
 from reframe.models.settings import AppSettings
@@ -33,6 +32,7 @@ __all__ = [
     "CapabilitiesLookup",
     "MediaTaskContext",
     "SourceAccess",
+    "SourceProber",
     "TaskFailed",
     "ToolsLookup",
     "require_source",
@@ -50,8 +50,8 @@ class ToolsLookup(Protocol):
     async def status(self) -> ToolSet: ...
 
 
-class SourceAccess(Protocol):
-    """``Reframe.sources``: probe a file (cached) and keep measured values."""
+class SourceProber(Protocol):
+    """``Reframe.sources``: probe a file (cached)."""
 
     async def probe(
         self,
@@ -61,16 +61,16 @@ class SourceAccess(Protocol):
         cancel: CancelToken | None = None,
     ) -> MediaSource | ProbeError: ...
 
-    async def store(self, source: MediaSource) -> None:
-        """Keep ``source`` (with measured values) as the known source of its file, in memory
-        and in the probe cache, while the file is unchanged."""
-        ...
+
+class SourceAccess(SourceProber, Protocol):
+    """``Reframe.sources``: probe a file (cached) and keep measured values."""
 
     async def update(
         self, source: MediaSource, change: Callable[[MediaSource], MediaSource]
     ) -> None:
-        """Keep ``change(latest)`` like :meth:`store`, where ``latest`` is the known source of
-        ``source``'s file at this moment (else ``source``). ``source`` is the version the
+        """Keep ``change(latest)`` as the known source of its file, in memory and in the probe
+        cache, where ``latest`` is the known source of ``source``'s file at this moment (else
+        ``source``). ``source`` is the version the
         values were measured on: when the file has changed since, nothing is stored. The
         stores and updates of one file run one at a time, so two scans of one file that run
         at the same time keep both their values (each applies only its own)."""
@@ -96,7 +96,6 @@ class MediaTaskContext:
     capabilities: CapabilitiesLookup
     settings: Callable[[], AppSettings]
     """The current settings."""
-    events: EventBus
     cache_dir: Path
     """Root of the cache for frames and preview clips."""
     definitions: Callable[[], Definitions]

@@ -47,6 +47,7 @@ from reframe.queue import QueueService
 from reframe.queue.store import row_of
 from reframe.tools import CancelToken
 from reframe_testing import fake_tools as ft
+from reframe_testing.capabilities import StubTools
 from reframe_testing.waiting import wait_until
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -150,14 +151,6 @@ class FakeWriter:
 
     def release(self) -> None:
         self._released.set()
-
-
-@dataclass
-class StubTools:
-    tools: ToolSet
-
-    async def status(self) -> ToolSet:
-        return self.tools
 
 
 @dataclass

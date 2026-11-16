@@ -215,7 +215,6 @@ row whose member a route reaches or that no longer exists
 | `settings.path` | A server folder: a client cannot use it, and an answer must not show it (the queue and task routes read `Reframe.config_dir`, `data_dir` and `cache_dir` only to write them as `<config>`, `<data>`, `<cache>`) |
 | `Reframe.settings_snapshot` | The same settings as `settings.get` (`GET /api/settings`) |
 | `capabilities.definitions` | The same definitions as `jobs.definitions` (`GET /api/definitions`) |
-| `jobs.detection_wait` | A setting of the service: how long validation waits for encoder detection |
 | `tools.versions` | `GET /api/system` gives each tool's version in its `ToolSet` |
 | `capabilities.wait` | `GET /api/system/encoders` never waits; `capabilities.changed` events follow a detection |
 | `capabilities.closest_available` | Validation uses it inside the core |

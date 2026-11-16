@@ -25,7 +25,7 @@ __all__ = ["start_bitrate_scan", "start_loudness_scan", "start_subtitle_scan"]
 def start_bitrate_scan(ctx: MediaTaskContext, path: Path, stream_index: int) -> TaskInfo:
     """The average bit rate of one stream, from its packet sizes
     (:class:`~reframe.models.BitrateScan`). When done, the measured bit rate is stored in the
-    known source (``ctx.sources.store``)."""
+    known source (``ctx.sources.update``)."""
 
     async def work(task: TaskContext) -> BitrateScan:
         return await bitrate.scan(ctx, path, stream_index, task)
@@ -40,7 +40,7 @@ def start_subtitle_scan(
 ) -> TaskInfo:
     """Event counts of the subtitle tracks (all when ``stream_indexes`` is ``None``), and the
     forced events of PGS and VobSub tracks (:class:`~reframe.models.SubtitleScan`). When done,
-    the counts are stored in the known source (``ctx.sources.store``)."""
+    the counts are stored in the known source (``ctx.sources.update``)."""
     wanted = None if stream_indexes is None else list(stream_indexes)
 
     async def work(task: TaskContext) -> SubtitleScan:

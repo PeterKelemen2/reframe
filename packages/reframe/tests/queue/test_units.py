@@ -203,14 +203,13 @@ async def test_job_log_rate_limit_and_file(tmp_path: Path) -> None:
     joblog.open("header")
     for n in range(10):
         joblog.write(f"line {n}")
-    joblog.write("file only", event=False)
     joblog.close()
     event = sub.get_nowait()
     assert isinstance(event, JobLogEvent)
     assert event.lines == ["line 7", "line 8", "line 9"]
     assert event.dropped == 8  # the header and lines 0-6
     text = (tmp_path / "logs" / "j.log").read_text(encoding="utf-8")
-    assert text.splitlines() == ["header", *(f"line {n}" for n in range(10)), "file only"]
+    assert text.splitlines() == ["header", *(f"line {n}" for n in range(10))]
 
 
 @pytest.mark.anyio

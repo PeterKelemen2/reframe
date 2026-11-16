@@ -32,6 +32,7 @@ from reframe.capabilities.fingerprint import gpu_fingerprint
 from reframe.capabilities.hwtest import TEST_TIMEOUT
 from reframe.capabilities.issues import closest_available
 from reframe.definitions import Definitions, load_definitions
+from reframe.errors import ReframeClosedError
 from reframe.events import EventBus, Subscription
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe.models.events import CapabilitiesChangedEvent, ToolsChangedEvent
@@ -58,18 +59,6 @@ def _same(a: EncoderStatus | None, b: EncoderStatus) -> bool:
     if a is None:
         return False
     return a.model_dump(exclude={"checked_at"}) == b.model_dump(exclude={"checked_at"})
-
-
-def _closed_error() -> Exception:
-    from reframe.service import ReframeClosedError  # reframe.service imports this module
-
-    return ReframeClosedError()
-
-
-def _is_closed_error(exc: Exception) -> bool:
-    from reframe.service import ReframeClosedError
-
-    return isinstance(exc, ReframeClosedError)
 
 
 class CapabilityService:
@@ -188,7 +177,7 @@ class CapabilityService:
         first (the next start shows its result)."""
         self._closed = True
         if self._token is not None:
-            self._token.cancel("shutting down")
+            self._token.cancel()
         tasks = [t for t in (self._task, self._watcher) if t is not None and not t.done()]
         if self._subscription is not None:
             self._subscription.close()
@@ -203,12 +192,12 @@ class CapabilityService:
 
     def _check_open(self) -> None:
         if self._closed:
-            raise _closed_error()
+            raise ReframeClosedError
 
     def _start(self, *, use_cache: bool) -> asyncio.Task[CapabilitySnapshot]:
         previous, old_token = self._task, self._token
         if old_token is not None:
-            old_token.cancel("replaced by a new detection")
+            old_token.cancel()
         if previous is not None and not previous.done():
             previous.cancel()
         token = CancelToken()
@@ -253,10 +242,10 @@ class CapabilityService:
             await asyncio.wait(set(self._writes))  # an older result never overwrites this one
         try:
             tools = await self._tools.status()
+        except ReframeClosedError as exc:  # Reframe is shutting down
+            log.info("encoder detection stopped: %s", exc)
+            return self._snapshot
         except Exception as exc:
-            if _is_closed_error(exc):  # Reframe is shutting down
-                log.info("encoder detection stopped: %s", exc)
-                return self._snapshot
             log.exception("tool discovery failed: no encoder detection")
             return self._fail(exc, token)  # data, never "detecting" for ever
         ffmpeg = tools.ffmpeg

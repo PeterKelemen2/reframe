@@ -4,8 +4,7 @@ measured values are worked out again."""
 
 from __future__ import annotations
 
-import os
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +20,6 @@ from reframe.models import (
     BitrateInfo,
     BitrateScan,
     BitrateSource,
-    CapabilitySnapshot,
     ContainerInfo,
     Disposition,
     LoudnessMeasurement,
@@ -40,53 +38,12 @@ from reframe.models import (
 )
 from reframe.probe import ProbeError, ProbeErrorKind
 from reframe.tasks import TaskContext, TaskManager
-from reframe.tools import CancelToken, RunResult, run_streaming
+from reframe.tools import RunResult, run_streaming
 from reframe_testing import fake_tools as ft
+from reframe_testing.capabilities import FixedCaps, StubSources, StubTools
 from reframe_testing.fake_tools import FakeTools
 
 pytestmark = pytest.mark.anyio
-
-
-class _Tools:
-    def __init__(self, tools: ToolSet) -> None:
-        self.tools = tools
-
-    async def status(self) -> ToolSet:
-        return self.tools
-
-
-class _Sources:
-    def __init__(self, outcome: MediaSource | ProbeError) -> None:
-        self.outcome = outcome
-        self.stored: list[MediaSource] = []
-
-    async def probe(
-        self,
-        path: str | os.PathLike[str],
-        *,
-        use_cache: bool = True,
-        cancel: CancelToken | None = None,
-    ) -> MediaSource | ProbeError:
-        if isinstance(self.outcome, MediaSource):
-            return self.outcome.model_copy(deep=True)
-        return self.outcome
-
-    async def store(self, source: MediaSource) -> None:
-        self.stored.append(source)
-
-    async def update(
-        self, source: MediaSource, change: Callable[[MediaSource], MediaSource]
-    ) -> None:
-        self.stored.append(change(self.stored[-1] if self.stored else source))
-
-
-class _Caps:
-    @property
-    def snapshot(self) -> CapabilitySnapshot:
-        return CapabilitySnapshot()
-
-    async def wait(self) -> CapabilitySnapshot:
-        return CapabilitySnapshot()
 
 
 def _info(name: str, path: Path | None, env: dict[str, str] | None = None) -> ToolInfo:
@@ -97,24 +54,22 @@ def _info(name: str, path: Path | None, env: dict[str, str] | None = None) -> To
 
 def _context(
     tmp_path: Path,
-    sources: _Sources,
+    sources: StubSources,
     *,
     ffmpeg: Path | None = None,
     ffprobe: Path | None = None,
     env: dict[str, str] | None = None,
 ) -> MediaTaskContext:
-    events = EventBus()
     tools = ToolSet(
         ffmpeg=_info("ffmpeg", ffmpeg, env),
         ffprobe=_info("ffprobe", ffprobe, env),
     )
     return MediaTaskContext(
-        tasks=TaskManager(events),
-        tools=_Tools(tools),
+        tasks=TaskManager(EventBus()),
+        tools=StubTools(tools),
         sources=sources,
-        capabilities=_Caps(),
+        capabilities=FixedCaps(),
         settings=AppSettings,
-        events=events,
         cache_dir=tmp_path / "cache",
         definitions=load_definitions,
     )
@@ -168,7 +123,7 @@ def _failed_with(done: TaskInfo, message: str) -> None:
 async def test_bitrate_scan_of_a_wrong_stream_fails(
     tmp_path: Path, index: int, message: str
 ) -> None:
-    sources = _Sources(_source(tmp_path))
+    sources = StubSources(_source(tmp_path))
     ctx = _context(tmp_path, sources, ffprobe=tmp_path / "ffprobe")
     done = await _finish(ctx, analysis.start_bitrate_scan(ctx, tmp_path / FILE, index))
     _failed_with(done, message)
@@ -177,7 +132,7 @@ async def test_bitrate_scan_of_a_wrong_stream_fails(
 
 
 async def test_scans_fail_without_their_tool(tmp_path: Path) -> None:
-    ctx = _context(tmp_path, _Sources(_source(tmp_path)))
+    ctx = _context(tmp_path, StubSources(_source(tmp_path)))
     path = tmp_path / FILE
     _failed_with(
         await _finish(ctx, analysis.start_bitrate_scan(ctx, path, 1)),
@@ -196,7 +151,7 @@ async def test_scans_fail_without_their_tool(tmp_path: Path) -> None:
 async def test_scans_fail_with_the_probe_error(tmp_path: Path) -> None:
     error = ProbeError(tmp_path / FILE, ProbeErrorKind.NOT_FOUND, "movie.mkv does not exist.")
     ctx = _context(
-        tmp_path, _Sources(error), ffmpeg=tmp_path / "ffmpeg", ffprobe=tmp_path / "ffprobe"
+        tmp_path, StubSources(error), ffmpeg=tmp_path / "ffmpeg", ffprobe=tmp_path / "ffprobe"
     )
     path = tmp_path / FILE
     for info in (
@@ -217,7 +172,7 @@ async def test_scans_fail_with_the_probe_error(tmp_path: Path) -> None:
 async def test_subtitle_scan_of_a_wrong_stream_fails(
     tmp_path: Path, indexes: list[int], message: str
 ) -> None:
-    sources = _Sources(_source(tmp_path))
+    sources = StubSources(_source(tmp_path))
     ctx = _context(tmp_path, sources, ffprobe=tmp_path / "ffprobe")
     done = await _finish(ctx, analysis.start_subtitle_scan(ctx, tmp_path / FILE, indexes))
     _failed_with(done, message)
@@ -227,7 +182,7 @@ async def test_subtitle_scan_of_a_wrong_stream_fails(
 async def test_subtitle_scan_of_no_tracks(tmp_path: Path) -> None:
     source = _source(tmp_path)
     source.subtitles = []
-    sources = _Sources(source)
+    sources = StubSources(source)
     ctx = _context(tmp_path, sources, ffprobe=tmp_path / "ffprobe")
     done = await _finish(ctx, analysis.start_subtitle_scan(ctx, tmp_path / FILE, None))
     assert done.state is TaskState.DONE
@@ -250,7 +205,7 @@ async def test_subtitle_scan_of_no_tracks(tmp_path: Path) -> None:
 async def test_loudness_with_wrong_arguments_fails(
     tmp_path: Path, index: int, start: float | None, duration: float | None, message: str
 ) -> None:
-    ctx = _context(tmp_path, _Sources(_source(tmp_path)), ffmpeg=tmp_path / "ffmpeg")
+    ctx = _context(tmp_path, StubSources(_source(tmp_path)), ffmpeg=tmp_path / "ffmpeg")
     info = analysis.start_loudness_scan(ctx, tmp_path / FILE, index, start=start, duration=duration)
     _failed_with(await _finish(ctx, info), message)
 
@@ -289,7 +244,7 @@ async def test_bitrate_scan_stores_the_measured_bit_rate(
         ft.Scenario([ft.Rule(tool="ffprobe", argv_has=["-select_streams", "2"],
                              actions=[ft.stdout(PACKETS)])])
     )  # fmt: skip
-    sources = _Sources(_source(tmp_path))
+    sources = StubSources(_source(tmp_path))
     ctx = _context(tmp_path, sources, ffprobe=fake_tools.ffprobe)
     done = await _finish(ctx, analysis.start_bitrate_scan(ctx, tmp_path / FILE, 2))
     assert done.state is TaskState.DONE, done.error
@@ -320,7 +275,7 @@ async def test_bitrate_scan_of_a_stream_without_packets(
     tmp_path: Path, fake_tools: FakeTools
 ) -> None:
     fake_tools.set_scenario(ft.Scenario([ft.Rule(tool="ffprobe", actions=[ft.stdout("")])]))
-    sources = _Sources(_source(tmp_path))
+    sources = StubSources(_source(tmp_path))
     ctx = _context(tmp_path, sources, ffprobe=fake_tools.ffprobe)
     done = await _finish(ctx, analysis.start_bitrate_scan(ctx, tmp_path / FILE, 0))
     assert done.state is TaskState.DONE
@@ -336,7 +291,7 @@ async def test_a_failing_ffprobe_fails_the_scan(tmp_path: Path, fake_tools: Fake
         ft.Scenario([ft.Rule(tool="ffprobe", exit_code=1, actions=[
             ft.stderr("movie.mkv: Invalid data found when processing input\n")])])
     )  # fmt: skip
-    sources = _Sources(_source(tmp_path))
+    sources = StubSources(_source(tmp_path))
     ctx = _context(tmp_path, sources, ffprobe=fake_tools.ffprobe)
     for info in (
         analysis.start_bitrate_scan(ctx, tmp_path / FILE, 1),
@@ -364,7 +319,7 @@ async def test_subtitle_scan_counts_and_stores(tmp_path: Path, fake_tools: FakeT
                     actions=[ft.stdout(packets)]),
         ])
     )  # fmt: skip
-    sources = _Sources(_source(tmp_path))
+    sources = StubSources(_source(tmp_path))
     ctx = _context(tmp_path, sources, ffprobe=fake_tools.ffprobe)
     done = await _finish(ctx, analysis.start_subtitle_scan(ctx, tmp_path / FILE, [4, 3, 4]))
     assert done.state is TaskState.DONE, done.error
@@ -392,7 +347,7 @@ async def test_subtitle_scan_recomputes_the_forced_heuristic(
     fake_tools.set_scenario(ft.Scenario([ft.Rule(tool="ffprobe", actions=[ft.stdout(packets)])]))
     source = _source(tmp_path)
     source.subtitles[2].language = "eng"
-    sources = _Sources(source)
+    sources = StubSources(source)
     ctx = _context(tmp_path, sources, ffprobe=fake_tools.ffprobe)
     done = await _finish(ctx, analysis.start_subtitle_scan(ctx, tmp_path / FILE, [3, 5]))
     assert done.state is TaskState.DONE, done.error
@@ -421,7 +376,7 @@ async def test_loudness_measure(
                                                   na_fields=["bitrate", "total_size"]),
                                       ft.stderr(LOUDNORM)])])
     )  # fmt: skip
-    ctx = _context(tmp_path, _Sources(_source(tmp_path)), ffmpeg=fake_tools.ffmpeg)
+    ctx = _context(tmp_path, StubSources(_source(tmp_path)), ffmpeg=fake_tools.ffmpeg)
     info = analysis.start_loudness_scan(ctx, tmp_path / FILE, 2, start=1.0, duration=2.0)
     done = await _finish(ctx, info)
     assert done.state is TaskState.DONE, done.error
@@ -455,7 +410,7 @@ async def test_loudness_without_a_measurement_fails(
     tmp_path: Path, fake_tools: FakeTools, actions: Sequence[ft.Action], message: str
 ) -> None:
     fake_tools.set_scenario(ft.Scenario([ft.Rule(tool="ffmpeg", actions=list(actions))]))
-    ctx = _context(tmp_path, _Sources(_source(tmp_path)), ffmpeg=fake_tools.ffmpeg)
+    ctx = _context(tmp_path, StubSources(_source(tmp_path)), ffmpeg=fake_tools.ffmpeg)
     info = analysis.start_loudness_scan(ctx, tmp_path / FILE, 1, start=None, duration=None)
     _failed_with(await _finish(ctx, info), message)
 
@@ -483,7 +438,7 @@ async def test_the_scans_run_their_tools_with_the_tool_environment(
     )
     env = {"REFRAME_C10_TEST": "bundled"}
     ctx = _context(
-        tmp_path, _Sources(source), ffmpeg=fake_tools.ffmpeg, ffprobe=fake_tools.ffprobe, env=env
+        tmp_path, StubSources(source), ffmpeg=fake_tools.ffmpeg, ffprobe=fake_tools.ffprobe, env=env
     )
     path = tmp_path / FILE
     for info in (

@@ -223,7 +223,7 @@ class Prober:
                 # Nobody waits any more: stop the shared run, and do not return before its
                 # ffprobe is gone (a TaskGroup caller relies on that).
                 self._land(flight_key, flight)
-                flight.token.cancel("no caller waits for this probe")
+                flight.token.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await asyncio.shield(flight.task)
         if isinstance(outcome, _Cancelled):

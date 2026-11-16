@@ -25,6 +25,7 @@ from reframe.batch.service import BatchService
 from reframe.capabilities import CapabilityService
 from reframe.definitions import load_definitions
 from reframe.diagnostics import build_report
+from reframe.errors import ReframeClosedError
 from reframe.events import EventBus
 from reframe.jobs import JobService
 from reframe.jsonpatch import JsonPatchError, apply_patch
@@ -97,13 +98,6 @@ SettingsGetter = Callable[[], AppSettings]
 KNOWN_SOURCES = 1024
 #: Seconds that :meth:`Reframe.close` waits for running probes to end after cancelling them.
 CLOSE_TIMEOUT = 10.0
-
-
-class ReframeClosedError(RuntimeError):
-    """The facade was used after :meth:`Reframe.close`."""
-
-    def __init__(self) -> None:
-        super().__init__("this Reframe instance is closed")
 
 
 def tool_usable(info: ToolInfo) -> bool:
@@ -572,7 +566,7 @@ class SourceService:
     async def close(self, timeout: float = CLOSE_TIMEOUT) -> None:  # noqa: ASYNC109
         """Cancel running probes (their processes are killed) and wait for them to end."""
         for token in list(self._tokens):
-            token.cancel("shutting down")
+            token.cancel()
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(self._idle.wait(), timeout)
 
@@ -961,7 +955,6 @@ class Reframe:
             sources=self.sources,
             capabilities=self.capabilities,
             settings=self.settings_snapshot,
-            events=self.events,
             cache_dir=cache_dir,
             definitions=load_definitions,
         )

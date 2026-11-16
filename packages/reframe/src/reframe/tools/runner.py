@@ -67,18 +67,16 @@ class CancelToken:
         self._event = threading.Event()
         self._lock = threading.Lock()
         self._waiters: list[tuple[asyncio.AbstractEventLoop, asyncio.Future[None]]] = []
-        self.reason: str | None = None
 
     @property
     def cancelled(self) -> bool:
         return self._event.is_set()
 
-    def cancel(self, reason: str | None = None) -> None:
-        """Set the flag (idempotent; the first reason is kept). Thread-safe."""
+    def cancel(self) -> None:
+        """Set the flag (idempotent). Thread-safe."""
         with self._lock:
             if self._event.is_set():
                 return
-            self.reason = reason
             self._event.set()
             waiters, self._waiters = self._waiters, []
         for loop, future in waiters:

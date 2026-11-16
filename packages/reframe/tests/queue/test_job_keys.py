@@ -17,7 +17,7 @@ import pytest
 from reframe.metadata import remux_job
 from reframe.models import JobSettings, JobState, SourceRef
 from reframe.queue import files, runner, service
-from reframe.queue.service import _conflicts, _output_key, _source_key
+from reframe.queue.service import _conflicts, _job_keys
 from reframe_testing import fake_tools as ft
 from reframe_testing.links import needs_symlinks
 
@@ -96,7 +96,7 @@ async def test_keys_differ_only_in_case_are_the_same_output(harness: Harness) ->
     h = harness
     first = queued(h.job("Movie"), "a")
     second = queued(h.job("MOVIE"), "b")
-    assert (_output_key(first) == _output_key(second)) is (sys.platform == "win32")
+    assert (_job_keys(first).output == _job_keys(second).output) is (sys.platform == "win32")
     assert _conflicts(second, [active_for(first)])
 
 
@@ -140,7 +140,7 @@ async def test_a_key_of_a_missing_file_is_its_resolved_path(
     h = harness
     job = queued(h.job("Missing"), "m")
     job.settings.source = SourceRef(path=tmp_path / "media" / ".." / "media" / "gone.mkv")
-    assert _source_key(job) == service._path_key(tmp_path / "media" / "gone.mkv")
+    assert _job_keys(job).source == service._path_key(tmp_path / "media" / "gone.mkv")
     assert not _conflicts(job, [active_for(queued(in_place_job(h), "edit"))])
 
 
@@ -343,7 +343,7 @@ async def test_the_keys_are_what_the_rule_compares(harness: Harness, tmp_path: P
     other.settings.source = SourceRef(path=tmp_path / "media" / "Another.mkv")
     job_keys = service._job_keys
     keys = job_keys(edit)
-    assert keys.output == keys.source == _source_key(edit) == _output_key(edit)
+    assert keys.output == keys.source
     for job, expected in ((encode, True), (other, False)):
         assert _conflicts(job, [active_for(edit)], job_keys(job)) is expected
         assert _conflicts(job, [active_for(edit)]) is expected

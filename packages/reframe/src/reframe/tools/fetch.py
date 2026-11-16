@@ -727,7 +727,7 @@ async def _in_thread[T](cancel: CancelToken, fn: Callable[..., T], *args: object
         # Not shield(): it reports an exception of the thread after a cancel to the loop.
         await asyncio.wait({future})  # a cancel of this wait leaves the thread running
     except asyncio.CancelledError:
-        cancel.cancel("cancelled")
+        cancel.cancel()
         await asyncio.wait({future}, timeout=STOP_WAIT)
         raise
     try:
@@ -749,7 +749,7 @@ async def _to_the_end[T](aw: Awaitable[T], cancel: CancelToken) -> tuple[T, bool
             if inner.cancelled():
                 raise  # ``aw`` itself was cancelled
             cancelled = True
-            cancel.cancel("cancelled")
+            cancel.cancel()
             current = asyncio.current_task()
             if current is not None:
                 current.uncancel()
