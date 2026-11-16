@@ -691,12 +691,9 @@ def resolve_tracks(
     *,
     definitions: Definitions | None = None,
     languages: LanguageSettings | None = None,
-    container_codecs: bool = True,
 ) -> TrackResolution:
     """The audio and subtitle tracks of ``source`` with ``template``: explicit rules where the
-    template has them, else the defaults. ``languages``: the preferred languages of the defaults.
-    ``container_codecs=False`` leaves out the lint's ``defaults.codec_not_in_container``, for a
-    caller that reports ``container.codec_unsupported`` itself."""
+    template has them, else the defaults. ``languages``: the preferred languages of the defaults."""
     defs = definitions or load_definitions()
     container = template.output.container
     preferred_audio = languages.preferred_audio if languages is not None else []
@@ -748,11 +745,7 @@ def resolve_tracks(
         selected = [d for d in audio_stage_result.decisions if d.selected]
         used = {d.rule for d in selected if d.rule is not None} if selected else None
         issues += lint_defaults(
-            template.audio_defaults,
-            container=container,
-            definitions=defs,
-            used=used,
-            container_codecs=container_codecs,
+            template.audio_defaults, container=container, definitions=defs, used=used
         )
     draft = TrackDraft(
         audio=audio.outputs,

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from reframe.batch import draft_tracks
+from reframe.batch import resolve_tracks
 from reframe.models import (
     JobTemplate,
     LanguageSettings,
@@ -68,7 +68,7 @@ async def test_foreign_audio_search_on_an_mkvmerge_file(
     assert forced.disposition.default
     assert [s.disposition.default for s in source.subtitles] == [True, False, False, True]
 
-    plain = draft_tracks(source, JobTemplate())
+    plain = resolve_tracks(JobTemplate(), source).draft
     assert [(t.source, t.metadata.default) for t in plain.subtitles] == [
         (4, True),
         (5, False),
@@ -86,7 +86,7 @@ async def test_foreign_audio_search_on_an_mkvmerge_file(
         )
     )
     languages = LanguageSettings(preferred_audio=["en"], preferred_subtitle=["en"])
-    draft = draft_tracks(source, template, languages=languages)
+    draft = resolve_tracks(template, source, languages=languages).draft
     assert [t.source_stream for t in draft.audio] == [2]  # the commentary is dropped
     assert [
         (t.source, t.action, t.metadata.forced, t.metadata.default) for t in draft.subtitles

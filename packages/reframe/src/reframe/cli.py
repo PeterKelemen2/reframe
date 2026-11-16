@@ -39,7 +39,7 @@ from reframe.batch.report import ROW_ASCII, ROW_MARKS, matrix_lines
 from reframe.batch.service import BatchService
 from reframe.dimensions import TIMES
 from reframe.events import EventBus, Subscription
-from reframe.jobs import OutputClaims, draft_from_preset, find_media_files, has_errors
+from reframe.jobs import OutputClaims, find_media_files, has_errors
 from reframe.models.batch import BatchGroup, BatchResolution, MatchLevel
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe.models.draft import JobDraft
@@ -1340,28 +1340,7 @@ class OwnerJobs:
         chosen = preset if isinstance(preset, Preset) else find_preset(app, preset)
         if isinstance(chosen, str):
             raise ValueError(chosen)
-        settings = app.settings_snapshot()
-        naming = chosen.naming if chosen.naming is not None else settings.output.naming
-        job, tracks, notes = await asyncio.to_thread(
-            draft_from_preset,
-            media,
-            chosen,
-            definitions=app.jobs.definitions,
-            languages=settings.languages,
-            container_codecs=False,
-        )
-        job, name, more = await app.jobs.name_job(job, media, naming=naming, output=output)
-        track_issues = [
-            i for i in tracks.issues if i.severity is Severity.ERROR or i.code.startswith("batch.")
-        ]
-        return JobDraft(
-            job=job,
-            decisions=tracks.decisions,
-            subtitle_decisions=tracks.subtitle_decisions,
-            naming=name,
-            issues=[*track_issues, *await self._validate(job)],
-            notes=[*notes, *more],
-        )
+        return await app.jobs.draft(media, chosen, output=output, validate=self._validate)
 
     async def name_job(
         self,

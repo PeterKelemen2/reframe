@@ -1,7 +1,9 @@
 # 0040 — The batch engine: one rule engine, selectors and relaxation, grouping, overrides, `reframe batch`
 
 - Status: accepted. The points marked **(open)** are product questions answered with a default
-  that is easy to change (each is one constant or small function, named below).
+  that is easy to change (each is one constant or small function, named below). Amended in
+  part by [0090](0090-batch-api-and-draft-path.md) (§8: `resolve_group`, `merge_template`; R1-4:
+  the `container_codecs` mechanism).
 - Date: 2026-10-15
 - Steps: C-12 (M7 part; core-complete wave 2a), C-15 (`Reframe.batch`, `reframe batch`)
 

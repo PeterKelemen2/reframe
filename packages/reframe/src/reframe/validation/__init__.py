@@ -160,12 +160,8 @@ def validate_template(
     context = TemplateContext(template=template, caps=caps, definitions=defs, subject=subject)
     issues = [_for_template(i) for i in _run(TEMPLATE_RULES, context)]
     # The lint finds shadowed or unreachable codec rules and bitrates out of range.
-    # The container rule reports codecs the container cannot hold, so the lint skips those.
     issues += lint_defaults(
-        template.audio_defaults,
-        container=template.output.container,
-        definitions=defs,
-        container_codecs=False,
+        template.audio_defaults, container=template.output.container, definitions=defs
     )
     issues += lint_track_rules(template)
     return issues

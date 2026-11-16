@@ -366,7 +366,7 @@ CASES: list[Case] = [
 
 
 def test_a_codec_the_container_cannot_hold_is_reported_once() -> None:
-    """The container rule reports it; the defaults lint runs with ``container_codecs=False``."""
+    """The container rule reports it; the defaults lint does not."""
     issues = sc.check_template(build(webm_video))
     on_path = [i for i in issues if i.path == "audio_defaults.codec_rules[0].codec"]
     assert [i.code for i in on_path] == ["container.codec_unsupported"]

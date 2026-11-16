@@ -228,18 +228,15 @@ def test_the_file_keys_are_computed_off_the_event_loop(
 async def test_the_batch_service_keys_files_off_the_event_loop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``Reframe.batch.resolve`` (with a group and overrides) and ``resolve_batch``: the keys
+    """``Reframe.batch.resolve`` (with overrides) and ``resolve_batch``: the keys
     are computed in worker threads."""
     folder = tmp_path / S01
     files = [media_file(folder, media.anime_file_name(1, n)) for n in (1, 2)]
     stubs = BatchStubs({f: recorded(anime(1, n), f) for f, n in zip(files, (1, 2), strict=True)})
     batch = make_batch(stubs)
-    grouping = await batch.group(files)
     spy = LoopSpy(monkeypatch)
     op = ReplaceOp.model_validate({"op": "replace", "path": "/video/preset", "value": "slow"})
-    resolution = await batch.resolve(
-        None, files, overrides={str(files[1]): [op]}, group=grouping.groups[0]
-    )
+    resolution = await batch.resolve(None, files, overrides={str(files[1]): [op]})
     assert [row.path for row in resolution.rows] == files
     _grouping, resolutions = await batch.resolve_batch(None, [*files, *files])
     assert [row.path for r in resolutions for row in r.rows] == files

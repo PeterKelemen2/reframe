@@ -14,7 +14,7 @@ from pathlib import Path
 from pydantic import TypeAdapter
 from syrupy.assertion import SnapshotAssertion
 
-from reframe.batch import group_sources, matrix_columns, output_size, resolve_group
+from reframe.batch import group_sources, matrix_columns, output_size, resolve
 from reframe.batch.report import matrix_lines
 from reframe.models import (
     AudioOutputSettings,
@@ -57,7 +57,8 @@ def matrix(
     by_path = {s.ref.path: s for s in sources}
     fs = SeasonFs(sources)
     rows = []
-    for row in resolve_group(group, template, sources, overrides):
+    for member in group.members:
+        row = resolve(template, by_path[member.path], (overrides or {}).get(str(member.path)))
         assert row.job is not None
         source = by_path[row.path]
         assert template.naming is not None
@@ -249,7 +250,7 @@ def test_matrix_labels_name_the_season_when_a_group_spans_seasons() -> None:
     sources = [*A.season(1)[:2], *A.season(2)[:2]]
     (group,) = group_sources(sources, "standard")
     template = A.example_template()
-    rows = resolve_group(group, template, sources)
+    rows = [resolve(template, source) for source in sources]
     resolution = BatchResolution(group=group, columns=matrix_columns(template), rows=rows)
     labels = [line.split()[0] for line in matrix_lines(resolution)[2:]]
     assert labels == ["S01E01", "S01E02", "S02E01", "S02E02"]

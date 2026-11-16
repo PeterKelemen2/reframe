@@ -10,15 +10,17 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
 from reframe import metadata, preview
-from reframe.batch import draft_tracks, output_size, video_metadata
+from reframe.batch import output_size, video_metadata
+from reframe.batch.lint import container_codec_issues
 from reframe.batch.resolve import resolve
+from reframe.batch.rules import resolve_tracks
 from reframe.command import PlanError, build_plan, job_type_info, output_chapters
 from reframe.command.metadata import rendered_tags
 from reframe.definitions import Definitions, EncoderOption, load_definitions
@@ -242,23 +244,13 @@ def draft_from_preset(
     *,
     definitions: Definitions | None = None,
     languages: LanguageSettings | None = None,
-    container_codecs: bool = True,
 ) -> tuple[JobSettings, TrackDraft, list[str]]:
     """The job settings of ``source`` encoded with ``preset`` (without the output path), the
     :class:`~reframe.models.TrackDraft` (the audio and subtitle decisions and the issues of the
     track stage), and notes about how preset options were applied. ``languages``: the
     preferred languages of the track selection. Pure.
-
-    ``container_codecs=False`` leaves out the defaults lint's ``defaults.codec_not_in_container``,
-    for a job that is validated later, which reports ``container.codec_unsupported`` instead.
     """
-    resolution = resolve(
-        preset,
-        source,
-        definitions=definitions,
-        languages=languages,
-        container_codecs=container_codecs,
-    )
+    resolution = resolve(preset, source, definitions=definitions, languages=languages)
     assert resolution.job is not None  # resolve always makes a job
     draft = TrackDraft(
         audio=resolution.job.audio,
@@ -323,6 +315,7 @@ class JobService:
         preset: Preset | str | None = None,
         *,
         output: Path | None = None,
+        validate: Callable[[JobSettings], Awaitable[list[ValidationIssue]]] | None = None,
     ) -> JobDraft | ProbeError:
         """The job for ``source`` with ``preset`` (``None``: the default preset; a string: a
         preset id or name), validated.
@@ -332,6 +325,9 @@ class JobService:
         extension; an existing folder gets the template name inside it. ``None``: the naming
         template, in the output folder of the naming options. A template name that is the
         source file itself gets the next free name.
+
+        ``validate``: validates the drafted job instead of this service (a client whose queue's
+        owner decides).
         """
         media = source if isinstance(source, MediaSource) else await self._sources.probe(source)
         if isinstance(media, ProbeError):
@@ -346,7 +342,11 @@ class JobService:
         track_issues = [
             i for i in tracks.issues if i.severity is Severity.ERROR or i.code.startswith("batch.")
         ]
-        issues = [*issues, *track_issues, *await self._validate(job, media, naming)]
+        if validate is None:
+            checked = await self._validate(job, media, naming)
+        else:
+            checked = await validate(job)
+        issues = [*issues, *track_issues, *checked]
         return JobDraft(
             job=job,
             decisions=tracks.decisions,
@@ -387,14 +387,8 @@ class JobService:
         naming: NamingOptions,
         output: Path | None,
     ) -> tuple[JobSettings, TrackDraft, NameResult, list[str]]:
-        # Validation reports a codec the container cannot hold, so the defaults lint does not
-        # say it again: one issue per problem.
         job, tracks, notes = draft_from_preset(
-            media,
-            preset,
-            definitions=self.definitions,
-            languages=self._settings().languages,
-            container_codecs=False,
+            media, preset, definitions=self.definitions, languages=self._settings().languages
         )
         job, name, more = self._name(job, media, naming, output)
         return job, tracks, name, [*notes, *more]
@@ -618,8 +612,21 @@ class JobService:
             chosen.output.container = container
         languages = self._settings().languages
         draft = await asyncio.to_thread(
-            draft_tracks, media, chosen, definitions=self.definitions, languages=languages
+            lambda: (
+                resolve_tracks(
+                    chosen, media, definitions=self.definitions, languages=languages
+                ).draft
+            )
         )
+        # No validation runs here to report a codec the container cannot hold, so the preview
+        # adds it, where the defaults decide the audio.
+        if not chosen.audio_rules:
+            draft.issues = [
+                *draft.issues,
+                *container_codec_issues(
+                    chosen.audio_defaults, chosen.output.container, self.definitions
+                ),
+            ]
         if issues:
             draft.issues = [*issues, *draft.issues]
         return draft
