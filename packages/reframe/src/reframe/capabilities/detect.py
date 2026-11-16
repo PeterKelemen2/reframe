@@ -20,7 +20,6 @@ from reframe.capabilities.devices import render_nodes
 from reframe.capabilities.hwtest import (
     FILTER_TESTS,
     TEST_TIMEOUT,
-    BitDepth,
     TestOutcome,
     run_filter_test,
     run_hardware_test,
@@ -34,6 +33,7 @@ from reframe.capabilities.parse import (
 )
 from reframe.capabilities.reasons import normalise_line
 from reframe.definitions import DEFAULT_VAAPI_DEVICE, Definitions, OperatingSystem, VideoEncoderDef
+from reframe.definitions.models import BitDepth
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe.models.tools import ToolInfo, ToolStatus
 from reframe.tools import CancelToken, RunResult, run

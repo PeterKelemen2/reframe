@@ -159,14 +159,12 @@ def test_identity_problems_are_reported() -> None:
     def mutate(raw: dict[str, Any]) -> None:
         enc = raw["video_encoders"]["libx264"]
         enc["handbrake_key"] = "x265"
-        enc["hardware"] = True
         enc["pix_fmts"] = {"10": "yuv420p10le"}
         raw["video_encoders"]["libx265"]["label"] = ""
         raw["video_encoders"]["libsvtav1"]["id"] = "other"
 
     problems = _lint_mutated(mutate)
     assert _has(problems, "handbrake_key 'x265' also used")
-    assert _has(problems, "libx264", "hardware must be true")
     assert _has(problems, "libx264", "no 8-bit")
     assert _has(problems, "libx265", "must not be empty")
     assert _has(problems, "libsvtav1", "differs from the table key")

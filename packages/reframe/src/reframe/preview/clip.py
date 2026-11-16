@@ -130,10 +130,7 @@ async def make_clip(
     if duration is not None and end is not None and end >= duration:
         end = None  # to the end
     defs = ctx.definitions()
-    container = defs.containers.get(job.output.container)
-    if container is None:
-        raise TaskFailed(f"Unknown container {job.output.container!r}.")
-    extension = container.extensions[0]
+    extension = defs.containers[job.output.container].extensions[0]
     tools = await ctx.tools.status()
     cache = PreviewCache(ctx.cache_dir)
     try:

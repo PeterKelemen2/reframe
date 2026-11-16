@@ -142,9 +142,6 @@ def test_filter_order_is_the_plan_order() -> None:
     assert [step for step in order if step in plan] == plan
     assert order.index("interlace_detection") == order.index("deinterlace") - 1
     assert order.index("crop") < order.index("custom") < order.index("scale")
-    defs = load_definitions()
-    assert [f.id for f in defs.ordered_filters()] == [s for s in order if s in defs.filters]
-    assert defs.filters["denoise"].position == order.index("denoise")
 
 
 def test_filter_implementation_choice() -> None:

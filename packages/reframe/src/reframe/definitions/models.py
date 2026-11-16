@@ -12,7 +12,7 @@ import math
 from collections.abc import Mapping
 from typing import Annotated, Literal, get_args
 
-from pydantic import Field, model_validator
+from pydantic import Field, computed_field
 
 from reframe.models.base import ReframeModel
 from reframe.models.defaults import PassthruCodec
@@ -364,7 +364,6 @@ class VideoEncoderDef(ReframeModel):
     handbrake_key: str
     """The short key for the ``{encoder}`` placeholder, in HandBrake's style."""
     family: EncoderFamily
-    hardware: bool
     vendor: Vendor | None = None
     platforms: list[OperatingSystem] = Field(default_factory=lambda: _ALL_PLATFORMS.copy())
     pix_fmts: dict[Literal["8", "10"], str] = Field(default_factory=dict)
@@ -389,6 +388,11 @@ class VideoEncoderDef(ReframeModel):
     extra_args: list[str] = Field(default_factory=list)
     """Always written after the codec."""
     options: list[EncoderOption] = Field(default_factory=list)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def hardware(self) -> bool:
+        return self.family != "software"
 
     def option(self, key: str) -> EncoderOption | None:
         return next((o for o in self.options if o.key == key), None)
@@ -604,8 +608,6 @@ class ContainerDef(ReframeModel):
     attachments: bool
     flags: list[TrackFlag]
     """Flags the FFmpeg muxer writes (and ffprobe reads back)."""
-    default_always_set: bool = False
-    """MP4: when no track of a type is default, the muxer marks the first one default."""
     language_format: Literal["iso639_2b", "iso639_2t"]
     """The language tag format: ISO 639-2/B for MKV, ISO 639-2/T for MP4."""
     format_flags: dict[str, list[str]] = Field(default_factory=dict)
@@ -687,8 +689,6 @@ class FilterDef(ReframeModel):
 
     id: FilterId
     label: str
-    position: int = 0
-    """Index in ``Definitions.filter_order``; set when the definitions are validated."""
     analysis: bool = False
     """Interlace detection: it marks frames for deinterlacing and changes no pixels."""
     implementations: list[FilterImplementation]
@@ -746,16 +746,6 @@ class Definitions(ReframeModel):
     filters: dict[FilterId, FilterDef] = Field(default_factory=dict)
     filter_order: list[str] = Field(default_factory=list)
     """The fixed filter order: the filter ids plus :data:`FILTER_STAGES`."""
-
-    @model_validator(mode="after")
-    def _filter_positions(self) -> Definitions:
-        for filter_id, definition in self.filters.items():
-            if filter_id in self.filter_order:
-                definition.position = self.filter_order.index(filter_id)
-        return self
-
-    def ordered_filters(self) -> list[FilterDef]:
-        return sorted(self.filters.values(), key=lambda f: f.position)
 
 
 def interpolate(points: list[tuple[float, float]], x: float) -> float:
