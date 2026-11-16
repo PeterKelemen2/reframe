@@ -20,7 +20,7 @@ from typing import Any, Literal, cast
 from pydantic import ValidationError
 
 from reframe import languages
-from reframe.models.base import Rational
+from reframe.models.base import Rational, is_language_tag
 from reframe.models.media import (
     AttachedPicture,
     Attachment,
@@ -65,7 +65,6 @@ __all__ = [
 PARSER_VERSION = 2
 
 _UNKNOWN = frozenset({"", "unknown", "unspecified", "reserved", "N/A"})
-_LANGUAGE_RE = re.compile(r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$")
 _PIX_FMT_DEPTH_RE = re.compile(r"(\d{1,2})(?:le|be)$")
 _EIGHT_BIT_PIX_FMTS = frozenset(
     {
@@ -165,7 +164,7 @@ def _language(tags: Mapping[str, str], warnings: list[str], index: int) -> str |
     if value is None or not value.strip():
         return None
     value = value.strip()
-    if not _LANGUAGE_RE.match(value) or len(value) > 64:
+    if not is_language_tag(value):
         warnings.append(f"Stream {index}: language tag {value!r} is not a language code.")
         return None
     return value
@@ -174,9 +173,9 @@ def _language(tags: Mapping[str, str], warnings: list[str], index: int) -> str |
 def _bcp47(language: str | None) -> str | None:
     """The BCP 47 tag of an ISO 639 code; ``None`` for ``und`` and for codes without one."""
     tag = languages.normalize(language)
-    if tag is None or tag == languages.UNDETERMINED or not _LANGUAGE_RE.match(tag):
+    if tag is None or tag == languages.UNDETERMINED or not is_language_tag(tag):
         return None
-    return tag if len(tag) <= 64 else None
+    return tag
 
 
 def _disposition(raw: Any) -> Disposition:

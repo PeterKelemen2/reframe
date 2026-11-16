@@ -19,6 +19,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Final
 
+from reframe.models.base import LANGUAGE_TAG_PATTERN, is_language_tag
 from reframe.models.job import Container
 
 __all__ = [
@@ -116,9 +117,6 @@ _ISO639_2_COLLECTIVE: Final = _code_set(
     """
 )
 
-#: The shape that :data:`reframe.models.LanguageTag` accepts.
-_TAG_SHAPE: Final = re.compile(r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$")
-_MAX_TAG_LENGTH: Final = 64
 _MAX_NAME_LENGTH: Final = 100
 
 _CORE_FILE: Final = "language-core.json.gz"
@@ -462,7 +460,7 @@ def _fold(text: str) -> str:
 def _code_language(text: str) -> _Tag | None:
     """Parse code-shaped input (BCP 47 / ISO 639) with the overrides, or ``None``."""
     text = text.strip().replace("_", "-")
-    if not _TAG_SHAPE.fullmatch(text) or len(text) > _MAX_TAG_LENGTH:
+    if not is_language_tag(text):
         return None
     primary = text.split("-", 1)[0].lower()
     try:
@@ -479,7 +477,7 @@ def _normalize_code(text: str) -> str | None:
     raw = text.strip().replace("_", "-")
     code = raw.lower()
     # The shape is checked before lowering: the Kelvin sign lowers to an ASCII "k".
-    if "-" not in code and code not in OVERRIDES and _TAG_SHAPE.fullmatch(raw):
+    if "-" not in code and code not in OVERRIDES and LANGUAGE_TAG_PATTERN.fullmatch(raw):
         core = _core()
         if code in core.canonical:
             return core.canonical[code]
@@ -488,7 +486,7 @@ def _normalize_code(text: str) -> str | None:
     lang = _code_language(text)
     if lang is None or not _is_valid(lang):
         return None
-    return lang.tag if _TAG_SHAPE.fullmatch(lang.tag) else None
+    return lang.tag if LANGUAGE_TAG_PATTERN.fullmatch(lang.tag) else None
 
 
 def _looks_like_name(text: str) -> bool:
@@ -558,7 +556,7 @@ def validate(value: str | None) -> str | None:
     text = value.strip().replace("_", "-")
     if text[:2].lower() == "x-":
         return f"{value!r}: private-use tags (x-...) are not supported."
-    if "-" not in text or not _TAG_SHAPE.fullmatch(text):
+    if "-" not in text or not LANGUAGE_TAG_PATTERN.fullmatch(text):
         return f"{value!r} is not a known language name or code."
     lang = _code_language(text)
     if lang is None:

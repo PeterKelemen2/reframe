@@ -28,6 +28,8 @@ from reframe.tools import CancelToken
 from reframe_testing import fake_tools as ft
 from reframe_testing.waiting import wait_until
 
+from .conftest import make_prober, stdout_file, streams_rule
+
 pytestmark = pytest.mark.anyio
 
 
@@ -45,23 +47,11 @@ def _append(path: Path, data: bytes) -> None:
         f.write(data)
 
 
-def streams_rule(*actions: ft.Action, exit_code: int = 0) -> ft.Rule:
-    return ft.Rule(tool="ffprobe", argv_has=["-show_streams"], actions=actions, exit_code=exit_code)
-
-
-def stdout_file(path: Path) -> ft.Action:
-    return {"stdout_file": str(path)}
-
-
 @pytest.fixture
 def media_file(tmp_path: Path) -> Path:
     path = tmp_path / "Show.S01E01.mkv"
     path.write_bytes(b"\x1a\x45\xdf\xa3 not really matroska")
     return path
-
-
-def make_prober(fake: ft.FakeTools, **kw: object) -> Prober:
-    return Prober(ProbeTool(str(fake.ffprobe), version="n-fake"), **kw)  # type: ignore[arg-type]
 
 
 def ffprobe_procs_alive(fake: ft.FakeTools) -> list[int]:

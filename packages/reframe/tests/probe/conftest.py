@@ -8,11 +8,25 @@ from typing import Any
 import pytest
 
 from reframe.models import MediaSource, SourceFingerprint
-from reframe.probe import parse_ffprobe
+from reframe.probe import Prober, ProbeTool, parse_ffprobe
 from reframe.probe.matroska import MatroskaFile, read_matroska
+from reframe_testing import fake_tools as ft
 
 REPO = Path(__file__).resolve().parents[4]
 PROBES = REPO / "testdata" / "probes"
+
+
+def streams_rule(*actions: ft.Action, exit_code: int = 0) -> ft.Rule:
+    """The rule for the main ffprobe call (the one with ``-show_streams``)."""
+    return ft.Rule(tool="ffprobe", argv_has=["-show_streams"], actions=actions, exit_code=exit_code)
+
+
+def stdout_file(path: Path) -> ft.Action:
+    return {"stdout_file": str(path)}
+
+
+def make_prober(fake: ft.FakeTools, **kw: object) -> Prober:
+    return Prober(ProbeTool(str(fake.ffprobe), version="n-fake"), **kw)  # type: ignore[arg-type]
 
 
 def load_probe(name: str) -> tuple[dict[str, Any], dict[str, Any] | None]:

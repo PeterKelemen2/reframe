@@ -25,7 +25,6 @@ from reframe.probe import (
     ProbeError,
     ProbeErrorKind,
     Prober,
-    ProbeTool,
     matroska,
     parse_ffprobe,
     sampling,
@@ -39,6 +38,8 @@ from reframe.tools import CancelToken
 from reframe_testing import fake_tools as ft
 from reframe_testing.blockscan import scan_blocks
 from reframe_testing.ebml import element, header, simple_block, track, tracks, uint
+
+from .conftest import make_prober, stdout_file, streams_rule
 
 _SEGMENT = 0x18538067
 _CLUSTER = 0x1F43B675
@@ -422,11 +423,8 @@ def _probe_json(tmp_path: Path, path: Path, *streams: dict[str, Any], duration: 
 
 
 def _fake_prober(fake: ft.FakeTools, probe: Path) -> Prober:
-    rule = ft.Rule(
-        tool="ffprobe", argv_has=["-show_streams"], actions=[{"stdout_file": str(probe)}]
-    )
-    fake.set_scenario(ft.Scenario([rule]))
-    return Prober(ProbeTool(str(fake.ffprobe), version="n-fake"))
+    fake.set_scenario(ft.Scenario([streams_rule(stdout_file(probe))]))
+    return make_prober(fake)
 
 
 def _two_audio_file(tmp_path: Path) -> tuple[Path, Path]:

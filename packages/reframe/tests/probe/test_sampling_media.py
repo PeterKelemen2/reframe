@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from reframe.models import AudioStream, BitrateSource, MediaSource, VideoStream
-from reframe.probe import Prober, ProbeTool, matroska, sampling
+from reframe.probe import Prober, matroska, sampling
 from reframe.probe.matroska import TrackKind, read_matroska, tracks_by_kind
 from reframe.tools import discover_tools
 from reframe_testing import fake_tools as ft
@@ -25,6 +25,8 @@ from reframe_testing import media
 from reframe_testing.blockscan import scan_blocks
 from reframe_testing.ebml import element, header, track, tracks
 from reframe_testing.mkvtoolnix import mkvtoolnix_tool
+
+from .conftest import make_prober, stdout_file, streams_rule
 
 pytestmark = pytest.mark.anyio
 
@@ -257,13 +259,8 @@ async def test_the_real_mkvmerge_files_keep_their_statistics_tags(
     assert total > int(probe["format"]["size"])
     media_file = tmp_path / probe["format"]["filename"]
     shutil.copyfile(REAL / f"{name}.tracks.mkv", media_file)
-    rule = ft.Rule(
-        tool="ffprobe",
-        argv_has=["-show_streams"],
-        actions=[{"stdout_file": str(REAL / f"{name}.json")}],
-    )
-    fake_tools.set_scenario(ft.Scenario([rule]))
-    source = await Prober(ProbeTool(str(fake_tools.ffprobe))).probe(media_file, use_cache=False)
+    fake_tools.set_scenario(ft.Scenario([streams_rule(stdout_file(REAL / f"{name}.json"))]))
+    source = await make_prober(fake_tools).probe(media_file, use_cache=False)
     assert isinstance(source, MediaSource), source
     bps, exact = RECORDED[name]
     assert (source.video[0].bitrate.source, source.video[0].bitrate.value) == (

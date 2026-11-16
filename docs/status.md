@@ -154,7 +154,7 @@ demo. What is left there is listed in [Not verified](#not-verified).
 | Q-6.5 Validation (A) | Not started |  |
 | Q-6.6 Batch (A) | Not started |  |
 | Q-6.7 Tools discovery and small dead members (A) | Not started |  |
-| Q-6.8 Probe (A) | Not started |  |
+| Q-6.8 Probe (A) | Done on Linux (2026-11-16) | PRB-04 (`start_probe_folder` gone; `test_folder_task_events` kept, now on the service's folder task with the exact event sequence, so the Done-when item passes), PRB-13 (`streams_rule`, `stdout_file`, `make_prober` in `tests/probe/conftest.py`), PRB-09 (`probe.prober.stat_regular` for the prober and `_check_file`), PRB-10 (`LANGUAGE_TAG_PATTERN`, `MAX_LANGUAGE_TAG`, `is_language_tag` in `models/base.py`; JSON Schema snapshot unchanged). Net lines: source -35 (+52 / -87), tests -3 (+89 / -92; the kept event test is the gap to the -65 estimate) |
 | Q-6.9 Queue, jobs and tasks (A) | Not started |  |
 | Q-6.10 Command, capabilities and shared tables (A) | Not started |  |
 | Q-6.11 Settings and preset stores (B) | Not started |  |

@@ -15,11 +15,9 @@ from pathlib import Path
 from pydantic import JsonValue
 
 from reframe.models.media import MediaSource
-from reframe.models.tasks import TaskInfo
 from reframe.platform.longpath import missing_text
 from reframe.probe.ffprobe import ProbeError, ProbeErrorKind
 from reframe.probe.prober import Prober
-from reframe.tasks import TaskContext, TaskManager
 from reframe.tools import CancelToken
 
 __all__ = [
@@ -30,7 +28,6 @@ __all__ = [
     "list_media_files",
     "natural_key",
     "probe_folder",
-    "start_probe_folder",
 ]
 
 DEFAULT_CONCURRENCY = 4
@@ -187,34 +184,3 @@ async def probe_folder(
         elif outcome is not None:
             result.errors.append(outcome)
     return result
-
-
-def start_probe_folder(
-    tasks: TaskManager,
-    prober: Prober,
-    folder: str | os.PathLike[str],
-    *,
-    concurrency: int = DEFAULT_CONCURRENCY,
-    recursive: bool = False,
-) -> TaskInfo:
-    """Start :func:`probe_folder` as a ``probe_folder`` task; returns its info at once."""
-    root = Path(os.path.abspath(folder))
-
-    async def work(ctx: TaskContext) -> FolderProbeResult:
-        def report(done: int, total: int, _path: Path) -> None:
-            ctx.progress(done=done, total=total, message=f"{done}/{total} files")
-
-        ctx.progress(0.0, "Listing files")
-        return await probe_folder(
-            prober,
-            root,
-            concurrency=concurrency,
-            recursive=recursive,
-            cancel=ctx.cancel,
-            on_progress=report,
-        )
-
-    def to_json(value: object) -> JsonValue:
-        return value.to_json() if isinstance(value, FolderProbeResult) else None
-
-    return tasks.start(TASK_KIND, work, message=f"Probing {root.name}", result_json=to_json)

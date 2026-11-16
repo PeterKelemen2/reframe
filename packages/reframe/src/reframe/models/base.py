@@ -12,11 +12,14 @@ alias and accept the field name or the alias on input. Floats must be finite
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 __all__ = [
+    "LANGUAGE_TAG_PATTERN",
+    "MAX_LANGUAGE_TAG",
     "DocumentModel",
     "LanguageTag",
     "NonNegativeFloat",
@@ -24,6 +27,7 @@ __all__ = [
     "PositiveInt",
     "Rational",
     "ReframeModel",
+    "is_language_tag",
 ]
 
 
@@ -61,13 +65,22 @@ class DocumentModel(BaseModel):
     )
 
 
+LANGUAGE_TAG_PATTERN = re.compile(r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$")
+MAX_LANGUAGE_TAG = 64
+
 #: A BCP 47 language tag (``en``, ``hun``, ``pt-BR``, ``zh-Hans``, ``und``). Only the shape is
 #: checked here; normalisation is in ``reframe.languages``. ISO 639-2 three-letter codes are
 #: valid BCP 47 primary subtags.
 LanguageTag = Annotated[
     str,
-    StringConstraints(pattern=r"^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$", max_length=64),
+    StringConstraints(pattern=LANGUAGE_TAG_PATTERN.pattern, max_length=MAX_LANGUAGE_TAG),
 ]
+
+
+def is_language_tag(value: str) -> bool:
+    """``value`` has the shape and length that :data:`LanguageTag` accepts."""
+    return len(value) <= MAX_LANGUAGE_TAG and LANGUAGE_TAG_PATTERN.fullmatch(value) is not None
+
 
 NonNegativeInt = Annotated[int, Field(ge=0)]
 PositiveInt = Annotated[int, Field(ge=1)]
