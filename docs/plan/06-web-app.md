@@ -211,17 +211,15 @@ row whose member a route reaches or that no longer exists
 | Member | Why no route reaches it |
 |--------|-------------------------|
 | `Reframe.create`, `Reframe.close`, `queue.close`, `power.close`, `tasks.close`, `tools.close`, `capabilities.close`, `sources.close`, `events.close` | The app's lifespan creates and closes the facade; a desktop client stops the server with `POST /api/system/shutdown` |
-| `tools.start`, `capabilities.start`, `tools.current`, `tools.discovering`, `capabilities.detecting`, `events.closed` | Lifecycle state. `GET /api/system` waits for a running discovery; `GET /api/system/encoders` and the `tools.changed` / `capabilities.changed` events show the rest |
-| `settings.path` | A server folder: a client cannot use it, and an answer must not show it (the queue and task routes read `Reframe.config_dir`, `data_dir` and `cache_dir` only to write them as `<config>`, `<data>`, `<cache>`) |
+| `tools.start`, `capabilities.start`, `tools.current`, `capabilities.detecting`, `events.closed` | Lifecycle state. `GET /api/system` waits for a running discovery; `GET /api/system/encoders` and the `tools.changed` / `capabilities.changed` events show the rest |
 | `Reframe.settings_snapshot` | The same settings as `settings.get` (`GET /api/settings`) |
 | `capabilities.definitions` | The same definitions as `jobs.definitions` (`GET /api/definitions`) |
-| `tools.versions` | `GET /api/system` gives each tool's version in its `ToolSet` |
 | `capabilities.wait` | `GET /api/system/encoders` never waits; `capabilities.changed` events follow a detection |
 | `capabilities.closest_available` | Validation uses it inside the core |
 | `presets.find` | The routes take ids; `jobs/draft`, `explain` and the batch routes accept a name or an id through the facade's own lookup |
 | `sources.probe_folder` | `POST /api/sources` expands folders itself (`jobs.media_files`): one task per request, without partial outputs ([0049](../decisions/0049-s2-system-fs-settings-sources-preview.md) item 5) |
 | `sources.store`, `sources.update` | The scans store what they measured themselves |
-| `sources.cache`, `sources.media`, `presets.store`, `tasks.events` | The objects the services are wired with (probe cache, the media task context, the preset file store, the event bus); clients reach them through the service methods and `WS /api/events` |
+| `sources.media`, `tasks.events` | The objects the services are wired with (the media task context, the event bus); clients reach them through the service methods and `WS /api/events` |
 | `events.publish`, `events.subscriber_count` | Only the core publishes events; a client receives them on `WS /api/events` |
 | `queue.owns_store`, `queue.busy`, `queue.store_busy` | The server's own state: it writes `server.json` only while it owns the store, `--owner-only` exits with 75 only while another process holds the lock, and idle exit waits while the queue is busy (S-7). A client reads `GET /api/queue` and the `job.state` events |
 | `queue.wait` | A client follows the `job.state` events or reads `GET /api/queue`; a request held open until jobs end would hold a connection for hours |
@@ -229,8 +227,6 @@ row whose member a route reaches or that no longer exists
 | `power.executor` | The executor is the operating system's mechanism |
 | `tasks.limit`, `tasks.set_limit` | The concurrency per task kind is internal; no setting changes it |
 | `batch.merge` | `POST /api/batch/derive` with `base` covers *Apply to group*; a client copies sections itself |
-| `presets.rename` | `PUT /api/presets/{id}` with the new name |
-| `presets.duplicate` | `GET /api/presets/{id}`, then `POST /api/presets` |
 
 ## S-3 Event WebSocket
 

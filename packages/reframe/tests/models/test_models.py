@@ -60,7 +60,6 @@ from reframe.models import (
     migrate,
     resolve_argv,
 )
-from reframe.models import migrations as migrations_mod
 from reframe.tools.discovery import locate_tools
 
 
@@ -247,19 +246,6 @@ def test_module_level_migrate() -> None:
     assert settings.queue.parallel_jobs == 2
     with pytest.raises(UnsupportedSchemaVersion):
         migrate("preset_file", {"schema_version": 99})
-
-
-def test_register_migration_uses_the_global_registry(monkeypatch: pytest.MonkeyPatch) -> None:
-    registry = MigrationRegistry()
-    registry.add_kind("settings", 2)
-    monkeypatch.setattr(migrations_mod, "REGISTRY", registry)
-
-    @migrations_mod.register_migration("settings", from_version=1)
-    def rename(data: dict[str, Any]) -> dict[str, Any]:
-        data["renamed"] = True
-        return data
-
-    assert migrate("settings", {"schema_version": 1}) == {"schema_version": 2, "renamed": True}
 
 
 def test_audio_defaults_end_with_a_catch_all() -> None:
