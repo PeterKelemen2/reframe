@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import importlib.util
 import shutil
-import sys
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
@@ -27,25 +24,12 @@ from reframe.models import (
 from reframe.service import Reframe
 from reframe_testing import media
 
+from . import anime as A
+
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
 
 Media = Callable[[str], Path]
 OPS = TypeAdapter(list[JsonPatchOp])
-
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-A = _load("anime")
 
 
 @pytest.fixture

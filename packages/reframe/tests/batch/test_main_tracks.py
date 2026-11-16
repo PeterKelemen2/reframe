@@ -6,11 +6,8 @@ foreign-audio burn-in.
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 from typing import Literal
 
 import pytest
@@ -20,14 +17,12 @@ from reframe.batch.explain import subtitle_stage
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     AudioDefaults,
-    AudioStream,
     JobTemplate,
     LanguageSettings,
     MediaSource,
     Preset,
     Severity,
     SubtitleDefaults,
-    SubtitleStream,
     TrackSelection,
     ValidationIssue,
 )
@@ -35,23 +30,7 @@ from reframe.presets import builtin_presets
 from reframe.probe import ProbeError
 from reframe.service import Reframe
 
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-T = _load("defaults_tracks")
-audio: Callable[..., AudioStream] = T.audio
-subtitle: Callable[..., SubtitleStream] = T.subtitle
-source: Callable[..., MediaSource] = T.source
+from .defaults_tracks import audio, source, subtitle
 
 NO_LISTED = "defaults.no_listed_language"
 

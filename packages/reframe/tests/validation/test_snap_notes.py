@@ -2,11 +2,7 @@
 
 from __future__ import annotations
 
-import importlib.util
 import itertools
-import sys
-from pathlib import Path
-from types import ModuleType
 from typing import Any, get_args
 
 import pytest
@@ -14,20 +10,8 @@ import pytest
 from reframe.definitions import channels_mixdown
 from reframe.models import AudioOutputTrack, CropSettings, Mixdown, ReplaceOp, Severity
 
+from . import scenario as sc
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 DEFS = sc.DEFS
 AUDIO_CODES = (
     "audio.mixdown_unsupported",

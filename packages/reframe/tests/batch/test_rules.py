@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from collections.abc import Sequence
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
@@ -43,24 +40,11 @@ from reframe.models import (
 from reframe.presets import builtin_presets
 from reframe.probe import parse_ffprobe
 
+from . import anime as A
+from . import defaults_tracks as T
+
 DEFS = load_definitions()
 PROBES = Path(__file__).resolve().parents[4] / "testdata" / "probes"
-
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-A = _load("anime")
-T = _load("defaults_tracks")
 
 
 def selector(kind: str = "audio", **kw: Any) -> TrackSelector:

@@ -6,13 +6,10 @@ system that lists the season folder.
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from types import ModuleType
 
 from pydantic import TypeAdapter
 from syrupy.assertion import SnapshotAssertion
@@ -31,20 +28,8 @@ from reframe.models import (
 )
 from reframe.naming import FileTimes, resolve_output_name
 
+from . import anime as A
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-A = _load("anime")
 OPS = TypeAdapter(list[JsonPatchOp])
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
 

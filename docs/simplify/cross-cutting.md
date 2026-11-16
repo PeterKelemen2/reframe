@@ -75,6 +75,7 @@ Line estimates here count each line once (the area entries overlap).
 - Depends on: none. Make it first: later packages edit these test files.
 - Confidence: high
 - Tier: A. Work package: Q-6.1.
+- Note (Q-6.1): partly skipped. `tests/jobs/test_cli_batch.py` (`_load_anime`) and `tests/validation/test_command_agreement.py` (`_load_command_tests`) keep their by-path loaders: pytest names a module in a folder with `__init__.py` from its topmost package (`jobs.test_cli_batch`, `validation.test_command_agreement`), so `from ..batch import anime` fails with "attempted relative import beyond top-level package". BAT-06's move into `reframe_testing` was not made for one consumer (rules 5, 6).
 
 ### X-05: HDR display names and the multiplication sign in one place
 - Kind: duplication

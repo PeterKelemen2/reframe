@@ -6,11 +6,10 @@ drive roots, a drive that is not connected, the same file through another spelli
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import sys
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -28,20 +27,8 @@ from reframe.validation.output import (
 )
 from reframe_testing.links import needs_symlinks
 
+from . import scenario as sc
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 #: chmod has no effect on Windows, and root ignores it.
 NO_POSIX_PERMISSIONS = sys.platform == "win32" or getattr(os, "geteuid", lambda: 0)() == 0
 MKV = sc.DEFS.containers["mkv"]

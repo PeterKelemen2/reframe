@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import importlib.util
 import random
-import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
@@ -31,20 +28,7 @@ from reframe.models import (
     VideoStream,
 )
 
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-A = _load("anime")
+from . import anime as A
 
 
 @pytest.mark.parametrize(

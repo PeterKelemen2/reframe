@@ -44,6 +44,8 @@ from reframe.textfile import TextCharset
 from reframe.validation import JobContext, validate
 from reframe.validation.range import range_duration
 
+from . import scenario as sc
+
 _COMMAND_TESTS = Path(__file__).resolve().parents[1] / "command"
 
 
@@ -66,20 +68,7 @@ def _load_command_tests() -> tuple[ModuleType, ModuleType]:
     )
 
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 cmd_tests, snapshots = _load_command_tests()
-sc = _load("scenario")
 DEFS = load_definitions()
 
 

@@ -3,11 +3,7 @@ error."""
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
@@ -21,11 +17,9 @@ from reframe.models import (
     AudioDefaults,
     AudioOutputSettings,
     AudioRuleExtras,
-    AudioStream,
     Container,
     ExtraAudioOutput,
     JobTemplate,
-    MediaSource,
     OutputOptions,
     OutputTrackRule,
     PassthruPolicy,
@@ -42,22 +36,7 @@ from reframe.models import (
 )
 from reframe.presets import builtin_presets
 
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-T = _load("defaults_tracks")
-audio: Callable[..., AudioStream] = T.audio
-source: Callable[..., MediaSource] = T.source
+from .defaults_tracks import audio, source
 
 CATCH_ALL = AudioCodecRule(codec="aac", mixdown="up_to_5.1", max_bitrate=256)
 

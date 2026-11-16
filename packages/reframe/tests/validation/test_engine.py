@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
@@ -16,6 +13,7 @@ from reframe.dimensions import compute_geometry, source_geometry
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     AverageBitrate,
+    BitrateSource,
     ChapterRange,
     ConstantQuality,
     CropRect,
@@ -45,20 +43,8 @@ from reframe.validation import (
 from reframe.validation.range import frame_count, range_duration
 from reframe.validation.registry import AREAS, Rule, job_rule, ordered
 
+from . import scenario as sc
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 DEFS = sc.DEFS
 
 
@@ -229,7 +215,7 @@ def test_estimate_passthrough_and_quality() -> None:
     s.job.range = TimeRange(start=0, end=60)
     assert estimate_output_bytes(context(s)) == int((8_000_000 + 160_000 + 128_000) * 60 / 8 * 1.02)
     s.source.video[0].bitrate.value = None
-    s.source.video[0].bitrate.source = "unknown"
+    s.source.video[0].bitrate.source = BitrateSource.UNKNOWN
     assert estimate_output_bytes(context(s)) == 6 * sc.GB // 10  # a tenth of the file
     s.source.container.size = None
     assert estimate_output_bytes(context(s)) is None
