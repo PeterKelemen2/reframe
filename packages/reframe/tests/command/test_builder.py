@@ -101,7 +101,6 @@ def test_refusals() -> None:
             plan_of(job, source)
 
     refuses("output path is not set", output__path=None)
-    refuses("unknown container", output__container="avi")
     refuses("unknown video encoder", video__encoder="libx266")
     refuses("H.264 cannot be written into WebM", output__container="webm")
     refuses("no 10-bit mode", video__encoder="h264_amf", video__bit_depth=10)

@@ -12,16 +12,17 @@ from collections.abc import Iterator
 from pydantic import JsonValue
 
 from reframe.command.audio import layout_channels
-from reframe.definitions import AudioEncoderDef, Definitions
+from reframe.definitions import Definitions
+from reframe.definitions.models import drop_upmix
 from reframe.models.issues import Fix, ValidationIssue
 from reframe.models.job import AudioOutputTrack, Mixdown
 from reframe.models.media import AudioStream
 from reframe.validation.common import (
     DEFAULT_AUDIO_ENCODER,
+    drop_track,
     error,
     fix,
     info,
-    remove,
     replace,
     warning,
 )
@@ -51,7 +52,7 @@ def source_streams(ctx: JobContext) -> Iterator[ValidationIssue]:
             "audio.source_missing",
             f"audio[{index}].source_stream",
             f"Audio track {index + 1} {what}.",
-            fix("Remove this audio track", remove(f"audio[{index}]")),
+            drop_track("audio", index),
         )
 
 
@@ -60,8 +61,6 @@ def auto_passthru(ctx: JobContext) -> Iterator[ValidationIssue]:
     """A passthru track whose codec the container cannot hold is encoded with the fallback
     encoder. Info: nothing is wrong."""
     container = ctx.container
-    if container is None:
-        return
     for index, track in enumerate(ctx.job.audio):
         if track.action != "passthru" or passthru_copies(ctx, track):
             continue
@@ -174,15 +173,6 @@ def _layout_mixdown(definitions: Definitions, layout: str) -> Mixdown | None:
     )
 
 
-def _dropped_as_upmix(
-    encoder: AudioEncoderDef, requested: Mixdown, channels: int, definitions: Definitions
-) -> bool:
-    """The no-upmix rule drops ``requested``: asked as if the encoder made every layout, the
-    helper still does not return it. An upmix only adds silent channels."""
-    every_layout = encoder.model_copy(update={"mixdowns": list(definitions.mixdowns)})
-    return every_layout.snap_mixdown(requested, channels, definitions.mixdowns) != requested
-
-
 @job_rule("audio", "audio.mixdown_unsupported", "audio.mixdown_upmix")
 def mixdowns(ctx: JobContext) -> Iterator[ValidationIssue]:
     """The layout the builder writes differs from the track's: the encoder cannot make it
@@ -202,8 +192,9 @@ def mixdowns(ctx: JobContext) -> Iterator[ValidationIssue]:
             result = f"is written as {planned.layout}"
             same = _layout_mixdown(defs, planned.layout)
             fixes = [_mixdown_fix(ctx, index, same)] if same is not None else []
-        if requested is not None and _dropped_as_upmix(
-            encoder, requested, planned.source_channels, defs
+        if (
+            requested is not None
+            and drop_upmix(requested, planned.source_channels, defs.mixdowns) is None
         ):
             source = _source_layout(stream)
             message = (

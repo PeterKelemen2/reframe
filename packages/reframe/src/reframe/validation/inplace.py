@@ -32,8 +32,7 @@ def new_output_path(ctx: JobContext) -> PurePath:
     source = Path(ctx.job.source.path)
     candidate: PurePath | None = ctx.name.path
     if candidate is None:
-        extension = ctx.container.extensions[0] if ctx.container is not None else ".mkv"
-        candidate = source.with_suffix(extension)
+        candidate = source.with_suffix(ctx.container.extensions[0])
     if source_clash(candidate, source, ctx.fs) is not None:
         candidate = free_of_source(candidate, source, ctx.fs)
     return candidate

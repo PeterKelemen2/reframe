@@ -268,10 +268,7 @@ def test_check_output_names_each_difference(tmp_path: Path) -> None:
         "3 audio tracks expected, 2 found",
         "subtitle track 1: language eng expected, fre found",
     ]
-    job.output.container = "avi"  # type: ignore[assignment]
-    assert check_output(job, source, output, defs) == ["unknown container 'avi'"]
     no_video = source.model_copy(update={"video": []}, deep=True)
-    job.output.container = "mkv"
     assert check_output(job, no_video, no_video, defs) == []
     job.audio[0].source_stream = 99  # a stream the source lacks: und
     assert "audio track 1: language und expected, jpn found" in check_output(

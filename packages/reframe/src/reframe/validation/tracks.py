@@ -91,7 +91,7 @@ def track_stream(ctx: JobContext, track: AudioOutputTrack) -> AudioStream | None
 
 def passthru_copies(ctx: JobContext, track: AudioOutputTrack) -> bool:
     """A passthru track whose source codec the container can hold (no encoder runs)."""
-    if track.action != "passthru" or ctx.container is None:
+    if track.action != "passthru":
         return False
     stream = track_stream(ctx, track)
     return (

@@ -691,14 +691,6 @@ CASES: list[Case] = [
         nothing,
     ),
     Case(
-        "unknown container",
-        "container.unknown",
-        "output.container",
-        ERR,
-        container("avi"),
-        container("mp4"),
-    ),
-    Case(
         "video codec not in container",
         "container.codec_unsupported",
         "video.encoder",
@@ -864,13 +856,13 @@ CASES: list[Case] = [
         "filters.tonemap.implementation",
         ERR,
         both(
-            hdr_source,
+            hdr10_source,
             filters(tonemap=FilterConfig(implementation="libplacebo")),
             lambda s: setattr(
                 s.caps, "filter_failures", {"libplacebo": "No working Vulkan driver"}
             ),
         ),
-        both(hdr_source, filters(tonemap=FilterConfig(implementation="libplacebo"))),
+        both(hdr10_source, filters(tonemap=FilterConfig(implementation="libplacebo"))),
     ),
     Case(
         "implementation not tested",
@@ -938,24 +930,28 @@ CASES: list[Case] = [
         "filter.hdr_without_tonemap",
         "filters.colorspace",
         WARN,
-        both(hdr_source, filters(colorspace=FilterConfig(preset="bt709"))),
-        both(hdr_source, filters(colorspace=FilterConfig(preset="bt709"), tonemap=FilterConfig())),
+        both(hdr10_source, filters(colorspace=FilterConfig(preset="bt709"))),
+        both(
+            hdr10_source, filters(colorspace=FilterConfig(preset="bt709"), tonemap=FilterConfig())
+        ),
     ),
     Case(
         "HDR to BT.2020 SDR without tone mapping",
         "filter.hdr_without_tonemap",
         "filters.colorspace",
         WARN,
-        both(hdr_source, filters(colorspace=FilterConfig(preset="bt2020"))),
-        both(hdr_source, filters(colorspace=FilterConfig(preset="bt2020"), tonemap=FilterConfig())),
+        both(hdr10_source, filters(colorspace=FilterConfig(preset="bt2020"))),
+        both(
+            hdr10_source, filters(colorspace=FilterConfig(preset="bt2020"), tonemap=FilterConfig())
+        ),
     ),
     Case(
         "HDR source encoded to 8-bit",
         "filter.hdr_8bit",
         "video.bit_depth",
         WARN,
-        both(hdr_source, video(bit_depth=8)),
-        both(hdr_source, video(bit_depth=10)),
+        both(hdr10_source, video(bit_depth=8)),
+        both(hdr10_source, video(bit_depth=10)),
     ),
     Case(
         "HDR10 source encoded to 8-bit, tone mapped",
@@ -1543,11 +1539,14 @@ def test_switch_container_changes_the_extension() -> None:
 
 
 def test_switch_container_keeps_every_track_valid() -> None:
-    """WebM holds neither x265 nor the subtitles, so the fixes offer only MKV."""
+    """WebVTT fits MKV and WebM, but WebM cannot hold x265, so the fixes offer only MKV."""
     s = sc.base()
-    s.job.output.container = "avi"  # type: ignore[assignment]
-    [issue] = [i for i in sc.check(s) if i.code == "container.unknown"]
-    assert [f.label for f in issue.fixes] == [f"Switch to {sc.DEFS.containers['mkv'].label}"]
+    s.job.output.container = "mp4"
+    s.job.output.path = Path("/out/Movie (2019).mp4")
+    s.job.subtitles = [SubtitleOutputTrack(source=3, action="convert", convert_to="webvtt")]
+    [issue] = [i for i in sc.check(s) if i.path == "subtitles[0].convert_to"]
+    switches = [f.label for f in issue.fixes if f.label.startswith("Switch to")]
+    assert switches == [f"Switch to {sc.DEFS.containers['mkv'].label}"]
 
 
 def test_encode_the_video_picks_an_encoder_the_container_holds() -> None:

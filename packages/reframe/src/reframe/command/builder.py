@@ -308,9 +308,7 @@ def build_plan(
     without ``now``).
     """
     defs = definitions if definitions is not None else load_definitions()
-    container = defs.containers.get(job.output.container)
-    if container is None:
-        raise PlanError(f"unknown container {job.output.container!r}")
+    container = defs.containers[job.output.container]
     if not source.video:
         raise PlanError("the source has no video stream")
     video = source.video[0]

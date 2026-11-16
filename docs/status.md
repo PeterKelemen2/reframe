@@ -162,7 +162,7 @@ demo. What is left there is listed in [Not verified](#not-verified).
 | Q-6.13 Probe and metadata (B) | Not started |  |
 | Q-6.14 Folder probe, language list, server leftovers (B) | Not started |  |
 | Q-6.15 Batch API and the draft path (B) | Not started |  |
-| Q-6.16 Validation rules (B) | Not started |  |
+| Q-6.16 Validation rules (B) | Done on Linux (2026-11-16) | VAL-12 (`validate`/`validate_template` lose `rules=`, `switch_video_encoder` needs `caps`, `metadata_blocks`, `drop_track`, `drop_upmix` in `definitions/models.py`, no `passthrough_known`), VAL-09 (`value_text` from `definitions/options.py`: numbers of 1e6 or more print in full; `option_int`, rate-control patch helpers), VAL-07 HDR part (validation uses the builder's `is_hdr`), VAL-03 (`shared_rule`, `ctx.doc`; four template twins gone, two new template cases; template issue order unchanged), VAL-06 (`container.unknown` and the `None` container guards gone, [0087](decisions/0087-no-unknown-container-check.md)). Net lines: source -100 (+212 / -312), tests +29 (+73 / -44) |
 | Q-6.17 Tool runner and platform (B) | Not started |  |
 | Q-6.18 Task manager and capability service (B) | Not started |  |
 | Q-6.19 Definitions fields (B) | Not started |  |

@@ -254,8 +254,6 @@ BURN = SubtitleOutputTrack(source=SRT, action="burn")
 REFUSALS: list[Refusal] = [
     Refusal("no output path", "output path is not set", "output.no_path",
             multitrack(setter(output__path=None))),
-    Refusal("unknown container", "unknown container", "container.unknown",
-            multitrack(setter(output__container="avi"))),
     Refusal("source without video", "no video stream", "source.no_video",
             source_without_video),
     Refusal("video passthrough the container cannot hold", "cannot be copied into WebM",

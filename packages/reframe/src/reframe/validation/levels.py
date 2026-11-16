@@ -17,11 +17,12 @@ from reframe.models.issues import Fix, ValidationIssue
 from reframe.models.job import VideoSettings
 from reframe.validation.common import error, fix, replace
 from reframe.validation.context import JobContext, TemplateContext
-from reframe.validation.registry import job_rule, template_rule
+from reframe.validation.registry import job_rule, shared_rule
 from reframe.validation.video import (
     CUSTOM_PARAM_CODES,
     OPTION_RULE_CODES,
     OVERRIDE_CODE,
+    option_int,
     video_custom_param_issues,
     video_custom_param_override_issues,
     video_option_rule_issues,
@@ -56,13 +57,7 @@ def x265_min_cu_size(video: VideoSettings, encoder: VideoEncoderDef | None) -> i
     speed preset's default; ``None`` when not known."""
     if encoder is None:
         return None
-    value = effective_option(encoder, video, "min-cu-size")
-    if isinstance(value, bool) or value is None:
-        return None
-    try:
-        size = int(value)
-    except ValueError:
-        return None
+    size = option_int(effective_option(encoder, video, "min-cu-size"))
     return size if size in (8, 16, 32) else None
 
 
@@ -145,29 +140,17 @@ def x265_level(ctx: JobContext) -> Iterator[ValidationIssue]:
     )
 
 
-@job_rule("encoder", *OPTION_RULE_CODES)
-def advanced_option_rules(ctx: JobContext) -> list[ValidationIssue]:
-    return video_option_rule_issues(ctx.job.video, ctx.caps, ctx.definitions)
+@shared_rule("encoder", *OPTION_RULE_CODES)
+def advanced_option_rules(ctx: JobContext | TemplateContext) -> list[ValidationIssue]:
+    return video_option_rule_issues(ctx.doc.video, ctx.caps, ctx.definitions)
 
 
-@job_rule("encoder", *CUSTOM_PARAM_CODES)
-def custom_params(ctx: JobContext) -> list[ValidationIssue]:
+@shared_rule("encoder", *CUSTOM_PARAM_CODES)
+def custom_params(ctx: JobContext | TemplateContext) -> list[ValidationIssue]:
     """Custom parameters that name a file, or that FFmpeg would read as its own options."""
-    return video_custom_param_issues(ctx.job.video, ctx.caps, ctx.definitions)
+    return video_custom_param_issues(ctx.doc.video, ctx.caps, ctx.definitions)
 
 
-@job_rule("encoder", OVERRIDE_CODE)
-def custom_param_overrides(ctx: JobContext) -> list[ValidationIssue]:
-    return video_custom_param_override_issues(ctx.job.video, ctx.definitions)
-
-
-@template_rule("encoder", *OPTION_RULE_CODES, *CUSTOM_PARAM_CODES, OVERRIDE_CODE)
-def template_advanced_option_rules(ctx: TemplateContext) -> list[ValidationIssue]:
-    """A preset's video settings: the same rules (the option rules and the custom
-    parameters), fixes on the template."""
-    video = ctx.template.video
-    return [
-        *video_option_rule_issues(video, ctx.caps, ctx.definitions),
-        *video_custom_param_issues(video, ctx.caps, ctx.definitions),
-        *video_custom_param_override_issues(video, ctx.definitions),
-    ]
+@shared_rule("encoder", OVERRIDE_CODE)
+def custom_param_overrides(ctx: JobContext | TemplateContext) -> list[ValidationIssue]:
+    return video_custom_param_override_issues(ctx.doc.video, ctx.definitions)

@@ -27,13 +27,7 @@ def generated_chapters(ctx: JobContext) -> Iterator[ValidationIssue]:
     settings = ctx.job.chapters
     every = settings.generate_every
     container = ctx.container
-    if (
-        every is None
-        or not settings.enabled
-        or ctx.source.chapters
-        or container is None
-        or not container.chapters
-    ):
+    if every is None or not settings.enabled or ctx.source.chapters or not container.chapters:
         return
     seconds = range_duration(ctx)
     if not seconds or generated_starts(every, seconds) is not None:

@@ -41,9 +41,14 @@ class JobContext:
 
     subject: str | None = None
 
+    @property
+    def doc(self) -> JobSettings | JobTemplate:
+        """What a rule shared with templates checks: the job."""
+        return self.job
+
     @cached_property
-    def container(self) -> ContainerDef | None:
-        return self.definitions.containers.get(self.job.output.container)
+    def container(self) -> ContainerDef:
+        return self.definitions.containers[self.job.output.container]
 
     @cached_property
     def video_stream(self) -> VideoStream | None:
@@ -111,6 +116,11 @@ class TemplateContext:
     definitions: Definitions
     subject: str | None = None
 
+    @property
+    def doc(self) -> JobSettings | JobTemplate:
+        """What a rule shared with jobs checks: the template."""
+        return self.template
+
     @cached_property
-    def container(self) -> ContainerDef | None:
-        return self.definitions.containers.get(self.template.output.container)
+    def container(self) -> ContainerDef:
+        return self.definitions.containers[self.template.output.container]

@@ -11,9 +11,9 @@ from reframe.models.issues import Fix, ValidationIssue
 from reframe.probe.names import FORCED_ONLY_SUBTITLE_CODECS
 from reframe.validation.common import (
     containers_for,
+    drop_track,
     error,
     fix,
-    remove,
     replace,
 )
 from reframe.validation.context import JobContext
@@ -22,10 +22,6 @@ from reframe.validation.tracks import (
     subtitle_input,
     switch_container,
 )
-
-
-def _drop(ctx: JobContext, index: int) -> Fix:
-    return fix("Remove this subtitle track", remove(f"subtitles[{index}]"))
 
 
 @job_rule(
@@ -40,14 +36,14 @@ def sources(ctx: JobContext) -> Iterator[ValidationIssue]:
                     f"subtitles[{index}].source",
                     f"Subtitle track {index + 1} reads stream {track.source}, which is not a "
                     "subtitle track of the source.",
-                    _drop(ctx, index),
+                    drop_track("subtitles", index),
                 )
         elif not ctx.fs.exists(Path(track.source.path)):
             yield error(
                 "subtitle.external_missing",
                 f"subtitles[{index}].source.path",
                 f"The subtitle file {track.source.path} does not exist.",
-                _drop(ctx, index),
+                drop_track("subtitles", index),
             )
         elif PurePath(track.source.path).suffix.lower() not in EXTERNAL_FORMATS:
             known = ", ".join(EXTERNAL_FORMATS)
@@ -56,7 +52,7 @@ def sources(ctx: JobContext) -> Iterator[ValidationIssue]:
                 f"subtitles[{index}].source.path",
                 f"The subtitle file {PurePath(track.source.path).name} has a type Reframe "
                 f"cannot read: use a {known} file.",
-                _drop(ctx, index),
+                drop_track("subtitles", index),
             )
 
 
@@ -97,7 +93,7 @@ def charsets(ctx: JobContext) -> Iterator[ValidationIssue]:
                 at,
                 f"{file.name} is {found.name}, which FFmpeg reads wrongly: {effect}. Save the "
                 "file as UTF-8.",
-                _drop(ctx, index),
+                drop_track("subtitles", index),
             )
         elif chosen is None:
             if found.name is None:
@@ -108,7 +104,7 @@ def charsets(ctx: JobContext) -> Iterator[ValidationIssue]:
                     "UTF-8), and none is chosen: FFmpeg would write its letters that are not "
                     "ASCII as invalid text (shown as \N{REPLACEMENT CHARACTER}) or stop with an "
                     "error. Choose the encoding the file was saved in.",
-                    _drop(ctx, index),
+                    drop_track("subtitles", index),
                 )
         elif _wide(chosen):
             yield error(
@@ -117,7 +113,7 @@ def charsets(ctx: JobContext) -> Iterator[ValidationIssue]:
                 f"FFmpeg reads subtitles as {chosen} wrongly: the text of {file.name} would "
                 "come out as other characters. Choose the encoding the file was saved in.",
                 *([as_utf8] if found.name == "UTF-8" else []),
-                _drop(ctx, index),
+                drop_track("subtitles", index),
             )
         elif _plain(chosen) == "UTF8":
             if found.name is None:
@@ -127,7 +123,7 @@ def charsets(ctx: JobContext) -> Iterator[ValidationIssue]:
                     f"{file.name} is not UTF-8, but UTF-8 is chosen: FFmpeg would stop with an "
                     "error at its first letter that is not ASCII. Choose the encoding the file "
                     "was saved in.",
-                    _drop(ctx, index),
+                    drop_track("subtitles", index),
                 )
         elif found.name == "UTF-8" and not found.ascii:
             yield error(
@@ -136,7 +132,7 @@ def charsets(ctx: JobContext) -> Iterator[ValidationIssue]:
                 f"{file.name} is UTF-8, but {chosen} is chosen: FFmpeg would drop or garble the "
                 "lines with letters that are not ASCII.",
                 as_utf8,
-                _drop(ctx, index),
+                drop_track("subtitles", index),
             )
 
 
@@ -164,8 +160,14 @@ def burn_in(ctx: JobContext) -> Iterator[ValidationIssue]:
             f"subtitles[{index}].action",
             f"Only one subtitle track can be burned in; track {burned[0] + 1} already is.",
             fix("Copy the track", replace(f"subtitles[{index}].action", "copy")),
-            _drop(ctx, index),
+            drop_track("subtitles", index),
         )
+
+
+def _can_burn(ctx: JobContext) -> bool:
+    return not ctx.job.video.passthrough and not any(
+        track.action == "burn" for track in ctx.job.subtitles
+    )
 
 
 @job_rule("subtitles", "subtitle.bitmap_unsupported")
@@ -173,11 +175,6 @@ def bitmap_copy(ctx: JobContext) -> Iterator[ValidationIssue]:
     """A copied bitmap track the container cannot hold. The fixes are burn in, another
     container, or drop."""
     container = ctx.container
-    if container is None:
-        return
-    can_burn = not ctx.job.video.passthrough and not any(
-        track.action == "burn" for track in ctx.job.subtitles
-    )
     for index, track in enumerate(ctx.job.subtitles):
         source = subtitle_input(ctx, track)
         if (
@@ -189,14 +186,14 @@ def bitmap_copy(ctx: JobContext) -> Iterator[ValidationIssue]:
         ):
             continue
         fixes: list[Fix] = []
-        if can_burn:
+        if _can_burn(ctx):
             fixes.append(fix("Burn it in", replace(f"subtitles[{index}].action", "burn")))
         fixes.extend(
             switch_container(
                 ctx, containers_for(ctx.definitions, "subtitles", source.codec, copy=True)
             )
         )
-        fixes.append(_drop(ctx, index))
+        fixes.append(drop_track("subtitles", index))
         yield error(
             "subtitle.bitmap_unsupported",
             f"subtitles[{index}].action",
@@ -214,27 +211,21 @@ def conversions(ctx: JobContext) -> Iterator[ValidationIssue]:
         source = subtitle_input(ctx, track)
         if source is not None and source.kind == "bitmap":
             fixes: list[Fix] = []
-            if (
-                container is not None
-                and source.codec
-                and container.subtitles.can_copy(source.codec)
-            ):
+            if source.codec and container.subtitles.can_copy(source.codec):
                 fixes.append(
                     fix(
                         "Copy the track",
                         replace(f"subtitles[{index}].action", "copy"),
                     )
                 )
-            if not ctx.job.video.passthrough and not any(
-                other.action == "burn" for other in ctx.job.subtitles
-            ):
+            if _can_burn(ctx):
                 fixes.append(
                     fix(
                         "Burn it in",
                         replace(f"subtitles[{index}].action", "burn"),
                     )
                 )
-            fixes.append(_drop(ctx, index))
+            fixes.append(drop_track("subtitles", index))
             yield error(
                 "subtitle.convert_bitmap",
                 f"subtitles[{index}].action",
@@ -244,7 +235,7 @@ def conversions(ctx: JobContext) -> Iterator[ValidationIssue]:
             )
         elif track.convert_to is None:
             fixes = []
-            if container is not None and container.text_subtitle_target is not None:
+            if container.text_subtitle_target is not None:
                 fixes.append(
                     fix(
                         f"Convert to {container.text_subtitle_target}",

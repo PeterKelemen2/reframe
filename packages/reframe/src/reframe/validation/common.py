@@ -29,6 +29,7 @@ __all__ = [
     "TrackKind",
     "add",
     "containers_for",
+    "drop_track",
     "error",
     "fix",
     "info",
@@ -107,6 +108,11 @@ def switch_container_fixes(
             ops.append(replace("output.path", str(output.with_suffix(container.extensions[0]))))
         fixes.append(fix(f"Switch to {container.label}", *ops))
     return fixes
+
+
+def drop_track(kind: Literal["audio", "subtitles"], index: int) -> Fix:
+    label = "audio" if kind == "audio" else "subtitle"
+    return fix(f"Remove this {label} track", remove(f"{kind}[{index}]"))
 
 
 def usable_encoder(encoder_id: str, caps: CapabilitySnapshot) -> bool:

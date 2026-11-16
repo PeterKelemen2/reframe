@@ -681,7 +681,7 @@ class JobRunner:
             plan.output_final,
             Path(job.settings.source.path),
             self._fs,
-            container=self._defs.containers.get(job.settings.output.container),
+            container=self._defs.containers[job.settings.output.container],
             collision="ask",
         )
         issues = [issue for issue in found if issue.code == "output.exists"] or [

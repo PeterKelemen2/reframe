@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+from reframe.command.filtergraph import is_hdr
 from reframe.definitions import Definitions, FilterDef, FilterImplementation
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.issues import Fix, ValidationIssue
@@ -15,7 +16,7 @@ from reframe.models.job import FilterConfig, FilterSettings
 from reframe.models.media import HdrFormat, VideoStream
 from reframe.validation.common import add, error, fix, remove, replace, warning
 from reframe.validation.context import JobContext, TemplateContext
-from reframe.validation.registry import job_rule, template_rule
+from reframe.validation.registry import job_rule, shared_rule
 from reframe.validation.video import ten_bit_patch
 
 CODES = (
@@ -31,8 +32,6 @@ CODES = (
 )
 #: Colorspace presets that convert to an SDR transfer (BT.2020 uses ``bt2020-10``, SDR).
 _SDR_PRESETS = frozenset({"bt709", "bt2020", "bt601-6-525", "bt601-6-625"})
-#: Transfer characteristics of HDR video (ffprobe ``color_transfer``).
-_HDR_TRANSFERS = frozenset({"smpte2084", "arib-std-b67"})
 
 
 def _available(caps: CapabilitySnapshot, definitions: Definitions) -> dict[str, bool] | None:
@@ -199,25 +198,11 @@ def filter_issues(
         yield from _check_filter(filter_id, config, definition, caps, available)
 
 
-@job_rule("filters", *CODES)
-def filters(ctx: JobContext) -> Iterator[ValidationIssue]:
-    if ctx.job.video.passthrough:
+@shared_rule("filters", *CODES)
+def filters(ctx: JobContext | TemplateContext) -> Iterator[ValidationIssue]:
+    if ctx.doc.video.passthrough:
         return
-    yield from filter_issues(ctx.job.filters, ctx.caps, ctx.definitions)
-
-
-@template_rule("filters", *CODES)
-def template_filters(ctx: TemplateContext) -> Iterator[ValidationIssue]:
-    if ctx.template.video.passthrough:
-        return
-    yield from filter_issues(ctx.template.filters, ctx.caps, ctx.definitions)
-
-
-def is_hdr(stream: VideoStream) -> bool:
-    """PQ (HDR10, HDR10+, Dolby Vision with a PQ base layer) or HLG."""
-    if stream.hdr is not None and stream.hdr.formats:
-        return True
-    return stream.color.transfer in _HDR_TRANSFERS
+    yield from filter_issues(ctx.doc.filters, ctx.caps, ctx.definitions)
 
 
 def _hdr_label(stream: VideoStream) -> str:

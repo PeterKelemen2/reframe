@@ -21,7 +21,7 @@ from reframe.models.geometry import (
 from reframe.models.issues import Fix, ValidationIssue
 from reframe.validation.common import error, fix, info, replace, warning
 from reframe.validation.context import JobContext, TemplateContext
-from reframe.validation.registry import job_rule, template_rule
+from reframe.validation.registry import job_rule, shared_rule
 
 
 def _notes(geometry: Geometry, *starts: str) -> list[str]:
@@ -190,15 +190,8 @@ def _custom_par_issue(dims: DimensionSettings) -> list[ValidationIssue]:
     ]
 
 
-@job_rule("dimensions", "dimensions.custom_par_missing")
-def custom_par(ctx: JobContext) -> list[ValidationIssue]:
-    if ctx.job.video.passthrough:
+@shared_rule("dimensions", "dimensions.custom_par_missing")
+def custom_par(ctx: JobContext | TemplateContext) -> list[ValidationIssue]:
+    if ctx.doc.video.passthrough:
         return []
-    return _custom_par_issue(ctx.job.dimensions)
-
-
-@template_rule("dimensions", "dimensions.custom_par_missing")
-def template_custom_par(ctx: TemplateContext) -> list[ValidationIssue]:
-    if ctx.template.video.passthrough:
-        return []
-    return _custom_par_issue(ctx.template.dimensions)
+    return _custom_par_issue(ctx.doc.dimensions)

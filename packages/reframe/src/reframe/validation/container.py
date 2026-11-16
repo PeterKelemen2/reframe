@@ -12,14 +12,14 @@ from reframe.definitions import ContainerDef, Definitions
 from reframe.definitions.models import TRACK_FLAGS
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.issues import Fix, ValidationIssue
-from reframe.models.job import AudioOutputTrack, Container, TrackMetadata
+from reframe.models.job import AudioOutputTrack, Container
 from reframe.models.media import AudioStream
 from reframe.validation.common import (
     SwitchContainer,
     containers_for,
+    drop_track,
     error,
     fix,
-    remove,
     replace,
     switch_container_fixes,
     usable_encoder,
@@ -27,6 +27,7 @@ from reframe.validation.common import (
 )
 from reframe.validation.context import JobContext, TemplateContext
 from reframe.validation.encoder import template_audio_encoder_ids
+from reframe.validation.metadata import metadata_blocks
 from reframe.validation.registry import job_rule, template_rule
 from reframe.validation.tracks import (
     subtitle_input,
@@ -63,16 +64,16 @@ def _audio_codec_issue(
     container_id: Container,
     ctx: JobContext | TemplateContext,
     *,
-    drop: str | None,
+    drop: int | None,
     track: AudioOutputTrack | None = None,
     stream: AudioStream | None = None,
     switch: SwitchContainer | None = None,
 ) -> list[ValidationIssue]:
     """``container.codec_unsupported`` for the audio encoder at ``path``."""
     definitions = ctx.definitions
-    container = definitions.containers.get(container_id)
+    container = definitions.containers[container_id]
     encoder = definitions.audio_encoders.get(encoder_id)
-    if container is None or encoder is None or encoder.codec in container.audio.encode:
+    if encoder is None or encoder.codec in container.audio.encode:
         return []
     fixes: list[Fix] = []
     convert = _audio_convert_encoder(container, ctx.caps, definitions)
@@ -88,7 +89,7 @@ def _audio_codec_issue(
         else switch_container_fixes(allowed, container_id, definitions)
     )
     if drop is not None:
-        fixes.append(fix("Remove this audio track", remove(drop)))
+        fixes.append(drop_track("audio", drop))
     return [
         error(
             UNSUPPORTED,
@@ -99,25 +100,11 @@ def _audio_codec_issue(
     ]
 
 
-@job_rule("container", "container.unknown")
-def known_container(ctx: JobContext) -> list[ValidationIssue]:
-    """A container the definitions do not have (a hand-edited or newer job file)."""
-    if ctx.container is not None:
-        return []
-    current = ctx.job.output.container
-    return [
-        error(
-            "container.unknown",
-            "output.container",
-            f"Unknown container {current!r}.",
-            *switch_container(ctx, list(ctx.definitions.containers)),
-        )
-    ]
-
-
 @job_rule("container", UNSUPPORTED)
 def video_codec(ctx: JobContext) -> list[ValidationIssue]:
     stream = ctx.video_stream
+    if ctx.job.video.passthrough and stream is None:
+        return []
     return video_container_issues(
         ctx.job.video,
         ctx.job.output.container,
@@ -125,7 +112,6 @@ def video_codec(ctx: JobContext) -> list[ValidationIssue]:
         ctx.definitions,
         source_codec=stream.codec if stream is not None else None,
         switch=lambda allowed: switch_container(ctx, allowed),
-        passthrough_known=stream is not None,
     )
 
 
@@ -140,7 +126,7 @@ def audio_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
             encoder_id,
             ctx.job.output.container,
             ctx,
-            drop=f"audio[{index}]",
+            drop=index,
             track=track,
             stream=track_stream(ctx, track),
             switch=lambda allowed: switch_container(ctx, allowed),
@@ -152,10 +138,8 @@ def subtitle_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
     """Text subtitles: a converted format the container cannot hold, or a copied text format
     it can neither hold nor convert automatically. (Bitmap: ``subtitle.bitmap_unsupported``.)"""
     container = ctx.container
-    if container is None:
-        return
     for index, track in enumerate(ctx.job.subtitles):
-        drop = fix("Remove this subtitle track", remove(f"subtitles[{index}]"))
+        drop = drop_track("subtitles", index)
         if track.action == "convert" and track.convert_to is not None:
             if track.convert_to in container.subtitles.encode:
                 continue
@@ -200,22 +184,11 @@ def subtitle_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
             )
 
 
-def _metadata_blocks(ctx: JobContext) -> Iterator[tuple[str, TrackMetadata]]:
-    yield "video.metadata", ctx.job.video.metadata
-    for index, audio in enumerate(ctx.job.audio):
-        yield f"audio[{index}].metadata", audio.metadata
-    for index, subtitle in enumerate(ctx.job.subtitles):
-        if subtitle.action != "burn":
-            yield f"subtitles[{index}].metadata", subtitle.metadata
-
-
 @job_rule("container", "container.flag_unsupported")
 def track_flags(ctx: JobContext) -> Iterator[ValidationIssue]:
     """A flag the muxer cannot write is lost, so it is a warning."""
     container = ctx.container
-    if container is None:
-        return
-    for prefix, metadata in _metadata_blocks(ctx):
+    for prefix, metadata in metadata_blocks(ctx, written_only=True):
         for flag in TRACK_FLAGS:
             if not getattr(metadata, flag) or flag in container.flags:
                 continue
@@ -238,6 +211,8 @@ def track_flags(ctx: JobContext) -> Iterator[ValidationIssue]:
 
 @template_rule("container", UNSUPPORTED)
 def template_video_codec(ctx: TemplateContext) -> list[ValidationIssue]:
+    if ctx.template.video.passthrough:
+        return []  # no source to check the copied codec against
     return video_container_issues(
         ctx.template.video,
         ctx.template.output.container,
