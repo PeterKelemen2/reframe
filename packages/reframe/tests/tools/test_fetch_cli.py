@@ -137,9 +137,9 @@ def test_status_json_still_exits_4(env: Path) -> None:
 
 
 def test_status_lines_are_shared_with_python_m_reframe_tools(fake: ft.FakeTools) -> None:
-    from reframe.tools import discover_tools_sync
+    from reframe.tools import discover_tools
 
-    tools = discover_tools_sync()
+    tools = asyncio.run(discover_tools())
     lines = status_lines(tools)
     result = invoke("tools", "status")
     assert [line.split()[0] for line in lines] == ["ffmpeg", "ffprobe"]

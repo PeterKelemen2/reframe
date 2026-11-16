@@ -66,7 +66,7 @@ from reframe.probe.prober import stat_regular
 from reframe.queue import QueueService
 from reframe.settings import MAX_DEPTH, SettingsStore, SettingsUpdate, too_deep, validation_detail
 from reframe.tasks import TaskContext, TaskManager
-from reframe.tools import CancelToken, check_tool, locate_tools
+from reframe.tools import CancelToken, discover_tools
 from reframe.tools.discovery import TOOL_NAMES, VERSION_TIMEOUT
 from reframe.tools.fetch import start_fetch
 from reframe.validation.fs import has_nul
@@ -227,18 +227,9 @@ class ToolsService:
         return task
 
     async def _discover(self) -> ToolSet:
-        # Same steps as discover_tools(), but locate_tools() runs in a thread: a network share
-        # can be slow to stat. The TaskGroup waits for every version check, so close() returns
-        # only after every child process is gone.
-        located = await asyncio.to_thread(
-            locate_tools, self._settings().tools, bundled_roots=self._bundled_roots
+        tools = await discover_tools(
+            self._settings().tools, bundled_roots=self._bundled_roots, timeout=self._timeout
         )
-        async with asyncio.TaskGroup() as group:
-            checks = [
-                group.create_task(check_tool(located[name], timeout=self._timeout))
-                for name in TOOL_NAMES
-            ]
-        tools = ToolSet(**{check.result().name: check.result() for check in checks})
         self._current = tools
         self._events.publish(ToolsChangedEvent(tools=tools))
         return tools

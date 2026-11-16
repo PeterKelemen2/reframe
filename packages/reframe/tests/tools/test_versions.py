@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from reframe.tools.versions import (
+    MIN_FFMPEG,
     lib_major_to_series,
     parse_ffmpeg_version,
 )
@@ -26,7 +27,6 @@ CASES = [
         (63, 1, 102),
         (63, 1, 102),
         True,
-        True,
     ),
     (
         ft.DATA_DIR / "ffprobe_version.stdout.txt",
@@ -36,7 +36,6 @@ CASES = [
         (9, 0),
         (63, 1, 102),
         (63, 1, 102),
-        True,
         False,
     ),
     (
@@ -48,7 +47,6 @@ CASES = [
         (63, 1, 102),
         (63, 1, 102),
         True,
-        True,
     ),
     (
         DATA / "ffprobe-arch-n9.0.2.txt",
@@ -58,7 +56,6 @@ CASES = [
         (9, 0),
         (63, 1, 102),
         (63, 1, 102),
-        True,
         False,
     ),
     (
@@ -70,7 +67,6 @@ CASES = [
         (62, 28, 103),
         (62, 12, 103),
         True,
-        True,
     ),
     (
         DATA / "ffprobe-btbn-n8.1.3.txt",
@@ -80,7 +76,6 @@ CASES = [
         (8, 1),
         (62, 28, 103),
         (62, 12, 103),
-        True,
         False,
     ),
     (
@@ -91,7 +86,6 @@ CASES = [
         (7, 1),
         (61, 19, 101),
         (61, 7, 100),
-        True,
         False,
     ),
     (
@@ -103,7 +97,6 @@ CASES = [
         (60, 31, 102),
         (60, 16, 100),
         False,
-        False,
     ),
     (
         DATA / "ffmpeg-btbn-master-N-127032.txt",
@@ -114,13 +107,12 @@ CASES = [
         (63, 15, 100),
         (63, 7, 100),
         True,
-        True,
     ),
 ]
 
 
 @pytest.mark.parametrize(
-    ("path", "tool", "token", "release", "series", "avcodec", "avformat", "meets", "exiting"),
+    ("path", "tool", "token", "release", "series", "avcodec", "avformat", "exiting"),
     CASES,
     ids=[c[0].name for c in CASES],
 )
@@ -132,7 +124,6 @@ def test_real_version_outputs(
     series: tuple[int, int],
     avcodec: tuple[int, int, int],
     avformat: tuple[int, int, int],
-    meets: bool,
     exiting: bool,
 ) -> None:
     text = path.read_text(encoding="utf-8")
@@ -142,7 +133,6 @@ def test_real_version_outputs(
     assert parsed.tool == tool
     assert parsed.version == token
     assert parsed.release == release
-    assert parsed.is_git_build is (release is None)
     assert parsed.series == series
     assert parsed.libraries["libavcodec"] == avcodec
     assert parsed.libraries["libavformat"] == avformat
@@ -155,7 +145,6 @@ def test_real_version_outputs(
         "libswscale",
         "libswresample",
     }
-    assert parsed.meets_minimum() is meets
     assert parsed.configuration[0].startswith("--prefix=")
     assert all(flag.startswith(("--enable-", "--disable-")) for flag in parsed.build_flags)
 
@@ -225,7 +214,6 @@ def test_version_tokens(
     assert parsed.version == token
     assert parsed.release == release
     assert parsed.series == series  # no library lines: a master build has no known series
-    assert parsed.meets_minimum() is (None if series is None else series >= (7, 0))
 
 
 def test_master_build_series_comes_from_the_library_majors() -> None:
@@ -237,7 +225,6 @@ def test_master_build_series_comes_from_the_library_majors() -> None:
     parsed = parse_ffmpeg_version(text)
     assert parsed is not None
     assert parsed.series == (6, 0)  # the older of the two decides
-    assert parsed.meets_minimum() is False
 
 
 # 60 and 63 are also pinned by the master-build tests (the series from the library majors).
@@ -278,5 +265,6 @@ def test_real_ffmpeg_and_ffprobe_versions_parse() -> None:
         parsed = parse_ffmpeg_version(out.stdout)
         assert parsed is not None, out.stdout[:200]
         assert parsed.tool == tool
-        assert parsed.meets_minimum() is True
+        assert parsed.series is not None
+        assert parsed.series >= MIN_FFMPEG
         assert "libavcodec" in parsed.libraries

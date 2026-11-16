@@ -211,7 +211,7 @@ row whose member a route reaches or that no longer exists
 | Member | Why no route reaches it |
 |--------|-------------------------|
 | `Reframe.create`, `Reframe.close`, `queue.close`, `power.close`, `tasks.close`, `tools.close`, `capabilities.close`, `sources.close`, `events.close` | The app's lifespan creates and closes the facade; a desktop client stops the server with `POST /api/system/shutdown` |
-| `tools.start`, `capabilities.start`, `tools.current`, `tools.discovering`, `capabilities.detecting`, `power.closed`, `events.closed` | Lifecycle state. `GET /api/system` waits for a running discovery; `GET /api/system/encoders` and the `tools.changed` / `capabilities.changed` events show the rest |
+| `tools.start`, `capabilities.start`, `tools.current`, `tools.discovering`, `capabilities.detecting`, `events.closed` | Lifecycle state. `GET /api/system` waits for a running discovery; `GET /api/system/encoders` and the `tools.changed` / `capabilities.changed` events show the rest |
 | `settings.path` | A server folder: a client cannot use it, and an answer must not show it (the queue and task routes read `Reframe.config_dir`, `data_dir` and `cache_dir` only to write them as `<config>`, `<data>`, `<cache>`) |
 | `Reframe.settings_snapshot` | The same settings as `settings.get` (`GET /api/settings`) |
 | `batch.definitions`, `capabilities.definitions` | The same definitions as `jobs.definitions` (`GET /api/definitions`) |
@@ -227,7 +227,7 @@ row whose member a route reaches or that no longer exists
 | `queue.owns_store`, `queue.busy`, `queue.store_busy` | The server's own state: it writes `server.json` only while it owns the store, `--owner-only` exits with 75 only while another process holds the lock, and idle exit waits while the queue is busy (S-7). A client reads `GET /api/queue` and the `job.state` events |
 | `queue.wait` | A client follows the `job.state` events or reads `GET /api/queue`; a request held open until jobs end would hold a connection for hours |
 | `power.schedule` | Only the queue starts a countdown: no client may shut down or suspend the server's machine on demand |
-| `power.countdown`, `power.executor` | The countdown's length and end are in `pending.seconds_left` and `pending.deadline`; the executor is the operating system's mechanism |
+| `power.executor` | The executor is the operating system's mechanism |
 | `tasks.limit`, `tasks.set_limit` | The concurrency per task kind is internal; no setting changes it |
 | `batch.merge` | `POST /api/batch/derive` with `base` covers *Apply to group*; a client copies sections itself |
 | `presets.rename` | `PUT /api/presets/{id}` with the new name |

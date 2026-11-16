@@ -23,7 +23,7 @@ from reframe.models import (
     VideoSettings,
     VideoStream,
 )
-from reframe.presets import DEFAULT_BUILTIN_ID, builtin_ids, builtin_presets
+from reframe.presets import DEFAULT_BUILTIN_ID, builtin_presets
 from reframe.validation.video import video_custom_param_override_issues
 
 BUILTIN_JSON = (
@@ -78,7 +78,7 @@ def test_ids_are_unique_stable_slugs() -> None:
     assert len(set(IDS)) == len(IDS)
     for preset_id in IDS:
         assert re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", preset_id), preset_id
-    assert builtin_ids() == frozenset(IDS)
+    assert {p.id for p in builtin_presets()} == set(IDS)
 
 
 def test_names_are_unique_without_case() -> None:

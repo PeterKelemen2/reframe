@@ -10,7 +10,6 @@ from reframe.tools.discovery import (
     ToolLocation,
     check_tool,
     discover_tools,
-    discover_tools_sync,
     locate_tools,
 )
 from reframe.tools.exitcodes import crashed
@@ -41,7 +40,6 @@ __all__ = [
     "check_tool",
     "crashed",
     "discover_tools",
-    "discover_tools_sync",
     "kill_leftovers",
     "kill_process_tree",
     "locate_tools",

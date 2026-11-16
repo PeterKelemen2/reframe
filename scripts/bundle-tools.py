@@ -12,6 +12,7 @@ layout is for, tool discovery must then find every bundled tool with its pinned 
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import posixpath
@@ -28,7 +29,7 @@ from pathlib import Path, PurePosixPath
 
 from reframe.models.tools import ToolOrigin, ToolStatus
 from reframe.tools import fetch
-from reframe.tools.discovery import ENV_VARS, LIBVA_DRIVER_DIRS, discover_tools_sync
+from reframe.tools.discovery import ENV_VARS, LIBVA_DRIVER_DIRS, discover_tools
 from reframe.tools.runner import CancelToken
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -347,7 +348,7 @@ def check_discovery(dest: Path, archives: Sequence[Archive]) -> None:
     """Tool discovery, as the installed app runs it on this computer, must find each tool of
     ``archives`` in ``dest`` with its pinned version. :raises FetchError:"""
     environ = {k: v for k, v in os.environ.items() if k not in ENV_VARS.values()}
-    found = discover_tools_sync(environ=environ, bundled_roots=[dest], search_path="")
+    found = asyncio.run(discover_tools(environ=environ, bundled_roots=[dest], search_path=""))
     problems = []
     for archive in archives:
         for name in FOLDER_TOOLS[archive.folder]:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import shlex
 import sys
@@ -17,7 +18,6 @@ from reframe.tools.discovery import (
     TOOL_NAMES,
     check_tool,
     discover_tools,
-    discover_tools_sync,
     locate_tools,
 )
 from reframe_testing import fake_tools as ft
@@ -149,10 +149,11 @@ async def test_a_bundled_build_is_reported_while_an_override_works(
     assert tools.ffprobe.bundled
 
 
-def test_no_bundled_build_is_reported_without_one(tmp_path: Path) -> None:
+@pytest.mark.anyio
+async def test_no_bundled_build_is_reported_without_one(tmp_path: Path) -> None:
     path_dir = tmp_path / "path"
     _fake(path_dir)
-    tools = discover_tools_sync(
+    tools = await discover_tools(
         environ=_env(), bundled_roots=[tmp_path / "no-root"], search_path=str(path_dir)
     )
     assert tools.ffmpeg.origin is ToolOrigin.PATH
@@ -176,15 +177,16 @@ async def test_bundled_wins_over_path(tmp_path: Path) -> None:
     assert tools.ffprobe.path == bundled.ffprobe
 
 
-def test_path_is_used_without_a_bundled_build(tmp_path: Path) -> None:
+@pytest.mark.anyio
+async def test_path_is_used_without_a_bundled_build(tmp_path: Path) -> None:
     path_dir = tmp_path / "path"
     on_path = _fake(path_dir)
-    tools = discover_tools_sync(
+    tools = await discover_tools(
         environ=_env(), bundled_roots=[tmp_path / "no-root"], search_path=str(path_dir)
     )
     assert tools.ffmpeg.origin is ToolOrigin.PATH
     assert tools.ffmpeg.path is not None
-    assert os.path.samefile(tools.ffmpeg.path, on_path.ffmpeg)
+    assert await asyncio.to_thread(os.path.samefile, tools.ffmpeg.path, on_path.ffmpeg)
     assert tools.ffprobe.origin is ToolOrigin.PATH
     assert tools.ffmpeg.env == {}  # LIBVA_DRIVERS_PATH only for the bundled build
 

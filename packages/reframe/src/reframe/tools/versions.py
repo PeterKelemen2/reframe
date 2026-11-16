@@ -54,10 +54,6 @@ class FfmpegVersion:
     """The library versions the binary runs with, by name."""
 
     @property
-    def is_git_build(self) -> bool:
-        return self.release is None
-
-    @property
     def release_text(self) -> str | None:
         if self.release is None:
             return None
@@ -81,11 +77,6 @@ class FfmpegVersion:
     def build_flags(self) -> list[str]:
         """The ``--enable-*`` / ``--disable-*`` options of the configuration."""
         return [a for a in self.configuration if a.startswith(("--enable-", "--disable-"))]
-
-    def meets_minimum(self, minimum: tuple[int, int] = MIN_FFMPEG) -> bool | None:
-        """True / False, or ``None`` when the version cannot be determined."""
-        series = self.series
-        return None if series is None else series >= minimum
 
 
 def parse_ffmpeg_version(text: str) -> FfmpegVersion | None:

@@ -6,9 +6,9 @@ published: the event bus puts it into a subscriber's stream when that subscriber
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Literal
 
-from pydantic import AwareDatetime, Field, TypeAdapter
+from pydantic import AwareDatetime, Field
 
 from reframe.models.base import NonNegativeInt, ReframeModel
 from reframe.models.capabilities import EncoderStatus
@@ -18,8 +18,6 @@ from reframe.models.text import DisplayText
 from reframe.models.tools import ToolSet
 
 __all__ = [
-    "EVENT_ADAPTER",
-    "EVENT_TYPES",
     "AppWarningEvent",
     "CapabilitiesChangedEvent",
     "Event",
@@ -186,11 +184,3 @@ Event = Annotated[
     | ResyncEvent,
     Field(discriminator="type"),
 ]
-
-#: Validates / serialises any :data:`Event` (``EVENT_ADAPTER.validate_json(text)``).
-EVENT_ADAPTER: TypeAdapter[Event] = TypeAdapter(Event)
-
-#: All event type strings, in the order of the union.
-EVENT_TYPES: tuple[str, ...] = tuple(
-    str(member.model_fields["type"].default) for member in get_args(get_args(Event)[0])
-)
