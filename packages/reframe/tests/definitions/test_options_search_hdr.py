@@ -16,7 +16,6 @@ from reframe.definitions import (
     describe_condition,
     effective_option,
     hdr_options,
-    lint_definitions,
     load_definitions,
     option_context,
     option_default,
@@ -35,6 +34,7 @@ from reframe.models import (
     VideoSettings,
     VideoStream,
 )
+from reframe_testing.definitions_lint import lint_definitions
 
 DEFS = load_definitions()
 X264, X265 = DEFS.video_encoders["libx264"], DEFS.video_encoders["libx265"]

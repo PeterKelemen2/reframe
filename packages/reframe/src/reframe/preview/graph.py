@@ -116,8 +116,6 @@ def job_video_graph(
     source: MediaSource,
     caps: CapabilitySnapshot,
     definitions: Definitions,
-    *,
-    tail: Sequence[str] = (),
 ) -> VideoGraph | None:
     """The job's video filter graph, as the command builder makes it, without subtitle burn-in.
     ``None`` for a copied video. Raises :class:`PlanError` like the builder (an unknown encoder,
@@ -143,7 +141,7 @@ def job_video_graph(
         filters=job.filters.root,
         geometry=geometry,
         scaler=job.dimensions.scaler,
-        tail=[f"format={pix_fmt}", *tail],
+        tail=[f"format={pix_fmt}"],
         definitions=definitions,
         available=filter_available(caps, definitions),
     )

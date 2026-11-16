@@ -3,13 +3,12 @@ The file-system reads go through :class:`NamingFs`, which tests replace."""
 
 from reframe.naming.fs import FileTimes, NamingFs, RealNamingFs
 from reframe.naming.parse import parse_name
-from reframe.naming.resolve import OVERRIDE_FIELDS, output_extension, resolve_output_name
+from reframe.naming.resolve import output_extension, resolve_output_name
 from reframe.naming.template import check_template
 from reframe.naming.value import render_value
 from reframe.naming.variables import VARIABLES
 
 __all__ = [
-    "OVERRIDE_FIELDS",
     "VARIABLES",
     "FileTimes",
     "NamingFs",

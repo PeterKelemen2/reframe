@@ -11,7 +11,9 @@ from pathlib import Path
 
 from reframe.mediatask import TaskFailed
 from reframe.models.media import AudioStream, MediaSource, SubtitleStream, VideoStream
-from reframe.tools import RunResult
+from reframe.models.tools import ToolInfo
+from reframe.tasks import TaskContext
+from reframe.tools import RunResult, run_streaming
 
 __all__ = [
     "PROGRESS_INTERVAL",
@@ -20,6 +22,7 @@ __all__ = [
     "fields",
     "find_stream",
     "number",
+    "run_scan",
     "stream_duration",
 ]
 
@@ -86,6 +89,27 @@ def check_run(result: RunResult, tool: str, path: Path) -> None:
         detail = _detail(result)
         suffix = f": {detail}" if detail else ""
         raise TaskFailed(f"{tool} failed on {path.name} (exit code {result.returncode}){suffix}")
+
+
+async def run_scan(
+    tool: ToolInfo,
+    argv: Callable[[str], list[str]],
+    path: Path,
+    task: TaskContext,
+    on_line: Callable[[str], None],
+) -> RunResult:
+    """Run ``tool`` with ``argv(program)``, feed its stdout lines to ``on_line``, and raise
+    :class:`TaskFailed` unless it exits cleanly."""
+    assert tool.path is not None  # require_tool returns found tools only
+    result = await run_streaming(
+        argv(str(tool.path)),
+        on_stdout_line=on_line,
+        on_stderr_line=None,
+        cancel=task.cancel,
+        extra_env=tool.env or None,
+    )
+    check_run(result, tool.name, path)
+    return result
 
 
 class ProgressReporter:

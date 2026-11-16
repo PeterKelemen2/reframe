@@ -472,8 +472,7 @@ async def test_the_scans_run_their_tools_with_the_tool_environment(
         seen.append((" ".join(argv[1:]), extra_env))
         return await run_streaming(argv, **kwargs)
 
-    for module in ("bitrate", "subtitles", "loudness"):
-        monkeypatch.setattr(f"reframe.analysis.{module}.run_streaming", spy)
+    monkeypatch.setattr("reframe.analysis.common.run_streaming", spy)
     fake_tools.set_scenario(
         ft.Scenario([ft.Rule(tool="ffprobe", actions=[ft.stdout(PACKETS)]),
                      ft.Rule(tool="ffmpeg", exit_code=1)])

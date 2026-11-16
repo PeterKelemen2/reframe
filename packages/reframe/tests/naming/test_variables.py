@@ -35,7 +35,6 @@ from reframe.models import (
 )
 from reframe.naming import VARIABLES, FileTimes, resolve_output_name
 from reframe.naming.context import audio_channels_label, hdr_label, resolution_label
-from reframe.naming.variables import HANDBRAKE_VARIABLES
 from reframe_testing.naming import FakeFs
 
 FILE = Path("/media/Hacksaw.Ridge.2016.2160p.UHD.BluRay.HEVC-GRP/hacksawridge.mkv")
@@ -61,7 +60,7 @@ def render(template: str, *, fs: FakeFs | None = None, **kwargs: Any) -> str:
 
 
 def test_there_are_17_handbrake_variables() -> None:
-    assert HANDBRAKE_VARIABLES == (
+    assert tuple(v.name for v in VARIABLES if v.group == "handbrake") == (
         "source",
         "title",
         "chapters",
@@ -93,7 +92,7 @@ def test_hb_source_is_the_chosen_name_source() -> None:
 
 def test_hb_title_is_the_file_index() -> None:
     assert render("{source}-{title}").endswith("-1")
-    assert render("{title:02}", title_index=3) == "03"
+    assert render("{title:02}") == "01"
 
 
 def test_hb_chapters() -> None:

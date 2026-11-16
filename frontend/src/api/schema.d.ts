@@ -2899,7 +2899,11 @@ export interface components {
          * @description When an option applies, e.g. ``rate_control == "bitrate"``.
          */
         Condition: {
-            /** Field */
+            /**
+             * Field
+             * @description A rule field such as ``rate_control``, or ``option:<key>`` for another option of the same
+             *     encoder.
+             */
             field: string;
             /**
              * Op

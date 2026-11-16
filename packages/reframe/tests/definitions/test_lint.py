@@ -7,8 +7,9 @@ from typing import Any
 
 import pytest
 
-from reframe.definitions import Definitions, lint_definitions, load_definitions
+from reframe.definitions import Definitions, load_definitions
 from reframe.definitions.loader import load_raw
+from reframe_testing.definitions_lint import lint_definitions
 
 
 def test_the_packaged_definitions_are_clean() -> None:

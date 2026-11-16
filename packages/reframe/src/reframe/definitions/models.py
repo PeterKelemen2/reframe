@@ -18,62 +18,6 @@ from reframe.models.base import ReframeModel
 from reframe.models.defaults import PassthruCodec
 from reframe.models.job import Container, FilterConfig, Mixdown, OptionValue, SubtitleFormat
 
-__all__ = [
-    "BITRATE_PLACEHOLDER",
-    "FILTER_IDS",
-    "FILTER_STAGES",
-    "OPTION_CATEGORIES",
-    "TRACK_FLAGS",
-    "AudioBitrateDef",
-    "AudioCodec",
-    "AudioEncoderDef",
-    "AudioQualityDef",
-    "BitDepth",
-    "BitrateLimits",
-    "BitrateMode",
-    "Choice",
-    "ChoiceSetting",
-    "CodecSupport",
-    "Condition",
-    "ContainerDef",
-    "Definitions",
-    "DerivedValue",
-    "EncoderDefault",
-    "EncoderFamily",
-    "EncoderOption",
-    "FastDecodeDef",
-    "FfmpegArg",
-    "FilterDef",
-    "FilterHelp",
-    "FilterId",
-    "FilterImplementation",
-    "FilterPreset",
-    "FilterTune",
-    "FixedDefault",
-    "HardwareSetup",
-    "MixdownDef",
-    "OperatingSystem",
-    "OptionDefault",
-    "OptionMapping",
-    "OptionType",
-    "PassthruCodecDef",
-    "PresetDefault",
-    "PrivateOpt",
-    "QualityBand",
-    "QualityMode",
-    "RateControlDef",
-    "SpeedCost",
-    "TrackFlag",
-    "TrackFlagDef",
-    "TwoPassDef",
-    "Vendor",
-    "VideoCodec",
-    "VideoEncoderDef",
-    "X26xParam",
-    "channels_mixdown",
-    "round_half_up",
-]
-
 EncoderFamily = Literal["software", "nvenc", "qsv", "amf", "vaapi"]
 """The picker group of an encoder. Only ``software`` is not hardware."""
 Vendor = Literal["nvidia", "intel", "amd"]
@@ -122,8 +66,6 @@ FILTER_IDS: tuple[FilterId, ...] = get_args(FilterId)
 FILTER_STAGES = ("crop", "scale", "format")
 """Stages of the fixed filter order that are not filters: crop, scale and the final pixel format
 (``HardwareSetup.filter_tail`` adds the hardware upload)."""
-
-BITRATE_PLACEHOLDER = "{kbps}"
 
 
 class Choice(ReframeModel):
@@ -203,10 +145,6 @@ class ChoiceSetting(ReframeModel):
     def get(self, value: str) -> Choice | None:
         return next((c for c in self.choices if c.value == value), None)
 
-    def default_for(self, bit_depth: int) -> str | None:
-        key: BitDepth = "10" if bit_depth == 10 else "8"
-        return self.default_by_depth.get(key, self.default)
-
 
 class FixedDefault(ReframeModel):
     kind: Literal["fixed"] = "fixed"
@@ -236,16 +174,13 @@ OptionDefault = Annotated[
     FixedDefault | PresetDefault | EncoderDefault, Field(discriminator="kind")
 ]
 
-ConditionField = str
-"""The field a condition reads: a name from ``CONDITION_FIELDS``, or ``option:<key>`` for another
-option of the same encoder."""
-CONDITION_FIELDS = ("rate_control", "two_pass", "bit_depth", "preset", "tune")
-
 
 class Condition(ReframeModel):
     """When an option applies, e.g. ``rate_control == "bitrate"``."""
 
-    field: ConditionField
+    field: str
+    """A rule field such as ``rate_control``, or ``option:<key>`` for another option of the same
+    encoder."""
     op: Literal["eq", "ne", "in", "not_in"] = "eq"
     value: OptionValue | list[OptionValue]
 

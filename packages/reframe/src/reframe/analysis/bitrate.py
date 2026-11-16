@@ -11,10 +11,10 @@ from pathlib import Path
 
 from reframe.analysis.common import (
     ProgressReporter,
-    check_run,
     fields,
     find_stream,
     number,
+    run_scan,
     stream_duration,
 )
 from reframe.mediatask import MediaTaskContext, TaskFailed, require_source, require_tool
@@ -28,7 +28,6 @@ from reframe.models.media import (
 )
 from reframe.probe import roles
 from reframe.tasks import TaskContext
-from reframe.tools import run_streaming
 
 __all__ = ["Packet", "PacketStats", "parse_packet", "scan", "scan_argv"]
 
@@ -164,15 +163,9 @@ async def scan(
         if duration and packet.time is not None and stats.first is not None:
             reporter.update(100.0 * (packet.time - stats.first) / duration, message)
 
-    assert ffprobe.path is not None
-    result = await run_streaming(
-        scan_argv(str(ffprobe.path), path, stream_index),
-        on_stdout_line=on_line,
-        on_stderr_line=None,
-        cancel=task.cancel,
-        extra_env=ffprobe.env or None,
+    await run_scan(
+        ffprobe, lambda program: scan_argv(program, path, stream_index), path, task, on_line
     )
-    check_run(result, "ffprobe", path)
     value = stats.bitrate(duration)
     bitrate = (
         BitrateInfo(value=value, source=BitrateSource.MEASURED)

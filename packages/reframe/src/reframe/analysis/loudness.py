@@ -10,14 +10,13 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-from reframe.analysis.common import ProgressReporter, check_run, find_stream, stream_duration
+from reframe.analysis.common import ProgressReporter, find_stream, run_scan, stream_duration
 from reframe.mediatask import MediaTaskContext, TaskFailed, require_source, require_tool
 from reframe.models.analysis import LoudnessMeasurement
 from reframe.models.media import AudioStream
 from reframe.queue.loudnorm import MeasureError, parse_blocks
 from reframe.queue.progress import ProgressParser
 from reframe.tasks import TaskContext
-from reframe.tools import run_streaming
 
 __all__ = ["KEYS", "measure_argv", "parse_measurement", "scan", "seconds"]
 
@@ -115,15 +114,13 @@ async def scan(
         if length:
             reporter.update(100.0 * block.out_time / length, message)
 
-    assert ffmpeg.path is not None
-    result = await run_streaming(
-        measure_argv(str(ffmpeg.path), path, stream_index, start, duration),
-        on_stdout_line=on_progress,
-        on_stderr_line=None,
-        cancel=task.cancel,
-        extra_env=ffmpeg.env or None,
+    result = await run_scan(
+        ffmpeg,
+        lambda program: measure_argv(program, path, stream_index, start, duration),
+        path,
+        task,
+        on_progress,
     )
-    check_run(result, "ffmpeg", path)
     if measured <= 0:
         # Nothing was decoded (a start after the end): loudnorm still prints -inf values.
         raise TaskFailed(

@@ -4,10 +4,10 @@ build does not list (``EncoderStatus``) are hidden. An empty list hides nothing.
 
 from __future__ import annotations
 
-from reframe.definitions.models import Choice, EncoderOption, OptionMapping, VideoEncoderDef
+from reframe.definitions.models import Choice, OptionMapping, VideoEncoderDef
 from reframe.models.capabilities import EncoderStatus
 
-__all__ = ["mapping_supported", "supported_options", "supported_presets"]
+__all__ = ["mapping_supported", "supported_presets"]
 
 
 def mapping_supported(
@@ -23,13 +23,6 @@ def mapping_supported(
     if mapping.kind == "x26x_param":
         return encoder.params_arg is not None and encoder.params_arg.lstrip("-") in known
     return True
-
-
-def supported_options(
-    encoder: VideoEncoderDef, status: EncoderStatus | None
-) -> list[EncoderOption]:
-    """``encoder.options`` without the options this build does not support."""
-    return [o for o in encoder.options if mapping_supported(encoder, o.mapping, status)]
 
 
 def supported_presets(encoder: VideoEncoderDef, status: EncoderStatus | None) -> list[Choice]:

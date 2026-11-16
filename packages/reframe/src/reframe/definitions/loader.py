@@ -20,8 +20,6 @@ def _data() -> Traversable:
 
 def _read(name: str) -> dict[str, Any]:
     data = _data() / name
-    if not data.is_file():
-        return {}
     with data.open("rb") as f:
         return tomllib.load(f)
 
@@ -29,8 +27,6 @@ def _read(name: str) -> dict[str, Any]:
 def _option_sets() -> dict[str, list[dict[str, Any]]]:
     folder = _data() / "options"
     sets: dict[str, list[dict[str, Any]]] = {}
-    if not folder.is_dir():
-        return sets
     for entry in sorted(folder.iterdir(), key=lambda e: e.name):
         if not entry.name.endswith(".toml"):
             continue
