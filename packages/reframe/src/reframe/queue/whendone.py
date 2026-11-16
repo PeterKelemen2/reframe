@@ -16,12 +16,12 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import Literal
 
 from reframe.events import EventBus
 from reframe.models.events import AppWarningEvent, NotificationEvent, PowerAction
 from reframe.models.queue import JobState, QueueJob
 from reframe.models.settings import WhenDone
-from reframe.platform.notify import notify
 from reframe.platform.power import PowerService
 from reframe.queue.errors import printable
 
@@ -79,22 +79,32 @@ class WhenDoneActions:
         source = Path(job.settings.source.path).name
         if state is JobState.DONE:
             path = output or job.output_path or job.settings.output.path
-            event = notify(
-                self._events,
+            event = self._notify(
                 "Job done",
                 printable(path.name if path is not None else source),
                 level="success",
                 job_id=job.id,
             )
         else:
-            event = notify(
-                self._events,
+            event = self._notify(
                 "Job failed",
                 printable(f"{source}: {error}" if error else source),
                 level="error",
                 job_id=job.id,
             )
         self._notified += 1
+        return event
+
+    def _notify(
+        self,
+        title: str,
+        message: str,
+        *,
+        level: Literal["info", "success", "warning", "error"],
+        job_id: str | None = None,
+    ) -> NotificationEvent:
+        event = NotificationEvent(title=title, message=message, level=level, job_id=job_id)
+        self._events.publish(event)
         return event
 
     def count(self, state: JobState) -> None:
@@ -116,8 +126,7 @@ class WhenDoneActions:
         if action == "notify":
             if done + failed == 1 and notified == 1:
                 return  # the job's own notification says the same
-            notify(
-                self._events,
+            self._notify(
                 "Queue finished",
                 text + ".",
                 level="warning" if failed else "success",

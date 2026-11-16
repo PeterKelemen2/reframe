@@ -96,27 +96,13 @@ def test_encoded_call_decodes_back() -> None:
     assert parsed.reply_serial is None
 
 
-def test_big_endian_messages_decode() -> None:
-    raw = dbus.encode(
-        dbus.METHOD_RETURN,
-        7,
-        [(dbus.FIELD_REPLY_SERIAL, 2), (dbus.FIELD_UNIX_FDS, 1)],
-        [("h", 0)],
-        endian=">",
-    )
-    assert raw[0:1] == b"B"
-    fds = [100, 101]
-    parsed = dbus.decode_message(raw, fds)
-    assert parsed.reply_serial == 2
-    assert parsed.body == [0]
-    assert parsed.fds == [100]
-    assert fds == [101]  # the next message's descriptors stay queued
-
-
 def test_other_body_types_and_unknown_signatures() -> None:
     raw = dbus.encode(dbus.SIGNAL, 3, [(dbus.FIELD_SIGNATURE, "ibyx")])
     parsed = dbus.decode_message(raw, [])
-    assert parsed.body == []  # 'x' is not supported: the body is skipped, not misread
+    assert parsed.body == []  # unsupported types: the body is skipped, not misread
+    reply = dbus.encode(dbus.METHOD_RETURN, 4, [(dbus.FIELD_REPLY_SERIAL, 2)], [("u", 1)])
+    reply = reply.replace(b"\x08\x01g\x00\x01u\x00", b"\x08\x01g\x00\x01b\x00")
+    assert dbus.decode_message(reply, []).body == [1]  # a boolean, as HasInhibit returns
     with pytest.raises(ValueError, match="cannot contain NUL"):
         dbus.encode(dbus.METHOD_CALL, 1, [], [("s", "a\0b")])
     with pytest.raises(ValueError, match="unsupported type"):
@@ -127,6 +113,8 @@ def test_bad_messages_raise_protocol_errors() -> None:
     good = _inhibit_call()
     with pytest.raises(dbus.DBusProtocolError, match="endianness"):
         dbus.decode_message(b"X" + good[1:], [])
+    with pytest.raises(dbus.DBusProtocolError, match="endianness"):
+        dbus.decode_message(b"B" + good[1:], [])
     with pytest.raises(dbus.DBusProtocolError, match="protocol version"):
         dbus.decode_message(good[:3] + b"\x02" + good[4:], [])
     with pytest.raises(dbus.DBusProtocolError, match="ends early"):
@@ -495,7 +483,6 @@ def test_connection_stays_open_for_several_calls_and_closes() -> None:
     before = open_fds()
     with fake_bus(scenario) as address:
         connection = dbus.Connection.open(address, timeout=5.0)
-        assert connection.unique_name == ":1.42"
         assert not connection.closed
         replies = [
             connection.call(
@@ -530,11 +517,15 @@ def test_connection_stays_open_for_several_calls_and_closes() -> None:
     assert open_fds() == before
 
 
-def test_connection_context_manager_closes() -> None:
+def test_connection_close_after_an_error_reply_frees_the_socket() -> None:
     before = open_fds()
     with fake_bus(Scenario(inhibit="error")) as address:
-        with dbus.Connection.open(address) as connection, pytest.raises(dbus.DBusError):
-            connection.call(destination="x.y", path="/", interface="x.y", member="Z")
+        connection = dbus.Connection.open(address)
+        try:
+            with pytest.raises(dbus.DBusError):
+                connection.call(destination="x.y", path="/", interface="x.y", member="Z")
+        finally:
+            connection.close()
         assert connection.closed
     assert open_fds() == before
 

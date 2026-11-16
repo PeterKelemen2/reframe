@@ -64,7 +64,7 @@ Linux and Windows.
 ```python
 async def run(argv: Sequence[str], *, timeout: float, cancel: CancelToken | None = None,
               max_output: int = 16 * 2**20, cwd: Path | None = None) -> RunResult
-async def run_streaming(argv, *, on_stdout_line, on_stderr_line, cancel, timeout=None) -> RunResult
+async def run_streaming(argv, *, on_stdout_line, on_stderr_line, cancel) -> RunResult  # no timeout: cancel stops it
 ```
 
 - [ ] `run` returns `RunResult(returncode, stdout, stderr, duration, timed_out, cancelled)`. It

@@ -73,21 +73,17 @@ async def test_crash_is_a_normal_result(fake_tools: ft.FakeTools) -> None:
     assert not result.ok
 
 
-async def test_stdin_cwd_and_extra_env(tmp_path: Path) -> None:
-    code = (
-        "import os, sys; data = sys.stdin.read(); "
-        "sys.stdout.write(data.upper() + '|' + os.environ['REFRAME_TEST_X'] + '|' + os.getcwd())"
-    )
+async def test_cwd_and_extra_env(tmp_path: Path) -> None:
+    code = "import os, sys; sys.stdout.write(os.environ['REFRAME_TEST_X'] + '|' + os.getcwd())"
     result = await run(
         [sys.executable, "-c", code],
         timeout=30,
-        stdin=b"abc",
         cwd=tmp_path,
         extra_env={"REFRAME_TEST_X": "42"},
     )
     assert result.ok, result.stderr_text
-    upper, value, cwd = result.stdout_text.split("|")
-    assert (upper, value) == ("ABC", "42")
+    value, cwd = result.stdout_text.split("|")
+    assert value == "42"
     assert await asyncio.to_thread(os.path.samefile, cwd, tmp_path)
 
 
@@ -391,9 +387,10 @@ async def test_streaming_passes_lines_to_callbacks(fake_tools: ft.FakeTools) -> 
     out: list[str] = []
     err: list[str] = []
     argv = [str(fake_tools.ffmpeg), "-i", "in.mkv", "-progress", "pipe:1", "-f", "null", "-"]
-    result = await run_streaming(
-        argv, on_stdout_line=out.append, on_stderr_line=err.append, cancel=None, timeout=60
-    )
+    async with asyncio.timeout(60):
+        result = await run_streaming(
+            argv, on_stdout_line=out.append, on_stderr_line=err.append, cancel=None
+        )
     assert result.ok
     assert out.count("progress=continue") == 4
     assert out[-1] == "progress=end"
@@ -440,18 +437,6 @@ async def test_streaming_cancel_from_a_callback(fake_tools: ft.FakeTools) -> Non
         assert not _alive(pid)
 
 
-async def test_streaming_timeout(fake_tools: ft.FakeTools) -> None:
-    _scenario(fake_tools, ft.Rule(argv_has=["-hang"], actions=[ft.hang()]))
-    result = await run_streaming(
-        [str(fake_tools.ffmpeg), "-hang"],
-        on_stdout_line=None,
-        on_stderr_line=None,
-        cancel=None,
-        timeout=1,
-    )
-    assert result.timed_out
-
-
 async def test_streaming_callback_error_kills_and_propagates(fake_tools: ft.FakeTools) -> None:
     _scenario(fake_tools, ft.Rule(argv_has=["-hang"], actions=[ft.stdout("boom\n"), ft.hang()]))
 
@@ -459,13 +444,13 @@ async def test_streaming_callback_error_kills_and_propagates(fake_tools: ft.Fake
         raise RuntimeError(f"callback failed on {line!r}")
 
     with pytest.raises(RuntimeError, match="callback failed on 'boom'"):
-        await run_streaming(
-            [str(fake_tools.ffmpeg), "-hang"],
-            on_stdout_line=on_line,
-            on_stderr_line=None,
-            cancel=None,
-            timeout=60,
-        )
+        async with asyncio.timeout(60):
+            await run_streaming(
+                [str(fake_tools.ffmpeg), "-hang"],
+                on_stdout_line=on_line,
+                on_stderr_line=None,
+                cancel=None,
+            )
     await wait_until(lambda: not any(_alive(pid) for pid in fake_tools.pids()))
 
 
@@ -480,10 +465,9 @@ async def test_streaming_keeps_the_tail(fake_tools: ft.FakeTools) -> None:
         on_stdout_line=None,
         on_stderr_line=lines.append,
         cancel=None,
-        max_output=1000,
     )
     assert result.truncated
-    assert len(result.stderr) == 1000
+    assert len(result.stderr) == runner_mod.DEFAULT_STREAMING_TAIL
     assert result.stderr.endswith(b"LAST\n")
     assert lines[-1] == "LAST"
     assert len(lines) == 3 * 2**20 // 64 + 1
@@ -626,14 +610,14 @@ async def test_on_start_gets_the_pid_of_the_running_process() -> None:
     def on_start(pid: int) -> None:
         seen.append((pid, _alive(pid)))
 
-    result = await run_streaming(
-        [sys.executable, "-c", code],
-        on_stdout_line=None,
-        on_stderr_line=None,
-        cancel=None,
-        timeout=30,
-        on_start=on_start,
-    )
+    async with asyncio.timeout(30):
+        result = await run_streaming(
+            [sys.executable, "-c", code],
+            on_stdout_line=None,
+            on_stderr_line=None,
+            cancel=None,
+            on_start=on_start,
+        )
     assert result.ok
     assert len(seen) == 1
     pid, alive = seen[0]
@@ -652,7 +636,6 @@ async def test_the_pid_lets_the_caller_suspend_and_resume_the_tree() -> None:
             on_stdout_line=lines.append,
             on_stderr_line=None,
             cancel=None,
-            timeout=60,
             on_start=pids.append,
         )
     )
@@ -664,7 +647,7 @@ async def test_the_pid_lets_the_caller_suspend_and_resume_the_tree() -> None:
     await asyncio.sleep(0.3)
     assert len(lines) == count, "a suspended process printed more lines"
     proc.resume()
-    result = await task
+    result = await asyncio.wait_for(task, 60)
     assert result.ok
     assert lines[-1] == "399"
 

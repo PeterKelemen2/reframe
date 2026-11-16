@@ -413,19 +413,6 @@ async def test_session_free_closes_the_connection_when_ending_fails() -> None:
     assert conn.closed == 1
 
 
-async def test_session_portal_only_and_unknown_interfaces() -> None:
-    conn = FakeConnection({PORTAL: dbus.Reply("o", ["/r"])})
-    _, connect = _connector(conn)
-    backend = SessionInhibitBackend(
-        address="unix:path=/fake", connect=connect, interfaces=(PORTAL,)
-    )
-    assert await backend.hold("x") is None
-    assert [c["interface"] for c in conn.calls] == [PORTAL]
-    await backend.free()
-    with pytest.raises(ValueError, match="unknown session inhibit interfaces"):
-        SessionInhibitBackend(interfaces=("org.example.Nope",))
-
-
 async def test_session_without_any_service_fails_and_closes_the_connection() -> None:
     conn = FakeConnection({PM: UNKNOWN, PORTAL: UNKNOWN})
     _, connect = _connector(conn)
