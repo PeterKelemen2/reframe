@@ -88,6 +88,7 @@ Estimated total (after verify): about -180 Python source lines (plus -17 TOML li
 - Confidence: high
 - Verdict: ADJUSTED (item 4: the tests call `supported_options` five times, lines 112,113,119,130,131, plus the docstring at line 1, and decision 0008:203 names it; item 2: the docstring names `CONDITION_FIELDS`, which NDP-02 moves; item 8: plan row 03:611 named; every other item re-checked with a repository-wide search and holds)
 - Orchestrator: Tier A, work package Q-6.4 (see ../plan.md).
+- Note (Q-6.4): item 2 moved a comment into the docstring of `Condition.field`; `Condition` is in the API, so the OpenAPI description of that field and `frontend/src/api/schema.d.ts` changed (descriptions only; D-28, review RA-1).
 
 ### NDP-04: Three shipped model fields that are derived or never read (OpenAPI touched)
 - Kind: model-redundancy

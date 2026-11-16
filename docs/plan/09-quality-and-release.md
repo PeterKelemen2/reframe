@@ -135,25 +135,25 @@ has its row.
 
 Tier A (before v1):
 
-- [ ] **Q-6.1** Test module loaders (X-04). Done when: the batch and validation tests pass, also
+- [x] **Q-6.1** Test module loaders (X-04). Done when: the batch and validation tests pass, also
       one file run alone, with the same test count.
-- [ ] **Q-6.2** Shared test helpers (MOD-08, NDP-05, PRB-07, SRV-05, TP-04). Done when: the test
+- [x] **Q-6.2** Shared test helpers (MOD-08, NDP-05, PRB-07, SRV-05, TP-04). Done when: the test
       count of `packages/` is unchanged and the real-bus sleep test was run once.
-- [ ] **Q-6.3** CLI (CLI-01, -02, -04, -05, -06, -07, -08, -10, -11, -12). Done when: every CLI
+- [x] **Q-6.3** CLI (CLI-01, -02, -04, -05, -06, -07, -08, -10, -11, -12). Done when: every CLI
       output test passes unchanged and the `--help` texts are the same.
-- [ ] **Q-6.4** Definitions and analysis (NDP-01, -02, -03, -06, -08). Done when: the linter
+- [x] **Q-6.4** Definitions and analysis (NDP-01, -02, -03, -06, -08). Done when: the linter
       runs from `testing/reframe_testing` and the shipped package no longer contains it.
-- [ ] **Q-6.5** Validation (VAL-01, -04, -05, -08). Done when: the template, custom-parameter and
+- [x] **Q-6.5** Validation (VAL-01, -04, -05, -08). Done when: the template, custom-parameter and
       agreement tests pass and every fix target is unchanged.
-- [ ] **Q-6.6** Batch (BAT-07, -08, -09, -10, -11). Done when: the anime-season snapshot, the
+- [x] **Q-6.6** Batch (BAT-07, -08, -09, -10, -11). Done when: the anime-season snapshot, the
       batch property tests and the CLI batch tests pass unchanged.
-- [ ] **Q-6.7** Tools discovery and small dead members (TP-02, TP-07, MOD-06). Done when:
+- [x] **Q-6.7** Tools discovery and small dead members (TP-02, TP-07, MOD-06). Done when:
       `python -m reframe.tools` prints the same result.
-- [ ] **Q-6.8** Probe (PRB-04, -09, -10, -13). Done when: the JSON Schema snapshot does not
+- [x] **Q-6.8** Probe (PRB-04, -09, -10, -13). Done when: the JSON Schema snapshot does not
       change and the folder task test passes.
-- [ ] **Q-6.9** Queue, jobs and tasks (QJ-04, -05, -06, -08, -09, -11, TP-08). Done when: the
+- [x] **Q-6.9** Queue, jobs and tasks (QJ-04, -05, -06, -08, -09, -11, TP-08). Done when: the
       queue's fault and stop tests pass and `scripts/gen-api.sh --check` shows no change.
-- [ ] **Q-6.10** Command, capabilities and shared tables (X-01, X-05, X-06, CMD-02, -04, -05,
+- [x] **Q-6.10** Command, capabilities and shared tables (X-01, X-05, X-06, CMD-02, -04, -05,
       -06). Done when: the 73 plan snapshots pass without an update.
 
 Tier B (if there is time before v1; otherwise after it):

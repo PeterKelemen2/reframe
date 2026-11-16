@@ -211,7 +211,7 @@ after v1 and does not block the release
 
 ### Release checklist
 
-- [ ] The Tier A steps of `Q-6` are done.
+- [x] The Tier A steps of `Q-6` are done.
 - [ ] Every "Must-have for v1" item in [01-scope.md](01-scope.md#must-have-for-v1) is checked off
       against its demo.
 - [ ] Docker image published. The compose example works with VAAPI, and with NVENC when an

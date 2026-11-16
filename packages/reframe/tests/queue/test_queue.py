@@ -811,7 +811,7 @@ async def test_a_store_that_cannot_be_written(harness: Harness) -> None:
     h = harness
     (h.tmp / "data").write_text("a file where the data folder should be")
     added = await h.queue.add(h.job())
-    assert added.state is JobState.WAITING  # the queue goes on in a private store in memory
+    assert added.state is JobState.WAITING  # the queue goes on in a read-only store
     [warning] = h.of_type("app.warning")
     assert warning.code == "queue.unreadable"  # type: ignore[union-attr]
     assert h.queue._store.read_only

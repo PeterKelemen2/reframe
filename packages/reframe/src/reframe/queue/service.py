@@ -582,8 +582,8 @@ class QueueService:
 
         The process that holds the lock loads the store. Running and paused jobs become
         interrupted, and their leftover files are removed in the background. A process that
-        cannot take the lock keeps its jobs in a private store in memory and sends one
-        ``app.warning``. Blocking, once: the lock is taken without waiting, and the store is a
+        cannot take the lock keeps its jobs in a read-only store that is never saved and sends
+        one ``app.warning``. Blocking, once: the lock is taken without waiting, and the store is a
         small local file.
         """
         if self._opened or self._closed:
