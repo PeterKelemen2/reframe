@@ -1,4 +1,4 @@
-"""``Reframe.batch``: group files, derive and merge templates, resolve a template in every file,
+"""``Reframe.batch``: group files, derive templates, resolve a template in every file,
 and save a group template as a preset.
 
 The rest of :mod:`reframe.batch` is pure. This module is the one place that probes, names and
@@ -22,15 +22,13 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Protocol, cast
 
-from reframe.batch.derive import derive_template, merge_template
+from reframe.batch.derive import derive_template
 from reframe.batch.grouping import episode_key, episode_labels, group_sources
 from reframe.batch.resolve import matrix_columns, resolve, row_status
 from reframe.jobs import file_key, probe_issue
 from reframe.models.batch import (
-    BatchGroup,
     BatchGrouping,
     BatchResolution,
-    GroupMember,
     MatchLevel,
     Resolution,
 )
@@ -124,18 +122,6 @@ def _keyed(probed: Sequence[tuple[Path, _Probed]]) -> list[tuple[str, Path, _Pro
     return [(file_key(path), path, found) for path, found in probed]
 
 
-def _ordered(
-    probed: Sequence[tuple[Path, _Probed]], members: Sequence[GroupMember]
-) -> list[tuple[str, Path, _Probed]]:
-    """:func:`_keyed` ``probed`` in the group's order (``members``, by file), else in episode
-    order. Blocking: the episode parser and the file keys stat the files, so this runs in a
-    worker thread."""
-    rank = {file_key(m.path): n for n, m in enumerate(members)}
-    return sorted(
-        _keyed(probed), key=lambda item: (rank.get(item[0], len(rank)), episode_key(item[1]))
-    )
-
-
 class BatchService:
     """Batch / season mode.
 
@@ -223,12 +209,6 @@ class BatchService:
             base = base.model_copy(update={"naming": self._settings().output.naming})
         return derive_template(job, source, sections, base=base)
 
-    def merge(
-        self, base: JobTemplate, incoming: JobTemplate, sections: Collection[Section]
-    ) -> JobTemplate:
-        """``base`` with ``incoming``'s ``sections``."""
-        return merge_template(base, incoming, sections)
-
     def _template(
         self, template: JobTemplate | str | None
     ) -> tuple[JobTemplate, list[ValidationIssue]]:
@@ -258,7 +238,6 @@ class BatchService:
         sources: Sequence[str | os.PathLike[str] | MediaSource],
         *,
         overrides: Mapping[str, Sequence[JsonPatchOp]] | None = None,
-        group: BatchGroup | None = None,
         check: Callable[[JobSettings], None] | None = None,
     ) -> BatchResolution:
         """The resolution matrix of ``template`` (a template, a preset name or id; ``None``:
@@ -275,28 +254,23 @@ class BatchService:
         settings = self._settings()
         naming = chosen.naming if chosen.naming is not None else settings.output.naming
         probed = await self._probe_all(sources)
-        members = group.members if group is not None else []
-
-        def prepare() -> tuple[_Patches, dict[str, list[str]], list[tuple[str, Path, _Probed]]]:
-            near = {file_key(m.path): m.differences for m in members if m.match == "near"}
-            return _patches(overrides), near, _ordered(probed, members)
-
-        patches, near, ordered = await asyncio.to_thread(prepare)
+        # The episode parser and the file keys stat the files.
+        patches, ordered = await asyncio.to_thread(
+            lambda: (_patches(overrides), sorted(_keyed(probed), key=lambda i: episode_key(i[1])))
+        )
         rows: list[Resolution] = []
         for key, path, found in ordered:
             if isinstance(found, ProbeError):
                 issues = [*template_issues, probe_issue(found)]
                 rows.append(Resolution(path=path, issues=issues, status="error"))
                 continue
-            first = list(template_issues)
-            if key in near:
-                first.append(_near_issue(near[key]))
-            row, _ = await self._row(chosen, found, patches.get(key), naming, first, check)
+            row, _ = await self._row(
+                chosen, found, patches.get(key), naming, template_issues, check
+            )
             rows.append(row)
         rows, batch_issues = await asyncio.to_thread(_collisions, rows)
         columns = await asyncio.to_thread(matrix_columns, chosen, languages=settings.languages)
         return BatchResolution(
-            group=group,
             columns=columns,
             rows=rows,
             issues=[*template_issues, *(issue for _, issue in batch_issues)],
@@ -406,13 +380,7 @@ class BatchService:
         languages = self._settings().languages
 
         def resolved() -> tuple[Resolution, JobSettings]:
-            resolution = resolve(
-                template,
-                source,
-                override,
-                languages=languages,
-                container_codecs=False,  # the validation below reports the codecs
-            )
+            resolution = resolve(template, source, override, languages=languages)
             assert resolution.job is not None  # resolve always makes a job
             if check is not None:
                 check(resolution.job)

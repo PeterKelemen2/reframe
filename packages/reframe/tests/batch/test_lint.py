@@ -9,7 +9,13 @@ from typing import Any
 import pytest
 
 from reframe.batch import lint_defaults, resolve_tracks
-from reframe.batch.lint import describe_rule, lint_track_rules, rule_covers
+from reframe.batch.lint import (
+    container_codec_issues,
+    describe_rule,
+    lint_track_rules,
+    rule_covers,
+)
+from reframe.definitions import load_definitions
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     AudioCodecRule,
@@ -64,17 +70,26 @@ def template_of(audio_defaults: AudioDefaults, container: Container = "mkv") -> 
     return JobTemplate(output=OutputOptions(container=container), audio_defaults=audio_defaults)
 
 
+def lint(template: JobTemplate) -> list[ValidationIssue]:
+    """The defaults lint and the container's codec check, as the preview shows them."""
+    defaults, container = template.audio_defaults, template.output.container
+    return [
+        *lint_defaults(defaults, container=container),
+        *container_codec_issues(defaults, container, load_definitions()),
+    ]
+
+
 def check_fixes(template: JobTemplate) -> list[ValidationIssue]:
     """Apply every fix of every issue: its issue is gone and no error is new. A fix that removes
     a rule renumbers the later rules, so it is checked by code: one issue of that code fewer."""
-    issues = lint_defaults(template.audio_defaults, container=template.output.container)
+    issues = lint(template)
     errors = {(i.code, i.path) for i in issues if i.severity is Severity.ERROR}
     for issue in issues:
         for fix in issue.fixes:
             assert fix.target == "template"
             data = apply_patch(template.model_dump(mode="json"), fix.patch)
             fixed = JobTemplate.model_validate(data)
-            after = lint_defaults(fixed.audio_defaults, container=fixed.output.container)
+            after = lint(fixed)
             if any(isinstance(op, RemoveOp) for op in fix.patch):
                 before = [i for i in issues if i.code == issue.code]
                 assert len([i for i in after if i.code == issue.code]) < len(before), fix.label
@@ -100,7 +115,7 @@ def test_clean_defaults() -> None:
 
 @pytest.mark.parametrize("preset", builtin_presets(), ids=lambda p: p.id)
 def test_builtin_presets_are_clean(preset: Any) -> None:
-    assert lint_defaults(preset.audio_defaults, container=preset.output.container) == []
+    assert lint(preset) == []
 
 
 @pytest.mark.parametrize(
@@ -312,8 +327,9 @@ def test_codec_not_in_container() -> None:
         "Switch to Matroska (MKV)",
         "Switch to MP4",
     ]
-    assert lint_defaults(bad, container="mkv") == []
-    assert lint_defaults(bad, container="webm", container_codecs=False) == []
+    assert container_codec_issues(bad, "mkv", load_definitions()) == []
+    # Validation reports these codecs, so the lint never does.
+    assert lint_defaults(bad, container="webm") == []
 
 
 EXAMPLE = defaults(

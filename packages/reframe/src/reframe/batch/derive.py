@@ -1,4 +1,4 @@
-"""Deriving a template from one file's job, and merging templates into a group's template.
+"""Deriving a group's template from one file's job.
 
 Sections carry the template fields of the job, but not its per-file parts: a manual crop is
 ``fixed`` for every file and an automatic one is detected per file, and the video track's
@@ -36,36 +36,11 @@ from reframe.models.template import (
 )
 
 __all__ = [
-    "SECTIONS",
-    "SECTION_FIELDS",
     "as_template",
     "derive_selector",
     "derive_template",
-    "merge_template",
 ]
 
-#: Every section, in display order.
-SECTIONS: tuple[TemplateSection, ...] = (
-    "dimensions",
-    "filters",
-    "video",
-    "audio",
-    "subtitles",
-    "chapters",
-    "tags",
-    "naming",
-)
-#: The template fields of each section.
-SECTION_FIELDS: dict[TemplateSection, tuple[str, ...]] = {
-    "dimensions": ("dimensions", "crop_policy"),
-    "filters": ("filters",),
-    "video": ("video",),
-    "audio": ("audio_rules", "audio_defaults"),
-    "subtitles": ("subtitle_rules", "subtitle_defaults"),
-    "chapters": ("chapters", "chapter_name_policy"),
-    "tags": ("tags",),
-    "naming": ("naming",),
-}
 _PRESET_ONLY = frozenset(Preset.model_fields) - frozenset(JobTemplate.model_fields)
 _FLAGS = ("default", "forced", "commentary", "hearing_impaired", "visual_impaired", "original")
 
@@ -75,21 +50,6 @@ def as_template(template: JobTemplate) -> JobTemplate:
     fields are left out, unknown fields are kept."""
     data = template.model_dump(mode="json", exclude=set(_PRESET_ONLY))
     return JobTemplate.model_validate(data)
-
-
-def merge_template(
-    base: JobTemplate, incoming: JobTemplate, sections: Collection[TemplateSection]
-) -> JobTemplate:
-    """``base`` with the fields of ``incoming``'s ``sections``. The result is a plain template
-    (see :func:`as_template`); neither input changes."""
-    copied = incoming.model_copy(deep=True)
-    update = {
-        name: getattr(copied, name)
-        for section in SECTIONS
-        if section in sections
-        for name in SECTION_FIELDS[section]
-    }
-    return as_template(base).model_copy(update=update)
 
 
 def derive_selector(

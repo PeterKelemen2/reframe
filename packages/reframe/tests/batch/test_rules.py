@@ -11,7 +11,6 @@ import pytest
 
 from reframe.batch import (
     compile_defaults,
-    draft_tracks,
     resolve_tracks,
     rule_label,
 )
@@ -432,7 +431,7 @@ def test_presets_resolve_as_the_selection_stage(languages: LanguageSettings | No
                     preset.audio_defaults, container=container, definitions=DEFS, used=used
                 ),
             ]
-            draft = draft_tracks(source, preset, definitions=DEFS, languages=languages)
+            draft = resolve_tracks(preset, source, definitions=DEFS, languages=languages).draft
             assert draft.audio == audio.outputs, (path.name, preset.id)
             assert draft.subtitles == subtitles.outputs, (path.name, preset.id)
             assert draft.decisions == audio.decisions

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from reframe.batch import draft_tracks
+from reframe.batch import resolve_tracks
 from reframe.jobs import (
     JobService,
     draft_from_preset,
@@ -25,6 +25,7 @@ from reframe.models import (
     AudioCodecRule,
     EncodePlan,
     JobDraft,
+    JobSettings,
     NamingOptions,
     Severity,
     TrackDraft,
@@ -88,7 +89,7 @@ async def test_draft_with_the_default_preset(movie: tuple[Stubs, Path]) -> None:
     assert job.chapters.enabled == default.chapters.enabled
     assert job.tags == default.tags
     # Tracks: every audio track through the rules, every subtitle copied.
-    tracks = draft_tracks(source, default)
+    tracks = resolve_tracks(default, source).draft
     assert job.audio == tracks.audio
     assert job.subtitles == tracks.subtitles
     assert draft.decisions == tracks.decisions
@@ -335,6 +336,25 @@ async def test_validate_waits_for_detection(movie: tuple[Stubs, Path]) -> None:
     assert "encoder.checking" not in codes(draft.issues)
 
 
+async def test_a_given_validator_replaces_the_services_validation(
+    movie: tuple[Stubs, Path],
+) -> None:
+    stubs, file = movie
+    stubs.snapshot = checking()
+    owner = ValidationIssue(severity=Severity.WARNING, code="owner.says", path="", message="")
+    validated: list[JobSettings] = []
+
+    async def validate(job: JobSettings) -> list[ValidationIssue]:
+        validated.append(job)
+        return [owner]
+
+    draft = await service(stubs).draft(file, validate=validate)
+    assert isinstance(draft, JobDraft)
+    assert validated == [draft.job]
+    assert draft.issues[-1] == owner
+    assert stubs.waits == 0
+
+
 async def test_validate_wait_is_bounded(movie: tuple[Stubs, Path]) -> None:
     stubs, file = movie
     stubs.snapshot = checking()
@@ -522,7 +542,7 @@ async def test_a_codec_the_container_cannot_hold_is_one_issue(tmp_path: Path) ->
     codes = [issue.code for issue in draft.issues]
     assert "container.codec_unsupported" in codes
     assert "defaults.codec_not_in_container" not in codes
-    # The pure engine without validation still reports it.
+    # The preview, which does not validate, reports it.
     explained = await jobs.explain(file, webm)
     assert isinstance(explained, TrackDraft)
     assert "defaults.codec_not_in_container" in [i.code for i in explained.issues]

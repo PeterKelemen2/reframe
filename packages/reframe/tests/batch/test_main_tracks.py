@@ -12,7 +12,7 @@ from typing import Literal
 
 import pytest
 
-from reframe.batch import draft_tracks, select_tracks
+from reframe.batch import resolve_tracks, select_tracks
 from reframe.batch.explain import subtitle_stage
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
@@ -52,7 +52,7 @@ def test_a_listed_audio_description_is_not_a_listed_language_found() -> None:
         ]
     )
     preset = builtin("H.265 MKV 1080p")
-    draft = draft_tracks(media, preset, languages=LanguageSettings(preferred_audio=["en"]))
+    draft = resolve_tracks(preset, media, languages=LanguageSettings(preferred_audio=["en"])).draft
     assert [t.source_stream for t in draft.audio] == [1]
     assert [(d.source_stream, d.selected, d.selection) for d in draft.decisions] == [
         (1, True, "No listed language found (English): the default-flagged track"),
@@ -104,7 +104,7 @@ def test_take_none_with_only_a_listed_commentary_is_an_error(
     )
     template = JobTemplate(audio_defaults=defaults)
     media = source([audio(1, "jpn", default=True), audio(2, "hun", "ac3", 2, 192, comment=True)])
-    draft = draft_tracks(media, template)
+    draft = resolve_tracks(template, media).draft
     assert [t.source_stream for t in draft.audio] == (
         [2] if commentary == "keep_after_main" else []
     )
@@ -116,7 +116,7 @@ def test_take_none_with_only_a_listed_commentary_is_an_error(
     )
     for fix in issue.fixes:
         fixed = JobTemplate.model_validate(apply_patch(template.model_dump(mode="json"), fix.patch))
-        again = draft_tracks(media, fixed)
+        again = resolve_tracks(fixed, media).draft
         assert [t.source_stream for t in again.audio][:1] == [1]
         assert NO_LISTED not in [i.code for i in again.issues]
 
@@ -179,7 +179,7 @@ def test_take_none_is_an_error_only_when_no_main_track_is_taken(
             selection=TrackSelection(languages=["hu"], no_match="none", other_languages=other)
         )
     )
-    draft = draft_tracks(media, template)
+    draft = resolve_tracks(template, media).draft
     assert [t.source_stream for t in draft.audio] == expected
     assert (NO_LISTED in errors(draft.issues)) == (not expected)
 
@@ -217,7 +217,7 @@ def _extras_template(
 
 def test_a_kept_commentary_is_never_the_first_language_default_audio() -> None:
     """``first_in_first_language`` skips the Hungarian commentary, which is not a main track."""
-    draft = draft_tracks(EXTRAS, _extras_template("first_in_first_language"))
+    draft = resolve_tracks(_extras_template("first_in_first_language"), EXTRAS).draft
     assert [(t.source_stream, t.metadata.commentary, t.metadata.default) for t in draft.audio] == [
         (1, False, True),
         (2, True, False),
@@ -231,7 +231,7 @@ def test_a_kept_commentary_is_never_the_first_language_default_audio() -> None:
 def test_a_commentary_subtitle_is_never_burned_in_for_foreign_audio() -> None:
     """English audio, Hungarian viewer, burn-in ``foreign_audio``: the only Hungarian subtitle
     is a commentary, which is not "the Hungarian subtitles for the English audio"."""
-    draft = draft_tracks(EXTRAS, _extras_template("first_output"))
+    draft = resolve_tracks(_extras_template("first_output"), EXTRAS).draft
     assert [(t.source, t.action) for t in draft.subtitles] == [(3, "copy")]
     row = next(d for d in draft.subtitle_decisions if d.source_stream == 3)
     assert not row.reason.startswith("Burn in")
@@ -239,7 +239,7 @@ def test_a_commentary_subtitle_is_never_burned_in_for_foreign_audio() -> None:
 
 def test_foreign_audio_burn_in_takes_the_main_subtitle() -> None:
     media = EXTRAS.model_copy(update={"subtitles": [*EXTRAS.subtitles, subtitle(5, "hun")]})
-    draft = draft_tracks(media, _extras_template("first_output"))
+    draft = resolve_tracks(_extras_template("first_output"), media).draft
     assert [(t.source, t.action) for t in draft.subtitles] == [(5, "burn"), (3, "copy")]
 
 

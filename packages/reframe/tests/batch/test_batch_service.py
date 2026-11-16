@@ -70,7 +70,7 @@ async def example_template(app: Reframe, e01: Path) -> tuple[JobTemplate, MediaS
         source,
         {"audio", "subtitles"},
     )
-    template = app.batch.merge(template, JobTemplate(naming=A.EXAMPLE_NAMING), {"naming"})
+    template = template.model_copy(update={"naming": A.EXAMPLE_NAMING})
     return template, source
 
 
@@ -85,7 +85,7 @@ async def test_a_season_from_grouping_to_the_queue_and_its_preset_on_season_2(
     assert group.representative == files[0]
 
     template, _e01 = await example_template(app, group.representative)
-    resolution = await app.batch.resolve(template, [m.path for m in group.members], group=group)
+    resolution = await app.batch.resolve(template, [m.path for m in group.members])
     assert [c.label for c in resolution.columns] == [
         "V",
         "A1 jpn TrueHD→Opus 5.1",
@@ -95,12 +95,8 @@ async def test_a_season_from_grouping_to_the_queue_and_its_preset_on_season_2(
         "Output name",
     ]
     statuses = [row.status for row in resolution.rows]
-    assert statuses == ["ok"] * 4 + ["warning"] + ["ok"] * 5 + ["error", "ok"]
-    e05, e11 = resolution.rows[4], resolution.rows[10]
-    assert [i.code for i in e05.issues if i.severity.value == "warning"] == ["batch.near_match"]
-    assert e05.issues[0].message == (
-        'Near match of the group: 1 extra track (eng AC-3 2.0 "Commentary").'
-    )
+    assert statuses == ["ok"] * 10 + ["error", "ok"]
+    e11 = resolution.rows[10]
     assert [(m.status, m.streams) for m in e11.matches] == [
         ("exact", [1]),
         ("missing", []),
@@ -115,6 +111,13 @@ async def test_a_season_from_grouping_to_the_queue_and_its_preset_on_season_2(
     ]
     assert all(r.naming is not None and r.naming.source == "file" for r in resolution.rows)
     assert resolution.issues == []
+    # Only a batch marks a near member of its group.
+    _grouping, (batched,) = await app.batch.resolve_batch(template, files)
+    e05 = batched.rows[4]
+    assert [i.code for i in e05.issues if i.severity.value == "warning"] == ["batch.near_match"]
+    assert e05.issues[0].message == (
+        'Near match of the group: 1 extra track (eng AC-3 2.0 "Commentary").'
+    )
 
     # E11: the dub is optional for this file (a per-file override) → every file can be queued.
     skip = {
@@ -122,9 +125,7 @@ async def test_a_season_from_grouping_to_the_queue_and_its_preset_on_season_2(
             [{"op": "replace", "path": "/audio_rules/1/required", "value": False}]
         )
     }
-    resolution = await app.batch.resolve(
-        template, [m.path for m in group.members], group=group, overrides=skip
-    )
+    resolution = await app.batch.resolve(template, [m.path for m in group.members], overrides=skip)
     assert [row.status for row in resolution.rows].count("error") == 0
     queued = []
     for row in resolution.rows:
@@ -141,9 +142,7 @@ async def test_a_season_from_grouping_to_the_queue_and_its_preset_on_season_2(
     assert isinstance(saved, Preset)
     assert (saved.category, saved.audio_rules) == ("Custom", template.audio_rules)
     s02 = season(fixture_media, tmp_path, 2)
-    second = await app.batch.group(s02)
-    (group2,) = second.groups
-    applied = await app.batch.resolve("anime show", s02, group=group2)
+    applied = await app.batch.resolve("anime show", s02)
     assert [row.status for row in applied.rows] == ["ok"] * 3
     assert all(m.status == "exact" for row in applied.rows for m in row.matches)
     assert [r.job.output.path.name for r in applied.rows if r.job and r.job.output.path] == [
@@ -242,7 +241,7 @@ async def test_an_output_that_is_another_source(
     assert "batch.output_is_source" not in [i.code for i in e02.issues]
 
 
-async def test_derive_merge_and_overrides_by_path_text(
+async def test_derive_and_overrides_by_path_text(
     app: Reframe, fixture_media: Media, tmp_path: Path
 ) -> None:
     files = season(fixture_media, tmp_path, 2)
@@ -255,8 +254,6 @@ async def test_derive_merge_and_overrides_by_path_text(
     assert derived.audio_rules == []
     orphan = draft.job.model_copy(update={"preset_id": None})
     assert app.batch.derive(orphan, source, {"audio"}).video.encoder == "libx265"  # default preset
-    merged = app.batch.merge(JobTemplate(), derived, {"video"})
-    assert merged.video == derived.video
     # Overrides are found by the file's path, however it is written.
     key = str(files[1].parent / ".." / files[1].parent.name / files[1].name)
     patch = {

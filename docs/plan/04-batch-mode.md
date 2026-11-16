@@ -228,11 +228,12 @@ def describe_tracks(source: MediaSource) -> list[TrackDescriptor]
 def fingerprint(source: MediaSource, level: MatchLevel) -> Fingerprint
 def group_sources(sources: list[MediaSource], level: MatchLevel) -> list[BatchGroup]
 def derive_template(job: JobSettings, source: MediaSource, sections: set[Section]) -> JobTemplate
-def merge_template(base: JobTemplate, incoming: JobTemplate, sections: set[Section]) -> JobTemplate
 def resolve(template: JobTemplate, source: MediaSource, override: JsonPatch | None) -> Resolution
-def resolve_group(group: BatchGroup, template: JobTemplate, sources: dict[Path, MediaSource],
-                  overrides: dict[SourceId, JsonPatch]) -> list[Resolution]   # the probed members
 ```
+
+A group is resolved file by file with `resolve` (`Reframe.batch.resolve` and `resolve_batch`).
+*Apply to group* is `derive_template` with a `base`; a client copies sections itself
+([decision 0090](../decisions/0090-batch-api-and-draft-path.md)).
 
 Done when:
 

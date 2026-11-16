@@ -7,7 +7,7 @@ from typing import Any
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from reframe.batch import draft_tracks, effective_language, effective_languages
+from reframe.batch import effective_language, effective_languages, resolve_tracks
 from reframe.batch.selection import extra_role, language_slot
 from reframe.definitions import load_definitions
 from reframe.models import (
@@ -239,5 +239,5 @@ def _check(draft: TrackDraft, media: MediaSource, template: JobTemplate, langs: 
 @given(cases())
 def test_defaults_properties(case: tuple[MediaSource, JobTemplate, LanguageSettings]) -> None:
     media, template, langs = case
-    draft = draft_tracks(media, template, definitions=DEFS, languages=langs)
+    draft = resolve_tracks(template, media, definitions=DEFS, languages=langs).draft
     _check(draft, media, template, langs)

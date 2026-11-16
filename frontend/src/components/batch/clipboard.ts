@@ -24,7 +24,7 @@ export const SECTIONS: readonly TemplateSection[] = [
   'naming',
 ]
 
-/** The template fields of each section: the core's `SECTION_FIELDS`. */
+/** The template fields of each section. */
 const SECTION_FIELDS: Record<TemplateSection, readonly (keyof JobTemplate)[]> = {
   dimensions: ['dimensions', 'crop_policy'],
   filters: ['filters'],

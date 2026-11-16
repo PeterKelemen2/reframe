@@ -55,8 +55,6 @@ __all__ = [
     "SubtitleStage",
     "audio_language",
     "audio_stage",
-    "explain",
-    "explain_subtitles",
     "forced_evidence",
     "foreign_audio_search",
     "subtitle_stage",
@@ -241,27 +239,6 @@ def _no_listed_language(
             ),
         ],
     )
-
-
-def explain(
-    defaults: AudioDefaults,
-    source: MediaSource,
-    *,
-    container: Container = "mkv",
-    preferred_languages: Sequence[str] = (),
-    definitions: Definitions | None = None,
-) -> list[TrackDecision]:
-    """One decision per source audio track, in source order: selected or not and why
-    (``selection``), the codec rule, the output(s) with their flags, and the reason.
-    ``preferred_languages``: the preferred audio languages, used when
-    ``defaults.selection.languages`` is empty."""
-    return audio_stage(
-        defaults,
-        source,
-        container=container,
-        preferred_languages=preferred_languages,
-        definitions=definitions,
-    ).decisions
 
 
 @dataclass(frozen=True, slots=True)
@@ -605,26 +582,3 @@ def _keep_every_subtitle(
             )
         )
     return SubtitleStage(selection, decisions, outputs)
-
-
-def explain_subtitles(
-    defaults: SubtitleDefaults,
-    source: MediaSource,
-    *,
-    container: Container = "mkv",
-    preferred_languages: Sequence[str] = (),
-    audio: Sequence[AudioOutputTrack] = (),
-    definitions: Definitions | None = None,
-) -> list[TrackDecision]:
-    """One decision per source subtitle track, in source order (``kind="subtitle"``): selected
-    or not and why, and the output (copy or burn-in, with its flags) with the reason.
-    ``preferred_languages``: the preferred subtitle languages. ``audio``: the drafted audio
-    outputs, for the foreign audio search (without them: the source's default audio track)."""
-    return subtitle_stage(
-        defaults,
-        source,
-        container=container,
-        preferred_languages=preferred_languages,
-        audio=audio,
-        definitions=definitions,
-    ).decisions

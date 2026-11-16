@@ -2,7 +2,8 @@
 
 - Status: accepted. The points marked **(open)** are product questions answered with a default
   that is easy to change (each one is a small function or constant, named below); the lead or
-  the user may change them.
+  the user may change them. Amended in part by [0090](0090-batch-api-and-draft-path.md) (§6:
+  the `container_codecs` mechanism).
 - Date: 2026-10-15
 - Steps: C-12 (M6 part; core-complete wave 1a)
 

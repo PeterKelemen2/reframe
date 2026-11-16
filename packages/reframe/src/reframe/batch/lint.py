@@ -36,6 +36,7 @@ from reframe.models.media import AudioStream
 from reframe.models.template import JobTemplate, OutputTrackRule, SubtitleOutputSettings
 
 __all__ = [
+    "container_codec_issues",
     "describe_rule",
     "lint_defaults",
     "lint_track_rules",
@@ -295,9 +296,12 @@ def _encoders(defaults: AudioDefaults) -> list[tuple[str, str]]:
     return found
 
 
-def _container_issues(
+def container_codec_issues(
     defaults: AudioDefaults, container: Container, defs: Definitions
 ) -> list[ValidationIssue]:
+    """An error for each encoder of ``defaults`` that ``container`` cannot hold, with fixes:
+    another encoder, another container. Validation reports the same encoders of a job as
+    ``container.codec_unsupported``, so only a caller without validation adds these."""
     holder = defs.containers.get(container)
     if holder is None:
         return []
@@ -350,16 +354,14 @@ def lint_defaults(
     container: Container = "mkv",
     definitions: Definitions | None = None,
     used: Collection[int] | None = None,
-    container_codecs: bool = True,
 ) -> list[ValidationIssue]:
     """Problems of the codec rules: shadowed or unreachable rules (warning), a max bitrate that
-    the encoder snaps (info; the note names the written value), an encoder the container cannot
-    hold (error, with fixes), and the rules that no selected track of a source uses (info).
-    Paths are template paths; fixes target ``"template"``.
+    the encoder snaps (info; the note names the written value), and the rules that no selected
+    track of a source uses (info). Paths are template paths; fixes target ``"template"``. An
+    encoder the container cannot hold is :func:`container_codec_issues`.
 
     ``used``: the 1-based numbers of the rules that encoded a selected track of a source
-    (``None``: no source, so no ``defaults.rule_unused``). ``container_codecs=False`` leaves out
-    ``defaults.codec_not_in_container``, for a caller whose own check reports the same encoders.
+    (``None``: no source, so no ``defaults.rule_unused``).
     """
     defs = definitions or load_definitions()
     rules = defaults.codec_rules
@@ -399,8 +401,6 @@ def lint_defaults(
             )
             if found is not None:
                 issues.append(found)
-    if container_codecs:
-        issues.extend(_container_issues(defaults, container, defs))
     if used is not None:
         for index, rule in enumerate(rules[:-1]):
             if index in dead or index + 1 in used:

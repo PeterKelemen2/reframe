@@ -535,8 +535,10 @@ overrides for `C-16`), and per-group resolution with a match report.
     when the source fits; snap to the allowed encoder values; unknown bitrate counts as above
     the max. Built in M2, before the selection stage: an M2 draft job takes every audio track
     through the codec rules ([decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)).
-  - `explain(defaults, source) -> list[TrackDecision]`, with a reason string for every
-    selected or dropped track and every chosen rule. It feeds the live preview.
+  - One `TrackDecision` per source track, with a reason string for every selected or dropped
+    track and every chosen rule: `audio_stage(defaults, source).decisions` and
+    `subtitle_stage(...).decisions`. `JobService.explain` feeds the live preview
+    ([decision 0090](../decisions/0090-batch-api-and-draft-path.md)).
   - Lint: shadowed rules, unreachable rules, max bitrate out of range.
 
 The rule engine (explicit track rules with relaxation; the defaults compiled into rules over

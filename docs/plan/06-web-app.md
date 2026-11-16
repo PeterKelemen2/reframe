@@ -226,7 +226,6 @@ row whose member a route reaches or that no longer exists
 | `power.schedule` | Only the queue starts a countdown: no client may shut down or suspend the server's machine on demand |
 | `power.executor` | The executor is the operating system's mechanism |
 | `tasks.limit`, `tasks.set_limit` | The concurrency per task kind is internal; no setting changes it |
-| `batch.merge` | `POST /api/batch/derive` with `base` covers *Apply to group*; a client copies sections itself |
 
 ## S-3 Event WebSocket
 

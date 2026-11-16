@@ -604,12 +604,12 @@ AC3_PASSTHRU = [(1, "passthru", "ac3", None), *AAC]
 def test_the_audio_draft_of_the_multitrack_fixture(
     preset_id: str, expected: list[tuple[int, str, str, int | None]]
 ) -> None:
-    """What ``draft_tracks`` does with the audio of the ``multitrack`` fixture: HandBrake
+    """What ``resolve_tracks`` does with the audio of the ``multitrack`` fixture: HandBrake
     re-encodes to AAC / Opus stereo and passes AC-3 5.1 through only in the Surround presets
     (plus an AAC stereo copy of it)."""
     import json
 
-    from reframe.batch import draft_tracks
+    from reframe.batch import resolve_tracks
     from reframe.models import SourceFingerprint
     from reframe.probe import parse_ffprobe
 
@@ -618,7 +618,7 @@ def test_the_audio_draft_of_the_multitrack_fixture(
         Path("/media/multitrack.mkv"),
         fingerprint=SourceFingerprint(size=0, mtime=0.0),
     )
-    draft = draft_tracks(source, by_id(preset_id))
+    draft = resolve_tracks(by_id(preset_id), source).draft
     got = [(t.source_stream, t.action, t.encoder, t.bitrate) for t in draft.audio]
     assert got == expected
     assert all(t.mixdown in (None, "stereo") for t in draft.audio)
