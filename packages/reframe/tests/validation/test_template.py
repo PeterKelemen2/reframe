@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
@@ -32,23 +27,10 @@ from reframe.models import (
 )
 from reframe.validation import TEMPLATE_RULES, validate_template
 
+from . import scenario as sc
+from .scenario import Case, Mod, both
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 ERR, WARN, INFO = Severity.ERROR, Severity.WARNING, Severity.INFO
-
-type Mod = Callable[[Any], None]
 
 
 def preset(**video: Any) -> Preset:
@@ -70,16 +52,6 @@ def build(mod: Mod) -> Any:
     return scenario
 
 
-@dataclass(frozen=True)
-class Case:
-    id: str
-    code: str
-    path: str
-    severity: Severity
-    positive: Mod
-    negative: Mod
-
-
 def video(**changes: Any) -> Mod:
     def mod(s: Any) -> None:
         for key, value in changes.items():
@@ -91,14 +63,6 @@ def video(**changes: Any) -> Mod:
 def caps(states: dict[str, Any], **kw: Any) -> Mod:
     def mod(s: Any) -> None:
         s.caps = sc.make_caps(states, **kw)
-
-    return mod
-
-
-def both(*mods: Mod) -> Mod:
-    def mod(s: Any) -> None:
-        for m in mods:
-            m(s)
 
     return mod
 
@@ -141,7 +105,7 @@ def nothing(s: Any) -> None:
     del s
 
 
-NO_HEVC_HARDWARE = {
+NO_HEVC_HARDWARE: dict[str, EncoderState | EncoderStatus] = {
     "hevc_nvenc": EncoderStatus(
         id="hevc_nvenc",
         state=EncoderState.UNAVAILABLE,

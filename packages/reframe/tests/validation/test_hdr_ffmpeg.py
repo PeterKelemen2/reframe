@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
@@ -30,24 +27,13 @@ from reframe.models import (
 from reframe.probe import parse_ffprobe
 from reframe.validation import LocalFileSystem, validate
 
+from . import scenario as sc
+
 pytestmark = pytest.mark.needs_ffmpeg
 
 Media = Callable[[str], Path]
 
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 #: zscale + tonemap (CPU tone mapping) usable; libplacebo needs a GPU and is not used here.
 CAPS = sc.make_caps(filters=["zscale", "tonemap"])
 

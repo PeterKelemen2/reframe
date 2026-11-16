@@ -1,6 +1,5 @@
-"""Scenarios for the validation tests: a clean job, a fake file system and the fix check.
-Loaded by path from the test modules (pytest runs with ``--import-mode=importlib``).
-"""
+"""Scenarios for the validation tests: a clean job, a fake file system, the fix check and the
+rule cases."""
 
 from __future__ import annotations
 
@@ -374,3 +373,24 @@ def check_template(scenario: TemplateScenario) -> list[ValidationIssue]:
 
 def deep(scenario: Scenario) -> Scenario:
     return copy.deepcopy(scenario)
+
+
+type Mod = Callable[[Any], None]
+
+
+@dataclass(frozen=True)
+class Case:
+    id: str
+    code: str
+    path: str
+    severity: Severity
+    positive: Mod
+    negative: Mod
+
+
+def both(*mods: Mod) -> Mod:
+    def mod(s: Any) -> None:
+        for m in mods:
+            m(s)
+
+    return mod

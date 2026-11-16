@@ -7,12 +7,10 @@ issue and validates again: the issue (same code and path) must be gone.
 
 from __future__ import annotations
 
-import importlib.util
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -45,37 +43,14 @@ from reframe.models import (
 )
 from reframe.validation import JOB_RULES, TEMPLATE_RULES
 
+from . import cases_inplace, cases_metadata, cases_options
+from . import scenario as sc
+from .scenario import Case, Mod, both
 
-def _load(name: str) -> ModuleType:
-    # pytest runs with --import-mode=importlib: a helper next to the tests is loaded by path.
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 DEFS: Definitions = sc.DEFS
 ERR, WARN, INFO = Severity.ERROR, Severity.WARNING, Severity.INFO
 #: A name Windows does not allow: an error for a Windows path, a warning elsewhere.
 NOT_PORTABLE = ERR if sys.platform == "win32" else WARN
-
-type Mod = Callable[[Any], None]
-
-
-@dataclass(frozen=True)
-class Case:
-    id: str
-    code: str
-    path: str
-    severity: Severity
-    positive: Mod
-    negative: Mod
 
 
 def build(mod: Mod) -> Any:
@@ -95,14 +70,6 @@ def video(**changes: Any) -> Mod:
 def caps(states: dict[str, Any], **kw: Any) -> Mod:
     def mod(s: Any) -> None:
         s.caps = sc.make_caps(states, **kw)
-
-    return mod
-
-
-def both(*mods: Mod) -> Mod:
-    def mod(s: Any) -> None:
-        for m in mods:
-            m(s)
 
     return mod
 
@@ -1519,10 +1486,9 @@ CASES: list[Case] = [
 
 #: Cases in other files next to this one: each has ``cases(h) -> list[Case]``, where ``h``
 #: gives this module's helpers (``h.Case``, ``h.ERR``, ``h.video``, …).
-EXTRA_CASE_FILES = ("cases_inplace", "cases_options", "cases_metadata")
 _HELPERS = SimpleNamespace(**globals())
-for _name in EXTRA_CASE_FILES:
-    CASES.extend(_load(_name).cases(_HELPERS))
+for _cases in (cases_inplace, cases_options, cases_metadata):
+    CASES.extend(_cases.cases(_HELPERS))
 
 
 @pytest.fixture(autouse=True)
@@ -1579,7 +1545,7 @@ def test_switch_container_changes_the_extension() -> None:
 def test_switch_container_keeps_every_track_valid() -> None:
     """WebM holds neither x265 nor the subtitles, so the fixes offer only MKV."""
     s = sc.base()
-    s.job.output.container = "avi"
+    s.job.output.container = "avi"  # type: ignore[assignment]
     [issue] = [i for i in sc.check(s) if i.code == "container.unknown"]
     assert [f.label for f in issue.fixes] == [f"Switch to {sc.DEFS.containers['mkv'].label}"]
 
@@ -1643,8 +1609,7 @@ def test_burn_it_in_is_not_offered_next_to_another_burn_in() -> None:
 def test_reading_as_utf8_is_offered_only_for_a_utf8_file(
     found: str, charset: str, fixes: list[str]
 ) -> None:
-    meta = _load("cases_metadata")
     s = sc.base()
-    meta.external(getattr(meta, found), charset)(s)
-    [issue] = [i for i in sc.check(s) if i.path == meta.AT]
+    cases_metadata.external(getattr(cases_metadata, found), charset)(s)
+    [issue] = [i for i in sc.check(s) if i.path == cases_metadata.AT]
     assert [f.label for f in issue.fixes] == fixes

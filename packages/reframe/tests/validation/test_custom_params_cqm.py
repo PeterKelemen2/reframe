@@ -4,12 +4,9 @@ with it. The matrix presets ``cqm=flat`` and ``cqm=jvt`` still dry-run."""
 from __future__ import annotations
 
 import asyncio
-import importlib.util
-import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
@@ -31,6 +28,8 @@ from reframe.tools import RunResult
 from reframe.validation import dryrun
 from reframe.validation.dryrun import dry_run
 
+from . import scenario as sc
+
 pytestmark = pytest.mark.anyio
 
 FixtureMedia = Callable[[str], Path]
@@ -47,21 +46,6 @@ CQM_FILE = "".join(
         ("INTER8X8_LUMA", 64),
     )
 )
-
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 
 
 def _job(custom: str, encoder: str = "libx264") -> JobSettings:

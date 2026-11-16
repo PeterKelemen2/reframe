@@ -4,13 +4,10 @@ get the same code at the rule that marks the tracks."""
 
 from __future__ import annotations
 
-import importlib.util
 import itertools
 import re
-import sys
 from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
@@ -33,20 +30,8 @@ from reframe.models import (
     ValidationIssue,
 )
 
+from . import scenario as sc
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 CODE = "metadata.several_defaults"
 DEFAULT = TrackMetadata(default=True)
 
