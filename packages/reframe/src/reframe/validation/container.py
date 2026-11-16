@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from reframe.definitions import ContainerDef, Definitions
 from reframe.definitions.models import TRACK_FLAGS
 from reframe.models.capabilities import CapabilitySnapshot
-from reframe.models.issues import Fix, FixTarget, ValidationIssue
+from reframe.models.issues import Fix, ValidationIssue
 from reframe.models.job import AudioOutputTrack, Container, TrackMetadata
 from reframe.models.media import AudioStream
 from reframe.validation.common import (
@@ -66,7 +66,6 @@ def _audio_codec_issue(
     drop: str | None,
     track: AudioOutputTrack | None = None,
     stream: AudioStream | None = None,
-    target: FixTarget,
     switch: SwitchContainer | None = None,
 ) -> list[ValidationIssue]:
     """``container.codec_unsupported`` for the audio encoder at ``path``."""
@@ -81,15 +80,15 @@ def _audio_codec_issue(
         ops = switch_audio_encoder(
             path, definitions.audio_encoders[convert], definitions, track=track, stream=stream
         )
-        fixes.append(fix(f"Use {convert}", *ops, target=target))
+        fixes.append(fix(f"Use {convert}", *ops))
     allowed = containers_for(definitions, "audio", encoder.codec)
     fixes.extend(
         switch(allowed)
         if switch is not None
-        else switch_container_fixes(allowed, container_id, definitions, target=target)
+        else switch_container_fixes(allowed, container_id, definitions)
     )
     if drop is not None:
-        fixes.append(fix("Remove this audio track", remove(drop), target=target))
+        fixes.append(fix("Remove this audio track", remove(drop)))
     return [
         error(
             UNSUPPORTED,
@@ -125,7 +124,6 @@ def video_codec(ctx: JobContext) -> list[ValidationIssue]:
         ctx.caps,
         ctx.definitions,
         source_codec=stream.codec if stream is not None else None,
-        target=ctx.target,
         switch=lambda allowed: switch_container(ctx, allowed),
         passthrough_known=stream is not None,
     )
@@ -145,7 +143,6 @@ def audio_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
             drop=f"audio[{index}]",
             track=track,
             stream=track_stream(ctx, track),
-            target=ctx.target,
             switch=lambda allowed: switch_container(ctx, allowed),
         )
 
@@ -158,7 +155,7 @@ def subtitle_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
     if container is None:
         return
     for index, track in enumerate(ctx.job.subtitles):
-        drop = fix("Remove this subtitle track", remove(f"subtitles[{index}]"), target=ctx.target)
+        drop = fix("Remove this subtitle track", remove(f"subtitles[{index}]"))
         if track.action == "convert" and track.convert_to is not None:
             if track.convert_to in container.subtitles.encode:
                 continue
@@ -168,7 +165,6 @@ def subtitle_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
                     fix(
                         f"Convert to {container.text_subtitle_target}",
                         replace(f"subtitles[{index}].convert_to", container.text_subtitle_target),
-                        target=ctx.target,
                     )
                 )
             fixes.extend(
@@ -224,7 +220,7 @@ def track_flags(ctx: JobContext) -> Iterator[ValidationIssue]:
             if not getattr(metadata, flag) or flag in container.flags:
                 continue
             path = f"{prefix}.{flag}"
-            clear = fix(f"Clear the {flag} flag", replace(path, False), target=ctx.target)
+            clear = fix(f"Clear the {flag} flag", replace(path, False))
             label = flag.replace("_", " ")
             others = [
                 c
@@ -247,7 +243,6 @@ def template_video_codec(ctx: TemplateContext) -> list[ValidationIssue]:
         ctx.template.output.container,
         ctx.caps,
         ctx.definitions,
-        target=ctx.target,
     )
 
 
@@ -255,5 +250,5 @@ def template_video_codec(ctx: TemplateContext) -> list[ValidationIssue]:
 def template_audio_codecs(ctx: TemplateContext) -> Iterator[ValidationIssue]:
     for path, encoder_id in template_audio_encoder_ids(ctx):
         yield from _audio_codec_issue(
-            path, encoder_id, ctx.template.output.container, ctx, drop=None, target=ctx.target
+            path, encoder_id, ctx.template.output.container, ctx, drop=None
         )

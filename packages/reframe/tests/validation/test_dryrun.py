@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from reframe.definitions import load_definitions
+from reframe.definitions.custom_params import split_custom_params
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     AverageBitrate,
@@ -29,7 +30,6 @@ from reframe.validation.dryrun import (
     dry_run_job,
     failure_detail,
     parse_dry_run,
-    split_custom_params,
 )
 from reframe.validation.video import video_option_rule_issues
 

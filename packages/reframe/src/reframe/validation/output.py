@@ -14,7 +14,7 @@ from typing import cast
 from reframe.command import job_type, partial_path
 from reframe.command.video import pass_log_files
 from reframe.definitions import ContainerDef
-from reframe.models.issues import Fix, FixTarget, ValidationIssue
+from reframe.models.issues import Fix, ValidationIssue
 from reframe.models.job import AverageBitrate
 from reframe.models.settings import CollisionPolicy
 from reframe.naming.sanitize import (
@@ -137,16 +137,14 @@ def _name_bytes(name: str) -> int:
         return len(name.encode("utf-8", "surrogatepass"))
 
 
-def name_issues(path: PurePath, *, target: FixTarget = "job") -> list[ValidationIssue]:
+def name_issues(path: PurePath) -> list[ValidationIssue]:
     """A manual output path checked against the file-name rules of :mod:`reframe.naming`: a
     folder name or the partial file name over 255 bytes is an error on every OS; a reserved
     Windows name (``CON.mkv``), a character Windows does not allow or a byte that is not UTF-8
     is an error for a Windows path and a warning elsewhere (the file may move)."""
     issues: list[ValidationIssue] = []
     safe = _safe_name(path)
-    fixes = [
-        fix(f"Save as {safe}", replace("output.path", str(path.with_name(safe))), target=target)
-    ]
+    fixes = [fix(f"Save as {safe}", replace("output.path", str(path.with_name(safe))))]
     partial = partial_path(cast(Path, path)).name
     too_long = [p for p in path.parent.parts if _name_bytes(p) > MAX_PART_BYTES]
     if too_long or _name_bytes(partial) > MAX_PART_BYTES:
@@ -188,15 +186,13 @@ def _size(value: float) -> str:
     return f"{gigabytes:.1f} GB" if gigabytes >= 1 else f"{value / 1e6:.0f} MB"
 
 
-def _nul_issue(path: PurePath, target: FixTarget) -> ValidationIssue:
+def _nul_issue(path: PurePath) -> ValidationIssue:
     shown = str(path).replace("\0", "\\0")
     fixes: list[Fix] = []
     safe = _safe_name(path)
     # A NUL in a folder name has no fix: a replacement would name another folder.
     if not has_nul(path.parent) and safe and not has_nul(safe):
-        fixes.append(
-            fix(f"Save as {safe}", replace("output.path", str(path.with_name(safe))), target=target)
-        )
+        fixes.append(fix(f"Save as {safe}", replace("output.path", str(path.with_name(safe)))))
     return error(
         "output.not_writable",
         "output.path",
@@ -229,19 +225,16 @@ def output_path_issues(
     *,
     container: ContainerDef | None,
     collision: CollisionPolicy,
-    target: FixTarget = "job",
 ) -> list[ValidationIssue]:
     """The checks of one output path. A path with a NUL character is one error and no
     file-system read."""
     issues: list[ValidationIssue] = []
 
     def save_as(candidate: PurePath) -> Fix:
-        return fix(
-            f"Save as {candidate.name}", replace("output.path", str(candidate)), target=target
-        )
+        return fix(f"Save as {candidate.name}", replace("output.path", str(candidate)))
 
     if has_nul(path):
-        return [_nul_issue(path, target)]
+        return [_nul_issue(path)]
     if container is not None and path.suffix.lower() not in container.extensions:
         default = container.extensions[0]
         issues.append(
@@ -253,7 +246,7 @@ def output_path_issues(
                 save_as(path.with_suffix(default)),
             )
         )
-    issues.extend(name_issues(path, target=target))
+    issues.extend(name_issues(path))
     # Windows hides what lies past the limit, so the checks below would read a wrong answer.
     named = any(issue.code == "output.name_too_long" for issue in issues)
     if not named and (long_path := _long_path_issue(path, fs)) is not None:
@@ -286,7 +279,6 @@ def output_path_issues(
             fix(
                 "Save next to the source",
                 replace("output.path", str(next_to_source)),
-                target=target,
             )
         )
     if folder is None:
@@ -422,9 +414,7 @@ def output_path(ctx: JobContext) -> Iterator[ValidationIssue]:
         if name is not None:
             if ctx.fs.exists(name):
                 name = next_free_path(name, ctx.fs)
-            fixes.append(
-                fix(f"Save as {name.name}", replace("output.path", str(name)), target=ctx.target)
-            )
+            fixes.append(fix(f"Save as {name.name}", replace("output.path", str(name))))
         yield error("output.no_path", "output.path", "The output file has no name yet.", *fixes)
         return
     yield from output_path_issues(
@@ -433,7 +423,6 @@ def output_path(ctx: JobContext) -> Iterator[ValidationIssue]:
         ctx.fs,
         container=ctx.container,
         collision=ctx.settings.output.collision,
-        target=ctx.target,
     )
 
 

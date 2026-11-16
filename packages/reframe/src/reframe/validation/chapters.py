@@ -47,6 +47,5 @@ def generated_chapters(ctx: JobContext) -> Iterator[ValidationIssue]:
         fix(
             f"Generate a chapter every {shortest:g} minutes",
             replace("chapters.generate_every", shortest),
-            target=ctx.target,
         ),
     )

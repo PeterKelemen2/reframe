@@ -22,7 +22,6 @@ from reframe.models.issues import (
     ValidationIssue,
 )
 from reframe.models.job import Container
-from reframe.models.tools import ToolInfo
 
 __all__ = [
     "DEFAULT_AUDIO_ENCODER",
@@ -37,7 +36,6 @@ __all__ = [
     "replace",
     "support",
     "switch_container_fixes",
-    "tool_problem",
     "usable_encoder",
     "warning",
 ]
@@ -70,12 +68,6 @@ def fix(label: str, *ops: JsonPatchOp, target: FixTarget = "job") -> Fix:
     return Fix(label=label, patch=list(ops), target=target)
 
 
-def tool_problem(tool: ToolInfo) -> str:
-    """`` <reason>``: why the tool cannot be used and how to get it, to end an issue's message;
-    empty without a reason."""
-    return f" {tool.reason}" if tool.reason else ""
-
-
 def replace(path: str, value: JsonValue) -> ReplaceOp:
     """``replace`` at the dotted field ``path`` (``audio[2].encoder``)."""
     return ReplaceOp(path=field_pointer(path), value=value)
@@ -94,7 +86,6 @@ def switch_container_fixes(
     current: Container,
     definitions: Definitions,
     *,
-    target: FixTarget = "job",
     output: PurePath | None = None,
     holds: Callable[[ContainerDef], bool] | None = None,
 ) -> list[Fix]:
@@ -114,7 +105,7 @@ def switch_container_fixes(
         ops: list[JsonPatchOp] = [replace("output.container", container_id)]
         if output is not None and output.suffix.lower() not in container.extensions:
             ops.append(replace("output.path", str(output.with_suffix(container.extensions[0]))))
-        fixes.append(fix(f"Switch to {container.label}", *ops, target=target))
+        fixes.append(fix(f"Switch to {container.label}", *ops))
     return fixes
 
 

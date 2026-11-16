@@ -18,30 +18,33 @@ from pathlib import Path
 from reframe.capabilities.reasons import informative_line, normalise_line
 from reframe.command import PlanError, build_plan
 from reframe.definitions import Definitions, EncoderOption, VideoEncoderDef, load_definitions
-from reframe.definitions.custom_params import CustomParam, split_custom_params, whole_param
+from reframe.definitions.custom_params import CustomParam, split_custom_params
 from reframe.definitions.search import cli_name
-from reframe.jsonpatch import format_pointer, parse_pointer
+from reframe.jsonpatch import parse_pointer
 from reframe.models.capabilities import CapabilitySnapshot
-from reframe.models.issues import Fix, RemoveOp, Severity, ValidationIssue
+from reframe.models.issues import Fix, Severity, ValidationIssue
 from reframe.models.job import AverageBitrate, JobSettings
 from reframe.models.media import MediaSource
 from reframe.models.plan import resolve_argv
 from reframe.models.tools import ToolSet, ToolStatus
 from reframe.tools import CancelToken, run
-from reframe.validation.common import error, fix, replace, warning
+from reframe.validation.common import error, warning
 from reframe.validation.fs import has_nul
-from reframe.validation.video import video_custom_param_issues, video_option_rule_issues
+from reframe.validation.video import (
+    remove_option_fix,
+    remove_param_fix,
+    video_custom_param_issues,
+    video_option_rule_issues,
+)
 
 __all__ = [
     "DRY_RUN_CODES",
     "DRY_RUN_TIMEOUT",
-    "CustomParam",
     "dry_run",
     "dry_run_argv",
     "dry_run_job",
     "failure_detail",
     "parse_dry_run",
-    "split_custom_params",
 ]
 
 #: Seconds before the dry run is stopped (one frame; a hardware encoder needs a moment to
@@ -60,10 +63,6 @@ DRY_RUN_CODES = (
 # ``+level`` tags each line with its level: x264's warnings through FFmpeg have no other mark.
 # The ``+`` keeps FFmpeg's other log flags (``level+info`` would stop folding repeated lines).
 _LOG_LEVEL = ("-loglevel", "+level+info")
-
-
-def _without(params: list[CustomParam], dropped: list[CustomParam]) -> str:
-    return ":".join(p.raw for p in params if not any(p is d for d in dropped))
 
 
 def dry_run_job(job: JobSettings) -> JobSettings:
@@ -267,29 +266,17 @@ class _Attribution:
         return found
 
     def _param_target(self, param: CustomParam) -> _Target:
-        group = whole_param(self.params, param)
-        rest = _without(self.params, group)
         return _Target(
             "video.custom_params",
             "encoder.custom_param_rejected",
-            (
-                fix(
-                    f"Remove {':'.join(p.raw for p in group).strip()} from the custom parameters",
-                    replace("video.custom_params", rest),
-                ),
-            ),
+            (remove_param_fix(self.params, param),),
         )
 
     def _option_target(self, key: str) -> _Target:
         return _Target(
             f"video.advanced.{key}",
             "encoder.option_rejected",
-            (
-                fix(
-                    f"Reset {key} to its default",
-                    RemoveOp(path=format_pointer(["video", "advanced", key])),
-                ),
-            ),
+            (remove_option_fix(key, f"Reset {key} to its default"),),
         )
 
     def target(self, name: str) -> _Target | None:

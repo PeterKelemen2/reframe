@@ -65,7 +65,7 @@ def range_duration(ctx: JobContext) -> float | None:
 
 
 def _full(ctx: JobContext) -> Fix:
-    return fix("Encode the whole source", replace("range", {"kind": "full"}), target=ctx.target)
+    return fix("Encode the whole source", replace("range", {"kind": "full"}))
 
 
 def _seconds(value: float) -> str:
@@ -126,7 +126,7 @@ def source_range(ctx: JobContext) -> Iterator[ValidationIssue]:
             "range.end",
             f"The range ends at {text(end)}, after the end of the source ({text(total)}): the "
             "encode stops at the end of the source.",
-            fix("End at the end of the source", replace("range.end", None), target=ctx.target),
+            fix("End at the end of the source", replace("range.end", None)),
         )
 
 
@@ -166,5 +166,5 @@ def _chapters(ctx: JobContext, selected: ChapterRange) -> Iterator[ValidationIss
             "range.end",
             f"The range ends at chapter {selected.end}; the source has {count} chapters: the "
             "encode stops at the last chapter.",
-            fix(f"End at chapter {count}", replace("range.end", count), target=ctx.target),
+            fix(f"End at chapter {count}", replace("range.end", count)),
         )

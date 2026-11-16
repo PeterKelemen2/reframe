@@ -25,7 +25,7 @@ from reframe.validation.tracks import (
 
 
 def _drop(ctx: JobContext, index: int) -> Fix:
-    return fix("Remove this subtitle track", remove(f"subtitles[{index}]"), target=ctx.target)
+    return fix("Remove this subtitle track", remove(f"subtitles[{index}]"))
 
 
 @job_rule(
@@ -84,7 +84,7 @@ def charsets(ctx: JobContext) -> Iterator[ValidationIssue]:
             continue  # a bitmap file, or one that subtitle.external_* reports
         at = f"subtitles[{index}].source.charset"
         chosen = track.source.charset or None
-        as_utf8 = fix("Read it as UTF-8 (as detected)", replace(at, None), target=ctx.target)
+        as_utf8 = fix("Read it as UTF-8 (as detected)", replace(at, None))
         if found.name is not None and found.name != "UTF-8":
             effect = (
                 "FFmpeg cannot open it"
@@ -154,9 +154,8 @@ def burn_in(ctx: JobContext) -> Iterator[ValidationIssue]:
                 fix(
                     "Copy the track",
                     replace(f"subtitles[{index}].action", "copy"),
-                    target=ctx.target,
                 ),
-                fix("Encode the video", replace("video.passthrough", False), target=ctx.target),
+                fix("Encode the video", replace("video.passthrough", False)),
             )
         return
     for index in burned[1:]:
@@ -164,7 +163,7 @@ def burn_in(ctx: JobContext) -> Iterator[ValidationIssue]:
             "subtitle.burn_multiple",
             f"subtitles[{index}].action",
             f"Only one subtitle track can be burned in; track {burned[0] + 1} already is.",
-            fix("Copy the track", replace(f"subtitles[{index}].action", "copy"), target=ctx.target),
+            fix("Copy the track", replace(f"subtitles[{index}].action", "copy")),
             _drop(ctx, index),
         )
 
@@ -191,9 +190,7 @@ def bitmap_copy(ctx: JobContext) -> Iterator[ValidationIssue]:
             continue
         fixes: list[Fix] = []
         if can_burn:
-            fixes.append(
-                fix("Burn it in", replace(f"subtitles[{index}].action", "burn"), target=ctx.target)
-            )
+            fixes.append(fix("Burn it in", replace(f"subtitles[{index}].action", "burn")))
         fixes.extend(
             switch_container(
                 ctx, containers_for(ctx.definitions, "subtitles", source.codec, copy=True)
@@ -226,7 +223,6 @@ def conversions(ctx: JobContext) -> Iterator[ValidationIssue]:
                     fix(
                         "Copy the track",
                         replace(f"subtitles[{index}].action", "copy"),
-                        target=ctx.target,
                     )
                 )
             if not ctx.job.video.passthrough and not any(
@@ -236,7 +232,6 @@ def conversions(ctx: JobContext) -> Iterator[ValidationIssue]:
                     fix(
                         "Burn it in",
                         replace(f"subtitles[{index}].action", "burn"),
-                        target=ctx.target,
                     )
                 )
             fixes.append(_drop(ctx, index))
@@ -254,7 +249,6 @@ def conversions(ctx: JobContext) -> Iterator[ValidationIssue]:
                     fix(
                         f"Convert to {container.text_subtitle_target}",
                         replace(f"subtitles[{index}].convert_to", container.text_subtitle_target),
-                        target=ctx.target,
                     )
                 )
             yield error(
@@ -289,6 +283,5 @@ def forced_only(ctx: JobContext) -> Iterator[ValidationIssue]:
             fix(
                 "Keep all events",
                 replace(f"subtitles[{index}].forced_only", False),
-                target=ctx.target,
             ),
         )
