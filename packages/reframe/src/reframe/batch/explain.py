@@ -23,10 +23,10 @@ from reframe.batch.selection import (
     KEEP_EVERYTHING,
     Pick,
     Selection,
+    _track,
     extra_role,
     is_forced,
     is_undetermined,
-    language_label,
     language_slot,
     select_tracks,
 )
@@ -71,10 +71,6 @@ def _with_default[T: (AudioOutputTrack, SubtitleOutputTrack)](track: T, value: b
         return track
     metadata = track.metadata.model_copy(update={"default": value})
     return track.model_copy(update={"metadata": metadata})
-
-
-def _track(stream: SubtitleStream) -> str:
-    return f"#{stream.index}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,8 +147,8 @@ def audio_stage(
         if pick.relabelled:
             stream = stream.model_copy(update={"language": pick.language, "language_ietf": None})
             notes.append(
-                f"Undetermined language: treated and written as {language_label(pick.language)}"
-                ", the first listed language"
+                "Undetermined language: treated and written as "
+                f"{languages.english_name(pick.language)}, the first listed language"
             )
         first = not any(languages.same_language(pick.language, other) for other in seen)
         if first:
@@ -214,7 +210,7 @@ def _dropped(
 def _no_listed_language(
     selection: Selection[AudioStream], undetermined: Literal["first_language", "other"]
 ) -> ValidationIssue:
-    names = " or ".join(language_label(tag) for tag in selection.languages)
+    names = " or ".join(languages.english_name(tag) for tag in selection.languages)
     pointer = "/audio_defaults/selection/no_match"
     listed_extras = any(
         extra_role(pick.stream) is not None
@@ -275,13 +271,8 @@ def explain(
 class ForeignAudio:
     """The outcome of the foreign audio search, which copies HandBrake's behaviour."""
 
-    audio_language: str | None
-    user_language: str | None
-    searched: bool
-    """The audio is in the viewer's language, so there is something to search for."""
     track: int | None = None
     """The position (in ``source.subtitles``) of the forced track found."""
-    evidence: str | None = None
     forced_only: bool = False
     """Only the forced events of a full PGS / VobSub track: usable only burned in."""
     note: str = ""
@@ -340,18 +331,13 @@ def foreign_audio_search(
     language (``user_language``, the first subtitle language); ties go to the earlier track.
     ``can_burn``: the burn-in behaviour would burn the track, which a rank-4 track needs."""
     if is_undetermined(audio_language) or user_language is None:
-        return ForeignAudio(
-            audio_language, user_language, False, note="Foreign audio search: no audio language"
-        )
-    audio_name = language_label(audio_language)
+        return ForeignAudio(note="Foreign audio search: no audio language")
+    audio_name = languages.english_name(audio_language)
     if not languages.same_language(audio_language, user_language):
         return ForeignAudio(
-            audio_language,
-            user_language,
-            False,
             note=(
                 f"Foreign audio search: not run, the audio is {audio_name} and the first "
-                f"subtitle language is {language_label(user_language)}"
+                f"subtitle language is {languages.english_name(user_language)}"
             ),
         )
     same = [
@@ -379,14 +365,10 @@ def foreign_audio_search(
                 f"Foreign audio search: no forced {audio_name} subtitle track (no forced flag "
                 "or title, and no low event count)"
             )
-        return ForeignAudio(audio_language, user_language, True, note=note)
+        return ForeignAudio(note=note)
     rank, position, words = usable[0]
     return ForeignAudio(
-        audio_language,
-        user_language,
-        True,
         track=position,
-        evidence=words,
         forced_only=rank == 4,
         note=(
             f"Foreign audio search: {_track(subtitles[position])} is the forced {audio_name} track "
@@ -460,8 +442,8 @@ def _burn_target(
                 # Never a commentary or description: they do not translate the audio.
                 if _main_in_first_language(selection.picks[position]):
                     return position, (
-                        f"foreign audio: the {language_label(viewer)} subtitles for the "
-                        f"{language_label(heard)} audio"
+                        f"foreign audio: the {languages.english_name(viewer)} subtitles for the "
+                        f"{languages.english_name(heard)} audio"
                     )
     if behaviour in ("first", "foreign_audio_then_first") and order:
         return order[0], "the first subtitle track"
@@ -555,8 +537,8 @@ def subtitle_stage(
         notes: list[str] = []
         if pick.selected and pick.relabelled:
             notes.append(
-                f"Undetermined language: treated and written as {language_label(pick.language)}"
-                ", the first listed language"
+                "Undetermined language: treated and written as "
+                f"{languages.english_name(pick.language)}, the first listed language"
             )
         if position == burned:
             assert burn is not None

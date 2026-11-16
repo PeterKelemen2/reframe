@@ -14,7 +14,6 @@ from reframe.batch.grouping import (
     compare,
     episode_info,
     episode_key,
-    episode_label,
     episode_labels,
     group_name,
 )
@@ -52,12 +51,12 @@ def test_episode_info(
 ) -> None:
     info = episode_info(Path(path))
     assert (info.name, info.season, info.episode) == (name, season, episode)
-    assert episode_label(Path(path)) == label
+    assert episode_labels([Path(path)]) == [label]
 
 
 def test_episode_label_with_season() -> None:
-    assert episode_label(A.path(1, 5), season=True) == "S01E05"
-    assert episode_label(Path("/tv/Show - 07.mkv"), season=True) == "E07"
+    assert episode_labels([A.path(1, 5)], season=True) == ["S01E05"]
+    assert episode_labels([Path("/tv/Show - 07.mkv")], season=True) == ["E07"]
 
 
 def test_episode_order() -> None:

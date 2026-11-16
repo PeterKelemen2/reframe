@@ -446,7 +446,7 @@ def test_foreign_audio_search_finds_the_forced_track(forced: SubtitleStream, evi
     assert stage.foreign_audio is not None
     assert stage.foreign_audio.track is not None
     assert media.subtitles[stage.foreign_audio.track].index == 4
-    assert stage.foreign_audio.evidence == evidence
+    assert f"({evidence})" in stage.foreign_audio.note
     # Put first and flagged forced; the language selection's full track follows.
     assert [(t.source, t.action, t.metadata.forced) for t in stage.outputs] == [
         (4, "copy", True),
@@ -507,7 +507,7 @@ def test_foreign_audio_search_needs_the_viewers_language() -> None:
     japanese = [ENGLISH_AUDIO[0].model_copy(update={"metadata": TrackMetadata(language="ja")})]
     stage = subtitle_stage(fas_defaults(), media, audio=japanese)
     assert stage.foreign_audio is not None
-    assert not stage.foreign_audio.searched
+    assert stage.foreign_audio.note.startswith("Foreign audio search: not run")
     assert [t.source for t in stage.outputs] == [3]
     note = (
         "Foreign audio search: not run, the audio is Japanese and the first subtitle language "
@@ -518,14 +518,13 @@ def test_foreign_audio_search_needs_the_viewers_language() -> None:
         media.subtitles, audio_language=None, user_language="en", can_burn=False
     )
     assert result.note == "Foreign audio search: no audio language"
-    assert not result.searched
 
 
 def test_no_forced_track_found() -> None:
     media = fas_source()
     stage = subtitle_stage(fas_defaults(), media, audio=ENGLISH_AUDIO)
     assert stage.foreign_audio is not None
-    assert stage.foreign_audio.searched
+    assert stage.foreign_audio.note.startswith("Foreign audio search: no forced")
     assert stage.foreign_audio.track is None
     note = (
         "Foreign audio search: no forced English subtitle track (no forced flag or title, and "
@@ -685,7 +684,7 @@ def test_an_empty_subtitle_track_is_not_the_forced_track() -> None:
     found = foreign_audio_search(
         [full, empty], audio_language="en", user_language="en", can_burn=False
     )
-    assert found.searched
+    assert found.note.startswith("Foreign audio search: no forced")
     assert found.track is None
     # A real low count is still found.
     few = subtitle(4, "eng", events=20)

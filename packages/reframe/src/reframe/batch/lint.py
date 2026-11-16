@@ -12,10 +12,9 @@ from reframe.batch.audio_rules import (
     bitrate_table,
     snap_note,
 )
-from reframe.batch.explain import audio_stage
-from reframe.batch.selection import TrackKind, language_label
+from reframe.batch.selection import TrackKind
 from reframe.definitions import AudioEncoderDef, Definitions, load_definitions
-from reframe.languages import matches
+from reframe.languages import english_name, matches
 from reframe.models.defaults import (
     AudioCodecRule,
     AudioDefaults,
@@ -33,27 +32,15 @@ from reframe.models.issues import (
     ValidationIssue,
 )
 from reframe.models.job import Container, Mixdown
-from reframe.models.media import AudioStream, MediaSource
+from reframe.models.media import AudioStream
 from reframe.models.template import JobTemplate, OutputTrackRule, SubtitleOutputSettings
 
 __all__ = [
-    "CODES",
     "describe_rule",
     "lint_defaults",
-    "lint_rules",
     "lint_track_rules",
     "rule_covers",
 ]
-
-#: Every code the lint gives.
-CODES = (
-    "defaults.rule_unreachable",
-    "defaults.rule_shadowed",
-    "defaults.bitrate_snapped",
-    "defaults.codec_not_in_container",
-    "defaults.rule_unused",
-    "metadata.several_defaults",
-)
 
 #: Encoders a "use another encoder" fix tries, in order (HandBrake's defaults first).
 _ENCODER_PREFERENCE = ("aac", "libopus", "ac3", "eac3", "flac", "libmp3lame")
@@ -96,7 +83,7 @@ def describe_rule(rule: AudioCodecRule) -> str:
     elif not rule.languages:
         langs = "no language"
     else:
-        langs = " or ".join(language_label(tag) for tag in rule.languages)
+        langs = " or ".join(english_name(tag) for tag in rule.languages)
     text = f"{langs}, {CHANNEL_CONDITIONS[rule.source_channels]}"
     if rule.extras.first_track_of_language_only:
         text += ", the first track of a language"
@@ -207,8 +194,8 @@ def _reachability(defaults: AudioDefaults, index: int) -> ValidationIssue | None
         )
     outside = _outside_selection(defaults, rule)
     if outside is not None:
-        names = " or ".join(language_label(tag) for tag in outside)
-        listed = " and ".join(language_label(tag) for tag in defaults.selection.languages or [])
+        names = " or ".join(english_name(tag) for tag in outside)
+        listed = " and ".join(english_name(tag) for tag in defaults.selection.languages or [])
         adds = [AddOp(path="/audio_defaults/selection/languages/-", value=tag) for tag in outside]
         return _issue(
             Severity.WARNING,
@@ -357,7 +344,7 @@ def _container_issues(
     return issues
 
 
-def lint_rules(
+def lint_defaults(
     defaults: AudioDefaults,
     *,
     container: Container = "mkv",
@@ -365,8 +352,15 @@ def lint_rules(
     used: Collection[int] | None = None,
     container_codecs: bool = True,
 ) -> list[ValidationIssue]:
-    """The lint of :func:`lint_defaults`. ``used``: the 1-based numbers of the rules that
-    encoded a selected track of a source (``None``: no source, so no ``defaults.rule_unused``)."""
+    """Problems of the codec rules: shadowed or unreachable rules (warning), a max bitrate that
+    the encoder snaps (info; the note names the written value), an encoder the container cannot
+    hold (error, with fixes), and the rules that no selected track of a source uses (info).
+    Paths are template paths; fixes target ``"template"``.
+
+    ``used``: the 1-based numbers of the rules that encoded a selected track of a source
+    (``None``: no source, so no ``defaults.rule_unused``). ``container_codecs=False`` leaves out
+    ``defaults.codec_not_in_container``, for a caller whose own check reports the same encoders.
+    """
     defs = definitions or load_definitions()
     rules = defaults.codec_rules
     issues: list[ValidationIssue] = []
@@ -421,45 +415,6 @@ def lint_rules(
                 )
             )
     return issues
-
-
-def lint_defaults(
-    defaults: AudioDefaults,
-    *,
-    container: Container = "mkv",
-    source: MediaSource | None = None,
-    definitions: Definitions | None = None,
-    preferred_languages: Sequence[str] = (),
-    container_codecs: bool = True,
-) -> list[ValidationIssue]:
-    """Problems of the codec rules: shadowed or unreachable rules (warning), a max bitrate that
-    the encoder snaps (info; the note names the written value), and an encoder the container
-    cannot hold (error, with fixes). With ``source``, also the rules that no selected track of
-    that source uses (info), with the selection taking ``preferred_languages``. Paths are
-    template paths; fixes target ``"template"``.
-
-    ``container_codecs=False`` leaves out ``defaults.codec_not_in_container``, for a caller whose
-    own check reports the same encoders.
-    """
-    defs = definitions or load_definitions()
-    used: set[int] | None = None
-    if source is not None:
-        stage = audio_stage(
-            defaults,
-            source,
-            container=container,
-            preferred_languages=preferred_languages,
-            definitions=defs,
-        )
-        selected = [d for d in stage.decisions if d.selected]
-        used = {d.rule for d in selected if d.rule is not None} if selected else None
-    return lint_rules(
-        defaults,
-        container=container,
-        definitions=defs,
-        used=used,
-        container_codecs=container_codecs,
-    )
 
 
 def _may_be_default(rule: OutputTrackRule, kind: TrackKind) -> bool:

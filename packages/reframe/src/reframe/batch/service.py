@@ -25,7 +25,6 @@ from typing import Protocol, cast
 from reframe.batch.derive import derive_template, merge_template
 from reframe.batch.grouping import episode_key, episode_labels, group_sources
 from reframe.batch.resolve import matrix_columns, resolve, row_status
-from reframe.definitions import Definitions, load_definitions
 from reframe.jobs import file_key
 from reframe.models.batch import (
     BatchGroup,
@@ -164,19 +163,11 @@ class BatchService:
         presets: _Presets,
         jobs: object,
         settings: Callable[[], AppSettings],
-        definitions: Definitions | None = None,
     ) -> None:
         self._sources = sources
         self._presets = presets
         self._jobs = cast(_Jobs, jobs)
         self._settings = settings
-        self._definitions = definitions
-
-    @property
-    def definitions(self) -> Definitions:
-        if self._definitions is None:
-            self._definitions = load_definitions()
-        return self._definitions
 
     async def _probe_all(
         self, sources: Sequence[str | os.PathLike[str] | MediaSource]
@@ -313,9 +304,7 @@ class BatchService:
             row, _ = await self._row(chosen, found, patches.get(key), naming, first, check)
             rows.append(row)
         rows, batch_issues = await asyncio.to_thread(_collisions, rows)
-        columns = await asyncio.to_thread(
-            matrix_columns, chosen, definitions=self.definitions, languages=settings.languages
-        )
+        columns = await asyncio.to_thread(matrix_columns, chosen, languages=settings.languages)
         return BatchResolution(
             group=group,
             columns=columns,
@@ -395,9 +384,7 @@ class BatchService:
         checked, batch_issues = await asyncio.to_thread(
             _collisions, flat, files=files, left_out=owners
         )
-        columns = await asyncio.to_thread(
-            matrix_columns, chosen, definitions=self.definitions, languages=settings.languages
-        )
+        columns = await asyncio.to_thread(matrix_columns, chosen, languages=settings.languages)
         resolutions: list[BatchResolution] = []
         start = 0
         for group, members in zip(groups, grouped, strict=True):
@@ -433,7 +420,6 @@ class BatchService:
                 template,
                 source,
                 override,
-                definitions=self.definitions,
                 languages=languages,
                 container_codecs=False,  # the validation below reports the codecs
             )

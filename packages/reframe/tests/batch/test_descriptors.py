@@ -13,7 +13,6 @@ from reframe.batch.descriptors import (
     codec_family,
     codec_label,
     hdr_type,
-    language_code,
     stream_roles,
     track_label,
 )
@@ -193,7 +192,6 @@ def test_labels() -> None:
     (v,) = describe_tracks(source(video(0, display_codec="HEVC Main 10", language="eng")))
     assert v.label == "HEVC Main 10 1920x1080"
     assert v.language == "en"
-    assert language_code(None) == "und"
 
 
 def test_undetermined_languages_are_none() -> None:

@@ -12,19 +12,17 @@ from reframe.models.job import TrackMetadata
 from reframe.models.media import AudioStream, SubtitleStream
 from reframe.naming.template import Value, parse_template, render
 
-__all__ = ["NAME_TEMPLATE_VARIABLES", "effective_language", "render_track_name", "track_metadata"]
+__all__ = ["effective_language", "language_values", "render_track_name", "track_metadata"]
 
-#: The variables of an audio track name template, with what they hold.
-NAME_TEMPLATE_VARIABLES: dict[str, str] = {
-    "lang": "The language tag: hu, pt-BR",
-    "lang_name": "The English name of the language: Hungarian",
-    "lang_native": "The language's own name: Magyar",
-    "channels": "The output channel layout: 5.1, 2.0",
-    "codec": "The output codec: AC-3, AAC; for passthru the source codec",
-    "bitrate": "The output bit rate in kb/s (empty for passthru and lossless encoders)",
-    "title": "The source track's title",
-    "source_codec": "The source codec: TrueHD Atmos, DTS-HD MA",
-}
+
+def language_values(language: str | None) -> dict[str, Value]:
+    """The language variables of a track name template: ``lang``, ``lang_name``,
+    ``lang_native``."""
+    return {
+        "lang": language,
+        "lang_name": languages.english_name(language),
+        "lang_native": languages.native_name(language, capitalize=True),
+    }
 
 
 def effective_language(stream: AudioStream | SubtitleStream) -> str | None:
