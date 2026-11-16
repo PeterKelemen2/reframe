@@ -39,7 +39,7 @@ from reframe.models.preset import FieldChange, Preset, PresetFile
 from reframe.models.settings import AppSettings, LogLevel
 from reframe.models.tasks import TaskInfo
 from reframe.models.template import JobTemplate
-from reframe.models.tools import ToolInfo, ToolSet, ToolStatus
+from reframe.models.tools import ToolInfo, ToolSet
 from reframe.platform.power import PowerService, create_power_service
 from reframe.presets import (
     ConflictPolicy,
@@ -79,7 +79,6 @@ __all__ = [
     "SettingsUpdate",
     "SourceService",
     "ToolsService",
-    "tool_usable",
 ]
 
 log = logging.getLogger(__name__)
@@ -93,11 +92,6 @@ KNOWN_SOURCES = 1024
 CLOSE_TIMEOUT = 10.0
 #: ffprobe runs at once in :meth:`SourceService.probe_many`.
 PROBE_CONCURRENCY = 4
-
-
-def tool_usable(info: ToolInfo) -> bool:
-    """A tool can be run: its status is ``found`` and it has a path."""
-    return info.status is ToolStatus.FOUND and info.path is not None
 
 
 class ToolsService:
@@ -567,7 +561,7 @@ class SourceService:
         return prober if isinstance(prober, Prober) else None
 
     def _prober_for(self, info: ToolInfo) -> Prober | ToolInfo:
-        if not tool_usable(info):
+        if not info.usable:
             return info
         tool = ProbeTool.of(info)
         if self._prober is None or self._prober.tool != tool:

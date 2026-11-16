@@ -163,8 +163,7 @@ async def test_renamed_chapters_give_a_new_clip(tmp_path: Path, fixture_media: M
 
 async def test_two_identical_clips_at_once(tmp_path: Path, fixture_media: Media) -> None:
     """Two runs of the same clip id at once (a raised limit, or two processes on one cache)."""
-    env = make_env(tmp_path / "cache")
-    env.tasks.set_limit("preview_clip", 2)
+    env = make_env(tmp_path / "cache", limits={"preview_clip": 2})
     src = fixture_media("hdr10-4k")
     job = job_for(src, encoder="libx265", bit_depth=10, preset="ultrafast")
     a = start_preview_clip(env.ctx, job, start=0.0, seconds=3.0)

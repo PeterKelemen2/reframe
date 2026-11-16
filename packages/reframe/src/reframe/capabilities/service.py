@@ -33,7 +33,7 @@ from reframe.errors import ReframeClosedError
 from reframe.events import EventBus, Subscription
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe.models.events import CapabilitiesChangedEvent, ToolsChangedEvent
-from reframe.models.tools import ToolInfo, ToolStatus
+from reframe.models.tools import ToolInfo
 from reframe.tools import CancelToken
 
 if TYPE_CHECKING:
@@ -100,7 +100,6 @@ class CapabilityService:
         self._ffmpeg_identity: _FfmpegIdentity | None = None
         self._subscription: Subscription | None = None
         self._watcher: asyncio.Task[None] | None = None
-        self._writes: set[asyncio.Task[None]] = set()
         self._detections: set[asyncio.Task[CapabilitySnapshot]] = set()
         """Every detection that has not ended (a replaced one may still kill its encodes)."""
         self._closed = False
@@ -159,8 +158,7 @@ class CapabilityService:
     async def close(self) -> None:
         """Cancel the detection (killing its test encodes) and stop watching tool changes.
         Returns when every detection it started has ended (one that ``rescan()`` replaced
-        may still be killing its test encodes). A cache write that has started is finished
-        first (the next start shows its result)."""
+        may still be killing its test encodes)."""
         self._closed = True
         if self._token is not None:
             self._token.cancel()
@@ -173,8 +171,6 @@ class CapabilityService:
         pending = {*tasks, *self._detections}
         if pending:
             await asyncio.wait(pending)
-        if self._writes:
-            await asyncio.wait(set(self._writes))
 
     def _check_open(self) -> None:
         if self._closed:
@@ -221,8 +217,6 @@ class CapabilityService:
     ) -> CapabilitySnapshot:
         if previous is not None:
             await asyncio.wait({previous})  # its test encodes are gone before new ones start
-        if self._writes:
-            await asyncio.wait(set(self._writes))  # an older result never overwrites this one
         try:
             tools = await self._tools.status()
         except ReframeClosedError as exc:  # Reframe is shutting down
@@ -244,7 +238,7 @@ class CapabilityService:
     ) -> CapabilitySnapshot:
         definitions = self._definitions
         options = await self._options()
-        if ffmpeg.status is not ToolStatus.FOUND or ffmpeg.path is None:
+        if not ffmpeg.usable:
             return self._finish(unusable_snapshot(ffmpeg, definitions), token)
 
         key = await self._key(ffmpeg, options)
@@ -279,18 +273,11 @@ class CapabilityService:
         if token.cancelled:
             return self._snapshot
         if key is not None:
-            await self._store(key, final)  # cached before anyone can see that it ended
+            # On the loop with no await before _finish: a cancel cannot stop the write half-way,
+            # no later detection can run during it, and the result is cached before anyone can
+            # see that the detection ended. It is one small file.
+            self._put(key, final)
         return self._finish(final, token)
-
-    async def _store(self, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
-        """Write ``snapshot`` to the cache in a worker thread. Cancelling the detection does
-        not cancel a started write: :meth:`close` and the next detection wait for it."""
-        write = asyncio.get_running_loop().create_task(
-            asyncio.to_thread(self._put, key, snapshot), name="reframe-capability-cache-write"
-        )
-        self._writes.add(write)
-        write.add_done_callback(self._writes.discard)
-        await asyncio.shield(write)
 
     def _put(self, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
         try:

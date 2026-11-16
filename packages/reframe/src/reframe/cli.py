@@ -92,7 +92,7 @@ from reframe.queue import (
 )
 from reframe.queue.lock import LOCK_FILE
 from reframe.queue.logs import log_file
-from reframe.service import ProbeError, ProbeErrorKind, Reframe, tool_usable
+from reframe.service import ProbeError, ProbeErrorKind, Reframe
 from reframe.textfile import NotARegularFileError, open_regular
 from reframe.tools.__main__ import status_lines
 from reframe.tools.fetch import (
@@ -557,7 +557,7 @@ def _not_usable(info: ToolInfo) -> str:
 def error_message(error: ProbeError, ffprobe: ToolInfo | None) -> str:
     """The one-line error for a failed probe."""
     if error.kind is ProbeErrorKind.TOOL_FAILED and ffprobe is not None:
-        if not tool_usable(ffprobe):
+        if not ffprobe.usable:
             return _one_line(f"error: {_not_usable(ffprobe)}")
         return _one_line(
             f"error: ffprobe ({origin_text(ffprobe)}) could not be started: "
@@ -1097,7 +1097,7 @@ async def run_encoders(*, as_json: bool) -> int:
         tools = await app.tools.status()
     if as_json:
         _write_json(snapshot)
-    if not tool_usable(tools.ffmpeg):
+    if not tools.ffmpeg.usable:
         _error(_not_usable(tools.ffmpeg))
         return EXIT_NO_TOOL
     return EXIT_OK
@@ -3204,7 +3204,7 @@ async def run_tools_status(*, as_json: bool) -> int:
         console = make_console()
         _print_tool_lines(console, tools)
         _say(console, fetched_text(data_dir), "dim")
-    problems = [tools.get(name) for name in REQUIRED_TOOLS if not tool_usable(tools.get(name))]
+    problems = [tools.get(name) for name in REQUIRED_TOOLS if not tools.get(name).usable]
     for info in problems:
         _error(tool_problem(info))
     return EXIT_NO_TOOL if problems else EXIT_OK

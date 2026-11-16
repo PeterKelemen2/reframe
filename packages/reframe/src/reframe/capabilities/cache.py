@@ -138,8 +138,7 @@ def cache_key(
 
 
 class CapabilityCache:
-    """Detection results by :class:`CacheKey`, as JSON files in one folder. Blocking file I/O:
-    call it off the event loop."""
+    """Detection results by :class:`CacheKey`, as JSON files in one folder. Blocking file I/O."""
 
     def __init__(self, folder: Path, *, max_entries: int = MAX_ENTRIES) -> None:
         self.folder = Path(folder)

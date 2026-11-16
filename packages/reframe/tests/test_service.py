@@ -25,7 +25,6 @@ from reframe.service import (
     ProbeErrorKind,
     Reframe,
     ReframeClosedError,
-    tool_usable,
 )
 from reframe.tools import ENV_VARS, CancelToken
 from reframe_testing import fake_tools as ft
@@ -235,7 +234,7 @@ async def test_missing_ffprobe_is_a_tool_error(
         assert outcome.detail is not None
         assert "REFRAME_FFPROBE" in outcome.detail
         tools = await app.tools.status()
-        assert not tool_usable(tools.ffprobe)
+        assert not tools.ffprobe.usable
         # A file problem is reported first: it is what the user must fix.
         missing = await app.sources.probe(env / "missing.mkv")
         assert isinstance(missing, ProbeError)

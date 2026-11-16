@@ -40,7 +40,7 @@ from reframe.models.naming import NamingOptions
 from reframe.models.plan import EncodePlan, HeaderEdit, PlanStep, resolve_argv
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.settings import AppSettings, CollisionPolicy
-from reframe.models.tools import ToolInfo, ToolSet, ToolStatus
+from reframe.models.tools import ToolInfo, ToolSet
 from reframe.probe import ProbeError, matroska
 from reframe.queue import files, loudnorm
 from reframe.queue.clock import Clock
@@ -151,10 +151,6 @@ def _block_key(block: ProgressBlock) -> tuple[float | None, int | None, int | No
 
 def _issue(code: str, message: str, path: str = "") -> ValidationIssue:
     return ValidationIssue(severity=Severity.ERROR, code=code, path=path, message=message)
-
-
-def _usable(info: ToolInfo) -> bool:
-    return info.status is ToolStatus.FOUND and info.path is not None
 
 
 class JobRunner:
@@ -372,7 +368,7 @@ class JobRunner:
             tool, step_argv = step.tool, step.argv
             info = prepared.tools.get(tool)
             what = _WHAT[step.kind]
-            if not _usable(info):
+            if not info.usable:
                 reason = f": {info.reason}" if info.reason else ""
                 return Outcome(
                     JobState.FAILED,

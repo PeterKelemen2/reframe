@@ -20,7 +20,7 @@ from reframe.definitions import Definitions
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.media import MediaSource
 from reframe.models.settings import AppSettings
-from reframe.models.tools import ToolInfo, ToolName, ToolSet, ToolStatus
+from reframe.models.tools import ToolInfo, ToolName, ToolSet
 from reframe.tasks import TaskFailed
 from reframe.tools import CancelToken
 
@@ -124,7 +124,7 @@ async def require_tool(ctx: MediaTaskContext, name: ToolName) -> ToolInfo:
     :class:`TaskFailed` with the tool's reason."""
     tools = await ctx.tools.status()
     info = tools.get(name)
-    if info.status is ToolStatus.FOUND and info.path is not None:
+    if info.usable:
         return info
     reason = info.reason or info.status.value
     raise TaskFailed(f"{name} cannot be used: {reason}")

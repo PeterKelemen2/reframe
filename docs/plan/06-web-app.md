@@ -224,7 +224,6 @@ row whose member a route reaches or that no longer exists
 | `queue.wait` | A client follows the `job.state` events or reads `GET /api/queue`; a request held open until jobs end would hold a connection for hours |
 | `power.schedule` | Only the queue starts a countdown: no client may shut down or suspend the server's machine on demand |
 | `power.executor` | The executor is the operating system's mechanism |
-| `tasks.limit`, `tasks.set_limit` | The concurrency per task kind is internal; no setting changes it |
 
 ## S-3 Event WebSocket
 
