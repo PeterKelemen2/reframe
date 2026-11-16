@@ -329,3 +329,23 @@ choices below were taken by the agents or by the orchestrator, with the same dec
   the orchestrator runs the full suite after each merge. See "How to run the tests" in
   [plan.md](plan.md).
 - If the other option: each agent also runs the full suite (now about 6 minutes with `-n auto`).
+
+### D-34 Q-6.7: the "Not exposed" table loses two rows without a new record
+- Question: TP-07 removed `PowerService.closed` and `countdown`. `docs/plan/06-web-app.md` lists
+  them in the "Not exposed" table, and `test_facade_coverage.py` fails while a row names a member
+  that no longer exists. D-4 treats removing something the plan names as a decision change.
+- Chosen: the table's own rule (a row whose member no longer exists goes) asks for the edit, so
+  it is bookkeeping, not a change of course; no record in Q-6.7. Q-6.11, whose record (X-07)
+  amends the same table, names these two rows too. The same holds for `batch.definitions`
+  (Q-6.6, BAT-10 item 2), removed from the table after the wave 3 merged run failed on it.
+- Rule: 2, 5.
+- If the other option: a short record for Q-6.7 that names the two rows.
+
+### D-35 Q-6.6 and Q-6.7: small choices of the agents
+- Q-6.6: `explain.py` imports the private `selection._track` instead of making it public (as
+  `descriptors` already does with `_EXTRA_ROLES`); the `rule_unused` tests go through
+  `resolve_tracks` with a small helper (tests +2 lines instead of -14); decision 0031 §6 names
+  the new entry point `lint_defaults(defaults, used=...)`, as BAT-07 asks. Rule 4, 5.
+- Q-6.7: the optional `ToolLocation.env_var` part of TP-02 is not done (outside the estimate);
+  `test_status_lines_are_shared_with_python_m_reframe_tools` stays synchronous and calls
+  `asyncio.run(discover_tools())`. Rule 5.
