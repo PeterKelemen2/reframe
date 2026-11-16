@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
-import time
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +15,7 @@ from reframe_server.routers.sources import ProbeSummary
 from reframe_server.sources import source_id
 from reframe_testing import fake_tools as ft
 from reframe_testing.server import PROBE_RULE, Api
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
@@ -30,14 +28,6 @@ async def _probe(api: Api, *paths: Path, recursive: bool = False) -> TaskInfo:
     task_id = response.json()["task_id"]
     assert response.headers["location"] == f"/api/tasks/{task_id}"
     return await api.reframe.tasks.wait(task_id)
-
-
-async def _until(check: Callable[[], bool], limit: float = 10.0) -> None:
-    deadline = time.monotonic() + limit
-    while not check():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.02)
 
 
 async def test_a_probed_file_gets_a_source_id(api: Api) -> None:
@@ -116,7 +106,7 @@ async def test_cancelling_the_probe_task_stops_its_ffprobe(api: Api) -> None:
     await api.reframe.capabilities.wait()  # its ffmpeg runs are not this test's
     response = await api.client.post("/api/sources", json={"paths": [str(api.media_file())]})
     task_id = response.json()["task_id"]
-    await _until(lambda: any("-show_streams" in call for call in api.fake.calls("ffprobe")))
+    await wait_until(lambda: any("-show_streams" in call for call in api.fake.calls("ffprobe")))
     assert api.reframe.tasks.cancel(task_id)
     info = await api.reframe.tasks.wait(task_id)
     assert info.state is TaskState.CANCELLED

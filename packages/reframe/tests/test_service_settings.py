@@ -5,8 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -29,16 +27,9 @@ from reframe.models.migrations import current_version
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
-
-
-async def until(condition: Callable[[], bool], limit: float = 30.0) -> None:
-    deadline = time.monotonic() + limit
-    while not condition():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.02)
 
 
 @pytest.fixture
@@ -291,7 +282,7 @@ async def test_encoder_settings_change_reruns_detection(
         app.tools.rescan = tools  # type: ignore[method-assign]
         result = await app.settings.update(patch)
         assert result.saved
-        await until(lambda: rescan.count == 1)
+        await wait_until(lambda: rescan.count == 1)
         assert tools.count == 0
 
 
@@ -311,7 +302,7 @@ async def test_tools_and_encoders_changed_together_rescan_both(config: Path) -> 
         new.tools.ffprobe = Path("/opt/ffmpeg/ffprobe")
         new.encoders.hardware_tests = False
         await app.settings.update(new)
-        await until(lambda: len(order) == 2)
+        await wait_until(lambda: len(order) == 2)
         assert order == ["tools", "capabilities"]
 
 
@@ -322,7 +313,7 @@ async def test_close_cancels_a_running_reaction(config: Path) -> None:
     await app.settings.update(
         [{"op": "replace", "path": "/encoders/hardware_tests", "value": False}]
     )
-    await until(lambda: rescan.count == 1)
+    await wait_until(lambda: rescan.count == 1)
     async with asyncio.timeout(10):
         await app.close()
     assert rescan.cancelled

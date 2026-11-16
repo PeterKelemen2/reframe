@@ -10,17 +10,13 @@ from pathlib import Path
 import pytest
 
 from reframe.models import JobDraft, JobState
+from reframe_testing.ebml import element
 from reframe_testing.mkvtoolnix import mkvtoolnix_tool
 
 from .test_metadata_edit_real import Env, draft_remux, env, mkvmerge, reprobe, run
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.anyio]
 __all__ = ["env"]
-
-
-def _element(element_id: int, payload: bytes) -> bytes:
-    raw_id = element_id.to_bytes((element_id.bit_length() + 7) // 8, "big")
-    return raw_id + bytes([0x01]) + len(payload).to_bytes(7, "big") + payload
 
 
 def _header(data: bytes, pos: int) -> tuple[int, int, int]:
@@ -50,11 +46,11 @@ def with_bogus_seek_entry(path: Path) -> None:
     void_id, void_size, void_header = _header(bytes(data), start + head_header + head_size)
     assert void_id == 0xEC
     room = head_header + head_size + void_header + void_size
-    bogus = _element(
-        0x4DBB, _element(0x53AB, bytes.fromhex("1654AE6B")) + _element(0x53AC, b"\xff" * 8)
+    bogus = element(
+        0x4DBB, element(0x53AB, bytes.fromhex("1654AE6B")) + element(0x53AC, b"\xff" * 8)
     )
-    new_head = _element(0x114D9B74, bogus + payload)
-    new_void = _element(0xEC, b"\0" * (room - len(new_head) - 9))
+    new_head = element(0x114D9B74, bogus + payload)
+    new_void = element(0xEC, b"\0" * (room - len(new_head) - 9))
     assert len(new_head) + len(new_void) == room
     data[start : start + room] = new_head + new_void
     path.write_bytes(bytes(data))

@@ -10,7 +10,6 @@ from typing import Any
 import pytest
 
 from reframe.jsonpatch import apply_patch
-from reframe.models import MediaSource
 from reframe_testing.server import Api, ApiFactory
 
 pytestmark = pytest.mark.anyio
@@ -19,16 +18,9 @@ DRAFTED = "Show S01E01 (1).mkv"
 """The default naming saves beside the source, under a free name."""
 
 
-async def add_source(api: Api) -> str:
-    path = api.media_file("Show S01E01.mkv")
-    assert isinstance(await api.reframe.sources.probe(path), MediaSource)
-    sid: str = api.app.state.sources.add(path)
-    return sid
-
-
 async def drafted(api: Api, route: str = "draft", **request: Any) -> dict[str, Any]:
     response = await api.client.post(
-        f"/api/jobs/{route}", json={"source_id": await add_source(api), **request}
+        f"/api/jobs/{route}", json={"source_id": await api.add_source(), **request}
     )
     assert response.status_code == 200
     body: dict[str, Any] = response.json()

@@ -7,7 +7,6 @@ import json
 import os
 import sqlite3
 import threading
-import time
 from collections.abc import AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,6 +47,7 @@ from reframe.queue import QueueService
 from reframe.queue.store import row_of
 from reframe.tools import CancelToken
 from reframe_testing import fake_tools as ft
+from reframe_testing.waiting import wait_until
 
 ROOT = Path(__file__).resolve().parents[4]
 PROBES = ROOT / "testdata" / "probes" / "fixtures"
@@ -86,15 +86,6 @@ def event_kinds(events: Iterable[Event]) -> list[str]:
             continue
         kinds.append(event.type)
     return kinds
-
-
-async def poll(condition: Callable[[], bool], limit: float = 20.0) -> None:
-    """Wait until ``condition()`` is true; the limit is only a safety net."""
-    deadline = time.monotonic() + limit
-    while not condition():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.01)
 
 
 def recorded(name: str, path: Path) -> MediaSource:
@@ -327,7 +318,7 @@ class Harness:
         return self.queue.log_path(job_id).read_text(encoding="utf-8")
 
     async def wait_for(self, condition: Callable[[], bool], limit: float = 20.0) -> None:
-        await poll(condition, limit)
+        await wait_until(condition, limit)
 
     async def running_process(self, job_id: str, limit: float = 20.0) -> psutil.Process:
         """The process of the job's running step, once it exists: the first ``job.progress``
@@ -337,7 +328,7 @@ class Harness:
             active = self.queue._active.get(job_id)
             return None if active is None else active.process
 
-        await poll(lambda: current() is not None, limit)
+        await wait_until(lambda: current() is not None, limit)
         process = current()
         assert process is not None
         return process
@@ -351,7 +342,7 @@ class Harness:
                     return event
             return None
 
-        await poll(lambda: find() is not None, limit)
+        await wait_until(lambda: find() is not None, limit)
         found = find()
         assert found is not None
         return found
@@ -404,7 +395,7 @@ async def restore_together(h: Harness, *jobs: JobSettings) -> list[str]:
     h.queue = queue_at(h)
     h.queue.list()
     # Restored keys are taken in the background: the first to arrive would start first.
-    await poll(lambda: all(job_id in h.queue._keys for job_id in ids))
+    await wait_until(lambda: all(job_id in h.queue._keys for job_id in ids))
     return ids
 
 

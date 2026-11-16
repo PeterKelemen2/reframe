@@ -41,8 +41,9 @@ from reframe.remote import RemoteError, RemoteQueue
 from reframe.remote import owner as owner_module
 from reframe_testing import fake_tools as ft
 from reframe_testing.server import PROBE_RULE, Api, ApiFactory
+from reframe_testing.waiting import wait_until
 
-from .conftest import HANG, Server, Wire, poll, serving
+from .conftest import HANG, Server, Wire, serving
 
 pytestmark = pytest.mark.anyio
 
@@ -89,7 +90,7 @@ async def job_of(server: Server, name: str, state: JobState | None = None) -> st
                 return job.id
         return None
 
-    await poll(lambda: found() is not None)
+    await wait_until(lambda: found() is not None)
     job_id = found()
     assert job_id is not None
     return job_id
@@ -339,7 +340,7 @@ async def test_ctrl_c_cancels_only_the_commands_jobs(server: Server) -> None:
     server.publish()
     files = [server.api.media_file(f"{name}.mkv") for name in ("A", "B")]
     task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
-    await poll(lambda: list(states(server).values()).count(JobState.RUNNING) == 2)
+    await wait_until(lambda: list(states(server).values()).count(JobState.RUNNING) == 2)
     assert queue.get(running.id).state is JobState.RUNNING  # type: ignore[union-attr]
     task.cancel()
     assert await asyncio.wait_for(task, WAIT) == cli.EXIT_INTERRUPTED
@@ -361,7 +362,9 @@ async def test_a_server_that_stops_while_the_command_follows_its_jobs(
         async with api.live() as live:
             Server(api, live).publish()
             task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
-            await poll(lambda: any(j.state is JobState.RUNNING for j in api.reframe.queue.list()))
+            await wait_until(
+                lambda: any(j.state is JobState.RUNNING for j in api.reframe.queue.list())
+            )
         code = await asyncio.wait_for(task, 30)
         jobs = api.reframe.queue.list()
         await api.reframe.queue.cancel()
@@ -449,7 +452,7 @@ async def test_a_stop_by_another_front_end_is_reported_and_a_later_start_runs_th
     queue = server.api.reframe.queue
     a = await job_of(server, "A.mkv", JobState.RUNNING)
     b = await job_of(server, "B.mkv", JobState.WAITING)
-    await poll(lambda: queue.only == [a, b])  # the command's start
+    await wait_until(lambda: queue.only == [a, b])  # the command's start
     await queue.stop()
     out: list[str] = []
 
@@ -457,7 +460,7 @@ async def test_a_stop_by_another_front_end_is_reported_and_a_later_start_runs_th
         out.append(capsys.readouterr().out)
         return cli.STOPPED_BY_OTHERS in "".join(out)
 
-    await poll(stop_shown)
+    await wait_until(stop_shown)
     await queue.cancel(a)
     await asyncio.sleep(0.3)  # a job that the runner took would be running by now
     assert states(server)[b] is JobState.WAITING
@@ -485,7 +488,7 @@ async def test_the_idle_end_of_another_commands_start_is_not_reported_as_a_stop(
     a = await job_of(server, "A.mkv", JobState.RUNNING)
     b = await job_of(server, "B.mkv", JobState.WAITING)
     c = await job_of(server, "C.mkv", JobState.WAITING)
-    await poll(lambda: queue.only == [a, b, c])  # the command's start
+    await wait_until(lambda: queue.only == [a, b, c])  # the command's start
     await queue.stop()
     await queue.cancel(a)
     other = await queue.add(await server.job("Y.mkv"))
@@ -500,7 +503,7 @@ async def test_the_idle_end_of_another_commands_start_is_not_reported_as_a_stop(
         out.append(capsys.readouterr().out)
         return "[3/3] cancelled" in "".join(out).splitlines()
 
-    await poll(c_shown)
+    await wait_until(c_shown)
     await queue.cancel(b)
     code = await asyncio.wait_for(task, WAIT)
     lines = "".join([*out, capsys.readouterr().out]).splitlines()
@@ -545,7 +548,7 @@ async def test_a_stop_just_before_the_commands_own_start_is_not_reported(
     task = asyncio.create_task(cli.run_encode(files, preset=None, output=None))
     a = await job_of(server, "A.mkv", JobState.RUNNING)
     b = await job_of(server, "B.mkv", JobState.WAITING)
-    await poll(lambda: queue.only == [a, b])
+    await wait_until(lambda: queue.only == [a, b])
     await queue.cancel()  # its events come after the stop's and the start's
     assert await asyncio.wait_for(task, WAIT) == cli.EXIT_FAILED
     assert cli.STOPPED_BY_OTHERS not in capsys.readouterr().out
@@ -569,7 +572,7 @@ async def test_a_stop_that_cannot_be_checked_with_the_owner_ends_nothing(
     a = await job_of(server, "A.mkv", JobState.RUNNING)
     await job_of(server, "B.mkv", JobState.WAITING)
     await queue.stop()
-    await poll(lambda: bool(checks))
+    await wait_until(lambda: bool(checks))
     await queue.cancel(a)
     queue.start()
     code = await asyncio.wait_for(task, WAIT)
@@ -583,7 +586,7 @@ async def test_a_stop_that_cannot_be_checked_with_the_owner_ends_nothing(
 
 async def connections_closed(server: Server) -> None:
     """Until no event connection is open, and the owner has acted on their ends."""
-    await poll(lambda: server.api.app.state.hub.connections == 0)
+    await wait_until(lambda: server.api.app.state.hub.connections == 0)
     await asyncio.sleep(0.5)
 
 
@@ -604,7 +607,7 @@ async def test_a_job_another_front_end_retries_is_left_to_it(
     await job_of(server, "B.mkv", JobState.RUNNING)
     server.api.fake.set_scenario(scenario(ends("B.mkv", seconds=4)))  # A's next run hangs
     assert await cli.run_queue_retry(a) == cli.EXIT_OK
-    await poll(lambda: states(server)[a] is JobState.RUNNING)
+    await wait_until(lambda: states(server)[a] is JobState.RUNNING)
     assert not task.done()
     code = await asyncio.wait_for(task, WAIT)
     lines = capsys.readouterr().out.splitlines()
@@ -612,7 +615,7 @@ async def test_a_job_another_front_end_retries_is_left_to_it(
     assert lines[-1] == "Summary: 1 done, 1 failed, 0 cancelled, 0 not queued."
     assert lines.count("[1/2] running") == 1  # A's new run is not shown
     await connections_closed(server)
-    await poll(lambda: states(server)[a] is JobState.RUNNING)
+    await wait_until(lambda: states(server)[a] is JobState.RUNNING)
     await server.api.reframe.queue.cancel(a)
 
 
@@ -633,7 +636,9 @@ async def test_ctrl_c_leaves_a_job_another_front_end_retried(
     assert code == cli.EXIT_INTERRUPTED
     assert lines[-1] == "Summary: 0 done, 1 failed, 1 cancelled, 0 not queued."
     await connections_closed(server)
-    await poll(lambda: states(server)[a] is JobState.RUNNING)  # in the slot of the cancelled B
+    await wait_until(
+        lambda: states(server)[a] is JobState.RUNNING
+    )  # in the slot of the cancelled B
     await server.api.reframe.queue.cancel(a)
 
 
@@ -701,7 +706,7 @@ async def _stop_and_continue(
         cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
     )
     job_id = await job_of(server, "A.mkv", JobState.RUNNING)
-    await poll(_sigtstp_handled, 10)  # never raised without a handler: it would stop pytest
+    await wait_until(_sigtstp_handled, 10)  # never raised without a handler: it would stop pytest
     signal.raise_signal(STOP)
     code = await asyncio.wait_for(task, WAIT)
     captured = capsys.readouterr()
@@ -730,7 +735,7 @@ async def test_a_command_that_was_stopped_cancels_its_jobs_on_sigterm(
             cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
         )
         job_id = await job_of(server, "A.mkv", JobState.RUNNING)
-        await poll(_sigtstp_handled, 10)
+        await wait_until(_sigtstp_handled, 10)
         signal.raise_signal(STOP)
         code = await asyncio.wait_for(task, WAIT)
         assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL  # the command's handler is gone
@@ -770,7 +775,7 @@ async def test_after_a_lost_connection_the_owners_states_are_reported(
     after = JobState.CANCELLED if attached else JobState.RUNNING
 
     async def after_the_owner_acted(*args: Any, **kwargs: Any) -> Any:
-        await poll(lambda: states(server)[job_id] is after)
+        await wait_until(lambda: states(server)[job_id] is after)
         return await connect(*args, **kwargs) if answers else "no Reframe server answers"
 
     monkeypatch.setattr(cli, "connect_owner", after_the_owner_acted)
@@ -808,7 +813,7 @@ async def test_a_command_that_cannot_reach_the_owner_after_a_stop(
         cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
     )
     job_id = await job_of(server, "A.mkv", JobState.RUNNING)
-    await poll(_sigtstp_handled, 10)
+    await wait_until(_sigtstp_handled, 10)
     signal.raise_signal(STOP)
     code = await asyncio.wait_for(task, WAIT)
     captured = capsys.readouterr()
@@ -931,7 +936,7 @@ async def test_a_detach_that_was_interrupted_leaves_its_jobs_to_the_owners_cance
     await asyncio.wait_for(entered.wait(), WAIT)
     task.cancel()
     assert await asyncio.wait_for(task, WAIT) == cli.EXIT_INTERRUPTED
-    await poll(lambda: sorted(states(server).values()) == [JobState.CANCELLED] * 2)
+    await wait_until(lambda: sorted(states(server).values()) == [JobState.CANCELLED] * 2)
 
 
 @asynccontextmanager
@@ -942,7 +947,7 @@ async def stoppable(api: Api) -> AsyncIterator[uvicorn.Server]:
     )
     running = asyncio.create_task(served.serve())
     try:
-        await poll(lambda: served.started or running.done())
+        await wait_until(lambda: served.started or running.done())
         yield served
     finally:
         served.should_exit = True
@@ -968,7 +973,7 @@ async def test_an_owner_that_stops_while_the_jobs_are_added(
             added.append(job.id)
             if len(added) == 2:
                 served.should_exit = True
-                await poll(lambda: not served.servers[0].is_serving())
+                await wait_until(lambda: not served.servers[0].is_serving())
             return job
 
         monkeypatch.setattr(queue, "add", add_then_stop)

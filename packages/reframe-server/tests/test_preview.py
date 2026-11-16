@@ -19,6 +19,7 @@ from reframe.tasks import TaskContext
 from reframe_server.sources import source_id
 from reframe_testing import fake_tools as ft
 from reframe_testing.server import PROBE_RULE, Api
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
@@ -31,14 +32,6 @@ def _lifetime(url: str, path: str) -> float:
     parts = urlsplit(url)
     assert parts.path == path
     return int(parse_qs(parts.query)["exp"][0]) - time.time()
-
-
-async def _until(check: Callable[[], bool], limit: float = 10.0) -> None:
-    deadline = time.monotonic() + limit
-    while not check():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.02)
 
 
 async def _source(api: Api, file: Path) -> str:
@@ -135,7 +128,7 @@ async def test_a_frames_task_cancelled_elsewhere_is_a_conflict(api: Api) -> None
     sid = await _source(api, api.media_file())
     body = {"source_id": sid, "count": 1}
     request = asyncio.ensure_future(api.client.post("/api/preview/frames", json=body))
-    await _until(lambda: any("-frames:v" in call for call in api.fake.calls("ffmpeg")))
+    await wait_until(lambda: any("-frames:v" in call for call in api.fake.calls("ffmpeg")))
     task = _frames_task(api)
     assert task is not None
     assert api.reframe.tasks.cancel(task.id)
@@ -148,7 +141,7 @@ async def test_shutdown_while_frames_are_made_is_503(api: Api) -> None:
     sid = await _source(api, api.media_file())
     body = {"source_id": sid, "count": 1}
     request = asyncio.ensure_future(api.client.post("/api/preview/frames", json=body))
-    await _until(lambda: any("-frames:v" in call for call in api.fake.calls("ffmpeg")))
+    await wait_until(lambda: any("-frames:v" in call for call in api.fake.calls("ffmpeg")))
     await api.reframe.close()
     response = await request
     assert (response.status_code, response.json()["code"]) == (503, "server.closing")

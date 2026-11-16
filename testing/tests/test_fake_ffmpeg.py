@@ -13,7 +13,6 @@ import signal
 import subprocess
 import sys
 import time
-from collections.abc import Callable
 from pathlib import Path
 
 import psutil
@@ -22,6 +21,7 @@ import pytest
 from reframe_testing import fake_ffmpeg
 from reframe_testing import fake_tools as ft
 from reframe_testing.fake_tools import FakeTools
+from reframe_testing.waiting import wait_until_sync
 
 POSIX = os.name != "nt"
 posix_only = pytest.mark.skipif(not POSIX, reason="POSIX signals")
@@ -37,15 +37,6 @@ def run(
 
 def data(name: str) -> bytes:
     return (ft.DATA_DIR / name).read_bytes()
-
-
-def wait_for(predicate: Callable[[], bool], timeout: float = 10.0) -> None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if predicate():
-            return
-        time.sleep(0.02)
-    raise AssertionError("condition not met in time")
 
 
 def kill_tree(pid: int) -> list[psutil.Process]:
@@ -544,7 +535,7 @@ def test_tree_kill_leaves_no_process(fake_tools: FakeTools) -> None:
     fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.spawn_grandchild(), ft.hang()])]))
     proc = subprocess.Popen([str(fake_tools.ffmpeg), "-i", "x", "y.mkv"])
     try:
-        wait_for(lambda: any(i.role == "grandchild" for i in fake_tools.invocations()))
+        wait_until_sync(lambda: any(i.role == "grandchild" for i in fake_tools.invocations()))
         pids = fake_tools.pids()
         assert len(pids) == 2
         main_pid = next(i.pid for i in fake_tools.invocations() if i.role == "main")
@@ -561,7 +552,7 @@ def test_tree_kill_leaves_no_process(fake_tools: FakeTools) -> None:
     finally:
         kill_tree(proc.pid)
         proc.wait(timeout=10)
-    wait_for(lambda: all(gone(pid) for pid in pids))
+    wait_until_sync(lambda: all(gone(pid) for pid in pids))
 
 
 def test_killing_only_the_parent_orphans_the_grandchild(fake_tools: FakeTools) -> None:
@@ -570,7 +561,7 @@ def test_killing_only_the_parent_orphans_the_grandchild(fake_tools: FakeTools) -
     proc = subprocess.Popen([str(fake_tools.ffmpeg), "-i", "x", "y.mkv"])
     grandchild_pid = 0
     try:
-        wait_for(lambda: any(i.role == "grandchild" for i in fake_tools.invocations()))
+        wait_until_sync(lambda: any(i.role == "grandchild" for i in fake_tools.invocations()))
         grandchild_pid = next(i.pid for i in fake_tools.invocations() if i.role == "grandchild")
         main = next(i.pid for i in fake_tools.invocations() if i.role == "main")
         psutil.Process(main).kill()
@@ -583,7 +574,7 @@ def test_killing_only_the_parent_orphans_the_grandchild(fake_tools: FakeTools) -
         if grandchild_pid:
             kill_tree(grandchild_pid)
         proc.wait(timeout=10)
-    wait_for(lambda: gone(grandchild_pid))
+    wait_until_sync(lambda: gone(grandchild_pid))
 
 
 def test_hang_and_grandchild_end_after_the_max_lifetime(fake_tools: FakeTools) -> None:
@@ -599,7 +590,7 @@ def test_hang_and_grandchild_end_after_the_max_lifetime(fake_tools: FakeTools) -
         assert proc.returncode == ft.LIFETIME_EXIT_CODE
         assert ft.MAX_LIFETIME_ENV.encode() in err
         grandchild = next(i.pid for i in fake_tools.invocations() if i.role == "grandchild")
-        wait_for(lambda: gone(grandchild), timeout=20)
+        wait_until_sync(lambda: gone(grandchild), limit=20)
     finally:
         kill_tree(proc.pid)
         proc.wait(timeout=10)
@@ -619,7 +610,7 @@ def test_kill_leftovers_kills_every_logged_process(fake_tools: FakeTools) -> Non
     fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.spawn_grandchild(), ft.hang()])]))
     proc = subprocess.Popen([str(fake_tools.ffmpeg), "-i", "x", "y.mkv"])
     try:
-        wait_for(lambda: len(fake_tools.pids()) == 2)
+        wait_until_sync(lambda: len(fake_tools.pids()) == 2)
         pids = fake_tools.pids()
         assert sorted(fake_tools.kill_leftovers()) == sorted(pids)
         assert all(gone(pid) for pid in pids)
@@ -769,7 +760,7 @@ def test_the_fake_runs_with_the_base_interpreter_not_a_venv_launcher(
     fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.spawn_grandchild(), ft.hang()])]))
     proc = subprocess.Popen([str(fake_tools.ffmpeg), "-i", "x", "y.mkv"])
     try:
-        wait_for(lambda: len(fake_tools.pids()) == 2)
+        wait_until_sync(lambda: len(fake_tools.pids()) == 2)
         for pid in fake_tools.pids():
             assert os.path.samefile(psutil.Process(pid).exe(), base)
     finally:

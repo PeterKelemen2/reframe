@@ -19,8 +19,9 @@ from reframe.queue.logs import log_file
 from reframe.queue.store import STORE_FILE
 from reframe.remote import owner as owner_module
 from reframe_testing.server import ApiFactory
+from reframe_testing.waiting import wait_until
 
-from .conftest import HANG, Server, poll
+from .conftest import HANG, Server
 
 pytestmark = pytest.mark.anyio
 
@@ -43,7 +44,7 @@ def state(server: Server, job_id: str) -> JobState | None:
 
 
 async def running(server: Server, job_id: str) -> None:
-    await poll(lambda: state(server, job_id) is JobState.RUNNING)
+    await wait_until(lambda: state(server, job_id) is JobState.RUNNING)
 
 
 async def test_list_through_the_owner(server: Server, capsys: pytest.CaptureFixture[str]) -> None:

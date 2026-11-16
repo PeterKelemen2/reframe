@@ -38,8 +38,7 @@ from reframe.probe.sampling import ClusterSample, estimate_bitrates, sample_clus
 from reframe.tools import CancelToken
 from reframe_testing import fake_tools as ft
 from reframe_testing.blockscan import scan_blocks
-
-from .test_matroska import element, header, track, tracks
+from reframe_testing.ebml import element, header, simple_block, track, tracks, uint
 
 _SEGMENT = 0x18538067
 _CLUSTER = 0x1F43B675
@@ -47,14 +46,6 @@ _MB = 1024 * 1024
 
 #: One cluster: its timestamp in ticks and the payload bytes of each block ``(track, bytes)``.
 Cluster = tuple[int, Sequence[tuple[int, int]]]
-
-
-def uint(element_id: int, value: int) -> bytes:
-    return element(element_id, value.to_bytes(max(1, (value.bit_length() + 7) // 8), "big"))
-
-
-def simple_block(track_number: int, size: int) -> bytes:
-    return element(0xA3, bytes([0x80 | track_number, 0, 0, 0x80]) + b"\xab" * size)
 
 
 def block_group(track_number: int, size: int) -> bytes:

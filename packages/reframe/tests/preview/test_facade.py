@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -16,15 +16,6 @@ from .helpers import file_reads_on_this_thread, job_for
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
 
 Media = Callable[[str], Path]
-
-
-@pytest.fixture
-async def app(tmp_path: Path) -> AsyncIterator[Reframe]:
-    app = await Reframe.create(tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "cache")
-    try:
-        yield app
-    finally:
-        await app.close()
 
 
 async def test_frames_and_a_frame_by_key(

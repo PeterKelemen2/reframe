@@ -7,7 +7,6 @@ import json
 import os
 import sys
 import time
-from collections.abc import Callable
 from pathlib import Path
 
 import psutil
@@ -27,17 +26,9 @@ from reframe.probe import prober as prober_mod
 from reframe.probe.prober import MATROSKA_READER
 from reframe.tools import CancelToken
 from reframe_testing import fake_tools as ft
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
-
-
-async def until(condition: Callable[[], bool], limit: float = 30.0) -> None:
-    """Wait (polling) until ``condition()`` is true."""
-    deadline = time.monotonic() + limit
-    while not condition():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.02)
 
 
 PROBES = Path(__file__).resolve().parents[4] / "testdata" / "probes"
@@ -184,7 +175,7 @@ async def test_cancel_kills_ffprobe(fake_tools: ft.FakeTools, media_file: Path) 
     fake_tools.set_scenario(ft.Scenario([streams_rule(ft.hang())]))
     token = CancelToken()
     task = asyncio.create_task(make_prober(fake_tools).probe(media_file, cancel=token))
-    await until(lambda: bool(fake_tools.pids()))
+    await wait_until(lambda: bool(fake_tools.pids()))
     started = time.monotonic()
     token.cancel()
     result = await task
@@ -205,7 +196,7 @@ async def test_cancel_during_frame_read(fake_tools: ft.FakeTools, media_file: Pa
     )
     token = CancelToken()
     task = asyncio.create_task(make_prober(fake_tools).probe(media_file, cancel=token))
-    await until(lambda: len(probe_calls(fake_tools)) >= 2)
+    await wait_until(lambda: len(probe_calls(fake_tools)) >= 2)
     token.cancel()
     result = await task
     assert isinstance(result, ProbeError)
@@ -447,7 +438,7 @@ async def test_one_cancelled_caller_does_not_cancel_the_others(
     token = CancelToken()
     quitter = asyncio.create_task(prober.probe(media_file, cancel=token))
     stayer = asyncio.create_task(prober.probe(media_file))
-    await until(lambda: bool(fake_tools.pids()))
+    await wait_until(lambda: bool(fake_tools.pids()))
     token.cancel()
     left = await quitter
     assert isinstance(left, ProbeError)
@@ -461,7 +452,7 @@ async def test_last_caller_gone_kills_the_shared_ffprobe(
     fake_tools.set_scenario(ft.Scenario([streams_rule(ft.hang())]))
     prober = make_prober(fake_tools)
     task = asyncio.create_task(prober.probe(media_file))
-    await until(lambda: bool(fake_tools.pids()))
+    await wait_until(lambda: bool(fake_tools.pids()))
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task

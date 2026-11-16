@@ -15,20 +15,10 @@ from reframe.models import JobSettings, MediaSource, SourceRef
 from reframe.probe import matroska
 from reframe.probe.matroska import MatroskaError, read_matroska
 from reframe.probe.prober import Prober, apply_matroska
+from reframe_testing.ebml import cluster, element, header, info, track, tracks
 
 from .conftest import parse_probe
-from .test_matroska import (
-    _tool,
-    cluster,
-    element,
-    header,
-    info,
-    mkvmerge_tracks,
-    propedit,
-    track,
-    tracks,
-    write,
-)
+from .test_matroska import _tool, mkvmerge_tracks, propedit, write
 
 _SEGMENT = 0x18538067
 _SEEK_HEAD = 0x114D9B74

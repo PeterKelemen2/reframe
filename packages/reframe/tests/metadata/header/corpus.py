@@ -17,7 +17,8 @@ from typing import Any
 
 from reframe.models.plan import HeaderEdit, InfoHeaderEdit, TrackHeaderEdit
 from reframe.probe.matroska import _header, read_matroska
-from reframe_testing import media
+from reframe_testing import ebml, media
+from reframe_testing.ebml import encode_size
 from reframe_testing.mkvtoolnix import mkvpropedit_args, mkvtoolnix_tool
 
 SEGMENT = 0x18538067
@@ -82,14 +83,9 @@ def segment(data: bytes) -> Segment:
     return Segment(pos, pos + 4, base, seg_size, top)
 
 
-def encode_size(size: int, width: int | None = None) -> bytes:
-    width = width or next(w for w in range(1, 9) if size < (1 << (7 * w)) - 1)
-    return ((1 << (7 * width)) | size).to_bytes(width, "big")
-
-
 def element(element_id: int, payload: bytes, width: int | None = None) -> bytes:
-    raw_id = element_id.to_bytes((element_id.bit_length() + 7) // 8, "big")
-    return raw_id + encode_size(len(payload), width) + payload
+    """An element with the shortest size field unless ``width`` is given."""
+    return ebml.element(element_id, payload, width=width)
 
 
 def void(total: int) -> bytes:

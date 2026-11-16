@@ -11,7 +11,7 @@ import stat
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -30,6 +30,7 @@ from reframe_server import owner
 from reframe_testing import fake_tools as ft
 from reframe_testing.processes import interpreter
 from reframe_testing.server import PROBE_RULE, ApiFactory
+from reframe_testing.waiting import wait_until_sync
 
 pytestmark = pytest.mark.anyio
 
@@ -120,14 +121,6 @@ def wait_for_endpoint(
         time.sleep(0.01)
 
 
-def wait_until(check: Callable[[], Any], limit: float = 30.0) -> Any:
-    deadline = time.monotonic() + limit
-    while not (result := check()):
-        assert time.monotonic() < deadline, "not in time"
-        time.sleep(0.02)
-    return result
-
-
 def start_hanging_job(client: httpx.Client, source: Path, output: Path) -> str:
     """Add a job for ``source`` the way a client does, start it, and return its id once its
     encode runs."""
@@ -137,12 +130,12 @@ def start_hanging_job(client: httpx.Client, source: Path, output: Path) -> str:
         task = client.get(f"/api/tasks/{accepted['task_id']}").json()
         return task["result"] if task["state"] == "done" else None
 
-    source_id = wait_until(probed)["sources"][0]["id"]
+    source_id = wait_until_sync(probed)["sources"][0]["id"]
     job = client.post("/api/jobs/draft", json={"source_id": source_id}).json()["job"]
     job["output"]["path"] = str(output)
     [added] = client.post("/api/queue", json={"jobs": [job]}).json()
     assert client.post("/api/queue/start").status_code == 204
-    wait_until(lambda: client.get("/api/queue").json()["jobs"][0]["state"] == "running")
+    wait_until_sync(lambda: client.get("/api/queue").json()["jobs"][0]["state"] == "running")
     job_id: str = added["id"]
     return job_id
 

@@ -4,17 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
 from pathlib import Path
 
 import psutil
 import pytest
 
 import reframe
-from reframe.events import Subscription
 from reframe.models import (
     AppSettings,
-    Event,
     MediaSource,
     TaskDoneEvent,
     TaskProgressEvent,
@@ -34,20 +31,13 @@ from reframe.service import (
 )
 from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
+from reframe_testing.helpers import drain
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
 PROBES = Path(__file__).resolve().parents[3] / "testdata" / "probes"
 MULTITRACK = PROBES / "fixtures" / "multitrack.mkv.json"
-
-
-async def until(condition: Callable[[], bool], limit: float = 30.0) -> None:
-    """Wait (polling) until ``condition()`` is true."""
-    deadline = time.monotonic() + limit
-    while not condition():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.02)
 
 
 def alive(pids: list[int]) -> list[int]:
@@ -68,13 +58,6 @@ def stdout_file(path: Path) -> ft.Action:
 
 def probe_rule(*actions: ft.Action, exit_code: int = 0) -> ft.Rule:
     return ft.Rule(tool="ffprobe", argv_has=["-show_streams"], actions=actions, exit_code=exit_code)
-
-
-def drain(subscription: Subscription) -> list[Event]:
-    events = []
-    while (event := subscription.get_nowait()) is not None:
-        events.append(event)
-    return events
 
 
 @pytest.fixture
@@ -142,7 +125,7 @@ async def test_create_returns_at_once_while_discovery_is_slow(
 async def test_close_kills_a_hanging_discovery(fake: ft.FakeTools) -> None:
     fake.set_scenario(ft.Scenario([ft.Rule(argv_has=["-version"], actions=[ft.hang()])]))
     app = await Reframe.create()
-    await until(lambda: len(fake.calls()) >= 2)  # ffmpeg and ffprobe version checks run
+    await wait_until(lambda: len(fake.calls()) >= 2)  # ffmpeg and ffprobe version checks run
     pids = fake.pids()
     assert alive(pids)
     started = time.monotonic()
@@ -162,7 +145,7 @@ async def test_close_cancels_folder_probe_and_kills_ffprobe(fake: ft.FakeTools, 
     fake.set_scenario(ft.Scenario([probe_rule(ft.hang())]))
     app = await Reframe.create()
     info = app.sources.probe_folder(folder)
-    await until(lambda: len(fake.calls("ffprobe")) >= 4)  # -version + 3 probes
+    await wait_until(lambda: len(fake.calls("ffprobe")) >= 4)  # -version + 3 probes
     pids = fake.pids()
     await app.close()
     assert alive(pids) == []
@@ -175,7 +158,7 @@ async def test_close_cancels_a_running_probe(fake: ft.FakeTools, media: Path) ->
     fake.set_scenario(ft.Scenario([probe_rule(ft.hang())]))
     app = await Reframe.create()
     task = asyncio.create_task(app.sources.probe(media))
-    await until(lambda: len(fake.calls("ffprobe")) >= 2)
+    await wait_until(lambda: len(fake.calls("ffprobe")) >= 2)
     pids = fake.pids()
     await app.close()
     outcome = await task
@@ -190,7 +173,7 @@ async def test_probe_waiting_for_discovery_is_cancelled_by_close(
     fake.set_scenario(ft.Scenario([ft.Rule(argv_has=["-version"], actions=[ft.hang()])]))
     app = await Reframe.create()
     task = asyncio.create_task(app.sources.probe(media))
-    await until(lambda: len(fake.calls()) >= 2)
+    await wait_until(lambda: len(fake.calls()) >= 2)
     await app.close()
     outcome = await task
     assert isinstance(outcome, ProbeError)
@@ -430,14 +413,14 @@ async def test_rescan_replaces_a_running_discovery(fake: ft.FakeTools, media: Pa
     fake.set_scenario(ft.Scenario([ft.Rule(argv_has=["-version"], actions=[ft.hang()])]))
     async with await Reframe.create() as app:
         waiting = asyncio.create_task(app.tools.status())
-        await until(lambda: len(fake.calls()) >= 2)
+        await wait_until(lambda: len(fake.calls()) >= 2)
         hanging = fake.pids()
         fake.set_scenario(ft.Scenario([probe_rule(stdout_file(MULTITRACK))]))
         tools = await app.tools.rescan()
         assert tools.ffprobe.status is ToolStatus.FOUND
         # The waiter of the first (cancelled) discovery gets the new result.
         assert await waiting == tools
-        await until(lambda: alive(hanging) == [], limit=10)
+        await wait_until(lambda: alive(hanging) == [], limit=10)
 
 
 async def test_status_starts_a_discovery_if_none_ran(env: Path) -> None:

@@ -46,6 +46,7 @@ from reframe_server.config import ServerConfig
 from reframe_server.events import EventHub
 from reframe_server.folders import hide_server_folders
 from reframe_testing.server import Api, LiveServer, receive_json
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
@@ -91,14 +92,9 @@ async def serving(api: Api, **options: Any) -> AsyncIterator[LiveServer]:
         try:
             yield server
         finally:
-            await asyncio.wait_for(hub(api).close(), 10)
+            await asyncio.wait_for(api.hub.close(), 10)
     logger.removeHandler(errors)
     assert errors.messages == []
-
-
-def hub(api: Api) -> EventHub:
-    served: EventHub = api.app.state.hub
-    return served
 
 
 class Client:
@@ -172,12 +168,6 @@ async def closed(
         except ConnectionClosed:
             pass
     return connection.close_code, messages
-
-
-async def wait_until(condition: Callable[[], bool], limit: float = 10.0) -> None:
-    async with asyncio.timeout(limit):
-        while not condition():  # noqa: ASYNC110 - the hub has no event for these states
-            await asyncio.sleep(0.01)
 
 
 async def stall(bus: EventBus, client: Client, subscription: Subscription) -> int:
@@ -505,7 +495,7 @@ async def test_the_first_message_lets_the_client_in_or_closes_4401(
         await connection.send(json.dumps(first_message))
         if admitted:
             assert (await receive_json(connection))["type"] == "hello"
-            assert hub(api).connections == 1
+            assert api.hub.connections == 1
         else:
             assert await closed(connection) == (4401, [])
     assert calls == asked
@@ -515,7 +505,7 @@ async def test_no_first_message_in_time_closes_4401_and_sends_nothing(api: Api) 
     async with serving(api, auth_timeout=0.3) as server, server.connect() as connection:
         api.reframe.events.publish(NotificationEvent(title="not for strangers"))
         assert await closed(connection) == (4401, [])
-        assert hub(api).connections == 0
+        assert api.hub.connections == 0
 
 
 async def test_a_disconnect_frees_the_subscription(api: Api) -> None:
@@ -523,11 +513,11 @@ async def test_a_disconnect_frees_the_subscription(api: Api) -> None:
     before = bus.subscriber_count
     async with serving(api) as server:
         async with server.connect() as connection:
-            assert hub(api).connections == 0
+            assert api.hub.connections == 0
             await connection.send(json.dumps({"type": "auth", "token": api.token}))
             await receive_json(connection)
-            assert (hub(api).connections, bus.subscriber_count) == (1, before + 1)
-        await wait_until(lambda: (hub(api).connections, bus.subscriber_count) == (0, before))
+            assert (api.hub.connections, bus.subscriber_count) == (1, before + 1)
+        await wait_until(lambda: (api.hub.connections, bus.subscriber_count) == (0, before))
 
 
 async def test_a_client_that_drops_while_the_hub_waits_to_send(
@@ -538,7 +528,7 @@ async def test_a_client_that_drops_while_the_hub_waits_to_send(
     async with serving(api) as server, signed_in(server, api) as client:
         await stall(bus, client, subscriptions[0])
         client.connection.transport.abort()
-        await wait_until(lambda: (hub(api).connections, bus.subscriber_count) == (0, before))
+        await wait_until(lambda: (api.hub.connections, bus.subscriber_count) == (0, before))
 
 
 async def test_a_client_that_drops_while_the_hub_waits_to_send_has_its_jobs_cancelled(
@@ -586,14 +576,14 @@ async def test_close_while_events_flow_ends_every_connection_also_a_stuck_one(
         try:
             await asyncio.sleep(0.2)
             started = time.monotonic()
-            await asyncio.wait_for(hub(api).close(), 10)
+            await asyncio.wait_for(api.hub.close(), 10)
             elapsed = time.monotonic() - started
         finally:
             publisher.cancel()
             stuck.connection.transport.abort()
         assert (await reader)[0] == 1001
         assert elapsed < 3
-        assert (hub(api).connections, bus.subscriber_count) == (0, before)
+        assert (api.hub.connections, bus.subscriber_count) == (0, before)
         async with server.connect() as late:
             assert await closed(late) == (1001, [])
 
@@ -602,7 +592,7 @@ async def test_the_facade_closing_ends_the_connection_with_1001(api: Api) -> Non
     async with serving(api) as server, signed_in(server, api) as client:
         await api.reframe.close()
         assert (await closed(client.connection))[0] == 1001
-        await wait_until(lambda: hub(api).connections == 0)
+        await wait_until(lambda: api.hub.connections == 0)
 
 
 @pytest.mark.usefixtures("make_api")  # the harness's folders, settings and fake tools

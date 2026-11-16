@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
 from typing import Any
 
 import psutil
@@ -17,17 +16,9 @@ from reframe.models import TaskDoneEvent, TaskProgressEvent, TaskState
 from reframe.tasks import DEFAULT_LIMIT, TaskContext, TaskFailed, TaskManager
 from reframe.tools import run
 from reframe_testing import fake_tools as ft
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
-
-
-async def until(condition: Callable[[], bool], limit: float = 30.0) -> None:
-    """Wait (polling) until ``condition()`` is true."""
-    deadline = time.monotonic() + limit
-    while not condition():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.02)
 
 
 def _alive(pid: int) -> bool:
@@ -124,7 +115,7 @@ async def test_cancel_kills_the_subprocess_within_one_second(fake_tools: ft.Fake
         return await run([str(fake_tools.ffprobe), "-i", "x"], timeout=60, cancel=ctx.cancel)
 
     info = tasks.start("probe", work)
-    await until(lambda: bool(fake_tools.pids()))
+    await wait_until(lambda: bool(fake_tools.pids()))
     [pid] = fake_tools.pids()
     started = time.monotonic()
     assert tasks.cancel(info.id)
@@ -145,7 +136,7 @@ async def test_cancel_without_token_use_still_kills(fake_tools: ft.FakeTools) ->
         return await run([str(fake_tools.ffprobe)], timeout=60)
 
     info = tasks.start("probe", work)
-    await until(lambda: bool(fake_tools.pids()))
+    await wait_until(lambda: bool(fake_tools.pids()))
     [pid] = fake_tools.pids()
     tasks.cancel(info.id)
     assert (await tasks.wait(info.id)).state is TaskState.CANCELLED

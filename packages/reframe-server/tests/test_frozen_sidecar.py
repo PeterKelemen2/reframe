@@ -8,10 +8,8 @@ from __future__ import annotations
 
 import json
 import os
-import queue
 import subprocess
 import sys
-import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -26,6 +24,7 @@ import reframe
 from reframe_server import parent
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
+from reframe_testing.processes import ready_port
 from reframe_testing.server import PROBE_RULE
 
 REPO = Path(__file__).resolve().parents[3]
@@ -52,17 +51,6 @@ class Frozen:
 
 class StartFrozen(Protocol):
     def __call__(self, parent_pid: int | None = None, *, real_tools: bool = False) -> Frozen: ...
-
-
-def ready_port(process: subprocess.Popen[bytes], limit: float = 30.0) -> int:
-    lines: queue.Queue[bytes] = queue.Queue()
-    stdout = process.stdout
-    assert stdout is not None
-    threading.Thread(target=lambda: lines.put(stdout.readline()), daemon=True).start()
-    ready = json.loads(lines.get(timeout=limit))
-    assert ready["event"] == "ready"
-    port: int = ready["port"]
-    return port
 
 
 @pytest.fixture

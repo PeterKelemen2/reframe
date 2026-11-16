@@ -20,8 +20,9 @@ from reframe.service import Reframe
 from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
+from reframe_testing.waiting import wait_until
 
-from .conftest import draft, event_kinds, of_job, poll, state_changes
+from .conftest import draft, event_kinds, of_job, state_changes
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.anyio]
 
@@ -64,7 +65,7 @@ class Real:
         return event_kinds(of_job(self.published, job_id))
 
     async def until(self, condition: Callable[[], bool], limit: float = 60.0) -> None:
-        await poll(condition, limit)
+        await wait_until(condition, limit)
 
     def progressed(self, job_id: str) -> bool:
         return any(

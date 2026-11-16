@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from reframe.models import JobDraft, JobSettings, JobTemplate, MediaSource, Preset, VideoSettings
+from reframe.models import JobDraft, JobSettings, JobTemplate, Preset, VideoSettings
 from reframe_testing.server import Api
 
 pytestmark = pytest.mark.anyio
@@ -17,12 +17,7 @@ QUALITY = {"op": "replace", "path": "/video/rate_control/value", "value": 30}
 
 
 async def add_sources(api: Api, count: int = 2) -> list[str]:
-    ids = []
-    for number in range(1, count + 1):
-        path = api.media_file(f"Show S01E0{number}.mkv")
-        assert isinstance(await api.reframe.sources.probe(path), MediaSource)
-        ids.append(api.app.state.sources.add(path))
-    return ids
+    return [await api.add_source(f"Show S01E0{number}.mkv") for number in range(1, count + 1)]
 
 
 def videos(rows: list[dict[str, Any]]) -> dict[str, tuple[str, float]]:

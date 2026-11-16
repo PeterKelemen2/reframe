@@ -1,8 +1,13 @@
-"""The Python process behind a command that a test starts with ``sys.executable``."""
+"""The processes that tests start: the interpreter behind ``sys.executable``, and the server's
+ready line."""
 
 from __future__ import annotations
 
+import json
+import queue
+import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -29,3 +34,15 @@ def interpreter(pid: int, *, timeout: float = 10.0) -> psutil.Process:
         if time.monotonic() > deadline:
             raise AssertionError(f"process {pid} started no {name} within {timeout:g} s")
         time.sleep(0.01)
+
+
+def ready_port(process: subprocess.Popen[bytes], limit: float = 30.0) -> int:
+    """The port of the server's ready line, the first line of its stdout."""
+    lines: queue.Queue[bytes] = queue.Queue()
+    stdout = process.stdout
+    assert stdout is not None
+    threading.Thread(target=lambda: lines.put(stdout.readline()), daemon=True).start()
+    ready = json.loads(lines.get(timeout=limit))
+    assert ready["event"] == "ready"
+    port: int = ready["port"]
+    return port

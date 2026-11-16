@@ -12,12 +12,11 @@ from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
 from reframe import settings as settings_module
-from reframe.events import EventBus, Subscription
+from reframe.events import EventBus
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     AppWarningEvent,
     ConstantQuality,
-    Event,
     JobTemplate,
     Preset,
     PresetFile,
@@ -27,15 +26,9 @@ from reframe.models import (
 from reframe.models import migrations as migrations_module
 from reframe.models.migrations import MigrationRegistry
 from reframe.presets import DEFAULT_BUILTIN_ID, PresetStore, builtin_presets, normalise_name
+from reframe_testing.helpers import drain, nested
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-
-
-def drain(subscription: Subscription) -> list[Event]:
-    events = []
-    while (event := subscription.get_nowait()) is not None:
-        events.append(event)
-    return events
 
 
 def registry_v2() -> MigrationRegistry:
@@ -689,14 +682,6 @@ def registry_v5() -> MigrationRegistry:
     for version in range(1, 5):
         registry.register("preset", from_version=version)(lambda data: data)
     return registry
-
-
-def nested(depth: int) -> list[Any]:
-    """A list nested ``depth`` levels deep (built without recursion)."""
-    value: list[Any] = []
-    for _ in range(depth - 1):
-        value = [value]
-    return value
 
 
 def test_save_refuses_a_preset_of_a_newer_reframe(tmp_path: Path) -> None:
