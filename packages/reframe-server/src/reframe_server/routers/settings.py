@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator
-from pathlib import Path
+from pathlib import PurePath
 
 from pydantic import BaseModel, ConfigDict
 
@@ -97,11 +97,10 @@ def _programs_set(old: ToolPaths, new: ToolPaths) -> set[str]:
     }
 
 
-def _folders(model: BaseModel, where: str = "") -> Iterator[tuple[str, Path]]:
+def _folders(settings: AppSettings) -> Iterator[tuple[str, PurePath]]:
     """Every folder of the settings but the tool paths, by its dotted name."""
-    for name in type(model).model_fields:
-        value = getattr(model, name)
-        if isinstance(value, Path):
-            yield f"{where}{name}", value
-        elif isinstance(value, BaseModel) and not isinstance(value, ToolPaths):
-            yield from _folders(value, f"{where}{name}.")
+    return (
+        (".".join(map(str, where)), path)
+        for where, path in security.model_paths(settings, ())
+        if where[0] != "tools"
+    )

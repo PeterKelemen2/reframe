@@ -4,9 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import sys
-from importlib import resources
-from pathlib import Path
 
 from fastapi import Request, Response
 from pydantic import BaseModel, ConfigDict
@@ -47,21 +44,10 @@ class LanguageList(BaseModel):
     """Ordered by English name."""
 
 
-#: The rendered list, shipped with the package: building it takes a few hundred milliseconds,
-#: and the page asks for it at every start.
-LANGUAGES_FILE = "languages.json"
-
-
-def render() -> StaticBody:
-    """The list built from :func:`reframe.languages.language_list`."""
-    entries = [Language.model_validate(entry) for entry in language_list()]
-    return StaticBody.of(LanguageList(languages=entries))
-
-
 @functools.cache
 def _body() -> StaticBody:
-    data = resources.files("reframe_server") / "data" / LANGUAGES_FILE
-    return StaticBody.of_content(data.read_bytes())
+    entries = [Language.model_validate(entry) for entry in language_list()]
+    return StaticBody.of(LanguageList(languages=entries))
 
 
 @router.get(
@@ -74,10 +60,3 @@ async def list_languages(request: Request) -> Response:
     """Every language of the picker. Send the ``ETag`` back in ``If-None-Match``: the answer
     is a ``304`` while the list is the same."""
     return (await asyncio.to_thread(_body)).respond(request)
-
-
-if __name__ == "__main__":
-    # Writes the shipped list again, after a change of the list or of the language packages.
-    target = Path(__file__).resolve().parent.parent / "data" / LANGUAGES_FILE
-    target.write_bytes(render().content)
-    print(f"wrote {target}", file=sys.stderr)

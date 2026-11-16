@@ -6,6 +6,7 @@ the pinned FFmpeg and the CI override build, so it checks the structure only.
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import subprocess
 import time
@@ -23,7 +24,7 @@ from reframe.models import (
     RoleEvidence,
     TrackRole,
 )
-from reframe.probe import FolderProbeResult, ProbeCache, Prober, probe_folder
+from reframe.probe import ProbeCache, Prober, list_media_files
 from reframe.tools import discover_tools
 
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg]
@@ -41,6 +42,17 @@ async def probe(prober: Prober, path: Path) -> MediaSource:
     result = await prober.probe(path)
     assert isinstance(result, MediaSource), result
     return result
+
+
+async def probe_all(prober: Prober, folder: Path) -> list[MediaSource]:
+    """The folder's media files, 4 at a time."""
+    gate = asyncio.Semaphore(4)
+
+    async def one(path: Path) -> MediaSource:
+        async with gate:
+            return await probe(prober, path)
+
+    return list(await asyncio.gather(*map(one, list_media_files(folder))))
 
 
 def roles(stream: object) -> list[tuple[TrackRole, RoleEvidence]]:
@@ -138,15 +150,14 @@ async def test_letterbox_is_sdr(prober: Prober, fixture_media: Media) -> None:
 
 
 async def test_season_folder(prober: Prober, fixture_media: Media) -> None:
-    result = await probe_folder(prober, fixture_media("season"))
-    assert result.errors == []
-    names = [s.ref.path.name for s in result.sources]
+    sources = await probe_all(prober, fixture_media("season"))
+    names = [s.ref.path.name for s in sources]
     assert names == [f"Show.S01E{i:02d}.Title.mkv" for i in range(1, 13)]
-    audio_counts = [len(s.audio) for s in result.sources]
+    audio_counts = [len(s.audio) for s in sources]
     assert audio_counts[4] == 4
     assert audio_counts[8] == 2
     assert {audio_counts[i] for i in range(12) if i not in (4, 8)} == {3}
-    e05 = result.sources[4].audio[3]
+    e05 = sources[4].audio[3]
     assert (e05.display_codec, e05.title) == ("AC-3", "Commentary")
     assert roles(e05) == [(TrackRole.COMMENTARY, RoleEvidence.FLAG)]
 
@@ -166,15 +177,13 @@ async def test_probe_budgets(prober: Prober, fixture_media: Media, tmp_path: Pat
     for i, src in enumerate(sorted(season.glob("*.mkv")) * 2, start=1):
         shutil.copyfile(src, folder / f"Show.S01E{i:02d}.mkv")
     started = time.perf_counter()
-    result: FolderProbeResult = await probe_folder(prober, folder)
+    assert len(await probe_all(prober, folder)) == 24
     folder_time = time.perf_counter() - started
-    assert len(result.sources) == 24
-    assert result.errors == []
 
     cached = Prober(prober.tool, cache=ProbeCache(tmp_path / "cache"))
-    await probe_folder(cached, folder)
+    await probe_all(cached, folder)
     started = time.perf_counter()
-    await probe_folder(cached, folder)
+    await probe_all(cached, folder)
     cached_time = time.perf_counter() - started
 
     print(

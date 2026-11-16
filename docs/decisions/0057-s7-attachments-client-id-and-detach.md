@@ -1,6 +1,6 @@
 # 0057 — S-7 attachments: `client_id`, `attach`, `detach`, and which end cancels
 
-- Status: accepted
+- Status: accepted; `EventHub.client_open` (item 1) is removed by [0089](0089-folder-probe-and-language-list-removed.md): `attachment()` is the one lookup
 - Date: 2026-10-28
 - Steps: S-7 (task B of [server-complete-breakdown.md](../server-complete-breakdown.md));
   affects C-17, S-3, S-5

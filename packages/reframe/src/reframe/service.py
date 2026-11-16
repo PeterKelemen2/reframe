@@ -17,7 +17,7 @@ from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from pathlib import Path
 from types import TracebackType
 
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from reframe import analysis, applog, paths, preview
 from reframe.analysis.subtitlefile import inspect_subtitle_file
@@ -57,22 +57,16 @@ from reframe.probe import (
     ProbeTool,
 )
 from reframe.probe.cache import CacheKey
-from reframe.probe.folder import (
-    DEFAULT_CONCURRENCY,
-    TASK_KIND,
-    FolderProbeResult,
-    probe_folder,
-)
 from reframe.probe.prober import stat_regular
 from reframe.queue import QueueService
 from reframe.settings import MAX_DEPTH, SettingsStore, SettingsUpdate, too_deep, validation_detail
-from reframe.tasks import TaskContext, TaskManager
+from reframe.tasks import TaskManager
 from reframe.tools import CancelToken, discover_tools
 from reframe.tools.fetch import start_fetch
 from reframe.validation.fs import has_nul
 
 __all__ = [
-    "FolderProbeResult",
+    "PROBE_CONCURRENCY",
     "ImportResult",
     "JobService",
     "PresetService",
@@ -97,6 +91,8 @@ SettingsGetter = Callable[[], AppSettings]
 KNOWN_SOURCES = 1024
 #: Seconds that :meth:`Reframe.close` waits for running probes to end after cancelling them.
 CLOSE_TIMEOUT = 10.0
+#: ffprobe runs at once in :meth:`SourceService.probe_many`.
+PROBE_CONCURRENCY = 4
 
 
 def tool_usable(info: ToolInfo) -> bool:
@@ -214,7 +210,7 @@ class ToolsService:
 
 
 class SourceService:
-    """Probing source files: one file, a folder (as a task) and the known sources. Also the
+    """Probing source files: one file, many files and the known sources. Also the
     analysis and preview tasks of a source: bitrate and subtitle scans, loudness, frames and
     crop detection.
 
@@ -246,7 +242,8 @@ class SourceService:
         self._known: OrderedDict[Path, MediaSource] = OrderedDict()
         self._locks: dict[Path, tuple[asyncio.Lock, list[int]]] = {}
         """Per file: the lock of :meth:`store` / :meth:`update` and how many wait for it."""
-        self._tokens: set[CancelToken] = set()
+        self._tokens: list[CancelToken] = []
+        """One entry per running call: :meth:`probe_many` hands one token to many calls."""
         self._active = 0
         self._idle = asyncio.Event()
         self._idle.set()
@@ -314,60 +311,40 @@ class SourceService:
         finally:
             self._leave(token)
 
-    def probe_folder(
+    async def probe_many(
         self,
-        path: str | os.PathLike[str],
+        files: Sequence[str | os.PathLike[str]],
         *,
-        recursive: bool = False,
-        concurrency: int = DEFAULT_CONCURRENCY,
-    ) -> TaskInfo:
-        """Probe every media file of a folder as a background task.
+        concurrency: int = PROBE_CONCURRENCY,
+        cancel: CancelToken | None = None,
+        on_progress: Callable[[int, int], object] | None = None,
+    ) -> list[MediaSource | ProbeError]:
+        """:meth:`probe` each file, ``concurrency`` at a time; the results in the order of
+        ``files``. After ``cancel`` no new ffprobe starts: the rest are ``CANCELLED`` errors.
+        ``on_progress(done, total)`` is called after each file."""
+        gate = asyncio.Semaphore(concurrency)
+        results: list[MediaSource | ProbeError | None] = [None] * len(files)
+        done = 0
 
-        Returns at once. Progress and the end come as ``task.progress`` / ``task.done``
-        events. ``TaskInfo.result`` is the JSON form of the :class:`FolderProbeResult`;
-        ``Reframe.tasks.value(task_id)`` returns the object itself, and every source is also
-        returned by :meth:`get`. An unusable ffprobe gives a result with one error for the
-        folder.
-        """
-        self._check_open()
-        if concurrency < 1:
-            raise ValueError(f"concurrency must be at least 1, got {concurrency}")
-        root = _absolute(path)
+        async def one(i: int, file: str | os.PathLike[str]) -> None:
+            nonlocal done
+            async with gate:
+                if cancel is not None and cancel.cancelled:
+                    results[i] = ProbeError(
+                        _absolute(file), ProbeErrorKind.CANCELLED, "The probe was cancelled."
+                    )
+                else:
+                    results[i] = await self.probe(file, cancel=cancel)
+            done += 1
+            if on_progress is not None:
+                on_progress(done, len(files))
 
-        async def work(ctx: TaskContext) -> FolderProbeResult:
-            if has_nul(root):  # listing it would raise ValueError
-                return FolderProbeResult(
-                    root, errors=[ProbeError(root, ProbeErrorKind.NOT_FOUND, _NUL_PATH)]
-                )
-            ctx.progress(None, "Waiting for tool discovery")
-            prober = await self._get_prober()
-            if isinstance(prober, ToolInfo):
-                return FolderProbeResult(root, errors=[_tool_error(root, prober)])
-
-            def report(done: int, total: int, _path: Path) -> None:
-                ctx.progress(done=done, total=total, message=f"{done}/{total} files")
-
-            ctx.progress(0.0, "Listing files")
-            # A cancel arrives both as the task's CancelledError and through ctx.cancel;
-            # probe_folder() returns only after every ffprobe it started is gone.
-            result = await probe_folder(
-                prober,
-                root,
-                concurrency=concurrency,
-                recursive=recursive,
-                cancel=ctx.cancel,
-                on_progress=report,
-            )
-            for source in result.sources:
-                self._remember(source)
-            return result
-
-        def to_json(value: object) -> JsonValue:
-            return value.to_json() if isinstance(value, FolderProbeResult) else None
-
-        return self._tasks.start(
-            TASK_KIND, work, message=f"Probing {root.name}", result_json=to_json
-        )
+        # A TaskGroup, not gather(): a cancelled gather() returns at its first child's end, and
+        # the other ffprobe kills can then be dropped when the loop stops.
+        async with asyncio.TaskGroup() as group:
+            for i, file in enumerate(files):
+                group.create_task(one(i, file))
+        return [result for result in results if result is not None]
 
     async def get(self, path: str | os.PathLike[str]) -> MediaSource | None:
         """The probed source of ``path`` if it is known and the file has not changed since.
@@ -545,7 +522,7 @@ class SourceService:
 
     async def close(self, timeout: float = CLOSE_TIMEOUT) -> None:  # noqa: ASYNC109
         """Cancel running probes (their processes are killed) and wait for them to end."""
-        for token in list(self._tokens):
+        for token in set(self._tokens):
             token.cancel()
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(self._idle.wait(), timeout)
@@ -567,12 +544,12 @@ class SourceService:
             self._known.popitem(last=False)
 
     def _enter(self, token: CancelToken) -> None:
-        self._tokens.add(token)
+        self._tokens.append(token)
         self._active += 1
         self._idle.clear()
 
     def _leave(self, token: CancelToken) -> None:
-        self._tokens.discard(token)
+        self._tokens.remove(token)
         self._active -= 1
         if self._active == 0:
             self._idle.set()

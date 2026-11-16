@@ -193,7 +193,6 @@
     },
     "taskKind": {
       "probe_sources": "Reading sources",
-      "probe_folder": "Reading a folder",
       "encoders_rescan": "Encoder detection",
       "tools_fetch": "FFmpeg download",
       "bitrate_scan": "Bitrate measurement",

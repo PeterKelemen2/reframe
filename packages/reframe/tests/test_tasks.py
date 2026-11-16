@@ -166,7 +166,6 @@ async def test_per_kind_limit_holds() -> None:
         assert (await tasks.wait(task_id)).state is TaskState.DONE
     assert peak == {"scan": 2, "other": DEFAULT_LIMIT}
     assert tasks.limit("scan") == 2
-    assert tasks.limit("probe_folder") == 2
 
 
 async def test_queued_tasks_start_in_order() -> None:

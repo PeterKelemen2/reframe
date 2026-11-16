@@ -136,10 +136,6 @@ def job_issue(config: ServerConfig, job: JobSettings) -> ValidationIssue | None:
     return in_place_issue(config, job) or folder_issue(config, job.output.path)
 
 
-def without_output(job: JobSettings) -> JobSettings:
-    return job.model_copy(update={"output": job.output.model_copy(update={"path": None})})
-
-
 def jail_job(config: ServerConfig, job: JobSettings) -> tuple[ValidationIssue | None, JobSettings]:
     """:func:`security.jail_job`, except that an output the server may not write is the
     returned :func:`job_issue` instead of a 403. Also returns the job the facade may look at:

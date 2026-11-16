@@ -217,7 +217,6 @@ row whose member a route reaches or that no longer exists
 | `capabilities.wait` | `GET /api/system/encoders` never waits; `capabilities.changed` events follow a detection |
 | `capabilities.closest_available` | Validation uses it inside the core |
 | `presets.find` | The routes take ids; `jobs/draft`, `explain` and the batch routes accept a name or an id through the facade's own lookup |
-| `sources.probe_folder` | `POST /api/sources` expands folders itself (`jobs.media_files`): one task per request, without partial outputs ([0049](../decisions/0049-s2-system-fs-settings-sources-preview.md) item 5) |
 | `sources.store`, `sources.update` | The scans store what they measured themselves |
 | `sources.media`, `tasks.events` | The objects the services are wired with (the media task context, the event bus); clients reach them through the service methods and `WS /api/events` |
 | `events.publish`, `events.subscriber_count` | Only the core publishes events; a client receives them on `WS /api/events` |

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from reframe_server.routers import languages
 from reframe_testing.server import Api
 
 pytestmark = pytest.mark.anyio
@@ -27,9 +26,3 @@ async def test_a_client_with_the_current_list_gets_304(api: Api) -> None:
     etag = (await api.client.get("/api/languages")).headers["etag"]
     response = await api.client.get("/api/languages", headers={"If-None-Match": etag})
     assert response.status_code == 304
-
-
-def test_the_shipped_list_is_the_built_one() -> None:
-    shipped = languages._body()
-    regenerate = "uv run python -m reframe_server.routers.languages"
-    assert shipped == languages.render(), f"the shipped language list is out of date: {regenerate}"

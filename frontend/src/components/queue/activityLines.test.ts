@@ -170,7 +170,6 @@ describe('the activity lines', () => {
   it('names every kind of task the server starts', () => {
     const kinds = [
       'probe_sources',
-      'probe_folder',
       'encoders_rescan',
       'tools_fetch',
       'bitrate_scan',
@@ -187,7 +186,6 @@ describe('the activity lines', () => {
     )
     expect(texts).toEqual([
       'Reading sources: cancelled',
-      'Reading a folder: cancelled',
       'Encoder detection: cancelled',
       'FFmpeg download: cancelled',
       'Bitrate measurement: cancelled',

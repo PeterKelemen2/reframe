@@ -30,9 +30,6 @@ class SourceRegistry:
         self._paths[sid] = path
         return sid
 
-    def path(self, sid: str) -> Path | None:
-        return self._paths.get(sid)
-
     def remove(self, sid: str) -> bool:
         return self._paths.pop(sid, None) is not None
 

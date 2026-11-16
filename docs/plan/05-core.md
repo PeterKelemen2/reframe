@@ -181,7 +181,10 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
       Keywords match whole words, case-insensitive; the acronyms `AD` and `CC` only in upper
       case. A track with no other role gets `main` (decision 0006).
 - [ ] Probe cache: key = absolute path + size + mtime. Stored as JSON in the cache dir.
-- [ ] Folder probe: a task with a concurrency limit (default 4) that reports progress.
+- [ ] Many files: `SourceService.probe_many` probes a list of files with a concurrency limit
+  (default 4), in the order of the list, with progress; after a cancel no new ffprobe starts
+  ([0089](../decisions/0089-folder-probe-and-language-list-removed.md); the server lists a
+  folder's files itself).
 
 Done when: snapshot tests of `MediaSource` exist for every fixture file, plus recorded JSON
 from real-world ffprobe output (TrueHD Atmos, DTS-HD MA, DTS:X, PGS, ASS with fonts, VFR,
@@ -594,7 +597,7 @@ class Reframe:
     events: EventBus
     tools: ToolsService            # status, re-scan; fetch (reframe tools fetch)
     capabilities: CapabilityService
-    sources: SourceService         # probe, probe_folder, get, store, update; C-10 tasks: bitrate_scan,
+    sources: SourceService         # probe, probe_many, get, store, update; C-10 tasks: bitrate_scan,
                                    # subtitle_scan, loudness_scan, frames, frame, cropdetect
     presets: PresetService
     jobs: JobService               # draft, validate, plan (dry_run=), name, media_files; explain

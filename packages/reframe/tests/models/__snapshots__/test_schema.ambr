@@ -9524,7 +9524,7 @@
         'type': 'string',
       }),
       'kind': dict({
-        'description': '``probe_folder``, ``cropdetect``, ``bitrate_scan``, ``frames``, …',
+        'description': '``probe_sources``, ``cropdetect``, ``bitrate_scan``, ``frames``, …',
         'title': 'Kind',
         'type': 'string',
       }),
