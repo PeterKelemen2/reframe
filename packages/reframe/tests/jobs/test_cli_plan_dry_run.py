@@ -13,8 +13,9 @@ from reframe.jobs import JobService
 from reframe.models import JobSettings, MediaSource, Severity, ValidationIssue
 from reframe.presets import builtin_presets
 from reframe_testing import fake_tools as ft
+from reframe_testing.cli import invoke
 
-from .conftest import invoke, media_file, replay
+from .conftest import media_file, replay
 
 CUSTOM = "Custom x265"
 

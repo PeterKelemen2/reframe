@@ -10,10 +10,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from typer.testing import CliRunner, Result
 
 from reframe import cli
-from reframe.cli import build_app
 from reframe.definitions import load_definitions
 from reframe.models import (
     AppSettings,
@@ -41,7 +39,6 @@ from .fake_queue import Behaviour, FakeQueue
 
 ROOT = Path(__file__).resolve().parents[4]
 PROBES = ROOT / "testdata" / "probes"
-WIDTH = "200"
 
 
 def probe_json(name: str) -> Path:
@@ -226,8 +223,13 @@ def draft_path(source: Path, name: str) -> Path:
     return path
 
 
-def invoke(*args: str, env: dict[str, str] | None = None) -> Result:
-    return CliRunner().invoke(build_app(), list(args), env={"COLUMNS": WIDTH, **(env or {})})
+def user_preset(preset_id: str, name: str, **changes: Any) -> dict[str, Any]:
+    """A user preset (a copy of *Fast 1080p30*) as JSON."""
+    base = next(p for p in builtin_presets() if p.id == "fast-1080p30")
+    preset = base.model_copy(
+        update={"id": preset_id, "name": name, "category": "Custom", "built_in": False, **changes}
+    )
+    return preset.model_dump(mode="json")
 
 
 class Queues:

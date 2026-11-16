@@ -17,18 +17,12 @@ from reframe.models import JobState, QueueJob
 from reframe.queue import lock as lock_module
 from reframe.queue.logs import log_file
 from reframe.queue.store import STORE_FILE
-from reframe.remote import owner as owner_module
 from reframe_testing.server import ApiFactory
 from reframe_testing.waiting import wait_until
 
 from .conftest import HANG, Server
 
 pytestmark = pytest.mark.anyio
-
-
-@pytest.fixture
-def short_waits(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(owner_module, "HELD_WAIT", 0.3)
 
 
 async def add(server: Server, name: str = "Show.mkv", *, start: bool = False) -> QueueJob:

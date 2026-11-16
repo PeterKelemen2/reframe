@@ -5,28 +5,19 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from reframe import cli
 from reframe.cli import EXIT_OK, printable
-from reframe.presets import builtin_presets
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
+from reframe_testing.cli import invoke
 
-from .conftest import Queues, invoke, media_file, probe_json, probe_rule
+from .conftest import Queues, media_file, probe_json, probe_rule, user_preset
 from .test_cli_output_names import E01, S01, anime, two_sources
 
 EVIL = "Evil\x1b[31mRED\x1b[0m\nline2\x07\x9b2J\x1b]0;title\x07"
 #: Windows file names cannot hold control characters; titles (metadata) can.
 NAMES_HOLD_ESC = sys.platform != "win32"
-
-
-def _user_preset(preset_id: str, name: str, **changes: Any) -> dict[str, Any]:
-    base = next(p for p in builtin_presets() if p.id == "fast-1080p30")
-    preset = base.model_copy(
-        update={"id": preset_id, "name": name, "category": "Custom", "built_in": False, **changes}
-    )
-    return preset.model_dump(mode="json")
 
 
 def _no_controls(text: str) -> None:
@@ -45,7 +36,7 @@ def test_names_from_an_imported_file_reach_the_terminal_without_escapes(
 ) -> None:
     data = {
         "schema_version": 1,
-        "presets": [_user_preset("u-\x1b[1mid", EVIL, category="Cat\x1b[5m")],
+        "presets": [user_preset("u-\x1b[1mid", EVIL, category="Cat\x1b[5m")],
     }
     file = tmp_path / "hostile.json"
     file.write_text(json.dumps(data), encoding="utf-8")

@@ -11,8 +11,7 @@ import pytest
 from reframe.cli import EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE, output_name, parsed_fields
 from reframe.models import NameResult
 from reframe_testing import fake_tools as ft
-
-from .conftest import invoke
+from reframe_testing.cli import invoke
 
 HACKSAW_DIR = (
     "Hacksaw.Ridge.2016.HYBRID.2160p.UHD.BluRay.REMUX.TrueHD.7.1.Atmos.DoVi.HDR.HEVC.HUN-HenDerson"

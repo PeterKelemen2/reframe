@@ -6,7 +6,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import socket
 from collections.abc import Callable
 
 import httpx
@@ -28,16 +27,9 @@ from reframe.remote import queue as queue_module
 from reframe_testing.server import ApiFactory
 from reframe_testing.waiting import wait_until
 
-from .conftest import HANG, Server, Wire, event_message, watch_requests
+from .conftest import HANG, Server, Wire, event_message, free_port, watch_requests
 
 pytestmark = pytest.mark.anyio
-
-
-def free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        port: int = sock.getsockname()[1]
-    return port
 
 
 @pytest.mark.parametrize(("detach", "state"), [(False, "cancelled"), (True, "waiting")])

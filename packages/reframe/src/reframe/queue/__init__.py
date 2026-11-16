@@ -6,9 +6,10 @@ The store is opened at the first use, by the one process that holds ``queue.lock
 
 from reframe.queue.client import QueueLike, SavedQueue, read_saved_queue
 from reframe.queue.errors import JobStateError, QueueError, UnknownJobError
-from reframe.queue.service import ENDED, QueueService
+from reframe.queue.service import ACTIVE, ENDED, QueueService
 
 __all__ = [
+    "ACTIVE",
     "ENDED",
     "JobStateError",
     "QueueError",

@@ -26,8 +26,9 @@ from reframe.models import (
 )
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
+from reframe_testing.cli import invoke
 
-from .conftest import Queues, Stubs, invoke, media_file, recorded, replay
+from .conftest import Queues, Stubs, media_file, recorded, replay
 from .test_cli_batch import A, import_demo_preset
 
 Media = Callable[[str], Path]

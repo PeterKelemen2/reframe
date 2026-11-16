@@ -38,7 +38,6 @@ from reframe.models import (
 from reframe.models.template import AudioOutputSettings
 from reframe.platform.power import OsAction, PowerService
 from reframe.remote import RemoteError, RemoteQueue
-from reframe.remote import owner as owner_module
 from reframe_testing import fake_tools as ft
 from reframe_testing.server import PROBE_RULE, Api, ApiFactory
 from reframe_testing.waiting import wait_until
@@ -94,12 +93,6 @@ async def job_of(server: Server, name: str, state: JobState | None = None) -> st
     job_id = found()
     assert job_id is not None
     return job_id
-
-
-@pytest.fixture
-def short_waits(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(owner_module, "HELD_WAIT", 0.3)
-    monkeypatch.setattr(owner_module, "START_WAIT", 0.3)
 
 
 def states(server: Server) -> dict[str, JobState]:
@@ -240,7 +233,7 @@ async def test_detach_needs_the_server(
             [Path("x")],
             preset=None,
             detach=True,
-            in_process=options.get("in_process"),
+            in_process=bool(options.get("in_process")),
             dry_run=options.get("dry_run", False),
         )
     assert code == cli.EXIT_USAGE
@@ -1141,26 +1134,3 @@ async def test_a_job_that_the_owner_adds_failed_is_not_counted_as_queued(
     assert code == cli.EXIT_FAILED
     assert "[1/1] failed when it was queued:" in out
     assert "Queued" not in out
-
-
-@pytest.mark.parametrize(
-    ("value", "client"), [("off", True), ("garbage", False)], ids=["a false word", "not a word"]
-)
-async def test_reframe_in_process_is_read_as_the_command_line_reads_it(
-    server: Server,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    value: str,
-    client: bool,
-) -> None:
-    monkeypatch.setenv(cli.IN_PROCESS_ENV, value)
-    server.publish()
-    code = await cli.run_encode([server.api.media_file("A.mkv")], preset=None, output=None)
-    captured = capsys.readouterr()
-    if client:
-        assert code == cli.EXIT_OK, captured
-        assert "Queue: Reframe " in captured.out
-    else:
-        assert code == cli.EXIT_USAGE
-        assert f"error: {cli.IN_PROCESS_ENV}: 'garbage' is not a valid boolean" in captured.err
-        assert server.api.reframe.queue.list() == []
