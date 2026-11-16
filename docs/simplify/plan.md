@@ -48,7 +48,9 @@ The Q-6 packages were made over more than one session. These notes hold for whoe
   its findings and its Done-when name) and the four static checks (`ruff check`,
   `ruff format --check`, `mypy`, `mypy --platform win32`), not the full suite. The orchestrator
   runs the full suite once on `m10-hardening` after each wave is merged. A failure there is
-  traced to its package (`git bisect` over the merge commits if needed).
+  traced to its package (`git bisect` over the merge commits if needed). A package that removes
+  a public member of a service also runs `packages/reframe-server/tests/test_facade_coverage.py`:
+  the "Not exposed" table of `docs/plan/06-web-app.md` may only name members that exist.
 - **Known flaky tests** (fail when the machine is loaded, pass alone; rerun alone first):
   `tests/remote/test_cli_client.py::test_a_client_drafts_as_the_in_process_draft[default]`,
   `tests/platform/test_sleep_dbus.py::test_connection_stays_open_for_several_calls_and_closes`,
