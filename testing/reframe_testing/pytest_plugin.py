@@ -131,6 +131,9 @@ def fixture_media_path(name: str) -> Path:
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item: pytest.Item) -> None:
+    # A time budget means nothing while every core runs other tests.
+    if item.get_closest_marker("benchmark") is not None and "PYTEST_XDIST_WORKER" in os.environ:
+        pytest.skip("benchmark: run alone with `uv run pytest -m benchmark -n 0`")
     if item.get_closest_marker("needs_mkvtoolnix") is not None:
         missing = mkvtoolnix_problem()
         if missing is not None:

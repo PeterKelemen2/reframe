@@ -47,8 +47,9 @@
 - [ ] **Q-2.4** Optional local suite on your own files: `REFRAME_SAMPLES=/path pytest -m samples`.
       It is never run in CI.
 
-Local full runs use `pytest-xdist`: `uv run pytest -m "not needs_gpu" -n auto` (about 6 minutes
-on 12 cores instead of about 35). CI keeps one process until xdist is checked on Windows
+Every pytest run is parallel: `pytest-xdist` `-n auto` is in `addopts` (a full run takes about 6
+minutes on 12 cores instead of about 35). `-n 0` runs in one process. The `benchmark` tests skip
+under xdist and run in one process (`-n 0`) in the CI benchmark job
 ([decision 0084](../decisions/0084-parallel-test-runs-with-pytest-xdist.md)).
 
 ### Test media

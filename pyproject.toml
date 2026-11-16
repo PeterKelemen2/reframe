@@ -99,6 +99,9 @@ addopts = [
     "-ra",
     "-p",
     "reframe_testing.pytest_plugin",
+    # pytest-xdist: every run is parallel (decision 0084); `-n 0` runs in one process.
+    "-n",
+    "auto",
 ]
 xfail_strict = true
 markers = [

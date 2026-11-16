@@ -42,9 +42,10 @@ uv run ruff check                         # lint
 uv run ruff format --check                # format check (uv run ruff format to fix)
 uv run mypy                               # strict type check (files listed in pyproject.toml)
 uv run mypy --platform win32              # the same, as the Windows CI runner sees it
-uv run pytest                             # all tests
-uv run pytest -m "not needs_gpu"          # what CI runs
-uv run pytest -m "not needs_gpu" -n auto  # the same in parallel (pytest-xdist): ~6 min, not ~35 (decision 0084)
+uv run pytest                             # all tests, in parallel (pytest-xdist `-n auto` is in addopts)
+uv run pytest -m "not needs_gpu"          # what CI runs (~6 min on 12 cores)
+uv run pytest -n 0 path/to/test.py --pdb  # one process: debugging, --pdb (decision 0084)
+uv run pytest -m benchmark -n 0           # time budgets; they skip under xdist
 uv run pytest --cov=reframe --cov-report=term-missing  # coverage
 uv run python scripts/make-testdata.py    # generate test media into testdata/media/ (git-ignored)
 uv run --no-project python scripts/fetch-tools.py   # pinned FFmpeg (tools/ffmpeg.toml) into .tools/, prints its bin dir

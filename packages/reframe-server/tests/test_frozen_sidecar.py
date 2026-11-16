@@ -190,6 +190,8 @@ def test_the_frozen_cli_names_languages_from_its_bundled_tables(
     ]
     env = frozen_env | {"REFRAME_FFMPEG": str(media.find_ffmpeg())}
     env["REFRAME_FFPROBE"] = str(media.find_ffprobe())
+    # Wide enough that "jpn Japanese" stays on one table line; an xdist worker has no COLUMNS.
+    env["COLUMNS"] = "200"
     result = run_cli(FROZEN_CLI, "probe", str(fixture_media("multitrack")), env=env, cwd=tmp_path)
     assert result.returncode == 0, result.stderr
     assert "jpn Japanese" in result.stdout
