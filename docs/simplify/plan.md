@@ -36,6 +36,34 @@ the Tier B findings (worth doing if there is time). Tier C is not planned.
 - Commit each package as one conventional commit with the step ID as scope, for example
   `refactor(Q-6.3): one print helper in the CLI`. Never push.
 
+## How to run the tests (notes from the Q-6 run)
+
+The Q-6 packages were made over more than one session. These notes hold for whoever continues.
+
+- **Full suite:** `uv run pytest -m "not needs_gpu" -n auto` (pytest-xdist, about 6 minutes on
+  12 cores; one process takes about 35;
+  [decision 0084](../decisions/0084-parallel-test-runs-with-pytest-xdist.md)).
+- **Who runs what:** an implementation agent runs the focused tests of its package (the folders
+  its findings and its Done-when name) and the four static checks (`ruff check`,
+  `ruff format --check`, `mypy`, `mypy --platform win32`), not the full suite. The orchestrator
+  runs the full suite once on `m10-hardening` after each wave is merged. A failure there is
+  traced to its package (`git bisect` over the merge commits if needed).
+- **Known flaky tests** (fail when the machine is loaded, pass alone; rerun alone first):
+  `tests/probe/test_live.py::test_probe_budgets` (a timing budget),
+  `tests/remote/test_cli_client.py::test_a_client_drafts_as_the_in_process_draft[default]`,
+  `tests/platform/test_sleep_dbus.py::test_connection_stays_open_for_several_calls_and_closes`,
+  and a `ResourceWarning` error in the setup or teardown of
+  `packages/reframe-server/tests/test_subtitles.py::test_a_sup_file_is_a_bitmap_counted_in_display_sets`
+  (an unclosed transport left by an earlier test). See `decisions-taken.md` D-25 and D-32.
+- **Agent worktrees** (`isolation: "worktree"`) are created from `main`, not `m10-hardening`:
+  each agent first runs `git reset --hard <SHA of the last merge>` and checks `git rev-parse HEAD`
+  (D-24). The worktree has no `frontend/node_modules`; for `scripts/gen-api.sh --check` or the
+  frontend commands, symlink the main checkout's `frontend/node_modules` and remove the link
+  before the commit. Expected skips in a worktree: the frozen-sidecar tests and the
+  `node_modules` tests.
+- **Progress** is in `docs/status.md` (rows Q-6.1 to Q-6.19) and in the "Implementation (Q-6)"
+  part of `decisions-taken.md`.
+
 ## Work packages
 
 Estimated lines are code lines (without comments and blanks) removed net, source / tests.

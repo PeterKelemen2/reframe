@@ -44,6 +44,7 @@ uv run mypy                               # strict type check (files listed in p
 uv run mypy --platform win32              # the same, as the Windows CI runner sees it
 uv run pytest                             # all tests
 uv run pytest -m "not needs_gpu"          # what CI runs
+uv run pytest -m "not needs_gpu" -n auto  # the same in parallel (pytest-xdist): ~6 min, not ~35 (decision 0084)
 uv run pytest --cov=reframe --cov-report=term-missing  # coverage
 uv run python scripts/make-testdata.py    # generate test media into testdata/media/ (git-ignored)
 uv run --no-project python scripts/fetch-tools.py   # pinned FFmpeg (tools/ffmpeg.toml) into .tools/, prints its bin dir

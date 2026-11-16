@@ -47,6 +47,10 @@
 - [ ] **Q-2.4** Optional local suite on your own files: `REFRAME_SAMPLES=/path pytest -m samples`.
       It is never run in CI.
 
+Local full runs use `pytest-xdist`: `uv run pytest -m "not needs_gpu" -n auto` (about 6 minutes
+on 12 cores instead of about 35). CI keeps one process until xdist is checked on Windows
+([decision 0084](../decisions/0084-parallel-test-runs-with-pytest-xdist.md)).
+
 ### Test media
 
 `scripts/make-testdata.py` generates small files (≤ 5 s, low resolution) with FFmpeg `lavfi`

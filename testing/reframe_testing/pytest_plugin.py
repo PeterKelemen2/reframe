@@ -247,3 +247,13 @@ def power_guard(_no_real_power_actions: PowerGuard) -> Iterator[PowerGuard]:
     calls = guard.take_calls()
     if calls:
         pytest.fail(f"a test reached a real power action: {calls}", pytrace=False)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    # pytest-xdist sends each report to the controller as UTF-8, and a lone surrogate in captured
+    # output (tests log undecodable file names on purpose) kills the worker; escape it first.
+    report.sections = [
+        (title, text.encode("utf-8", "backslashreplace").decode("utf-8"))
+        for title, text in report.sections
+    ]
