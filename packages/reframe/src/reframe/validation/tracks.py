@@ -15,7 +15,6 @@ from reframe.validation.common import DEFAULT_AUDIO_ENCODER, replace, switch_con
 from reframe.validation.context import JobContext
 
 __all__ = [
-    "BITMAP_CODECS",
     "EXTERNAL_FORMATS",
     "FORCED_ONLY_CODECS",
     "EncodedAudio",
@@ -30,8 +29,6 @@ __all__ = [
     "track_stream",
 ]
 
-#: ffprobe codec names of bitmap subtitles.
-BITMAP_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"})
 #: Subtitle codecs whose FFmpeg decoder has ``forced_subs_only``.
 FORCED_ONLY_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle"})
 #: External subtitle files by extension: (ffprobe codec name, kind). The command builder reads
@@ -208,7 +205,6 @@ def switch_container(ctx: JobContext, allowed: Sequence[Container]) -> list[Fix]
         allowed,
         ctx.job.output.container,
         ctx.definitions,
-        target=ctx.target,
         output=ctx.job.output.path,
         holds=lambda container: job_fits(ctx, container),
     )

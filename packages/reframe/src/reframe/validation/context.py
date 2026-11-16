@@ -13,7 +13,6 @@ from reframe.definitions import ContainerDef, Definitions
 from reframe.dimensions import compute_geometry, source_geometry
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.geometry import Geometry, SourceGeometry
-from reframe.models.issues import FixTarget
 from reframe.models.job import JobSettings
 from reframe.models.media import AudioStream, MediaSource, SubtitleStream, VideoStream
 from reframe.models.naming import NameResult, NamingOptions
@@ -40,7 +39,6 @@ class JobContext:
     naming: NamingOptions
     """The effective naming options (the preset's, else Settings → Output)."""
 
-    target: FixTarget = "job"
     subject: str | None = None
 
     @cached_property
@@ -117,7 +115,6 @@ class TemplateContext:
     caps: CapabilitySnapshot
     definitions: Definitions
     subject: str | None = None
-    target: FixTarget = "template"
 
     @cached_property
     def container(self) -> ContainerDef | None:

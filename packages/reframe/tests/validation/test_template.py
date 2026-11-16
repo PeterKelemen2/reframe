@@ -25,7 +25,10 @@ from reframe.models import (
     TrackSelector,
     VideoSettings,
 )
-from reframe.validation import TEMPLATE_RULES, validate_template
+from reframe.models.issues import ValidationIssue
+from reframe.validation import TEMPLATE_RULES, TemplateContext, validate_template
+from reframe.validation.common import error, fix, replace
+from reframe.validation.registry import Rule
 
 from . import scenario as sc
 from .scenario import Case, Mod, both
@@ -413,3 +416,22 @@ def test_subject_names_the_template() -> None:
     template = preset(encoder="libx999")
     (issue,) = validate_template(template, sc.make_caps(), subject="Batch group 2")
     assert issue.message == "Batch group 2 uses the unknown encoder 'libx999'."
+
+
+def test_template_fixes_target_the_template_but_settings_fixes_stay() -> None:
+    def both_targets(ctx: TemplateContext) -> list[ValidationIssue]:
+        return [
+            error(
+                "output.example",
+                "output",
+                "Example.",
+                fix("Fix the preset", replace("output.path", None)),
+                fix(
+                    "Fix the settings", replace("output.collision", "overwrite"), target="settings"
+                ),
+            )
+        ]
+
+    rule = Rule("output", "both_targets", both_targets, ("output.example",))
+    (issue,) = validate_template(preset(), sc.make_caps(), rules=[rule])
+    assert [f.target for f in issue.fixes] == ["template", "settings"]

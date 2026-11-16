@@ -51,7 +51,7 @@ def source_streams(ctx: JobContext) -> Iterator[ValidationIssue]:
             "audio.source_missing",
             f"audio[{index}].source_stream",
             f"Audio track {index + 1} {what}.",
-            fix("Remove this audio track", remove(f"audio[{index}]"), target=ctx.target),
+            fix("Remove this audio track", remove(f"audio[{index}]")),
         )
 
 
@@ -106,12 +106,10 @@ def passthru_settings(ctx: JobContext) -> Iterator[ValidationIssue]:
                 f"Encode the track ({encoder})",
                 replace(f"audio[{index}].action", "encode"),
                 *([] if track.encoder else [replace(f"audio[{index}].encoder", encoder)]),
-                target=ctx.target,
             ),
             fix(
                 f"Remove the {what}",
                 *(replace(f"audio[{index}].{field}", off) for _, field, off in found),
-                target=ctx.target,
             ),
         )
 
@@ -152,7 +150,7 @@ def _mixdown_fix(ctx: JobContext, index: int, mixdown: Mixdown | None) -> Fix:
         if mixdown is None
         else f"Mix down to {_label(ctx.definitions, mixdown)}"
     )
-    return fix(label, replace(f"audio[{index}].mixdown", mixdown), target=ctx.target)
+    return fix(label, replace(f"audio[{index}].mixdown", mixdown))
 
 
 def _layout_downmix(planned: EncodedAudio) -> bool:
@@ -244,8 +242,7 @@ def bitrates(ctx: JobContext) -> Iterator[ValidationIssue]:
                 f"audio[{index}].bitrate",
                 f"{encoder.label} is lossless and has no bitrate: audio track {index + 1} is "
                 f"written without one ({kbps} kb/s is not used).",
-                fix("Remove the bitrate", replace(f"audio[{index}].bitrate", None),
-                    target=ctx.target),
+                fix("Remove the bitrate", replace(f"audio[{index}].bitrate", None)),
             )  # fmt: skip
             continue
         if kbps is None or snapped is None or snapped == kbps or encoder.bitrate is None:
@@ -261,7 +258,6 @@ def bitrates(ctx: JobContext) -> Iterator[ValidationIssue]:
             fix(
                 f"Use {snapped} kb/s",
                 replace(f"audio[{index}].bitrate", snapped),
-                target=ctx.target,
             ),
         )
 
@@ -280,8 +276,7 @@ def qualities(ctx: JobContext) -> Iterator[ValidationIssue]:
                 f"audio[{index}].quality",
                 f"{encoder.label} is lossless and has no VBR quality: audio track {index + 1} "
                 "is written without one.",
-                fix("Remove the VBR quality", replace(f"audio[{index}].quality", None),
-                    target=ctx.target),
+                fix("Remove the VBR quality", replace(f"audio[{index}].quality", None)),
             )  # fmt: skip
             continue
         limits = encoder.bitrate.by_mixdown.get(planned.table)
@@ -296,7 +291,6 @@ def qualities(ctx: JobContext) -> Iterator[ValidationIssue]:
                 f"Use {limits.default} kb/s",
                 replace(f"audio[{index}].quality", None),
                 replace(f"audio[{index}].bitrate", limits.default),
-                target=ctx.target,
             ),
         )
 
@@ -318,6 +312,5 @@ def samplerates(ctx: JobContext) -> Iterator[ValidationIssue]:
             fix(
                 f"Use {written} Hz",
                 replace(f"audio[{index}].samplerate", written),
-                target=ctx.target,
             ),
         )

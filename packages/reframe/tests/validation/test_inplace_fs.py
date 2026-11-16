@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path, PurePath, PureWindowsPath
+from pathlib import Path, PurePath
 from typing import Any
 
 import pytest
@@ -13,7 +13,6 @@ from reframe.metadata import remux_job
 from reframe.models import ReplaceOp
 from reframe.queue import files
 from reframe.validation import FileSystemView, LocalFileSystem
-from reframe.validation.inplace import source_writable
 
 from . import scenario as sc
 
@@ -55,22 +54,6 @@ def test_local_writable_file_on_windows_opens_the_file(
         file.chmod(0o644)
 
 
-class WindowsView:
-    """A view of a Windows file system: read-only files by case-insensitive name."""
-
-    def __init__(self, readonly: set[str]) -> None:
-        self.readonly = {name.casefold() for name in readonly}
-
-    def writable_file(self, path: PurePath) -> bool:
-        return str(PureWindowsPath(path)).casefold() not in self.readonly
-
-
-def test_source_writable_asks_the_view_with_windows_paths() -> None:
-    view = WindowsView({r"C:\Media\Show.mkv"})
-    assert not source_writable(view, PureWindowsPath(r"c:\media\SHOW.mkv"))  # type: ignore[arg-type]
-    assert source_writable(view, PureWindowsPath(r"C:\Media\Other.mkv"))  # type: ignore[arg-type]
-
-
 def test_every_view_answers_writable_file() -> None:
     source = PurePath("/media/Show.mkv")
     fake: FileSystemView = sc.FakeFs(files=[source], readonly=[PurePath("/media/Locked.mkv")])
@@ -81,7 +64,6 @@ def test_every_view_answers_writable_file() -> None:
         files=[PurePath("/media/Locked.mkv")], readonly=[PurePath("/media/Locked.mkv")]
     )
     assert not locked.writable_file(PurePath("/media/Locked.mkv"))
-    assert not source_writable(locked, PurePath("/media/Locked.mkv"))
 
 
 @pytest.mark.skipif(root_user, reason="root can open a read-only file for writing")

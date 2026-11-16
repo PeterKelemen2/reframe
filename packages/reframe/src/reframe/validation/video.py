@@ -40,10 +40,8 @@ from reframe.models.capabilities import CapabilitySnapshot, EncoderStatus
 from reframe.models.issues import (
     AddOp,
     Fix,
-    FixTarget,
     JsonPatchOp,
     RemoveOp,
-    ReplaceOp,
     ValidationIssue,
 )
 from reframe.models.job import (
@@ -69,6 +67,8 @@ __all__ = [
     "CUSTOM_PARAM_CODES",
     "OPTION_RULE_CODES",
     "OVERRIDE_CODE",
+    "remove_option_fix",
+    "remove_param_fix",
     "switch_video_encoder",
     "ten_bit_patch",
     "video_availability_issues",
@@ -185,15 +185,11 @@ def _switch_fix(
     video: VideoSettings,
     new_id: str,
     definitions: Definitions,
-    target: FixTarget,
     *,
-    closest: bool = False,
     caps: CapabilitySnapshot | None = None,
 ) -> Fix:
     ops, note = switch_video_encoder(video, new_id, definitions, caps)
-    details = [text for text in ("closest match" if closest else None, note) if text]
-    label = f"Use {new_id}" + (f" ({'; '.join(details)})" if details else "")
-    return fix(label, *ops, target=target)
+    return fix(f"Use {new_id}" + (f" ({note})" if note else ""), *ops)
 
 
 def video_availability_issues(
@@ -201,27 +197,18 @@ def video_availability_issues(
     caps: CapabilitySnapshot,
     definitions: Definitions,
     *,
-    target: FixTarget = "job",
     subject: str | None = None,
 ) -> list[ValidationIssue]:
     """The availability issues of the video encoder. The closest-match fix also converts the
     quality and the rest (:func:`switch_video_encoder`)."""
-    issues = encoder_issues(
-        video.encoder, caps, definitions, path="video.encoder", target=target, subject=subject
+    return encoder_issues(
+        video.encoder,
+        caps,
+        definitions,
+        path="video.encoder",
+        subject=subject,
+        fix_ops=lambda new: switch_video_encoder(video, new, definitions, caps),
     )
-    result: list[ValidationIssue] = []
-    for issue in issues:
-        fixes: list[Fix] = []
-        for old_fix in issue.fixes:
-            first = old_fix.patch[0]
-            if isinstance(first, ReplaceOp) and isinstance(first.value, str):
-                fixes.append(
-                    _switch_fix(video, first.value, definitions, target, closest=True, caps=caps)
-                )
-            else:  # pragma: no cover - encoder_issues makes only replace fixes
-                fixes.append(old_fix)
-        result.append(issue.model_copy(update={"fixes": fixes}))
-    return result
 
 
 def _rechecking(caps: CapabilitySnapshot | None) -> bool:
@@ -267,8 +254,6 @@ def video_bit_depth_issues(
     video: VideoSettings,
     caps: CapabilitySnapshot,
     definitions: Definitions,
-    *,
-    target: FixTarget = "job",
 ) -> list[ValidationIssue]:
     """``encoder.no_10bit``: 10-bit output with an encoder (or a GPU) that cannot do it.
 
@@ -299,7 +284,7 @@ def video_bit_depth_issues(
             "encoder.no_10bit",
             "video.bit_depth",
             f"{encoder.label} cannot encode 10-bit: {reason}.",
-            fix("Use 8-bit", *ops, target=target),
+            fix("Use 8-bit", *ops),
         )
     ]
 
@@ -308,8 +293,6 @@ def video_choice_issues(
     video: VideoSettings,
     caps: CapabilitySnapshot,
     definitions: Definitions,
-    *,
-    target: FixTarget = "job",
 ) -> list[ValidationIssue]:
     """``encoder.<preset|tune|profile|level>_unsupported``: a value the encoder (or this
     build) does not have. The fix resets it to the encoder's default."""
@@ -343,7 +326,6 @@ def video_choice_issues(
                     fix(
                         f"Use the encoder's default {label}",
                         replace(f"video.{field}", None),
-                        target=target,
                     ),
                 )
             )
@@ -453,8 +435,6 @@ def video_option_issues(
     video: VideoSettings,
     caps: CapabilitySnapshot,
     definitions: Definitions,
-    *,
-    target: FixTarget = "job",
 ) -> list[ValidationIssue]:
     """Advanced options: unknown to the encoder, not supported by this build, or a bad value.
     The fix removes the option (back to the default)."""
@@ -465,11 +445,7 @@ def video_option_issues(
     issues: list[ValidationIssue] = []
     for key, value in video.advanced.items():
         path = f"video.advanced.{key}"
-        reset = fix(
-            f"Reset {key} to its default",
-            RemoveOp(path=format_pointer(["video", "advanced", key])),
-            target=target,
-        )
+        reset = remove_option_fix(key, f"Reset {key} to its default")
         option = encoder.option(key)
         if option is None:
             issues.append(
@@ -506,8 +482,6 @@ def video_option_issues(
 def video_rate_control_issues(
     video: VideoSettings,
     definitions: Definitions,
-    *,
-    target: FixTarget = "job",
 ) -> list[ValidationIssue]:
     """Rate control that the encoder does not have, or a value outside its range."""
     encoder = definitions.video_encoders.get(video.encoder)
@@ -523,7 +497,6 @@ def video_rate_control_issues(
                     fix(
                         "Use average bitrate",
                         replace("video.rate_control", AverageBitrate().model_dump(mode="json")),
-                        target=target,
                     )
                 ]
                 if bitrate is not None
@@ -548,7 +521,6 @@ def video_rate_control_issues(
                     fix(
                         f"Use {quality.label} {_num(snapped)}",
                         replace("video.rate_control.value", snapped),
-                        target=target,
                     ),
                 )
             )
@@ -562,7 +534,6 @@ def video_rate_control_issues(
                         "video.rate_control",
                         ConstantQuality(value=quality.default).model_dump(mode="json"),
                     ),
-                    target=target,
                 )
             ]
             if quality is not None
@@ -588,7 +559,6 @@ def video_rate_control_issues(
                 fix(
                     f"Use {clamped} kb/s",
                     replace("video.rate_control.kbps", clamped),
-                    target=target,
                 ),
             )
         )
@@ -602,7 +572,6 @@ def video_rate_control_issues(
                     "Use one pass",
                     replace("video.rate_control.two_pass", False),
                     replace("video.rate_control.turbo_first_pass", False),
-                    target=target,
                 ),
             )
         )
@@ -630,15 +599,11 @@ def _option_value(
     return (default.values.get(preset) if preset is not None else None), False
 
 
-def _set_option(key: str, value: OptionValue, target: FixTarget, label: str) -> Fix:
-    return fix(
-        label, AddOp(path=format_pointer(["video", "advanced", key]), value=value), target=target
-    )
+def _set_option(key: str, value: OptionValue, label: str) -> Fix:
+    return fix(label, AddOp(path=format_pointer(["video", "advanced", key]), value=value))
 
 
-def video_x26x_rule_issues(
-    video: VideoSettings, definitions: Definitions, *, target: FixTarget = "job"
-) -> list[ValidationIssue]:
+def video_x26x_rule_issues(video: VideoSettings, definitions: Definitions) -> list[ValidationIssue]:
     """Rules across two advanced options. The ``animation`` tune adds 2 to the B-frames, and
     ``zerolatency`` sets them and the lookahead to 0, unless the job sets them. x264 uses
     ``subme`` 9 instead of 10 or 11 unless ``trellis`` is 2, without a message."""
@@ -660,15 +625,11 @@ def video_x26x_rule_issues(
             and lookahead <= bframes
             and not (lookahead == 0 and bframes == 0)
         ):
-            fixes = [
-                _set_option("rc-lookahead", bframes + 1, target, f"Look ahead {bframes + 1} frames")
-            ]
+            fixes = [_set_option("rc-lookahead", bframes + 1, f"Look ahead {bframes + 1} frames")]
             if lookahead >= 1:
-                fixes.append(
-                    _set_option("bframes", lookahead - 1, target, f"Use {lookahead - 1} B-frames")
-                )
+                fixes.append(_set_option("bframes", lookahead - 1, f"Use {lookahead - 1} B-frames"))
             else:
-                fixes.append(_set_option("bframes", 0, target, "Use no B-frames"))
+                fixes.append(_set_option("bframes", 0, "Use no B-frames"))
             issues.append(
                 error(
                     "encoder.lookahead_too_short",
@@ -688,15 +649,15 @@ def video_x26x_rule_issues(
                     "video.advanced.subme",
                     f"x264 uses subme {subme} only with trellis 2: with trellis {trellis} it "
                     "uses subme 9.",
-                    _set_option("trellis", "2", target, "Set trellis 2"),
-                    _set_option("subme", 9, target, "Use subme 9"),
+                    _set_option("trellis", "2", "Set trellis 2"),
+                    _set_option("subme", 9, "Use subme 9"),
                 )
             )
     return issues
 
 
 def video_fast_decode_issues(
-    video: VideoSettings, definitions: Definitions, *, target: FixTarget = "job"
+    video: VideoSettings, definitions: Definitions
 ) -> list[ValidationIssue]:
     """Fast decode is a tune of an encoder that takes one tune only (x265): another tune with
     it is a conflict, which the command builder refuses."""
@@ -713,8 +674,8 @@ def video_fast_decode_issues(
                 "video.fast_decode",
                 f"{encoder.label} takes one tune: fast decode ({fast.tune}) cannot be combined "
                 f"with the tune {video.tune!r}.",
-                fix("Turn off fast decode", replace("video.fast_decode", False), target=target),
-                fix("Remove the tune", replace("video.tune", None), target=target),
+                fix("Turn off fast decode", replace("video.fast_decode", False)),
+                fix("Remove the tune", replace("video.tune", None)),
             )
         ]
     return [
@@ -722,7 +683,7 @@ def video_fast_decode_issues(
             "encoder.fast_decode_unsupported",
             "video.fast_decode",
             f"{encoder.label} has no fast-decode setting: it is ignored.",
-            fix("Turn off fast decode", replace("video.fast_decode", False), target=target),
+            fix("Turn off fast decode", replace("video.fast_decode", False)),
         )
     ]
 
@@ -739,8 +700,8 @@ def _option_pointer(key: str) -> str:
     return format_pointer(["video", "advanced", key])
 
 
-def _remove_option(key: str, target: FixTarget, label: str | None = None) -> Fix:
-    return fix(label or f"Remove {key}", RemoveOp(path=_option_pointer(key)), target=target)
+def remove_option_fix(key: str, label: str | None = None) -> Fix:
+    return fix(label or f"Remove {key}", RemoveOp(path=_option_pointer(key)))
 
 
 def _value_label(option: EncoderOption, value: OptionValue) -> str:
@@ -753,7 +714,7 @@ def _value_label(option: EncoderOption, value: OptionValue) -> str:
     return _num(value) if isinstance(value, int | float) else str(value)
 
 
-def _condition_fix(condition: Condition, encoder: VideoEncoderDef, target: FixTarget) -> Fix | None:
+def _condition_fix(condition: Condition, encoder: VideoEncoderDef) -> Fix | None:
     """A fix that makes an ``option:<key>`` condition hold (``eq`` or ``in``); ``None`` for the
     others."""
     if not condition.field.startswith("option:") or condition.op not in ("eq", "in"):
@@ -763,7 +724,7 @@ def _condition_fix(condition: Condition, encoder: VideoEncoderDef, target: FixTa
     if other is None:  # pragma: no cover - the linter checks the condition's option
         return None
     value = condition.value[0] if isinstance(condition.value, list) else condition.value
-    return _set_option(key, value, target, f"Set {other.label} to {_value_label(other, value)}")
+    return _set_option(key, value, f"Set {other.label} to {_value_label(other, value)}")
 
 
 def _int(value: OptionValue | None) -> int | None:
@@ -815,13 +776,13 @@ class _Options:
         return f"{option.label} ({key})" if option is not None else key
 
 
-def _inactive_issues(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
+def _inactive_issues(opts: _Options) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     encoder = opts.encoder
     for key, unmet in opts.inactive.items():
         needs = " and ".join(describe_condition(c, encoder) for c in unmet)
-        fixes = [_remove_option(key, target)]
-        if len(unmet) == 1 and (set_fix := _condition_fix(unmet[0], encoder, target)):
+        fixes = [remove_option_fix(key)]
+        if len(unmet) == 1 and (set_fix := _condition_fix(unmet[0], encoder)):
             fixes.append(set_fix)
         issues.append(
             warning(
@@ -834,7 +795,7 @@ def _inactive_issues(opts: _Options, target: FixTarget) -> list[ValidationIssue]
     return issues
 
 
-def _vbv_rules(video: VideoSettings, opts: _Options, target: FixTarget) -> list[ValidationIssue]:
+def _vbv_rules(video: VideoSettings, opts: _Options) -> list[ValidationIssue]:
     maxrate, bufsize = (_int(opts.written.get(key)) or 0 for key in ("vbv-maxrate", "vbv-bufsize"))
     used_max, used_buf = (_int(opts.effective(key)) or 0 for key in ("vbv-maxrate", "vbv-bufsize"))
     name = opts.encoder.label
@@ -845,7 +806,7 @@ def _vbv_rules(video: VideoSettings, opts: _Options, target: FixTarget) -> list[
                 "encoder.option_inactive",
                 "video.advanced.vbv-maxrate",
                 f"{name} ignores {opts.label('vbv-maxrate')} without {opts.label('vbv-bufsize')}.",
-                _remove_option("vbv-maxrate", target),
+                remove_option_fix("vbv-maxrate"),
             )
         )
     # At an average bitrate the encoder takes the bitrate as the VBV maximum, so a buffer alone
@@ -857,13 +818,13 @@ def _vbv_rules(video: VideoSettings, opts: _Options, target: FixTarget) -> list[
                 "video.advanced.vbv-bufsize",
                 f"{name} ignores {opts.label('vbv-bufsize')} without "
                 f"{opts.label('vbv-maxrate')} at a constant quality.",
-                _remove_option("vbv-bufsize", target),
+                remove_option_fix("vbv-bufsize"),
             )
         )
     return issues
 
 
-def _x264_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
+def _x264_rules(opts: _Options) -> list[ValidationIssue]:
     """x264 lowers these with ``bluray-compat`` on, without a message."""
     if opts.effective("bluray-compat") is not True:
         return []
@@ -886,14 +847,14 @@ def _x264_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
                 f"video.advanced.{key}",
                 f"With Blu-ray compatibility x264 uses {opts.label(key)} {shown}, not "
                 f"{_value_label(option, opts.written[key])}.",
-                _set_option(key, value, target, f"Use {shown}"),
-                _remove_option(key, target),
+                _set_option(key, value, f"Use {shown}"),
+                remove_option_fix(key),
             )
         )
     return issues
 
 
-def _x265_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
+def _x265_rules(opts: _Options) -> list[ValidationIssue]:
     ctu = _int(opts.effective("ctu"))
     if ctu is None:
         return []
@@ -907,8 +868,8 @@ def _x265_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
                 "video.advanced.min-cu-size",
                 f"x265 stops when the minimum CU size ({min_cu}) is larger than the CTU size "
                 f"({ctu}).",
-                _set_option("min-cu-size", str(ctu), target, f"Use min CU size {ctu}"),
-                _remove_option("min-cu-size", target),
+                _set_option("min-cu-size", str(ctu), f"Use min CU size {ctu}"),
+                remove_option_fix("min-cu-size"),
             )
         )
     limit_refs = opts.written.get("limit-refs")
@@ -919,8 +880,8 @@ def _x265_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
                 "video.advanced.limit-refs",
                 f"x265 turns limit references {limit_refs} off with parallel mode analysis "
                 "(pmode).",
-                _set_option("limit-refs", "1", target, "Use limit references 1"),
-                _set_option("pmode", False, target, "Turn parallel mode analysis off"),
+                _set_option("limit-refs", "1", "Use limit references 1"),
+                _set_option("pmode", False, "Turn parallel mode analysis off"),
             )
         )
     for key, what in (("max-tu-size", "maximum TU size"), ("qg-size", "quantisation group")):
@@ -931,14 +892,14 @@ def _x265_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
                     "encoder.option_ignored",
                     f"video.advanced.{key}",
                     f"x265 lowers the {what} {size} to the CTU size {ctu}.",
-                    _set_option(key, str(ctu), target, f"Use {ctu}"),
-                    _remove_option(key, target),
+                    _set_option(key, str(ctu), f"Use {ctu}"),
+                    remove_option_fix(key),
                 )
             )
     return issues
 
 
-def _svt_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
+def _svt_rules(opts: _Options) -> list[ValidationIssue]:
     levels = opts.written.get("hierarchical-levels")
     if opts.effective("irefresh-type") != "1" or levels is None or levels == "4":
         return []
@@ -950,8 +911,8 @@ def _svt_rules(opts: _Options, target: FixTarget) -> list[ValidationIssue]:
             "video.advanced.hierarchical-levels",
             f"With forward keyframes SVT-AV1 uses hierarchical levels 4 "
             f"({_value_label(option, '4')}), not {_value_label(option, levels)}.",
-            _set_option("hierarchical-levels", "4", target, "Use 16 frames"),
-            _remove_option("hierarchical-levels", target),
+            _set_option("hierarchical-levels", "4", "Use 16 frames"),
+            remove_option_fix("hierarchical-levels"),
         )
     ]
 
@@ -961,7 +922,6 @@ def _min_max_conflict(
     low_key: str,
     high_key: str,
     message: str,
-    target: FixTarget,
 ) -> list[ValidationIssue]:
     """``low_key`` above ``high_key`` (both as the encoder uses them) stops the encoder."""
     low, high = _int(opts.effective(low_key)), _int(opts.effective(high_key))
@@ -971,8 +931,8 @@ def _min_max_conflict(
         return []  # pragma: no cover - the defaults are consistent (the linter's range)
     path_key = low_key if low_key in opts.written else high_key
     fixes = [
-        _set_option(low_key, high, target, f"Use {opts.label(low_key)} {high}"),
-        _set_option(high_key, low, target, f"Use {opts.label(high_key)} {low}"),
+        _set_option(low_key, high, f"Use {opts.label(low_key)} {high}"),
+        _set_option(high_key, low, f"Use {opts.label(high_key)} {low}"),
     ]
     return [
         error(
@@ -984,14 +944,13 @@ def _min_max_conflict(
     ]
 
 
-def _vp9_rules(video: VideoSettings, opts: _Options, target: FixTarget) -> list[ValidationIssue]:
+def _vp9_rules(video: VideoSettings, opts: _Options) -> list[ValidationIssue]:
     """libvpx: ``qmin`` above ``qmax`` fails, and so does a CQ value outside them."""
     issues = _min_max_conflict(
         opts,
         "qmin",
         "qmax",
         "libvpx stops when the minimum quantiser ({low}) is above the maximum ({high}).",
-        target,
     )
     rc = video.rate_control
     qmin, qmax = _int(opts.effective("qmin")), _int(opts.effective("qmax"))
@@ -1001,10 +960,8 @@ def _vp9_rules(video: VideoSettings, opts: _Options, target: FixTarget) -> list[
     for key, bound, outside in (("qmin", qmin, crf < qmin), ("qmax", qmax, crf > qmax)):
         if not outside:
             continue
-        fixes = [_set_option(key, crf, target, f"Use {opts.label(key)} {crf}")]
-        fixes.append(
-            fix(f"Use CQ {bound}", replace("video.rate_control.value", bound), target=target)
-        )
+        fixes = [_set_option(key, crf, f"Use {opts.label(key)} {crf}")]
+        fixes.append(fix(f"Use CQ {bound}", replace("video.rate_control.value", bound)))
         issues.append(
             error(
                 "encoder.option_conflict",
@@ -1021,8 +978,6 @@ def video_option_rule_issues(
     video: VideoSettings,
     caps: CapabilitySnapshot,
     definitions: Definitions,
-    *,
-    target: FixTarget = "job",
 ) -> list[ValidationIssue]:
     """Rules of the advanced options, each checked with the encoder. An option the builder
     leaves out is inactive; a value the encoder silently changes is ignored; a combination it
@@ -1031,31 +986,29 @@ def video_option_rule_issues(
     if encoder is None or video.passthrough:
         return []
     opts = _Options(video, encoder, _status(caps, encoder.id))
-    issues = _inactive_issues(opts, target)
+    issues = _inactive_issues(opts)
     if encoder.id in ("libx264", "libx265"):
-        issues += _vbv_rules(video, opts, target)
+        issues += _vbv_rules(video, opts)
     if encoder.id == "libx264":
-        issues += _x264_rules(opts, target)
+        issues += _x264_rules(opts)
     elif encoder.id == "libx265":
-        issues += _x265_rules(opts, target)
+        issues += _x265_rules(opts)
     elif encoder.id == "libsvtav1":
-        issues += _svt_rules(opts, target)
+        issues += _svt_rules(opts)
         issues += _min_max_conflict(
             opts,
             "min-qp",
             "max-qp",
             "SVT-AV1 stops when the minimum quantiser ({low}) is above the maximum ({high}).",
-            target,
         )
         issues += _min_max_conflict(
             opts,
             "qm-min",
             "qm-max",
             "SVT-AV1 stops when the minimum QM level ({low}) is above the maximum ({high}).",
-            target,
         )
     elif encoder.id == "libvpx-vp9":
-        issues += _vp9_rules(video, opts, target)
+        issues += _vp9_rules(video, opts)
     return issues
 
 
@@ -1063,25 +1016,18 @@ CUSTOM_PARAM_CODES = ("encoder.custom_param_file", "encoder.custom_param_unknown
 """The codes of :func:`video_custom_param_issues` (registered in ``validation/levels.py``)."""
 
 
-def _remove_param(
-    params: Sequence[CustomParam], param: CustomParam | None, target: FixTarget
-) -> Fix:
+def remove_param_fix(params: Sequence[CustomParam], param: CustomParam | None) -> Fix:
     if param is None:  # a key only FFmpeg's own splitting finds (quotes): drop them all
-        return fix(
-            "Remove the custom parameters", replace("video.custom_params", ""), target=target
-        )
+        return fix("Remove the custom parameters", replace("video.custom_params", ""))
     group = whole_param(params, param)
     rest = ":".join(p.raw for p in params if not any(p is g for g in group))
     return fix(
         f"Remove {':'.join(p.raw for p in group).strip()} from the custom parameters",
         replace("video.custom_params", rest),
-        target=target,
     )
 
 
-def _param_file_issues(
-    encoder: VideoEncoderDef, video: VideoSettings, target: FixTarget
-) -> list[ValidationIssue]:
+def _param_file_issues(encoder: VideoEncoderDef, video: VideoSettings) -> list[ValidationIssue]:
     """x264 / x265 / SVT-AV1: the keys the library reads, split as typed and as FFmpeg splits
     the params argument (quotes and escapes)."""
     params = split_custom_params(video.custom_params)
@@ -1104,7 +1050,7 @@ def _param_file_issues(
                 "video.custom_params",
                 f"The custom parameter {name!r} names a file ({encoder.label}: {what}). Reframe "
                 "does not pass parameters that make the encoder read or write files.",
-                _remove_param(params, owner, target),
+                remove_param_fix(params, owner),
             )
         )
     return issues
@@ -1114,7 +1060,6 @@ def _own_option_issues(
     encoder: VideoEncoderDef,
     video: VideoSettings,
     status: EncoderStatus | None,
-    target: FixTarget,
 ) -> list[ValidationIssue]:
     """VP9, NVENC, QSV, AMF, VAAPI: each entry is written as ``-<name>:v:0``; only the allow-list
     of :func:`~reframe.definitions.custom_params.own_option_allowed` passes."""
@@ -1147,9 +1092,7 @@ def _own_option_issues(
                 f"encoder={encoder.id}) or a generic encoder option: Reframe passes only these "
                 "to FFmpeg."
             )
-        issues.append(
-            error(code, "video.custom_params", message, _remove_param(params, param, target))
-        )
+        issues.append(error(code, "video.custom_params", message, remove_param_fix(params, param)))
     return issues
 
 
@@ -1157,8 +1100,6 @@ def video_custom_param_issues(
     video: VideoSettings,
     caps: CapabilitySnapshot,
     definitions: Definitions,
-    *,
-    target: FixTarget = "job",
 ) -> list[ValidationIssue]:
     """Custom parameters that Reframe does not pass to FFmpeg, each with a fix that removes the
     entry: a key that makes the encoder read or write a file, and, for an encoder without a
@@ -1170,8 +1111,8 @@ def video_custom_param_issues(
     if encoder is None:
         return []
     if encoder.params_arg is not None:
-        return _param_file_issues(encoder, video, target)
-    return _own_option_issues(encoder, video, _status(caps, encoder.id), target)
+        return _param_file_issues(encoder, video)
+    return _own_option_issues(encoder, video, _status(caps, encoder.id))
 
 
 OVERRIDE_CODE = "encoder.custom_param_overrides"
@@ -1200,7 +1141,7 @@ def _options_set_by(encoder: VideoEncoderDef, name: str) -> list[EncoderOption]:
 
 
 def video_custom_param_override_issues(
-    video: VideoSettings, definitions: Definitions, *, target: FixTarget = "job"
+    video: VideoSettings, definitions: Definitions
 ) -> list[ValidationIssue]:
     """Custom parameters that set an advanced option, at that option's path: they come last,
     so the encoder uses them. A warning when the option is set too, info otherwise."""
@@ -1218,7 +1159,7 @@ def video_custom_param_override_issues(
     for key, (option, param) in setting.items():
         typed = f"{param.name}={param.value}"
         label = f"{option.label} ({key})"
-        remove = _remove_param(params, param, target)
+        remove = remove_param_fix(params, param)
         path = f"video.advanced.{key}"
         if key in video.advanced:
             shown = _value_label(option, video.advanced[key])
@@ -1268,7 +1209,6 @@ def _encode_fix(
     container: ContainerDef,
     caps: CapabilitySnapshot,
     definitions: Definitions,
-    target: FixTarget,
 ) -> Fix:
     """Turn off passthrough, and switch to an encoder the container holds when the job's encoder
     cannot go into it."""
@@ -1278,8 +1218,8 @@ def _encode_fix(
         candidates = _convert_candidates(video, container.video.encode, caps, definitions)
         if candidates:
             ops += switch_video_encoder(video, candidates[0], definitions, caps)[0]
-            return fix(f"Encode the video with {candidates[0]}", *ops, target=target)
-    return fix("Encode the video", *ops, target=target)
+            return fix(f"Encode the video with {candidates[0]}", *ops)
+    return fix("Encode the video", *ops)
 
 
 def video_container_issues(
@@ -1289,7 +1229,6 @@ def video_container_issues(
     definitions: Definitions,
     *,
     source_codec: str | None = None,
-    target: FixTarget = "job",
     switch: SwitchContainer | None = None,
     passthrough_known: bool = False,
 ) -> list[ValidationIssue]:
@@ -1305,7 +1244,7 @@ def video_container_issues(
     def switch_to(allowed: Sequence[Container]) -> list[Fix]:
         if switch is not None:
             return switch(allowed)
-        return switch_container_fixes(allowed, container_id, definitions, target=target)
+        return switch_container_fixes(allowed, container_id, definitions)
 
     container = definitions.containers.get(container_id)
     if container is None:
@@ -1320,7 +1259,7 @@ def video_container_issues(
             if source_codec is not None
             else []
         )
-        fixes.append(_encode_fix(video, container, caps, definitions, target))
+        fixes.append(_encode_fix(video, container, caps, definitions))
         what = f"{source_codec} video" if source_codec is not None else "video of an unknown codec"
         return [
             error(
@@ -1334,7 +1273,7 @@ def video_container_issues(
     if encoder is None or encoder.codec in container.video.encode:
         return []
     fixes = [
-        _switch_fix(video, candidate, definitions, target, caps=caps)
+        _switch_fix(video, candidate, definitions, caps=caps)
         for candidate in _convert_candidates(video, container.video.encode, caps, definitions)
     ]
     fixes.extend(switch_to(containers_for(definitions, "video", encoder.codec)))

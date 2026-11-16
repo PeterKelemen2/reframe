@@ -52,9 +52,7 @@ def template_naming(ctx: TemplateContext) -> Iterator[ValidationIssue]:
     if naming is None:
         return
     for field in ("movie_template", "episode_template"):
-        yield from check_template(
-            getattr(naming, field), field=f"naming.{field}", target=ctx.target
-        )
+        yield from check_template(getattr(naming, field), field=f"naming.{field}")
     if naming.output_folder_mode == "fixed" and naming.output_folder is None:
         yield warning(
             "naming.no_output_folder",

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, get_args
 
 from reframe.models.issues import ValidationIssue
 
@@ -41,20 +41,7 @@ Area = Literal[
     "naming",
 ]
 #: The order in which areas are checked (and issues are listed).
-AREAS: tuple[Area, ...] = (
-    "tools",
-    "source",
-    "encoder",
-    "container",
-    "dimensions",
-    "filters",
-    "audio",
-    "subtitles",
-    "metadata",
-    "range",
-    "output",
-    "naming",
-)
+AREAS: tuple[Area, ...] = get_args(Area)
 
 
 @dataclass(frozen=True, slots=True)

@@ -134,6 +134,16 @@ def _source_path_issues(job: JobSettings, source: MediaSource) -> list[Validatio
     return []
 
 
+def _for_template(issue: ValidationIssue) -> ValidationIssue:
+    """``issue`` with its ``"job"`` fixes aimed at the template; ``"settings"`` fixes stay."""
+    if not any(f.target == "job" for f in issue.fixes):
+        return issue
+    fixes = [
+        f.model_copy(update={"target": "template"}) if f.target == "job" else f for f in issue.fixes
+    ]
+    return issue.model_copy(update={"fixes": fixes})
+
+
 def validate_template(
     template: JobTemplate,
     caps: CapabilitySnapshot,
@@ -151,7 +161,7 @@ def validate_template(
         subject = f'Preset "{template.name}"'
     defs = definitions if definitions is not None else load_definitions()
     context = TemplateContext(template=template, caps=caps, definitions=defs, subject=subject)
-    issues = _run(TEMPLATE_RULES if rules is None else rules, context)
+    issues = [_for_template(i) for i in _run(TEMPLATE_RULES if rules is None else rules, context)]
     if rules is None:
         # The lint finds shadowed or unreachable codec rules and bitrates out of range.
         # The container rule reports codecs the container cannot hold, so the lint skips those.

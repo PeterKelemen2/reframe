@@ -23,28 +23,6 @@ def _blocks(ctx: JobContext) -> Iterator[tuple[str, TrackMetadata]]:
         yield f"subtitles[{index}].metadata", subtitle.metadata
 
 
-def _written_languages(ctx: JobContext) -> Iterator[tuple[str, str | None]]:
-    stream = ctx.video_stream
-    source = (stream.language_ietf or stream.language) if stream is not None else None
-    yield "video.metadata", ctx.job.video.metadata.language or source
-    for index, audio in enumerate(ctx.job.audio):
-        found = (
-            ctx.audio_streams.get(audio.source_stream) if audio.source_stream is not None else None
-        )
-        source = (found.language_ietf or found.language) if found is not None else None
-        yield f"audio[{index}].metadata", audio.metadata.language or source
-    for index, subtitle in enumerate(ctx.job.subtitles):
-        if subtitle.action == "burn":
-            # A burned-in subtitle has no track to write a language into.
-            continue
-        if isinstance(subtitle.source, int):
-            sub = ctx.subtitle_streams.get(subtitle.source)
-            source = (sub.language_ietf or sub.language) if sub is not None else None
-        else:
-            source = subtitle.source.language
-        yield f"subtitles[{index}].metadata", subtitle.metadata.language or source
-
-
 @job_rule("metadata", "metadata.language_invalid")
 def track_languages(ctx: JobContext) -> Iterator[ValidationIssue]:
     for prefix, metadata in _blocks(ctx):
@@ -60,7 +38,6 @@ def track_languages(ctx: JobContext) -> Iterator[ValidationIssue]:
             fix(
                 "Keep the source language",
                 replace(f"{prefix}.language", None),
-                target=ctx.target,
             ),
         )
 
@@ -84,7 +61,6 @@ def track_names(ctx: JobContext) -> Iterator[ValidationIssue]:
                 fix(
                     "Remove the NUL characters",
                     replace(at, name.replace("\0", "")),
-                    target=ctx.target,
                 ),
             )
 
@@ -128,6 +104,5 @@ def default_tracks(ctx: JobContext) -> Iterator[ValidationIssue]:
             fix(
                 f"Keep only {kind} track {first + 1} default",
                 *(replace(f"{field}[{index}].metadata.default", False) for index in others),
-                target=ctx.target,
             ),
         )

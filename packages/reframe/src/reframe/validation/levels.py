@@ -133,10 +133,8 @@ def x265_level(ctx: JobContext) -> Iterator[ValidationIssue]:
         None,
     )
     if fitting is not None:
-        fixes.append(
-            fix(f"Use level {fitting}", replace("video.level", fitting), target=ctx.target)
-        )
-    fixes.append(fix("Let x265 choose the level", replace("video.level", None), target=ctx.target))
+        fixes.append(fix(f"Use level {fitting}", replace("video.level", fitting)))
+    fixes.append(fix("Let x265 choose the level", replace("video.level", None)))
     shown = f" at {float(rate):.3g} fps" if rate is not None else ""
     yield error(
         "encoder.level_too_low",
@@ -149,18 +147,18 @@ def x265_level(ctx: JobContext) -> Iterator[ValidationIssue]:
 
 @job_rule("encoder", *OPTION_RULE_CODES)
 def advanced_option_rules(ctx: JobContext) -> list[ValidationIssue]:
-    return video_option_rule_issues(ctx.job.video, ctx.caps, ctx.definitions, target=ctx.target)
+    return video_option_rule_issues(ctx.job.video, ctx.caps, ctx.definitions)
 
 
 @job_rule("encoder", *CUSTOM_PARAM_CODES)
 def custom_params(ctx: JobContext) -> list[ValidationIssue]:
     """Custom parameters that name a file, or that FFmpeg would read as its own options."""
-    return video_custom_param_issues(ctx.job.video, ctx.caps, ctx.definitions, target=ctx.target)
+    return video_custom_param_issues(ctx.job.video, ctx.caps, ctx.definitions)
 
 
 @job_rule("encoder", OVERRIDE_CODE)
 def custom_param_overrides(ctx: JobContext) -> list[ValidationIssue]:
-    return video_custom_param_override_issues(ctx.job.video, ctx.definitions, target=ctx.target)
+    return video_custom_param_override_issues(ctx.job.video, ctx.definitions)
 
 
 @template_rule("encoder", *OPTION_RULE_CODES, *CUSTOM_PARAM_CODES, OVERRIDE_CODE)
@@ -169,7 +167,7 @@ def template_advanced_option_rules(ctx: TemplateContext) -> list[ValidationIssue
     parameters), fixes on the template."""
     video = ctx.template.video
     return [
-        *video_option_rule_issues(video, ctx.caps, ctx.definitions, target=ctx.target),
-        *video_custom_param_issues(video, ctx.caps, ctx.definitions, target=ctx.target),
-        *video_custom_param_override_issues(video, ctx.definitions, target=ctx.target),
+        *video_option_rule_issues(video, ctx.caps, ctx.definitions),
+        *video_custom_param_issues(video, ctx.caps, ctx.definitions),
+        *video_custom_param_override_issues(video, ctx.definitions),
     ]
