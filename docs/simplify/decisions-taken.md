@@ -349,3 +349,11 @@ choices below were taken by the agents or by the orchestrator, with the same dec
 - Q-6.7: the optional `ToolLocation.env_var` part of TP-02 is not done (outside the estimate);
   `test_status_lines_are_shared_with_python_m_reframe_tools` stays synchronous and calls
   `asyncio.run(discover_tools())`. Rule 5.
+
+### D-36 Q-6.9: shared stubs and where `SourceProber` lives
+- QJ-08 allowed an optional shared `StubSources`; it was made, with the analysis stub's behaviour
+  (a deep copy on probe, an update applied to the last stored source); `test_mediatask` never
+  reads `.stored`. Rule 4.
+- QJ-06: the one `SourceProber` protocol moved into `mediatask.py` as the base of
+  `SourceAccess`, so `mediatask` stays a leaf module (no import of `queue.runner`). Rule 5.
+- QJ-05 removed `JobService.detection_wait`; its row left the "Not exposed" table (D-34).
