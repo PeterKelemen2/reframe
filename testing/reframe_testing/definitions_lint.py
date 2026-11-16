@@ -11,7 +11,6 @@ import re
 from typing import get_args
 
 from reframe.definitions.models import (
-    CONDITION_FIELDS,
     FILTER_IDS,
     FILTER_STAGES,
     OPTION_CATEGORIES,
@@ -25,6 +24,7 @@ from reframe.definitions.models import (
     EncoderOption,
     FilterDef,
     FilterImplementation,
+    OptionMapping,
     QualityMode,
     VideoCodec,
     VideoEncoderDef,
@@ -34,6 +34,7 @@ from reframe.models.job import Container, Mixdown, OptionValue, SubtitleFormat
 
 __all__ = ["lint_definitions"]
 
+CONDITION_FIELDS = ("rate_control", "two_pass", "bit_depth", "preset", "tune")
 _PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 _FILTER_NAME = re.compile(r"^([A-Za-z0-9_]+)")
 #: Filters a chain may use besides its implementation's (pixel format conversion).
@@ -105,11 +106,10 @@ def _lint_video(defs: Definitions) -> list[str]:
         if enc.fast_decode is not None and enc.fast_decode.params and enc.params_arg is None:
             out.append(f"{where}.fast_decode: params need a params_arg")
         out += _lint_options(where, enc)
-    if encoders:
-        codecs_in_containers = {c for cont in defs.containers.values() for c in cont.video.encode}
-        for enc_id, enc in encoders.items():
-            if defs.containers and enc.codec not in codecs_in_containers:
-                out.append(f"video_encoders.{enc_id}: no container can hold {enc.codec}")
+    codecs_in_containers = {c for cont in defs.containers.values() for c in cont.video.encode}
+    for enc_id, enc in encoders.items():
+        if enc.codec not in codecs_in_containers:
+            out.append(f"video_encoders.{enc_id}: no container can hold {enc.codec}")
     return out
 
 
@@ -294,22 +294,20 @@ def _lint_choice_setting(w: str, enc: VideoEncoderDef, setting: ChoiceSetting) -
             out.append(f"{w}: choice {c.value!r} has no label")
         if c.bit_depths is not None and not set(c.bit_depths) <= {8, 10}:
             out.append(f"{w}: choice {c.value!r} names an unknown bit depth")
-    out += _lint_mapping(w, enc, setting.mapping.kind, setting.mapping)
+    out += _lint_mapping(w, enc, setting.mapping)
     return out
 
 
-def _lint_mapping(w: str, enc: VideoEncoderDef, kind: str, mapping: object) -> list[str]:
+def _lint_mapping(w: str, enc: VideoEncoderDef, mapping: OptionMapping) -> list[str]:
     out: list[str] = []
-    if kind == "ffmpeg_arg":
-        arg = getattr(mapping, "arg", "")
-        if not arg.startswith("-") or len(arg) < 2:
-            out.append(f"{w}: ffmpeg_arg {arg!r} must be an option with a dash")
-    elif kind == "private_opt":
-        name = getattr(mapping, "name", "")
-        if not name or name.startswith("-"):
-            out.append(f"{w}: private_opt name {name!r} must be given without the dash")
-    elif kind == "x26x_param":
-        if not getattr(mapping, "name", ""):
+    if mapping.kind == "ffmpeg_arg":
+        if not mapping.arg.startswith("-") or len(mapping.arg) < 2:
+            out.append(f"{w}: ffmpeg_arg {mapping.arg!r} must be an option with a dash")
+    elif mapping.kind == "private_opt":
+        if not mapping.name or mapping.name.startswith("-"):
+            out.append(f"{w}: private_opt name {mapping.name!r} must be given without the dash")
+    elif mapping.kind == "x26x_param":
+        if not mapping.name:
             out.append(f"{w}: x26x_param needs a name")
         if enc.params_arg is None:
             out.append(f"{w}: x26x_param on an encoder without params_arg")
@@ -336,7 +334,7 @@ def _lint_options(where: str, enc: VideoEncoderDef) -> list[str]:
             out.append(f"{w}: unknown category {opt.category!r}")
         if len(opt.help.strip()) < 10:
             out.append(f"{w}: needs help text")
-        out += _lint_mapping(w, enc, opt.mapping.kind, opt.mapping)
+        out += _lint_mapping(w, enc, opt.mapping)
         if opt.mapping.kind == "x26x_param":
             parts.setdefault(opt.mapping.name, []).append(opt.mapping.part)
         out += _lint_option_range(w, opt)
@@ -353,11 +351,10 @@ def _lint_options(where: str, enc: VideoEncoderDef) -> list[str]:
     return out
 
 
-def _option_target(opt: EncoderOption) -> str | None:
-    """The key of what an option writes, so that mapping kinds compare: the argument (``-bf``),
+def _mapping_target(mapping: OptionMapping) -> str | None:
+    """The key of what a mapping writes, so that mapping kinds compare: the argument (``-bf``),
     ``-<name>`` for a private option, ``params:<name>`` for an ``x26x_param`` (``None`` for a
     composite part)."""
-    mapping = opt.mapping
     if mapping.kind == "x26x_param":
         return None if mapping.part is not None else f"params:{mapping.name}"
     if mapping.kind == "private_opt":
@@ -383,13 +380,9 @@ def _setting_targets(enc: VideoEncoderDef) -> dict[str, tuple[str, str | None]]:
         setting: ChoiceSetting | None = getattr(enc, name)
         if setting is None:
             continue
-        mapping = setting.mapping
-        if mapping.kind == "x26x_param":
-            found.setdefault(f"params:{mapping.name}", (name, None))
-        elif mapping.kind == "private_opt":
-            found.setdefault(f"-{mapping.name}", (name, None))
-        else:
-            found.setdefault(mapping.arg.split(":", 1)[0], (name, None))
+        target = _mapping_target(setting.mapping)
+        if target is not None:
+            found.setdefault(target, (name, None))
     quality, bitrate = enc.rate_control.quality, enc.rate_control.bitrate
     if quality is not None:
         args("rate control", quality.args, "quality")
@@ -416,7 +409,7 @@ def _lint_option_targets(where: str, enc: VideoEncoderDef) -> list[str]:
     settings = _setting_targets(enc)
     owners: dict[str, str] = {}
     for opt in enc.options:
-        target = _option_target(opt)
+        target = _mapping_target(opt.mapping)
         if target is None:
             continue
         w = f"{where}.options.{opt.key}"
@@ -527,10 +520,10 @@ def _lint_condition(
 def _lint_audio(defs: Definitions) -> list[str]:
     out: list[str] = []
     for mixdown in get_args(Mixdown):
-        if defs.mixdowns and mixdown not in defs.mixdowns:
+        if mixdown not in defs.mixdowns:
             out.append(f"mixdowns: {mixdown} is not defined")
     for codec in get_args(PassthruCodec):
-        if defs.passthru_codecs and codec not in defs.passthru_codecs:
+        if codec not in defs.passthru_codecs:
             out.append(f"passthru_codecs: {codec} is not defined")
     for enc_id, enc in defs.audio_encoders.items():
         out += _lint_audio_encoder(f"audio_encoders.{enc_id}", enc, defs)
@@ -577,11 +570,7 @@ def _lint_audio_encoder(w: str, enc: AudioEncoderDef, defs: Definitions) -> list
     rates = enc.samplerates
     if not rates or rates != sorted(set(rates)):
         out.append(f"{w}: samplerates must be listed, sorted and unique")
-    if (
-        enc.passthru is not None
-        and defs.passthru_codecs
-        and enc.passthru not in defs.passthru_codecs
-    ):
+    if enc.passthru is not None and enc.passthru not in defs.passthru_codecs:
         out.append(f"{w}: unknown passthru codec {enc.passthru}")
     if enc.lossless:
         if enc.bitrate is not None or enc.quality is not None:
@@ -614,8 +603,6 @@ def _lint_audio_encoder(w: str, enc: AudioEncoderDef, defs: Definitions) -> list
 def _lint_containers(defs: Definitions) -> list[str]:
     out: list[str] = []
     containers = defs.containers
-    if not containers:
-        return out
     for cont_id in get_args(Container):
         if cont_id not in containers:
             out.append(f"containers: {cont_id} is not defined")
@@ -673,8 +660,6 @@ def _lint_container(w: str, cont: ContainerDef, audio_codecs: set[str]) -> list[
 
 def _lint_filters(defs: Definitions) -> list[str]:
     out: list[str] = []
-    if not defs.filters:
-        return out
     for filter_id in FILTER_IDS:
         if filter_id not in defs.filters:
             out.append(f"filters: {filter_id} is not defined")

@@ -8,8 +8,6 @@ from reframe.models.naming import NamingVariable, VariableGroup, VariableKind
 
 __all__ = [
     "DATE_FORMATS",
-    "HANDBRAKE_VARIABLES",
-    "NAME_TEXT_VARIABLES",
     "VARIABLES",
     "VARIABLE_KINDS",
 ]
@@ -73,12 +71,6 @@ VARIABLES: tuple[NamingVariable, ...] = (
 )
 
 VARIABLE_KINDS: dict[str, VariableKind] = {v.name: v.kind for v in VARIABLES}
-HANDBRAKE_VARIABLES = tuple(v.name for v in VARIABLES if v.group == "handbrake")
-
-#: Text from the name: the word separator and the HandBrake clean-up options apply.
-NAME_TEXT_VARIABLES = frozenset(
-    {"source", "main_title", "name", "sub_title", "edition", "source_type"}
-)
 
 #: Default formats of the date variables: ISO dates and ``14-30`` times, because a system
 #: short date can contain ``/`` and ``:``.

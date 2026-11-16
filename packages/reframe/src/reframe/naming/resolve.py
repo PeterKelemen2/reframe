@@ -30,7 +30,7 @@ from reframe.naming.template import (
 )
 from reframe.naming.variables import VARIABLE_KINDS
 
-__all__ = ["OVERRIDE_FIELDS", "apply_overrides", "output_extension", "resolve_output_name"]
+__all__ = ["apply_overrides", "output_extension", "resolve_output_name"]
 
 _TEXT_OVERRIDES = (
     "name",
@@ -42,8 +42,6 @@ _TEXT_OVERRIDES = (
     "release_group",
 )
 _NUMBER_OVERRIDES = ("season", "episode", "year")
-#: The parsed-name fields a job can override (``JobNaming.field_overrides``).
-OVERRIDE_FIELDS = _TEXT_OVERRIDES + _NUMBER_OVERRIDES
 _OVERRIDES_PATH = "output.naming.field_overrides"
 #: Most digits of a number override. ``str.isdigit`` is not the check: it accepts ``²``,
 #: which ``int`` refuses, and Arabic-Indic or full-width digits.
@@ -171,7 +169,6 @@ def resolve_output_name(
     container: Container | None = None,
     root: Path | None = None,
     now: datetime | None = None,
-    title_index: int = 1,
     fs: NamingFs | None = None,
     definitions: Definitions | None = None,
 ) -> NameResult:
@@ -220,7 +217,6 @@ def resolve_output_name(
             job=job,
             source=source,
             output_size=output_size,
-            title_index=title_index,
         )
     )
 

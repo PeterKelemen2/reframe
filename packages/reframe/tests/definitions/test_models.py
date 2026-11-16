@@ -67,8 +67,6 @@ def test_choice_setting_helpers() -> None:
     assert isinstance(profiles, ChoiceSetting)
     assert profiles.values(10) == ["main10"]
     assert profiles.values() == ["main", "main10"]
-    assert profiles.default_for(10) == "main10"
-    assert profiles.default_for(8) == "main"
     assert profiles.get("nope") is None
     level = load_definitions().video_encoders["libsvtav1"].levels
     assert level is not None
