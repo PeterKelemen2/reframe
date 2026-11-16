@@ -69,7 +69,7 @@ def test_save_then_load_round_trip_keeps_unknown_fields(tmp_path: Path) -> None:
     settings = AppSettings.model_validate(
         {"queue": {"parallel_jobs": 2, "new_queue_knob": True}, "new_section": {"a": 1}}
     )
-    store.save(settings)
+    store.write(settings)
     data = json.loads((tmp_path / "settings.json").read_text("utf-8"))
     assert data["new_section"] == {"a": 1}
     assert data["queue"]["new_queue_knob"] is True
@@ -102,7 +102,7 @@ def test_old_schema_fixture_loads_after_migration(tmp_path: Path) -> None:
     assert settings.languages.preferred_audio == ["hu", "en"]
     # The unknown field is kept and written back; the file itself is not touched by a load.
     assert json.loads((tmp_path / "settings.json").read_text("utf-8")) == OLD_SETTINGS_V1
-    store.save(settings)
+    store.write(settings)
     saved = json.loads((tmp_path / "settings.json").read_text("utf-8"))
     assert saved["schema_version"] == 2
     assert saved["queue"]["parallel_jobs"] == 3
@@ -202,7 +202,7 @@ def test_newer_file_is_kept_untouched_and_never_overwritten(tmp_path: Path) -> N
     assert event.detail is not None
     assert "7" in event.detail
     # Saving is refused with a warning, and the file stays as it was.
-    store.save(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
+    store.write(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
     [refused] = drain(events)
     assert isinstance(refused, AppWarningEvent)
     assert refused.code == "settings.not_saved"
@@ -247,7 +247,7 @@ def test_permission_denied_on_write_is_a_warning(tmp_path: Path) -> None:
     events = bus.subscribe()
     try:
         store = SettingsStore(folder, bus)
-        store.save(AppSettings())  # no exception
+        store.write(AppSettings())  # no exception
         [event] = drain(events)
         assert isinstance(event, AppWarningEvent)
         assert event.code == "settings.write_failed"
@@ -290,7 +290,7 @@ def test_write_is_atomic_and_leaves_no_temporary_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = SettingsStore(tmp_path)
-    store.save(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
+    store.write(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
     before = (tmp_path / "settings.json").read_bytes()
     seen: list[tuple[Path, Path]] = []
 
@@ -439,7 +439,7 @@ def test_nesting_up_to_the_limit_is_fine(tmp_path: Path) -> None:
 def test_too_deep_settings_are_not_saved_and_no_exception(tmp_path: Path, depth: int) -> None:
     """A document the loader would reject as damaged is never written."""
     store = SettingsStore(tmp_path)
-    store.save(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
+    store.write(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
     before = (tmp_path / "settings.json").read_bytes()
     warning = store.write(AppSettings.model_validate({"x": nested(depth)}))
     assert warning is not None

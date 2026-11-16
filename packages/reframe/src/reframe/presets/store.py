@@ -679,8 +679,6 @@ class PresetStore:
             return exc if is_newer(exc) else str(exc)
         except ValidationError as exc:
             return validation_detail(exc)
-        except RecursionError:
-            return TOO_DEEP
         except (MigrationError, LookupError, TypeError, ValueError) as exc:
             return f"migration failed: {exc}"
 

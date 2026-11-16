@@ -295,9 +295,8 @@ def test_a_rotation_tried_again_keeps_every_old_file(
     assert all(lines(folder, f"reframe.log.{k}") for k in (1, 2, 3))
 
 
-def test_the_defaults_are_five_mib_and_three_old_files(folder: Path, install: Install) -> None:
-    app_log = install(folder, "info")
-    assert (app_log.max_bytes, app_log.backup_count) == (5 * 1024 * 1024, 3)
+def test_the_defaults_are_five_mib_and_three_old_files() -> None:
+    assert (applog.MAX_BYTES, applog.BACKUP_COUNT) == (5 * 1024 * 1024, 3)
 
 
 def test_the_level_filters_reframe_records_and_a_change_applies_at_once(

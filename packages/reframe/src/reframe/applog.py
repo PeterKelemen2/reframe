@@ -290,14 +290,6 @@ class AppLog:
             logger.addHandler(forward)
 
     @property
-    def max_bytes(self) -> int:
-        return self._handler.maxBytes
-
-    @property
-    def backup_count(self) -> int:
-        return self._handler.backupCount
-
-    @property
     def broken(self) -> bool:
         """Writing failed: the log is off until the next start."""
         return self._handler.broken

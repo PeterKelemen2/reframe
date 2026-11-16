@@ -255,7 +255,6 @@ async def test_close_during_a_countdown_cancels_and_never_executes() -> None:
     await service.close()
     assert phases(countdown_events(subscription))[-1] == ("cancelled", 50)
     assert service.pending is None
-    assert service.closed
     await settle()
     assert ticker.waiting == 0
     assert executor.actions == []
@@ -538,7 +537,12 @@ def test_invalid_countdown(countdown: float) -> None:
         PowerService(EventBus(), countdown=countdown)
 
 
-def test_defaults() -> None:
-    service = PowerService(EventBus())
-    assert service.countdown == COUNTDOWN_SECONDS == 60.0
-    assert not service.closed
+async def test_defaults() -> None:
+    events = EventBus()
+    subscription = events.subscribe(max_queue=10)
+    service = PowerService(events, executor=FakeExecutor())
+    service.schedule("shutdown")
+    started = countdown_events(subscription)
+    assert COUNTDOWN_SECONDS == 60.0
+    assert phases(started) == [("started", 60)]
+    await service.close()

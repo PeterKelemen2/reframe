@@ -12,8 +12,6 @@ from pydantic import TypeAdapter, ValidationError
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     DOCUMENT_MODELS,
-    EVENT_ADAPTER,
-    EVENT_TYPES,
     AppSettings,
     ArgTemplate,
     AudioCodecRule,
@@ -30,7 +28,6 @@ from reframe.models import (
     EncodePlan,
     EncoderState,
     EncoderStatus,
-    Event,
     ExternalSubtitle,
     FilterConfig,
     FilterSettings,
@@ -347,25 +344,6 @@ def test_filter_settings_keep_their_order() -> None:
     )
     assert list(filters.root) == ["sharpen", "deinterlace", "denoise"]
     assert list(json.loads(filters.model_dump_json())) == ["sharpen", "deinterlace", "denoise"]
-
-
-def test_event_types_match_the_union() -> None:
-    members = TypeAdapter(Event).json_schema()["discriminator"]["mapping"]
-    assert set(members) == set(EVENT_TYPES)
-    assert len(EVENT_TYPES) == 13
-    assert EVENT_TYPES[-1] == "resync"
-    assert EVENT_TYPES[:8] == (
-        "capabilities.changed",
-        "task.progress",
-        "task.done",
-        "job.state",
-        "job.progress",
-        "job.log",
-        "queue.changed",
-        "queue.processing",
-    )
-    event = EVENT_ADAPTER.validate_python({"type": "job.state", "job_id": "1", "state": "running"})
-    assert event.type == "job.state"
 
 
 def test_move_op_alias() -> None:

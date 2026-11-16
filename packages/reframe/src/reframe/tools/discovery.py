@@ -36,7 +36,6 @@ __all__ = [
     "ToolPathSettings",
     "check_tool",
     "discover_tools",
-    "discover_tools_sync",
     "locate_tools",
 ]
 
@@ -416,7 +415,9 @@ async def discover_tools(
     timeout: float = VERSION_TIMEOUT,  # noqa: ASYNC109 - passed to run()
 ) -> ToolSet:
     """Locate every tool and check its version (in parallel). Never raises for tool problems."""
-    located = locate_tools(
+    # locate_tools() runs in a thread: a network share can be slow to stat.
+    located = await asyncio.to_thread(
+        locate_tools,
         settings,
         environ=environ,
         bundled_roots=bundled_roots,
@@ -428,28 +429,3 @@ async def discover_tools(
     async with asyncio.TaskGroup() as group:
         checks = [group.create_task(check_tool(located[t], timeout=timeout)) for t in TOOL_NAMES]
     return ToolSet(**{check.result().name: check.result() for check in checks})
-
-
-def discover_tools_sync(
-    settings: ToolPathSettings | BaseModel | None = None,
-    *,
-    environ: Mapping[str, str] | None = None,
-    bundled_roots: Sequence[Path] | None = None,
-    search_path: str | None = None,
-    platform: str | None = None,
-    timeout: float = VERSION_TIMEOUT,
-) -> ToolSet:
-    """:func:`discover_tools` for synchronous code.
-
-    It runs its own event loop, so it must not be called from a running loop.
-    """
-    return asyncio.run(
-        discover_tools(
-            settings,
-            environ=environ,
-            bundled_roots=bundled_roots,
-            search_path=search_path,
-            platform=platform,
-            timeout=timeout,
-        )
-    )

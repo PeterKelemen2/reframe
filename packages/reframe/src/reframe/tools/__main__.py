@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 from collections.abc import Sequence
 
 from reframe.models.tools import ToolInfo, ToolOrigin, ToolSet, ToolStatus
-from reframe.tools.discovery import TOOL_NAMES, discover_tools_sync
+from reframe.tools.discovery import TOOL_NAMES, discover_tools
 
 __all__ = ["main", "status_line", "status_lines"]
 
@@ -44,7 +45,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error(f"unknown tool(s): {', '.join(unknown)}")
     required = [name for name in TOOL_NAMES if name in requested]
 
-    tools = discover_tools_sync()
+    tools = asyncio.run(discover_tools())
     if args.json:
         print(tools.model_dump_json(indent=2))
     else:

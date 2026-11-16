@@ -52,8 +52,6 @@ from reframe.models.defaults import (
 )
 from reframe.models.draft import JobDraft
 from reframe.models.events import (
-    EVENT_ADAPTER,
-    EVENT_TYPES,
     AppWarningEvent,
     CapabilitiesChangedEvent,
     Event,
@@ -270,8 +268,6 @@ from reframe.models.tools import (
 __all__ = [
     "BUILT_IN_CATEGORIES",
     "DOCUMENT_MODELS",
-    "EVENT_ADAPTER",
-    "EVENT_TYPES",
     "AddOp",
     "AppSettings",
     "AppWarningEvent",

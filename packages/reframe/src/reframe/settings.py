@@ -193,17 +193,17 @@ class JsonDocumentFile:
                 with contextlib.suppress(OSError):
                     tmp.unlink()
 
-    def backup(self, label: str = "corrupt") -> Path:
-        """Rename the file (a link's target) to ``<stem>.<label>-<time>[-n]<suffix>`` next to
+    def backup(self) -> Path:
+        """Rename the file (a link's target) to ``<stem>.corrupt-<time>[-n]<suffix>`` next to
         it and return the new path. Raises ``OSError`` when that fails."""
         source = self.target
         stamp = time.strftime("%Y%m%d-%H%M%S")
         stem, suffix = source.stem, source.suffix
-        target = source.with_name(f"{stem}.{label}-{stamp}{suffix}")
+        target = source.with_name(f"{stem}.corrupt-{stamp}{suffix}")
         number = 1
         while target.exists():
             number += 1
-            target = source.with_name(f"{stem}.{label}-{stamp}-{number}{suffix}")
+            target = source.with_name(f"{stem}.corrupt-{stamp}-{number}{suffix}")
         replace_file(source, target)
         return target
 
@@ -339,15 +339,9 @@ class SettingsStore:
                     return AppSettings()
                 except ValidationError as exc:
                     detail = validation_detail(exc)
-                except RecursionError:
-                    detail = TOO_DEEP
                 except (MigrationError, LookupError, TypeError, ValueError) as exc:
                     detail = f"migration failed: {exc}"
             return self._replace_corrupt(detail)
-
-    def save(self, settings: AppSettings) -> None:
-        """Write ``settings``. A failure is an ``app.warning`` event, not an exception."""
-        self.write(settings)
 
     def write(self, settings: AppSettings) -> AppWarningEvent | None:
         """Write ``settings``; returns the warning (also published) when it was not written.
