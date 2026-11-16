@@ -39,7 +39,7 @@ from reframe.models.preset import FieldChange, Preset, PresetFile
 from reframe.models.settings import AppSettings, LogLevel
 from reframe.models.tasks import TaskInfo
 from reframe.models.template import JobTemplate
-from reframe.models.tools import ToolInfo, ToolName, ToolSet, ToolStatus
+from reframe.models.tools import ToolInfo, ToolSet, ToolStatus
 from reframe.platform.power import PowerService, create_power_service
 from reframe.presets import (
     ConflictPolicy,
@@ -68,7 +68,6 @@ from reframe.queue import QueueService
 from reframe.settings import MAX_DEPTH, SettingsStore, SettingsUpdate, too_deep, validation_detail
 from reframe.tasks import TaskContext, TaskManager
 from reframe.tools import CancelToken, discover_tools
-from reframe.tools.discovery import TOOL_NAMES, VERSION_TIMEOUT
 from reframe.tools.fetch import start_fetch
 from reframe.validation.fs import has_nul
 
@@ -119,14 +118,12 @@ class ToolsService:
         settings: SettingsGetter,
         *,
         bundled_roots: Sequence[Path],
-        timeout: float = VERSION_TIMEOUT,
-        tasks: TaskManager | None = None,
-        data_dir: Path | None = None,
+        tasks: TaskManager,
+        data_dir: Path,
     ) -> None:
         self._events = events
         self._settings = settings
         self._bundled_roots = list(bundled_roots)
-        self._timeout = timeout
         self._tasks = tasks
         self._data_dir = data_dir
         self._task: asyncio.Task[ToolSet] | None = None
@@ -137,10 +134,6 @@ class ToolsService:
     def current(self) -> ToolSet | None:
         """The result of the last finished discovery; ``None`` until the first one ends."""
         return self._current
-
-    @property
-    def discovering(self) -> bool:
-        return self._task is not None and not self._task.done()
 
     def start(self) -> None:
         """Start a discovery in the background unless one is running. Returns at once."""
@@ -164,11 +157,6 @@ class ToolsService:
             # cancelled from outside (start a new one).
             if self._task is task:
                 self._task = None
-
-    async def versions(self) -> dict[ToolName, str | None]:
-        """The version of each tool; ``None`` for a tool that was not found."""
-        tools = await self.status()
-        return {name: tools.get(name).version for name in TOOL_NAMES}
 
     async def rescan(self) -> ToolSet:
         """Run discovery again. A discovery that is still running is cancelled first: its
@@ -194,8 +182,6 @@ class ToolsService:
         :class:`~reframe.models.ToolFetchResult`. ``manifest``: another manifest file."""
         if self._closed:
             raise ReframeClosedError
-        if self._tasks is None or self._data_dir is None:
-            raise RuntimeError("ToolsService.fetch needs the task manager and the data folder")
         return start_fetch(
             self._tasks,
             data_dir=self._data_dir,
@@ -221,9 +207,7 @@ class ToolsService:
         return task
 
     async def _discover(self) -> ToolSet:
-        tools = await discover_tools(
-            self._settings().tools, bundled_roots=self._bundled_roots, timeout=self._timeout
-        )
+        tools = await discover_tools(self._settings().tools, bundled_roots=self._bundled_roots)
         self._current = tools
         self._events.publish(ToolsChangedEvent(tools=tools))
         return tools
@@ -266,10 +250,6 @@ class SourceService:
         self._active = 0
         self._idle = asyncio.Event()
         self._idle.set()
-
-    @property
-    def cache(self) -> ProbeCache:
-        return self._cache
 
     async def probe(
         self,
@@ -683,18 +663,12 @@ class SettingsService:
         self,
         store: SettingsStore,
         *,
-        initial: AppSettings | None = None,
         on_change: SettingsListener | None = None,
     ) -> None:
         self._store = store
-        self._settings = initial.model_copy(deep=True) if initial is not None else store.load()
+        self._settings = store.load()
         self._on_change = on_change
         self._lock = asyncio.Lock()
-
-    @property
-    def path(self) -> Path:
-        """``<config>/settings.json``."""
-        return self._store.path
 
     @property
     def problems(self) -> list[AppWarningEvent]:
@@ -806,10 +780,6 @@ class PresetService:
         self._store = store
 
     @property
-    def store(self) -> PresetStore:
-        return self._store
-
-    @property
     def problems(self) -> list[AppWarningEvent]:
         """Warnings of loading ``presets.json`` and of failed writes (also published)."""
         return self._store.problems
@@ -853,14 +823,8 @@ class PresetService:
     async def save(self, preset: Preset) -> Preset | ValidationIssue:
         return await asyncio.to_thread(self._store.save, preset)
 
-    async def rename(self, preset_id: str, name: str) -> Preset | ValidationIssue:
-        return await asyncio.to_thread(self._store.rename, preset_id, name)
-
     async def delete(self, preset_id: str) -> Preset | ValidationIssue:
         return await asyncio.to_thread(self._store.delete, preset_id)
-
-    async def duplicate(self, preset_id: str, name: str | None = None) -> Preset | ValidationIssue:
-        return await asyncio.to_thread(self._store.duplicate, preset_id, name)
 
     async def set_default(self, preset_id: str | None) -> Preset | ValidationIssue:
         return await asyncio.to_thread(self._store.set_default, preset_id)
@@ -910,14 +874,9 @@ class Reframe:
         config_dir: Path,
         data_dir: Path,
         cache_dir: Path,
-        settings: AppSettings | None = None,
         on_log_level: Callable[[LogLevel], None] | None = None,
     ) -> None:
-        """Wire the services without starting anything. Use :meth:`create` instead.
-
-        ``settings``: the settings to start with instead of reading ``settings.json`` (they
-        are saved there at the first change).
-        """
+        """Wire the services without starting anything. Use :meth:`create` instead."""
         self.config_dir = config_dir
         self.data_dir = data_dir
         self.cache_dir = cache_dir
@@ -927,7 +886,6 @@ class Reframe:
         self.events = EventBus()
         self.settings = SettingsService(
             SettingsStore(config_dir, self.events),
-            initial=settings,
             on_change=self._settings_changed,
         )
         self.presets = PresetService(PresetStore(config_dir, self.events))
@@ -1015,24 +973,10 @@ class Reframe:
         config = Path(config_dir) if config_dir is not None else paths.config_dir()
         data = Path(data_dir) if data_dir is not None else paths.data_dir()
         cache = Path(cache_dir) if cache_dir is not None else paths.cache_dir()
-        settings = cls._load_settings(config)
-        app = cls(
-            config_dir=config,
-            data_dir=data,
-            cache_dir=cache,
-            settings=settings,
-            on_log_level=on_log_level,
-        )
+        app = cls(config_dir=config, data_dir=data, cache_dir=cache, on_log_level=on_log_level)
         app.tools.start()
         app.capabilities.start()
         return app
-
-    @staticmethod
-    def _load_settings(config_dir: Path) -> AppSettings | None:
-        """Settings to start with instead of ``<config>/settings.json`` (a test hook).
-        ``None``, the default: the settings store reads the file."""
-        del config_dir
-        return None
 
     def settings_snapshot(self) -> AppSettings:
         """The current settings (a copy). The one place where the services read them."""

@@ -107,16 +107,14 @@ async def test_create_returns_at_once_while_discovery_is_slow(
     elapsed = time.monotonic() - started
     try:
         assert elapsed < 0.5, f"create() took {elapsed:.2f} s"
-        before, discovering = app.tools.current, app.tools.discovering
+        before = app.tools.current
         assert before is None
-        assert discovering
         # probe() waits for the discovery and then uses the discovered ffprobe.
         source = await app.sources.probe(media)
         assert isinstance(source, MediaSource), source
         assert time.monotonic() - started >= 1.4
         after = app.tools.current
         assert after is not None
-        assert not app.tools.discovering
         assert after.ffprobe.origin is ToolOrigin.ENV
     finally:
         await app.close()
@@ -202,15 +200,12 @@ async def test_async_with_closes(fake: ft.FakeTools, media: Path) -> None:
 
 
 async def test_folders_default_to_paths_and_can_be_given(env: Path) -> None:
-    app = Reframe(
-        config_dir=env / "c", data_dir=env / "d", cache_dir=env / "k", settings=AppSettings()
-    )
-    assert app.sources.cache.directory == env / "k" / "probe"
+    app = Reframe(config_dir=env / "c", data_dir=env / "d", cache_dir=env / "k")
+    assert app.cache_dir == env / "k"
     async with await Reframe.create() as default:
         assert default.config_dir == env / "config"
         assert default.data_dir == env / "data"
         assert default.cache_dir == env / "cache"
-        assert default.sources.cache.directory == env / "cache" / "probe"
     async with await Reframe.create(env / "c2", env / "d2", cache_dir=env / "k2") as given:
         assert (given.config_dir, given.data_dir, given.cache_dir) == (
             env / "c2",
@@ -238,7 +233,8 @@ async def test_settings_tool_paths_feed_discovery(
 ) -> None:
     fake_tools.set_scenario(ft.Scenario([probe_rule(stdout_file(MULTITRACK))]))
     settings = AppSettings(tools=ToolPaths(ffmpeg=fake_tools.ffmpeg, ffprobe=fake_tools.ffprobe))
-    monkeypatch.setattr(Reframe, "_load_settings", staticmethod(lambda config_dir: settings))
+    (env / "config").mkdir()
+    (env / "config" / "settings.json").write_text(settings.model_dump_json(), "utf-8")
     async with await Reframe.create() as app:
         assert app.settings_snapshot() == settings
         assert app.settings_snapshot() is not app.settings_snapshot()
@@ -276,7 +272,6 @@ async def test_missing_ffprobe_is_a_tool_error(
         errors = final.result["errors"]
         assert isinstance(errors, list)
         assert [e["kind"] for e in errors if isinstance(e, dict)] == ["tool_failed"]
-        assert app.sources.cache.directory == env / "cache" / "probe"
 
 
 async def test_probe_errors_are_values(fake: ft.FakeTools, media: Path, env: Path) -> None:
@@ -400,9 +395,6 @@ async def test_rescan_publishes_tools_changed(fake: ft.FakeTools) -> None:
         first = await app.tools.status()
         second = await app.tools.rescan()
         assert second.ffprobe.path == first.ffprobe.path
-        versions = await app.tools.versions()
-        assert versions["ffprobe"] == "n9.0.2-17-g2a571b6068-20260930"  # the fake's version
-        assert set(versions) == {"ffmpeg", "ffprobe"}
         received = drain(events)
         # The first discovery may have ended before the subscription.
         assert 1 <= len(received) <= 2
@@ -424,17 +416,16 @@ async def test_rescan_replaces_a_running_discovery(fake: ft.FakeTools, media: Pa
 
 
 async def test_status_starts_a_discovery_if_none_ran(env: Path) -> None:
-    app = Reframe(
-        config_dir=env / "c", data_dir=env / "d", cache_dir=env / "k", settings=AppSettings()
-    )
+    app = Reframe(config_dir=env / "c", data_dir=env / "d", cache_dir=env / "k")
     try:
-        before = app.tools.current
+        before, task = app.tools.current, app.tools._task
         assert before is None
-        assert not app.tools.discovering
+        assert task is None
         tools = await app.tools.status()
         assert app.tools.current == tools
+        ran = app.tools._task
         app.tools.start()  # a discovery ran: no new one
-        assert not app.tools.discovering
+        assert app.tools._task is ran
     finally:
         await app.close()
 

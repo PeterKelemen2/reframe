@@ -169,7 +169,6 @@ from reframe.models.migrations import (
     current_version,
     load_document,
     migrate,
-    register_migration,
 )
 from reframe.models.naming import (
     MediaKind,
@@ -498,6 +497,5 @@ __all__ = [
     "json_text",
     "load_document",
     "migrate",
-    "register_migration",
     "resolve_argv",
 ]

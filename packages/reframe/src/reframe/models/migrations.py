@@ -4,7 +4,7 @@ Every persisted document has ``schema_version``; a document without one is versi
 migration takes the raw JSON data of version *N* and returns the data of version *N + 1*. It is
 registered per document kind and version::
 
-    @register_migration("settings", from_version=1)
+    @REGISTRY.register("settings", from_version=1)
     def _settings_1_to_2(data: dict[str, Any]) -> dict[str, Any]:
         data["queue"]["parallel_jobs"] = data["queue"].pop("parallel", 1)
         return data
@@ -48,7 +48,6 @@ __all__ = [
     "current_version",
     "load_document",
     "migrate",
-    "register_migration",
 ]
 
 Migration = Callable[[dict[str, Any]], dict[str, Any]]
@@ -179,11 +178,6 @@ def _media_source_1_to_2(data: dict[str, Any]) -> dict[str, Any]:
             if isinstance(bitrate, dict) and bitrate.get("source") == "mediainfo":
                 bitrate["source"] = "estimated"
     return data
-
-
-def register_migration(kind: str, from_version: int) -> Callable[[Migration], Migration]:
-    """Register a migration of ``kind`` from ``from_version`` (see the module doc)."""
-    return REGISTRY.register(kind, from_version)
 
 
 def current_version(kind: str) -> int:

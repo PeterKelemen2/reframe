@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +59,19 @@ def template(**video: Any) -> JobTemplate:
 @pytest.fixture
 def store(tmp_path: Path) -> PresetStore:
     return PresetStore(tmp_path)
+
+
+@pytest.fixture
+def use_registry(monkeypatch: pytest.MonkeyPatch) -> Callable[[MigrationRegistry], None]:
+    """Installs a fake migration registry for the rest of the test."""
+    # The built-ins are cached at their first load: loaded under a fake registry, they would
+    # keep its schema versions for the whole test process.
+    builtin_presets()
+
+    def install(registry: MigrationRegistry) -> None:
+        monkeypatch.setattr(migrations_module, "REGISTRY", registry)
+
+    return install
 
 
 def created(store: PresetStore, name: str, **video: Any) -> Preset:
@@ -137,7 +151,6 @@ def test_builtins_cannot_be_changed_renamed_or_deleted(store: PresetStore) -> No
     assert builtin is not None
     for result in (
         store.save(builtin),
-        store.rename("fast-1080p30", "Faster"),
         store.delete("fast-1080p30"),
     ):
         assert isinstance(result, ValidationIssue)
@@ -175,22 +188,6 @@ def test_empty_name_is_an_issue(store: PresetStore) -> None:
     assert result.code == "preset.name_empty"
 
 
-def test_rename(tmp_path: Path, store: PresetStore) -> None:
-    mine = created(store, "Mine")
-    created(store, "Other")
-    clash = store.rename(mine.id, "other")
-    assert isinstance(clash, ValidationIssue)
-    assert clash.code == "preset.name_conflict"
-    renamed = store.rename(mine.id, "Mine (archive)")
-    assert isinstance(renamed, Preset)
-    assert renamed.name == "Mine (archive)"
-    # Renaming to the same name with another case is fine (it is the preset's own name).
-    assert isinstance(store.rename(mine.id, "MINE (ARCHIVE)"), Preset)
-    missing = store.rename("nope", "x")
-    assert isinstance(missing, ValidationIssue)
-    assert missing.code == "preset.not_found"
-
-
 def test_delete(tmp_path: Path, store: PresetStore) -> None:
     mine = created(store, "Mine")
     deleted = store.delete(mine.id)
@@ -200,28 +197,6 @@ def test_delete(tmp_path: Path, store: PresetStore) -> None:
     again = store.delete(mine.id)
     assert isinstance(again, ValidationIssue)
     assert again.code == "preset.not_found"
-
-
-def test_duplicate_builtin_and_user_presets(store: PresetStore) -> None:
-    copy = store.duplicate("h265-mkv-1080p")
-    assert isinstance(copy, Preset)
-    assert copy.name == "H.265 MKV 1080p (2)"
-    assert copy.category == "Custom"
-    assert not copy.built_in
-    assert copy.id != "h265-mkv-1080p"
-    original = store.get("h265-mkv-1080p")
-    assert original is not None
-    assert copy.video == original.video
-    second = store.duplicate("h265-mkv-1080p")
-    assert isinstance(second, Preset)
-    assert second.name == "H.265 MKV 1080p (3)"
-    mine = created(store, "Mine")
-    mine_copy = store.duplicate(mine.id, "Mine, slower")
-    assert isinstance(mine_copy, Preset)
-    assert mine_copy.category == mine.category
-    missing = store.duplicate("nope")
-    assert isinstance(missing, ValidationIssue)
-    assert missing.code == "preset.not_found"
 
 
 def test_default_preset(tmp_path: Path, store: PresetStore) -> None:
@@ -236,7 +211,6 @@ def test_default_preset(tmp_path: Path, store: PresetStore) -> None:
     assert store.set_default(mine.id) == mine
     store.delete(mine.id)  # deleting the default falls back to the built-in default
     assert store.default().id == DEFAULT_BUILTIN_ID
-    assert store.default_id is None
     missing = store.set_default("nope")
     assert isinstance(missing, ValidationIssue)
     assert missing.code == "preset.not_found"
@@ -264,7 +238,7 @@ def test_a_failed_write_changes_nothing(
     events = bus.subscribe()
     store = PresetStore(tmp_path, bus)
     monkeypatch.setattr(settings_module, "_replace", full)
-    result = store.rename(mine.id, "Renamed")
+    result = store.save(mine.model_copy(update={"name": "Renamed"}))
     assert isinstance(result, ValidationIssue)
     assert result.code == "presets.write_failed"
     assert store.user_presets() == [mine]
@@ -468,8 +442,11 @@ def test_import_with_a_failed_write_imports_nothing(
     assert store.user_presets() == []
 
 
-def test_import_migrates_an_old_export(tmp_path: Path) -> None:
-    store = PresetStore(tmp_path, registry=registry_v2())
+def test_import_migrates_an_old_export(
+    tmp_path: Path, use_registry: Callable[[MigrationRegistry], None]
+) -> None:
+    use_registry(registry_v2())
+    store = PresetStore(tmp_path)
     raw = json.loads((FIXTURES / "presets-v1.json").read_text("utf-8"))
     result = store.import_(raw)
     assert result.ok
@@ -477,9 +454,12 @@ def test_import_migrates_an_old_export(tmp_path: Path) -> None:
     assert result.imported[0].video.rate_control == ConstantQuality(value=19)
 
 
-def test_old_schema_fixture_loads_after_migration(tmp_path: Path) -> None:
+def test_old_schema_fixture_loads_after_migration(
+    tmp_path: Path, use_registry: Callable[[MigrationRegistry], None]
+) -> None:
+    use_registry(registry_v2())
     (tmp_path / "presets.json").write_bytes((FIXTURES / "presets-v1.json").read_bytes())
-    store = PresetStore(tmp_path, registry=registry_v2())
+    store = PresetStore(tmp_path)
     presets = store.user_presets()
     assert store.problems == []
     assert [p.name for p in presets] == ["Anime 720p (old)", "Archive x265 (old)"]
@@ -490,7 +470,7 @@ def test_old_schema_fixture_loads_after_migration(tmp_path: Path) -> None:
     assert archive.video.rate_control == ConstantQuality(value=20)
     assert store.default() == archive
     # Unknown fields survive, in the file and in each preset, and are written back.
-    store.rename(anime.id, "Anime 720p")
+    store.save(anime.model_copy(update={"name": "Anime 720p"}))
     data = json.loads((tmp_path / "presets.json").read_text("utf-8"))
     assert data["schema_version"] == 2
     assert data["written_by"] == "Reframe 0.0.1"
@@ -499,15 +479,6 @@ def test_old_schema_fixture_loads_after_migration(tmp_path: Path) -> None:
     assert data["presets"][0]["schema_version"] == 2
     assert data["presets"][0]["video"]["rate_control"] == {"mode": "quality", "value": 19.0}
     assert data["presets"][1]["user_note"] == "for the shelf"
-
-
-def test_real_loader_runs_the_migration_registry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(migrations_module, "REGISTRY", registry_v2())
-    (tmp_path / "presets.json").write_bytes((FIXTURES / "presets-v1.json").read_bytes())
-    presets = PresetStore(tmp_path, builtins=[]).user_presets()
-    assert presets[0].video.rate_control == ConstantQuality(value=19)
 
 
 def test_corrupt_file_is_backed_up_and_replaced_with_defaults(tmp_path: Path) -> None:
@@ -582,7 +553,7 @@ def test_presets_of_a_newer_reframe_are_kept_verbatim(tmp_path: Path) -> None:
     assert store.user_presets() == [mine]
     assert store.problems == []
     assert store.find("Future") is None
-    store.rename("m", "Mine, renamed")
+    store.save(mine.model_copy(update={"name": "Mine, renamed"}))
     rewritten = json.loads((tmp_path / "presets.json").read_text("utf-8"))
     assert rewritten["presets"][0] == future
     assert rewritten["presets"][1]["name"] == "Mine, renamed"
@@ -740,16 +711,18 @@ def test_save_and_import_never_take_the_id_of_a_newer_preset(tmp_path: Path) -> 
     assert [p["id"] for p in saved["presets"]] == ["f", "m", imported.id]
 
 
-def test_the_name_of_a_newer_preset_is_taken(tmp_path: Path) -> None:
+def test_the_name_of_a_newer_preset_is_taken(
+    tmp_path: Path, use_registry: Callable[[MigrationRegistry], None]
+) -> None:
     """Otherwise the newer Reframe would read two presets with one name."""
-    with_future(tmp_path)
+    mine = with_future(tmp_path)
     store = PresetStore(tmp_path)
     clash = store.create(template(), "future")
     assert isinstance(clash, ValidationIssue)
     assert clash.code == "preset.name_conflict"
     assert clash.message == "A preset named “Future” already exists."
     assert store.unique_name("Future") == "Future (2)"
-    refused = store.rename("m", "FUTURE")
+    refused = store.save(mine.model_copy(update={"name": "FUTURE"}))
     assert isinstance(refused, ValidationIssue)
     assert refused.code == "preset.name_conflict"
     renamed = store.import_(PresetFile(presets=[Preset(id="r", name="Future")]), "rename")
@@ -759,14 +732,17 @@ def test_the_name_of_a_newer_preset_is_taken(tmp_path: Path) -> None:
     assert replacing.replaced == []
     skipped = store.import_(PresetFile(presets=[Preset(id="s", name="Future")]), "skip")
     assert skipped.skipped == ["Future"]
-    newer = PresetStore(tmp_path, registry=registry_v5())
+    use_registry(registry_v5())
+    newer = PresetStore(tmp_path)
     names = [normalise_name(p.name) for p in newer.user_presets()]
     assert sorted(names) == ["future", "future (2)", "future (3)", "mine"]
     saved = json.loads((tmp_path / "presets.json").read_text("utf-8"))
     assert saved["presets"][0] == FUTURE
 
 
-def test_export_all_keeps_newer_presets_unchanged(tmp_path: Path) -> None:
+def test_export_all_keeps_newer_presets_unchanged(
+    tmp_path: Path, use_registry: Callable[[MigrationRegistry], None]
+) -> None:
     """Newer presets go into the export file unchanged, with a warning that only a newer
     Reframe can import them."""
     mine = with_future(tmp_path / "a", default="f")
@@ -792,7 +768,8 @@ def test_export_all_keeps_newer_presets_unchanged(tmp_path: Path) -> None:
     assert result.skipped == ["Future"]
     assert [i.code for i in result.issues] == ["preset.newer_version"]
     # The newer Reframe imports both, the newer one unchanged.
-    newer = PresetStore(tmp_path / "c", registry=registry_v5())
+    use_registry(registry_v5())
+    newer = PresetStore(tmp_path / "c")
     result = newer.import_(document)
     assert sorted(p.name for p in result.imported) == ["Future", "Mine"]
     future = newer.find("Future")

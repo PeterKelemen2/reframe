@@ -592,7 +592,7 @@ class Reframe:
     @classmethod
     async def create(cls, config_dir: Path | None = None, data_dir: Path | None = None) -> Reframe: ...
     events: EventBus
-    tools: ToolsService            # status, versions, re-scan; fetch (reframe tools fetch)
+    tools: ToolsService            # status, re-scan; fetch (reframe tools fetch)
     capabilities: CapabilityService
     sources: SourceService         # probe, probe_folder, get, store, update; C-10 tasks: bitrate_scan,
                                    # subtitle_scan, loudness_scan, frames, frame, cropdetect

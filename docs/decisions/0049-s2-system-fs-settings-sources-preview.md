@@ -113,7 +113,7 @@ Behaviour checked on 2026-10-22 (FastAPI 0.159.1, Starlette 1.9.0, uvicorn 0.54.
     the core), `sources.probe_folder` (item 5), `sources.store` and `sources.update` (the
     scans store what they measured themselves), `settings.path` (a server path the client
     cannot use), and the lifecycle members `start`, `close`, `current`, `discovering`,
-    `detecting`, `cache`.
+    `detecting`, `cache`. (2026-11-16, [0085](0085-unused-preset-and-facade-members-removed.md): `tools.versions`, `settings.path`, `tools.discovering` and `sources.cache` are removed from the facade.)
 
 ## Consequences
 

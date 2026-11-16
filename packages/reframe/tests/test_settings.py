@@ -15,14 +15,8 @@ from reframe import settings as settings_module
 from reframe.events import EventBus
 from reframe.models import AppSettings, AppWarningEvent
 from reframe.models import migrations as migrations_module
-from reframe.models.migrations import MigrationRegistry, current_version
-from reframe.settings import (
-    REPLACE_ATTEMPTS,
-    JsonDocumentFile,
-    SettingsStore,
-    migrate_document,
-    replace_file,
-)
+from reframe.models.migrations import MigrationRegistry, current_version, migrate
+from reframe.settings import REPLACE_ATTEMPTS, JsonDocumentFile, SettingsStore, replace_file
 from reframe_testing.helpers import drain, nested
 
 #: A made-up settings.json at schema version 1. Its ``from_the_future`` field is unknown to
@@ -90,9 +84,12 @@ def test_a_path_that_is_not_utf8_is_saved_and_loaded_back(tmp_path: Path) -> Non
     assert SettingsStore(tmp_path).load() == settings
 
 
-def test_old_schema_fixture_loads_after_migration(tmp_path: Path) -> None:
+def test_old_schema_fixture_loads_after_migration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(migrations_module, "REGISTRY", registry_v2())
     write_json(tmp_path / "settings.json", OLD_SETTINGS_V1)
-    store = SettingsStore(tmp_path, registry=registry_v2())
+    store = SettingsStore(tmp_path)
     settings = store.load()
     assert store.problems == []
     assert settings.schema_version == 2
@@ -110,20 +107,9 @@ def test_old_schema_fixture_loads_after_migration(tmp_path: Path) -> None:
     assert saved["from_the_future"] == {"keep": ["me"]}
 
 
-def test_real_loader_runs_the_migration_registry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Without ``registry=`` the store migrates with ``REGISTRY``, which this test swaps."""
-    monkeypatch.setattr(migrations_module, "REGISTRY", registry_v2())
-    write_json(tmp_path / "settings.json", OLD_SETTINGS_V1)
-    settings = SettingsStore(tmp_path).load()
-    assert settings.schema_version == 2
-    assert settings.queue.parallel_jobs == 3
-
-
 def test_current_files_need_no_migration() -> None:
     data = AppSettings().model_dump(mode="json")
-    assert migrate_document("settings", data) == data
+    assert migrate("settings", data) == data
 
 
 def test_corrupt_file_is_backed_up_and_replaced_with_defaults(tmp_path: Path) -> None:
@@ -173,7 +159,9 @@ def test_damaged_contents_count_as_corrupt(
     assert len(list(tmp_path.glob("settings.corrupt-*.json"))) == 1
 
 
-def test_a_failing_migration_counts_as_corrupt(tmp_path: Path) -> None:
+def test_a_failing_migration_counts_as_corrupt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     registry = MigrationRegistry()
     registry.add_kind("settings", 2)
 
@@ -181,8 +169,9 @@ def test_a_failing_migration_counts_as_corrupt(tmp_path: Path) -> None:
     def _broken(data: dict[str, Any]) -> dict[str, Any]:
         return {"queue": data["no such key"]}
 
+    monkeypatch.setattr(migrations_module, "REGISTRY", registry)
     write_json(tmp_path / "settings.json", {"schema_version": 1})
-    store = SettingsStore(tmp_path, registry=registry)
+    store = SettingsStore(tmp_path)
     assert store.load() == AppSettings()
     assert [p.code for p in store.problems] == ["settings.corrupt"]
 
@@ -454,7 +443,9 @@ def test_too_deep_counts_levels_without_recursion() -> None:
     assert settings_module.too_deep(nested(1_000_000), 64)
 
 
-def test_the_store_writes_the_current_schema_version(tmp_path: Path) -> None:
+def test_the_store_writes_the_current_schema_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A newer label would make the next start read the file as newer and use the defaults."""
     store = SettingsStore(tmp_path)
     assert store.write(AppSettings.model_validate({"schema_version": 7})) is None
@@ -463,7 +454,8 @@ def test_the_store_writes_the_current_schema_version(tmp_path: Path) -> None:
     again = SettingsStore(tmp_path)
     again.load()
     assert again.problems == []
-    v2 = SettingsStore(tmp_path, registry=registry_v2())
+    monkeypatch.setattr(migrations_module, "REGISTRY", registry_v2())
+    v2 = SettingsStore(tmp_path)
     assert v2.write(AppSettings()) is None
     assert json.loads((tmp_path / "settings.json").read_text("utf-8"))["schema_version"] == 2
 

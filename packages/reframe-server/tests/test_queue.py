@@ -265,7 +265,7 @@ async def test_when_done_is_saved_in_the_settings(api: Api) -> None:
     response = await api.client.put("/api/queue/when-done", json={"when_done": "sleep"})
     assert response.status_code == 200
     assert response.json() == {"when_done": "sleep"}
-    saved = json.loads(api.reframe.settings.path.read_text(encoding="utf-8"))
+    saved = json.loads((api.reframe.config_dir / "settings.json").read_text(encoding="utf-8"))
     assert saved["queue"]["when_done"] == "sleep"
 
 

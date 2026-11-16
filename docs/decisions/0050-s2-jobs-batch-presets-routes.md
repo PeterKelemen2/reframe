@@ -98,8 +98,8 @@ facade showed what the table leaves open:
    there); an entry of another shape is left to the store, which refuses it.
 10. **Facade methods not exposed** (for 2a's list in 06): `batch.merge` (copies whole sections of
     one template into another; `batch/derive` with `base` covers *Apply to group*, and a client
-    copies sections itself), `presets.rename` (a `PUT` with the new name), `presets.duplicate`
-    (`GET` then `POST /api/presets`; a clash is a `409` whose fix names a free name),
+    copies sections itself), `presets.rename` (a `PUT` with the new name; 2026-11-16, [0085](0085-unused-preset-and-facade-members-removed.md): removed from the facade), `presets.duplicate`
+    (`GET` then `POST /api/presets`; a clash is a `409` whose fix names a free name; removed from the facade by [0085](0085-unused-preset-and-facade-members-removed.md)),
     `presets.find` (the routes take ids; `jobs/draft`, `explain` and the batch routes accept a name
     or an id through the facade's own lookup), `jobs.media_files` (folders are listed and probed
     by the `fs` and `sources` routes). `jobs.preview_clip` and `jobs.preview_clip_path` belong to

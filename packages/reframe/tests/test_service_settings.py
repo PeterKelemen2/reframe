@@ -74,7 +74,6 @@ class Calls:
 
 async def test_create_reads_settings_json(config: Path, fake_tools: ft.FakeTools) -> None:
     async with await Reframe.create() as app:
-        assert app.settings.path == config / "settings.json"
         assert app.settings_snapshot().tools.ffprobe == fake_tools.ffprobe
         assert app.settings.problems == []
         tools = await app.tools.status()
@@ -340,18 +339,6 @@ async def test_a_newer_settings_file_is_not_overwritten(env: Path) -> None:
     assert (folder / "settings.json").read_text("utf-8") == '{"schema_version": 42}'
 
 
-async def test_settings_hook_still_overrides_the_file(
-    env: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    settings = AppSettings.model_validate({"queue": {"parallel_jobs": 4}})
-    monkeypatch.setattr(Reframe, "_load_settings", staticmethod(lambda config_dir: settings))
-    async with await Reframe.create() as app:
-        assert app.settings_snapshot() == settings
-        await app.settings.update([{"op": "replace", "path": "/queue/parallel_jobs", "value": 5}])
-    saved = json.loads((env / "config" / "settings.json").read_text("utf-8"))
-    assert saved["queue"]["parallel_jobs"] == 5
-
-
 async def test_presets_are_read_at_first_use_not_in_create(env: Path) -> None:
     folder = env / "config"
     folder.mkdir()
@@ -382,10 +369,12 @@ async def test_preset_service_round_trip(config: Path) -> None:
         clash = await presets.create(JobTemplate(), "my X265")
         assert isinstance(clash, ValidationIssue)
         assert clash.code == "preset.name_conflict"
-        renamed = await presets.rename(mine.id, "My x265, slower")
+        renamed = await presets.save(mine.model_copy(update={"name": "My x265, slower"}))
         assert isinstance(renamed, Preset)
         assert await presets.set_default(mine.id) == renamed
-        copy = await presets.duplicate("h265-nvenc-1080p")
+        nvenc = presets.get("h265-nvenc-1080p")
+        assert nvenc is not None
+        copy = await presets.create(nvenc, "H.265 NVENC 1080p (2)")
         assert isinstance(copy, Preset)
         changed = copy.model_copy(update={"description": "mine"}, deep=True)
         changed.video.preset = "p7"
