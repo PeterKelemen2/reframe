@@ -83,8 +83,6 @@ def _lint_video(defs: Definitions) -> list[str]:
             other = keys[enc.handbrake_key]
             out.append(f"{where}: handbrake_key {enc.handbrake_key!r} also used by {other}")
         keys[enc.handbrake_key] = enc_id
-        if enc.hardware != (enc.family != "software"):
-            out.append(f"{where}: hardware must be true exactly for non-software families")
         if "8" not in enc.pix_fmts:
             out.append(f"{where}: pix_fmts has no 8-bit format")
         out += _lint_fallback(where, enc, encoders)

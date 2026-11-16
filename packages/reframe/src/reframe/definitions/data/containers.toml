@@ -67,7 +67,6 @@ attachments = false
 # captions), visual_impaired (also descriptions). `original` is not written.
 flags = ["default", "forced", "commentary", "hearing_impaired", "visual_impaired"]
 # With no default track of a type, the MP4 muxer marks the first one default.
-default_always_set = true
 language_format = "iso639_2t"
 # Text subtitles (SRT, ASS, WebVTT) are converted to mov_text.
 text_subtitle_target = "mov_text"

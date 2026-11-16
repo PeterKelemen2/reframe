@@ -165,7 +165,7 @@ demo. What is left there is listed in [Not verified](#not-verified).
 | Q-6.16 Validation rules (B) | Not started |  |
 | Q-6.17 Tool runner and platform (B) | Not started |  |
 | Q-6.18 Task manager and capability service (B) | Not started |  |
-| Q-6.19 Definitions fields (B) | Not started |  |
+| Q-6.19 Definitions fields (B) | Done on Linux (2026-11-16) | NDP-11 items 1, 2, 4 (no `parse_template` cache, `make_clip` indexes the container, one `BitDepth`; item 3 left for after Q-6.13, which owns `subtitlefile.py`), NDP-04 (`VideoEncoderDef.hardware` is a computed field, `default_always_set` and `FilterDef.position` / `ordered_filters` gone; `schema.d.ts` regenerated; the detector fingerprint changes: one re-detection). Net lines: source -19 (+9 / -28), tests -7 (+2 / -9), TOML -17, frontend -15 (+2 / -17) |
 
 ## Features
 

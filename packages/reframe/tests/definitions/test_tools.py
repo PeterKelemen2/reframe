@@ -1701,7 +1701,7 @@ def test_default_flag_without_a_default_track(container: str, tmp_path: Path) ->
     )
     assert result.returncode == 0
     first = _probe(out, "-show_streams")["streams"][0]["disposition"]["default"]
-    assert bool(first) == cont.default_always_set
+    assert bool(first) == (container == "mp4")
 
 
 @pytest.mark.parametrize("container", ["mkv", "mp4", "webm"])

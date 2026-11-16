@@ -10,10 +10,10 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from reframe.capabilities.reasons import Failure, TestContext, explain_failure, normalise_line
 from reframe.definitions import DEFAULT_VAAPI_DEVICE, VideoEncoderDef
+from reframe.definitions.models import BitDepth
 from reframe.models.capabilities import EncoderState
 from reframe.tools import CancelToken, run
 
@@ -23,7 +23,6 @@ __all__ = [
     "TEST_MAX_OUTPUT",
     "TEST_SOURCE",
     "TEST_TIMEOUT",
-    "BitDepth",
     "TestOutcome",
     "filter_test_argv",
     "hardware_test_argv",
@@ -39,7 +38,6 @@ TEST_TIMEOUT = 10.0
 #: Bytes of output kept from a test encode.
 TEST_MAX_OUTPUT = 2**20
 
-BitDepth = Literal["8", "10"]
 _VAAPI_PLACEHOLDER = "{vaapi_device}"
 #: FFmpeg replaced a ``-pix_fmt`` that the encoder does not take (and then exits 0).
 _AUTO_SELECTED = re.compile(

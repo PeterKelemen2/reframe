@@ -2978,12 +2978,6 @@ export interface components {
              */
             flags: ("default" | "forced" | "commentary" | "hearing_impaired" | "visual_impaired" | "original")[];
             /**
-             * Default Always Set
-             * @description MP4: when no track of a type is default, the muxer marks the first one default.
-             * @default false
-             */
-            default_always_set: boolean;
-            /**
              * Language Format
              * @description The language tag format: ISO 639-2/B for MKV, ISO 639-2/T for MP4.
              * @enum {string}
@@ -3894,12 +3888,6 @@ export interface components {
             id: "detelecine" | "interlace_detection" | "deinterlace" | "denoise" | "deblock" | "custom" | "tonemap" | "colorspace" | "sharpen" | "chroma_smooth" | "grayscale";
             /** Label */
             label: string;
-            /**
-             * Position
-             * @description Index in ``Definitions.filter_order``; set when the definitions are validated.
-             * @default 0
-             */
-            position: number;
             /**
              * Analysis
              * @description Interlace detection: it marks frames for deinterlacing and changes no pixels.
@@ -7689,8 +7677,6 @@ export interface components {
              * @enum {string}
              */
             family: "software" | "nvenc" | "qsv" | "amf" | "vaapi";
-            /** Hardware */
-            hardware: boolean;
             /** Vendor */
             vendor?: ("nvidia" | "intel" | "amd") | null;
             /** Platforms */
@@ -7735,6 +7721,8 @@ export interface components {
             extra_args?: string[];
             /** Options */
             options?: components["schemas"]["EncoderOption"][];
+            /** Hardware */
+            readonly hardware: boolean;
         };
         /**
          * VideoSettings

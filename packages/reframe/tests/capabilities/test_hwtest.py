@@ -11,8 +11,8 @@ from reframe.capabilities import (
     run_filter_test,
     run_hardware_test,
 )
-from reframe.capabilities.hwtest import BitDepth
 from reframe.definitions import load_definitions
+from reframe.definitions.models import BitDepth
 from reframe.models import EncoderState, ToolInfo
 from reframe_testing import fake_tools as ft
 from reframe_testing.capabilities import detect_rule

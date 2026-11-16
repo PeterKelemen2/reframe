@@ -292,6 +292,9 @@ Estimated total (after verify): about -180 Python source lines (plus -17 TOML li
 - Confidence: high
 - Verdict: ADJUSTED (item 1 has four callers, not three; item 4 also removes the `Literal` import and the `__all__` entry in `hwtest.py` and adds one import line in `detect.py`; estimate -8; item 2's `container.unknown` validation rule (`validation/container.py:104`) is for a job file with a container the definitions lack, but `Container` is a `Literal` that the model already enforces, so `make_clip` cannot see one; items 1 to 3 re-checked and hold)
 - Orchestrator: Tier B, work package Q-6.19 (see ../plan.md).
+- Q-6.19 note: items 1, 2 and 4 done. Item 3 (`analysis/subtitlefile.py` and
+  `tests/analysis/test_subtitlefile.py`) skipped: both files belong to Q-6.13, which ran in the
+  same wave. Do it after Q-6.13 is merged.
 
 ## Looked at and kept
 
