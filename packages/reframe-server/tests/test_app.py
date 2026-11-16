@@ -389,7 +389,7 @@ async def test_task_events_name_no_server_folder(api: Api) -> None:
     async with api.live() as server, server.connect() as connection:
         await connection.send(json.dumps({"type": "auth", "token": api.token}))
         assert (await receive_json(connection))["type"] == "hello"
-        task = api.reframe.tasks.start("test", work)
+        task = api.reframe.tasks.start("test", work, result_json=lambda value: value)
         while True:
             message = await receive_json(connection)
             event = message.get("event", {})

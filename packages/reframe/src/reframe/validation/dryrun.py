@@ -26,7 +26,7 @@ from reframe.models.issues import Fix, Severity, ValidationIssue
 from reframe.models.job import AverageBitrate, JobSettings
 from reframe.models.media import MediaSource
 from reframe.models.plan import resolve_argv
-from reframe.models.tools import ToolSet, ToolStatus
+from reframe.models.tools import ToolSet
 from reframe.tools import CancelToken, run
 from reframe.validation.common import error, warning
 from reframe.validation.fs import has_nul
@@ -464,7 +464,7 @@ async def dry_run(
             update={"source": job.source.model_copy(update={"path": job.source.path.absolute()})}
         )
     ffmpeg = tools.ffmpeg
-    if ffmpeg.status is not ToolStatus.FOUND or ffmpeg.path is None:
+    if not ffmpeg.usable:
         return [
             warning(
                 "encoder.dry_run_skipped",

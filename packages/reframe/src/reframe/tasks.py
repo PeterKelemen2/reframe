@@ -1,18 +1,17 @@
 """Background tasks: every long operation is a task with an id. :meth:`TaskManager.start`
 returns its :class:`~reframe.models.TaskInfo` at once, and the work reports ``task.progress``
 and ``task.done`` on the event bus, in that order. Each event carries a copy of the
-``TaskInfo``, so a later change does not alter an event that is already queued. At most
-``limit(kind)`` tasks of one kind run at the same time; the others wait in state ``queued``.
+``TaskInfo``, so a later change does not alter an event that is already queued. Tasks of one
+kind run at most ``DEFAULT_LIMITS[kind]`` at the same time; the others wait in state ``queued``.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import itertools
 import logging
 import os
-from collections import OrderedDict, deque
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -101,42 +100,6 @@ class TaskContext:
         self._manager._report(self.id, percent, message)
 
 
-class _Gate:
-    """A FIFO slot counter for one kind (an ``asyncio.Semaphore`` whose limit can change)."""
-
-    def __init__(self, limit: int) -> None:
-        self.limit = limit
-        self.active = 0
-        self._waiters: deque[asyncio.Future[None]] = deque()
-
-    async def acquire(self) -> None:
-        if self.active < self.limit and not self._waiters:
-            self.active += 1
-            return
-        future: asyncio.Future[None] = asyncio.get_running_loop().create_future()
-        self._waiters.append(future)
-        try:
-            await future
-        except asyncio.CancelledError:
-            if future.done() and not future.cancelled():
-                self.release()  # the slot was granted just before the cancel: give it back
-            else:
-                with contextlib.suppress(ValueError):
-                    self._waiters.remove(future)
-            raise
-
-    def release(self) -> None:
-        self.active -= 1
-        self.wake()
-
-    def wake(self) -> None:
-        while self._waiters and self.active < self.limit:
-            future = self._waiters.popleft()
-            if not future.done():
-                self.active += 1
-                future.set_result(None)
-
-
 @dataclass
 class _Task:
     info: TaskInfo
@@ -155,37 +118,22 @@ class TaskManager:
         events: EventBus | None = None,
         *,
         limits: Mapping[str, int] | None = None,
-        default_limit: int = DEFAULT_LIMIT,
         keep_finished: int = DEFAULT_KEEP_FINISHED,
     ) -> None:
         self.events = events
         self._limits = {**DEFAULT_LIMITS, **(limits or {})}
         for kind, limit in self._limits.items():
             _check_limit(kind, limit)
-        _check_limit("default", default_limit)
-        self._default_limit = default_limit
         self._keep_finished = keep_finished
         self._tasks: OrderedDict[str, _Task] = OrderedDict()
-        self._gates: dict[str, _Gate] = {}
+        self._gates: dict[str, asyncio.Semaphore] = {}
         self._ids = itertools.count(1)
         self._prefix = os.urandom(3).hex()
 
-    def limit(self, kind: str) -> int:
-        return self._limits.get(kind, self._default_limit)
-
-    def set_limit(self, kind: str, limit: int) -> None:
-        """Change the concurrency limit of ``kind``; a higher limit starts waiting tasks."""
-        _check_limit(kind, limit)
-        self._limits[kind] = limit
-        gate = self._gates.get(kind)
-        if gate is not None:
-            gate.limit = limit
-            gate.wake()
-
-    def _gate(self, kind: str) -> _Gate:
+    def _gate(self, kind: str) -> asyncio.Semaphore:
         gate = self._gates.get(kind)
         if gate is None:
-            gate = self._gates[kind] = _Gate(self.limit(kind))
+            gate = self._gates[kind] = asyncio.Semaphore(self._limits.get(kind, DEFAULT_LIMIT))
         return gate
 
     def start(
@@ -310,9 +258,6 @@ class TaskManager:
         if isinstance(value, BaseModel):
             dumped: JsonValue = value.model_dump(mode="json")
             return dumped
-        if _is_json(value):
-            json_value: JsonValue = value
-            return json_value
         return None
 
     def _report(self, task_id: str, percent: float | None, message: str | None) -> None:
@@ -341,15 +286,3 @@ class TaskManager:
 def _check_limit(kind: str, limit: int) -> None:
     if limit < 1:
         raise ValueError(f"concurrency limit of {kind!r} must be at least 1, got {limit}")
-
-
-def _is_json(value: Any) -> bool:
-    if value is None or isinstance(value, (bool, int, str)):
-        return True
-    if isinstance(value, float):
-        return value == value and value not in (float("inf"), float("-inf"))
-    if isinstance(value, list):
-        return all(_is_json(item) for item in value)
-    if isinstance(value, dict):
-        return all(isinstance(k, str) and _is_json(v) for k, v in value.items())
-    return False

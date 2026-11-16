@@ -32,7 +32,6 @@ from reframe.models import (
     MediaSource,
     TimeRange,
     ToolSet,
-    ToolStatus,
 )
 from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.plan import resolve_argv
@@ -233,7 +232,7 @@ async def _run_plan(tctx: TaskContext, plan: EncodePlan, tools: ToolSet) -> None
                 continue
             assert step.tool is not None
             info = tools.get(step.tool)
-            if info.status is not ToolStatus.FOUND or info.path is None:
+            if not info.usable:
                 raise TaskFailed(f"{step.description} needs {step.tool}, which is not available.")
             try:
                 argv = resolve_argv(step.argv, values)

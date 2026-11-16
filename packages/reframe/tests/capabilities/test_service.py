@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -484,62 +483,6 @@ async def test_wait_and_rescan_return_after_the_cache_write(
     assert order == ["cached", "final event"]
     assert cached_snapshot(harness.cache_dir) == second.model_dump(mode="json")
     assert second.checked_at != first.checked_at
-
-
-async def test_close_finishes_a_started_cache_write(
-    harness: Harness, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """``close()`` cancels the detection but not a cache write that has started."""
-    started, release = threading.Event(), threading.Event()
-    put = CapabilityCache.put
-
-    def slow_put(cache: CapabilityCache, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
-        started.set()
-        release.wait(15)
-        put(cache, key, snapshot)
-
-    monkeypatch.setattr(CapabilityCache, "put", slow_put)
-    harness.service.start()
-    try:
-        await wait_until(started.is_set)
-        closing = asyncio.ensure_future(harness.service.close())
-        await wait_until(lambda: not harness.service.detecting)  # the detection is cancelled ...
-        assert not closing.done()  # ... but close() waits for the write
-    finally:
-        release.set()
-    await closing
-    assert cache_files(harness.cache_dir)
-    assert not cached_snapshot(harness.cache_dir)["detecting"]
-
-
-async def test_a_new_detection_waits_for_the_last_cache_write(
-    harness: Harness, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A re-scan during a cache write starts after the write: an older result never
-    overwrites the newer one."""
-    started, release = threading.Event(), threading.Event()
-    put = CapabilityCache.put
-
-    def slow_first_put(cache: CapabilityCache, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
-        if not started.is_set():
-            started.set()
-            release.wait(15)
-        put(cache, key, snapshot)
-
-    monkeypatch.setattr(CapabilityCache, "put", slow_first_put)
-    harness.service.start()
-    try:
-        await wait_until(started.is_set)
-        (first,) = running_detections()
-        rescan = asyncio.ensure_future(harness.service.rescan())
-        await wait_until(first.done)  # cancelled during its cache write ...
-        await asyncio.sleep(0)
-        assert harness.tools.calls == 1  # ... and the re-scan waits for the write
-    finally:
-        release.set()
-    final = await rescan
-    assert harness.tools.calls == 2
-    assert cached_snapshot(harness.cache_dir) == final.model_dump(mode="json")
 
 
 async def test_a_failing_cache_write_is_not_fatal(

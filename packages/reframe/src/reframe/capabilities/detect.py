@@ -474,7 +474,7 @@ async def detect_capabilities(
     kills every running FFmpeg; the snapshot is then incomplete (statuses stay ``checking``).
     """
     options = options or DetectionOptions()
-    if ffmpeg.status is not ToolStatus.FOUND or ffmpeg.path is None:
+    if not ffmpeg.usable:
         snapshot = unusable_snapshot(ffmpeg, definitions)
         if on_update is not None:
             on_update(list(snapshot.encoders.values()))

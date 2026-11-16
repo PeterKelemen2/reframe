@@ -60,6 +60,7 @@ from reframe.models import (
     migrate,
     resolve_argv,
 )
+from reframe.models.tools import ToolInfo, ToolStatus
 from reframe.tools.discovery import locate_tools
 
 
@@ -375,6 +376,14 @@ def test_use_bundled_fix_applies_to_app_settings(tmp_path: Path) -> None:
     assert fix.target == "settings"
     patched = apply_patch(settings.model_dump(mode="json"), fix.patch)
     assert AppSettings.model_validate(patched).tools.ffmpeg is None
+
+
+def test_a_tool_is_usable_only_when_found_with_a_path() -> None:
+    path = Path("/usr/bin/ffmpeg")
+    assert ToolInfo(name="ffmpeg", status=ToolStatus.FOUND, path=path).usable
+    assert not ToolInfo(name="ffmpeg", status=ToolStatus.FOUND).usable
+    assert not ToolInfo(name="ffmpeg", status=ToolStatus.MISSING, path=path).usable
+    assert "usable" not in ToolInfo(name="ffmpeg", status=ToolStatus.FOUND).model_dump()
 
 
 @pytest.mark.needs_ffmpeg

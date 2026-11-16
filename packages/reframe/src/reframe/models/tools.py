@@ -88,6 +88,11 @@ class ToolInfo(ReframeModel):
     Settings path discovery uses it. Also set while an override is in use."""
     fixes: list[Fix] = Field(default_factory=list)
 
+    @property
+    def usable(self) -> bool:
+        """The tool can be run: its status is ``found`` and it has a path."""
+        return self.status is ToolStatus.FOUND and self.path is not None
+
 
 class ToolSet(ReframeModel):
     """The discovery result for every tool."""

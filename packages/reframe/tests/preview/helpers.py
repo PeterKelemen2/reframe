@@ -7,7 +7,7 @@ import json
 import os
 import subprocess
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -161,11 +161,12 @@ def make_env(
     snapshot: CapabilitySnapshot | None = None,
     settings: AppSettings | None = None,
     tools: ToolSet | None = None,
+    limits: Mapping[str, int] | None = None,
 ) -> Env:
     """A context with the real FFmpeg (``media.find_ffmpeg``), call it inside a running
     event loop (the task manager needs one)."""
     events = EventBus()
-    tasks = TaskManager(events)
+    tasks = TaskManager(events, limits=limits)
     toolset = tools if tools is not None else real_tools()
     ffprobe = toolset.ffprobe.path
     assert ffprobe is not None
