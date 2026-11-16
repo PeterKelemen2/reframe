@@ -34,8 +34,9 @@ from reframe.platform import longpath
 from reframe.queue import UnknownJobError
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
+from reframe_testing.cli import invoke
 
-from .conftest import Queues, draft_path, invoke, media_file, replay
+from .conftest import Queues, draft_path, media_file, replay
 from .fake_queue import Behaviour, FakeQueue
 
 SEASON = "Show.S01.1080p.BluRay.x264-GRP"
@@ -126,6 +127,12 @@ def test_a_file_that_cannot_be_probed_is_not_queued(
     assert "Summary: 1 done, 0 failed, 0 cancelled, 1 not queued." in result.stdout
 
 
+def test_a_reframe_in_process_value_that_is_no_truth_value_is_a_usage_error() -> None:
+    result = invoke("encode", "x.mkv", env={cli.IN_PROCESS_ENV: "garbage"})
+    assert result.exit_code == EXIT_USAGE
+    assert "'garbage' is not a valid boolean" in result.output
+
+
 def test_output_with_several_files_is_refused(season: Path, queues: Queues, tmp_path: Path) -> None:
     result = invoke("encode", str(season), "-o", str(tmp_path / "out.mkv"))
     assert result.exit_code == EXIT_USAGE
@@ -207,7 +214,7 @@ async def test_cancelling_the_command_cancels_the_jobs(
     running = asyncio.Event()
     queues.behaviour = lambda _job: "hang"
     queues.on_running = lambda _job: running.set()
-    task = asyncio.create_task(cli.run_encode([season], preset=None, output=None))
+    task = asyncio.create_task(cli.run_encode([season], preset=None, output=None, in_process=True))
     await asyncio.wait_for(running.wait(), 30)
     await asyncio.sleep(0.05)  # the 10 % progress event
     assert partial_files(season)
@@ -460,7 +467,9 @@ async def test_a_start_that_the_owner_refuses_is_sent_again_for_the_jobs_still_t
 
     monkeypatch.setattr(cli, "get_queue", make)
     files = [season / name for name in EPISODES[:2]]
-    code = await asyncio.wait_for(cli.run_encode(files, preset=None, output=None), 30)
+    code = await asyncio.wait_for(
+        cli.run_encode(files, preset=None, output=None, in_process=True), 30
+    )
     lines = capsys.readouterr().out.splitlines()
     assert code == EXIT_FAILED
     assert [call for call in made[0].calls if "start" in call] == [
@@ -486,7 +495,9 @@ async def test_a_start_that_the_owner_keeps_refusing_ends_the_command(
 
     monkeypatch.setattr(cli, "get_queue", make)
     files = [season / name for name in EPISODES[:2]]
-    code = await asyncio.wait_for(cli.run_encode(files, preset=None, output=None), 30)
+    code = await asyncio.wait_for(
+        cli.run_encode(files, preset=None, output=None, in_process=True), 30
+    )
     captured = capsys.readouterr()
     assert code == EXIT_FAILED
     assert captured.err == "error: the jobs cannot be queued: no job 'job-1' in the queue\n"
@@ -517,7 +528,9 @@ async def test_a_job_removed_while_the_command_waits_for_its_jobs(
 
     monkeypatch.setattr(cli, "get_queue", make)
     files = [season / name for name in EPISODES[:2]]
-    code = await asyncio.wait_for(cli.run_encode(files, preset=None, output=None), 30)
+    code = await asyncio.wait_for(
+        cli.run_encode(files, preset=None, output=None, in_process=True), 30
+    )
     lines = capsys.readouterr().out.splitlines()
     assert code == EXIT_OK
     assert lines[-1] == "Summary: 2 done, 0 failed, 0 cancelled, 0 not queued."
@@ -556,7 +569,9 @@ async def test_ctrl_c_leaves_a_job_that_ended_and_was_retried_before_the_command
 
     monkeypatch.setattr(cli, "get_queue", make)
     files = [season / name for name in EPISODES[:2]]
-    code = await asyncio.wait_for(cli.run_encode(files, preset=None, output=None), 30)
+    code = await asyncio.wait_for(
+        cli.run_encode(files, preset=None, output=None, in_process=True), 30
+    )
     assert code == EXIT_INTERRUPTED
     assert "cancel job-1" not in made[0].calls
     assert "cancel job-2" in made[0].calls

@@ -54,13 +54,13 @@ from reframe.queue.watchdog import STALL_AFTER, STEP_TIME_LIMIT, TICK
 from reframe.queue.whendone import WhenDoneActions
 from reframe.validation import FileSystemView, LocalFileSystem
 
-__all__ = ["ENDED", "OUTPUT_CLAIMED", "QueueService"]
+__all__ = ["ACTIVE", "ENDED", "OUTPUT_CLAIMED", "QueueService"]
 
 log = logging.getLogger(__name__)
 
 #: States in which a job has ended (until it is retried).
 ENDED = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED})
-_ACTIVE = frozenset({JobState.RUNNING, JobState.PAUSED})
+ACTIVE = frozenset({JobState.RUNNING, JobState.PAUSED})
 _RETRY = frozenset({JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED})
 #: States in which a job's output and source are claimed: no other job may write them.
 _CLAIMING = frozenset({JobState.WAITING, JobState.RUNNING, JobState.PAUSED})
@@ -371,7 +371,7 @@ class QueueService:
         self._ensure_open()
         async with self._lock:
             job = self._job(job_id)
-            if job.state in _ACTIVE or job_id in self._active:
+            if job.state in ACTIVE or job_id in self._active:
                 raise JobStateError(f"job {job_id} is {job.state.value}: cancel it first")
             del self._jobs[job_id]
             self._keys.pop(job_id, None)
@@ -640,7 +640,7 @@ class QueueService:
         now = self._clock.now()
         interrupted: builtins.list[tuple[QueueJob, JobState]] = []
         for job in loaded.jobs:
-            if job.state in _ACTIVE:
+            if job.state in ACTIVE:
                 interrupted.append((job, job.state))
                 job.state = JobState.INTERRUPTED
                 job.error = _restored_error(job)

@@ -16,8 +16,9 @@ from reframe.jobs import JobService
 from reframe.models import AppWarningEvent
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
+from reframe_testing.cli import invoke
 
-from .conftest import invoke, media_file, replay
+from .conftest import media_file, replay
 from .fake_queue import FakeQueue
 
 
@@ -184,6 +185,6 @@ def test_json_of_an_undecodable_name_is_escaped(
     from reframe.models import SourceRef
 
     ref = SourceRef(path=Path("/m") / "bad\udcffname.mkv")
-    cli._write_model_json(ref)
+    cli._write_json(ref)
     out = capsys.readouterr().out
     assert "bad\\udcffname.mkv" in out

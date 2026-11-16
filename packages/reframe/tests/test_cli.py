@@ -16,17 +16,16 @@ from typing import Any
 import pytest
 from rich.console import Console
 from syrupy.assertion import SnapshotAssertion
-from typer.testing import CliRunner, Result
+from typer.testing import Result
 
 from reframe import __version__, cli
 from reframe.cli import (
-    EXIT_NO_FFPROBE,
+    EXIT_FAILED,
+    EXIT_NO_TOOL,
     EXIT_NOT_FOUND,
     EXIT_OK,
-    EXIT_PROBE_FAILED,
     EXIT_USAGE,
     TIMES,
-    build_app,
     error_message,
     fmt_bitrate,
     fmt_bps,
@@ -76,6 +75,7 @@ from reframe.platform import longpath
 from reframe.service import ProbeError, ProbeErrorKind
 from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
+from reframe_testing.cli import invoke
 
 REPO = Path(__file__).resolve().parents[3]
 PROBES = REPO / "testdata" / "probes"
@@ -83,15 +83,10 @@ INDEX: dict[str, dict[str, Any]] = json.loads((PROBES / "index.json").read_text(
     "probes"
 ]
 X = TIMES  # the multiplication sign between width and height
-WIDTH = "200"
 #: SGR colour parameters (foreground 30-38, 90-97; background 40-48, 100-107).
 COLOUR_SGR = re.compile(r"\x1b\[(?:\d+;)*(?:3[0-8]|9[0-7]|4[0-8]|10[0-7])(?:;\d+)*m")
 
 Media = Callable[[str], Path]
-
-
-def invoke(*args: str, env: dict[str, str] | None = None) -> Result:
-    return CliRunner().invoke(build_app(), list(args), env={"COLUMNS": WIDTH, **(env or {})})
 
 
 def assert_clean_failure(result: Result, code: int) -> str:
@@ -316,7 +311,7 @@ def test_text_subs_attachment(cache_env: Path, fixture_media: Media) -> None:
 def test_garbage_file_real_ffprobe(cache_env: Path) -> None:
     path = cache_env / "garbage.mkv"
     path.write_bytes(bytes(range(256)) * 16)
-    line = assert_clean_failure(invoke("probe", str(path)), EXIT_PROBE_FAILED)
+    line = assert_clean_failure(invoke("probe", str(path)), EXIT_FAILED)
     assert "ffprobe could not read the file" in line
 
 
@@ -413,12 +408,12 @@ def test_garbage_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     )
     path = tmp_path / "garbage.mkv"
     path.write_bytes(b"\0" * 100)
-    line = assert_clean_failure(invoke("probe", str(path)), EXIT_PROBE_FAILED)
+    line = assert_clean_failure(invoke("probe", str(path)), EXIT_FAILED)
     assert line == (
         f"error: {path}: ffprobe could not read the file (exit code 1). "
         "(garbage.mkv: Invalid data found when processing input)"
     )
-    assert_clean_failure(invoke("probe", "--json", str(path)), EXIT_PROBE_FAILED)
+    assert_clean_failure(invoke("probe", "--json", str(path)), EXIT_FAILED)
 
 
 def test_invalid_ffprobe_output(fake_env: ft.FakeTools, tmp_path: Path) -> None:
@@ -427,7 +422,7 @@ def test_invalid_ffprobe_output(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     )
     path = tmp_path / "x.mkv"
     path.write_bytes(b"x")
-    line = assert_clean_failure(invoke("probe", str(path)), EXIT_PROBE_FAILED)
+    line = assert_clean_failure(invoke("probe", str(path)), EXIT_FAILED)
     assert "not JSON" in line
 
 
@@ -436,7 +431,7 @@ def test_missing_ffprobe(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     path = tmp_path / "x.mkv"
     path.write_bytes(b"x")
     result = invoke("probe", str(path), env={"REFRAME_FFPROBE": str(missing)})
-    line = assert_clean_failure(result, EXIT_NO_FFPROBE)
+    line = assert_clean_failure(result, EXIT_NO_TOOL)
     assert line.startswith(
         f"error: ffprobe is not usable (missing, set by REFRAME_FFPROBE: {missing}): "
     )
@@ -461,7 +456,7 @@ def test_broken_ffprobe(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     )
     path = tmp_path / "x.mkv"
     path.write_bytes(b"x")
-    line = assert_clean_failure(invoke("probe", str(path)), EXIT_NO_FFPROBE)
+    line = assert_clean_failure(invoke("probe", str(path)), EXIT_NO_TOOL)
     assert "ffprobe is not usable (broken, set by REFRAME_FFPROBE" in line
     assert "error while loading shared libraries" in line
 
@@ -472,7 +467,7 @@ def test_too_old_ffprobe(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     )
     path = tmp_path / "x.mkv"
     path.write_bytes(b"x")
-    line = assert_clean_failure(invoke("probe", str(path)), EXIT_NO_FFPROBE)
+    line = assert_clean_failure(invoke("probe", str(path)), EXIT_NO_TOOL)
     assert "(too_old, set by REFRAME_FFPROBE" in line
     assert "too old" in line
 

@@ -26,10 +26,12 @@ from reframe.cli import (
 from reframe.events import EventBus
 from reframe.models import AppSettings, JobSettings
 from reframe.models.events import PowerAction, PowerCountdownEvent
+from reframe.queue import ENDED
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
+from reframe_testing.cli import invoke
 
-from .conftest import invoke, media_file, replay
+from .conftest import media_file, replay
 from .fake_queue import Behaviour, FakeQueue
 
 EPISODES = [f"Show.S01E{n:02d}.1080p.BluRay.x264-GRP.mkv" for n in (1, 2)]
@@ -140,7 +142,7 @@ class Setup:
     async def _when_done(self, events: EventBus, queue: FakeQueue, power: FakePower) -> None:
         async for _event in events.subscribe(types={"job.state"}):
             jobs = queue.list()
-            if jobs and all(job.state in cli.FINAL_STATES for job in jobs):
+            if jobs and all(job.state in ENDED for job in jobs):
                 assert self.action is not None
                 power.schedule(self.action)
                 return
@@ -221,7 +223,7 @@ async def test_ctrl_c_cancels_the_countdown(season: Path, setup: Setup, tmp_path
     countdown cancels it through ``power.cancel``: nothing runs, exit 130."""
     when_done(tmp_path, "shutdown")
     setup.power_options = {"seconds": 60, "tick": 0.05}
-    task = asyncio.create_task(cli.run_encode([season], preset=None, output=None))
+    task = asyncio.create_task(cli.run_encode([season], preset=None, output=None, in_process=True))
     deadline = time.monotonic() + 30
     while setup.power is None or setup.power.pending is None:
         assert time.monotonic() < deadline, "the countdown did not start"

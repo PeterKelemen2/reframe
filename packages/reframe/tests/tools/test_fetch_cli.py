@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 from rich.console import Console
-from typer.testing import CliRunner, Result
+from typer.testing import Result
 
 from reframe import cli
 from reframe.cli import (
@@ -20,9 +20,7 @@ from reframe.cli import (
     EXIT_OK,
     EXIT_USAGE,
     FetchView,
-    build_app,
     fetched_text,
-    task_error,
 )
 from reframe.models import TaskInfo, TaskState
 from reframe.tools import ENV_VARS
@@ -30,6 +28,7 @@ from reframe.tools import fetch as fetch_module
 from reframe.tools.__main__ import status_lines
 from reframe.tools.fetch import host_platform, install_dir_for, installed_build
 from reframe_testing import fake_tools as ft
+from reframe_testing.cli import invoke
 
 from .fetch_server import (
     FAKE_VERSION,
@@ -42,15 +41,10 @@ from .fetch_server import (
     write_manifest,
 )
 
-WIDTH = "200"
 POSIX_ONLY = pytest.mark.skipif(
     sys.platform == "win32" or host_platform() != "linux-x64",
     reason="the fake Linux build runs only on a linux-x64 host",
 )
-
-
-def invoke(*args: str) -> Result:
-    return CliRunner().invoke(build_app(), list(args), env={"COLUMNS": WIDTH})
 
 
 def assert_clean_failure(result: Result, code: int) -> list[str]:
@@ -426,34 +420,3 @@ def test_fetch_view_bar() -> None:
     view.close()
     view.close()
     assert "Downloading a.tar.xz" in out.getvalue()
-
-
-def test_task_error_drops_the_expected_failure_prefix() -> None:
-    info = _task("x", None).model_copy(update={"error": "TaskFailed: the SHA-256 is wrong"})
-    assert task_error(info) == "the SHA-256 is wrong"
-    info = info.model_copy(update={"error": "ValueError: boom"})
-    assert task_error(info) == "ValueError: boom"
-    assert task_error(info.model_copy(update={"error": None})) == "no reason given"
-
-
-def test_an_expected_task_failure_is_not_logged_with_a_traceback() -> None:
-    """With no logging configured, the task manager's ``log.exception`` would print a traceback."""
-    import logging
-
-    from reframe.mediatask import TaskFailed
-
-    cli._quiet_expected_failures()
-    cli._quiet_expected_failures()
-    logger = logging.getLogger("reframe.tasks")
-    filters = [f for f in logger.filters if isinstance(f, cli._ExpectedTaskFailure)]
-    assert len(filters) == 1
-
-    def record(exc: BaseException) -> logging.LogRecord:
-        return logging.LogRecord(
-            "reframe.tasks", logging.ERROR, __file__, 1, "task failed", (), (type(exc), exc, None)
-        )
-
-    assert not filters[0].filter(record(TaskFailed("the SHA-256 is wrong")))
-    assert filters[0].filter(record(ValueError("a bug")))
-    plain = logging.LogRecord("reframe.tasks", logging.ERROR, __file__, 1, "x", (), None)
-    assert filters[0].filter(plain)

@@ -11,8 +11,7 @@ from reframe.cli import EXIT_NO_TOOL, EXIT_OK, encoder_text
 from reframe.models import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe_testing import fake_tools as ft
 from reframe_testing.capabilities import detect_rule
-
-from .conftest import invoke
+from reframe_testing.cli import invoke
 
 NVENC_LINE = "hevc_nvenc — unavailable: NVIDIA driver not found"
 

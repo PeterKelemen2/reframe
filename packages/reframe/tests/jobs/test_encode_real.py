@@ -20,8 +20,7 @@ from reframe.cli import EXIT_INTERRUPTED, EXIT_OK, IN_PROCESS_ENV
 from reframe.models import JobDraft, JobState, MediaSource
 from reframe.service import Reframe
 from reframe_testing import media
-
-from .conftest import invoke
+from reframe_testing.cli import invoke
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.slow]
 

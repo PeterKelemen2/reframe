@@ -20,8 +20,9 @@ from reframe.cli import EXIT_FAILED, EXIT_OK, IN_PROCESS_ENV
 from reframe.models.issues import ReplaceOp
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
+from reframe_testing.cli import invoke
 
-from .conftest import Queues, invoke, media_file, recorded, replay
+from .conftest import Queues, media_file, recorded, replay
 from .test_cli_output_names import (
     E01,
     E01_OUT,

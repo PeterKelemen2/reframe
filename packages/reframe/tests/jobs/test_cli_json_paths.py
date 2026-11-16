@@ -15,8 +15,9 @@ import pytest
 from reframe.cli import EXIT_OK
 from reframe.models import EncodePlan, JobDraft, MediaSource, NameResult
 from reframe_testing import fake_tools as ft
+from reframe_testing.cli import invoke
 
-from .conftest import invoke, media_file, replay
+from .conftest import media_file, replay
 
 pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="a file name that is not UTF-8")
 

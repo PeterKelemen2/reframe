@@ -19,8 +19,9 @@ from reframe.models import MediaSource
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
+from reframe_testing.cli import invoke
 
-from .conftest import Queues, invoke, media_file, replay
+from .conftest import Queues, media_file, replay
 
 
 def _load_anime() -> ModuleType:
@@ -271,7 +272,7 @@ def test_cancelling_the_batch_cancels_its_jobs(s01: Path, queues: Queues) -> Non
     async def run() -> int:
         running = asyncio.Event()
         queues.on_running = lambda _job: running.set()
-        task = asyncio.create_task(cli.run_batch([s01], preset=None))
+        task = asyncio.create_task(cli.run_batch([s01], preset=None, in_process=True))
         await asyncio.wait_for(running.wait(), 30)
         task.cancel()
         return await task

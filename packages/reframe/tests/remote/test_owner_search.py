@@ -9,7 +9,6 @@ import functools
 import json
 import logging
 import os
-import socket
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
@@ -34,7 +33,7 @@ from reframe.remote.owner import (
     server_log,
 )
 
-from .conftest import Server
+from .conftest import Server, free_port
 
 pytestmark = pytest.mark.anyio
 
@@ -66,13 +65,6 @@ async def search(server: Server, launch: FakeStart, **options: Any) -> Owner | N
     )
 
 
-def free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        port: int = sock.getsockname()[1]
-    return port
-
-
 def write_endpoint(server: Server, **fields: Any) -> None:
     data = json.loads(server.owner().endpoint.model_dump_json())
     data.update(fields)
@@ -84,12 +76,6 @@ async def unowned(server: Server) -> Server:
     """The test's server answers its health route, but ``queue.lock`` is free."""
     await server.api.reframe.queue.close()
     return server
-
-
-@pytest.fixture
-def short_waits(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(owner_module, "START_WAIT", 0.4)
-    monkeypatch.setattr(owner_module, "HELD_WAIT", 0.4)
 
 
 async def test_the_server_that_the_endpoint_file_names_is_used(server: Server) -> None:

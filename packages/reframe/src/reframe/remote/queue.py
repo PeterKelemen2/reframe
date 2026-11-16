@@ -41,6 +41,7 @@ from reframe.models.issues import ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.queue import JobState, QueueJob
 from reframe.models.text import json_text
+from reframe.queue import ACTIVE, ENDED
 from reframe.queue.errors import JobStateError, QueueError, UnknownJobError
 from reframe.queue.logs import log_file
 from reframe.remote.owner import Owner, usable_token
@@ -50,8 +51,6 @@ __all__ = ["OwnerStopping", "RemoteError", "RemotePower", "RemoteQueue"]
 log = logging.getLogger(__name__)
 _WS_LOG = logging.getLogger("websockets.client")
 
-ENDED = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED})
-_ACTIVE = frozenset({JobState.RUNNING, JobState.PAUSED})
 _Forwarded = (
     JobStateEvent
     | JobProgressEvent
@@ -68,8 +67,6 @@ _MODELS: dict[str, type[_Forwarded]] = {
     "power.countdown": PowerCountdownEvent,
     "resync": ResyncEvent,
 }
-#: The events that the queue's users follow; the others stay with the server.
-FORWARDED = frozenset(_MODELS)
 #: An event of these types that cannot be read leaves the copy behind: read the whole queue.
 _COPIED = frozenset({"job.state", "queue.changed", "queue.processing", "resync"})
 OPEN_TIMEOUT = 10.0
@@ -746,7 +743,7 @@ class RemoteQueue:
         error = f"{reason[0].upper()}{reason[1:]} while the job ran."
         for job_id in self._ids():
             job = self._jobs[job_id]
-            if job.state not in _ACTIVE:
+            if job.state not in ACTIVE:
                 continue
             previous, job.state, job.error = job.state, JobState.INTERRUPTED, error
             self.events.publish(

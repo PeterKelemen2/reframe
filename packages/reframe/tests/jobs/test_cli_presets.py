@@ -28,23 +28,15 @@ from reframe.cli import (
 from reframe.models import Preset
 from reframe.presets import builtin_presets
 from reframe_testing import fake_tools as ft
+from reframe_testing.cli import WIDTH, invoke
 
-from .conftest import WIDTH, invoke
+from .conftest import user_preset
 
 BUILTINS = builtin_presets()
 
 
 def config_dir(tmp_path: Path) -> Path:
     return tmp_path / "config"
-
-
-def user_preset(preset_id: str, name: str, **changes: Any) -> dict[str, Any]:
-    """A user preset (a copy of *Fast 1080p30*) as JSON."""
-    base = next(p for p in BUILTINS if p.id == "fast-1080p30")
-    preset = base.model_copy(
-        update={"id": preset_id, "name": name, "category": "Custom", "built_in": False, **changes}
-    )
-    return preset.model_dump(mode="json")
 
 
 def write_presets(
@@ -306,7 +298,7 @@ def test_import_missing_file(cli_env: ft.FakeTools, tmp_path: Path) -> None:
     assert result.stderr == f"error: {tmp_path / 'nope.json'}: the file does not exist.\n"
     folder = invoke("presets", "import", str(tmp_path))
     assert folder.exit_code == EXIT_NOT_FOUND
-    assert "is a folder" in folder.stderr
+    assert folder.stderr == f"error: {tmp_path} is a folder, not a preset file.\n"
 
 
 @pytest.mark.parametrize(

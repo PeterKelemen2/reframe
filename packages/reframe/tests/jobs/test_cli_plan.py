@@ -10,12 +10,13 @@ from pathlib import Path
 import pytest
 
 from reframe import jobs as jobs_module
-from reframe.cli import EXIT_FAILED, EXIT_NO_FFPROBE, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE
+from reframe.cli import EXIT_FAILED, EXIT_NO_TOOL, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE
 from reframe.models import EncodePlan, JobDraft
 from reframe_testing import fake_tools as ft
 from reframe_testing.capabilities import detect_rule
+from reframe_testing.cli import invoke
 
-from .conftest import draft_path, invoke, media_file, replay
+from .conftest import draft_path, media_file, replay
 
 Media = "Movie.2016.1080p.BluRay.x264-GRP"
 
@@ -135,7 +136,7 @@ def test_missing_file(cli_env: ft.FakeTools, tmp_path: Path) -> None:
 def test_no_ffprobe(movie: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("REFRAME_FFPROBE", str(tmp_path / "no-ffprobe"))
     result = invoke("plan", str(movie))
-    assert result.exit_code == EXIT_NO_FFPROBE
+    assert result.exit_code == EXIT_NO_TOOL
     assert result.stderr.startswith("error: ffprobe is not usable")
 
 
