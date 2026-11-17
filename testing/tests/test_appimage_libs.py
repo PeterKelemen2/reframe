@@ -30,6 +30,10 @@ def _load_script() -> ModuleType:
 
 al = _load_script()
 
+# dpkg's info files are named "package:arch.list", which is not a Windows file name, and
+# dpkg-query exists only in the Linux build image the script runs in.
+dpkg_only = pytest.mark.skipif(sys.platform == "win32", reason="dpkg exists only on Linux")
+
 # What dpkg-query prints for the fake installed packages; the last one is removed (config left).
 DPKG_ROWS = {
     "libgtk-3-0": "libgtk-3-0\tamd64\t3.24.33-1ubuntu2.2\tgtk+3.0\t3.24.33-1ubuntu2.2\tii ",
@@ -106,6 +110,7 @@ def test_an_empty_package_list_is_an_error(tmp_path: Path) -> None:
         al.read_package_list(listing)
 
 
+@dpkg_only
 def test_resolve_gives_each_packages_source_and_version(fake_dpkg: Path, tmp_path: Path) -> None:
     listing = tmp_path / "packages.txt"
     listing.write_text("libxau6\nlibgtk-3-0\n")
@@ -133,12 +138,14 @@ def test_resolve_gives_each_packages_source_and_version(fake_dpkg: Path, tmp_pat
     ]
 
 
+@dpkg_only
 @pytest.mark.parametrize("package", ["libmissing", "libold1"])
 def test_a_listed_package_that_is_not_installed_is_an_error(fake_dpkg: Path, package: str) -> None:
     with pytest.raises(al.AppImageLibsError, match=f"not installed in this image: {package}"):
         al.query_packages(["libxau6", package])
 
 
+@dpkg_only
 @pytest.mark.parametrize(
     ("relative", "package"),
     [
@@ -155,6 +162,7 @@ def test_each_appdir_file_maps_to_the_package_it_was_copied_from(
     assert al.owner(relative, _index(tmp_path)) == {package}
 
 
+@dpkg_only
 def test_the_appdir_gives_the_packages_of_its_distro_files_only(tmp_path: Path) -> None:
     appdir = _appdir(
         tmp_path / "Reframe.AppDir",
@@ -172,6 +180,7 @@ def test_the_appdir_gives_the_packages_of_its_distro_files_only(tmp_path: Path) 
     assert al.appdir_packages(appdir, _index(tmp_path)) == ["libblkid1", "libgtk-3-0"]
 
 
+@dpkg_only
 def test_an_appdir_library_that_no_package_owns_is_an_error(tmp_path: Path) -> None:
     appdir = _appdir(tmp_path / "Reframe.AppDir", ["usr/lib/libgtk-3.so.0", "usr/lib/libmine.so"])
 
@@ -200,6 +209,7 @@ def test_the_comparison_names_every_change() -> None:
     assert al.compare(expected, expected) == []
 
 
+@dpkg_only
 def test_the_check_passes_only_for_the_packages_and_versions_the_manifest_has(
     fake_dpkg: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -220,6 +230,7 @@ def test_the_check_passes_only_for_the_packages_and_versions_the_manifest_has(
     assert problem.startswith("libgtk-3-0: ")
 
 
+@dpkg_only
 def test_the_check_prints_the_list_to_commit_when_the_appimage_has_other_packages(
     fake_dpkg: Path,
     tmp_path: Path,
@@ -263,6 +274,7 @@ SIDECAR_INDEX = {
 }
 
 
+@dpkg_only
 def test_the_sidecars_system_libraries_map_to_their_packages(tmp_path: Path) -> None:
     index = al.file_index(_dpkg_info(tmp_path / "info", SIDECAR_INDEX))
     internal = "usr/lib/Reframe/sidecar/_internal"
@@ -282,6 +294,7 @@ def test_the_sidecars_system_libraries_map_to_their_packages(tmp_path: Path) -> 
     assert al.appdir_packages(appdir, index) == ["libstdc++6", "zlib1g"]
 
 
+@dpkg_only
 def test_a_file_that_two_packages_own_is_an_error(tmp_path: Path) -> None:
     owned = {"libfoo1": ["/usr/lib/x86_64-linux-gnu/libfoo.so.1"]}
     owned["libfoo1-compat"] = owned["libfoo1"]

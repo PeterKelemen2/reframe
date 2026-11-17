@@ -154,7 +154,9 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     shutil.copyfile(CLIFF_TOML, repo / "cliff.toml")
     # The first release's section, written by hand in place of the frame's note.
     (repo / "CHANGELOG.md").write_text(
-        _header() + "## [0.9.0] - 2026-01-01\n\n### Added\n\n- written by hand\n", encoding="utf-8"
+        _header() + "## [0.9.0] - 2026-01-01\n\n### Added\n\n- written by hand\n",
+        encoding="utf-8",
+        newline="\n",
     )
     subprocess.run(["git", "add", "cliff.toml", "CHANGELOG.md"], cwd=repo, check=True)
     _commit(repo, "F-1: a commit in the older style")

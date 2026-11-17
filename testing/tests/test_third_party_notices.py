@@ -861,7 +861,7 @@ def test_an_ubuntu_package_without_its_copyright_file_is_an_error(
 
     assert tpn.main(["--platform", "linux-x64", "--out", str(out), *options]) == 1
     err = capsys.readouterr().err
-    assert "libgtk-3-common/copyright" in err
+    assert str(Path("libgtk-3-common", "copyright")) in err
     assert "build image" in err
     assert not out.exists()
 
