@@ -20,20 +20,6 @@ from reframe_testing.capabilities import detect_rule
 pytestmark = pytest.mark.anyio
 
 ENCODERS = load_definitions().video_encoders
-HEAD = ["ffmpeg", "-hide_banner", "-nostdin"]
-SOURCE = ["-f", "lavfi", "-i", "color=size=640x360", "-frames:v", "3"]
-
-
-def test_vaapi_command() -> None:
-    assert hardware_test_argv("ffmpeg", ENCODERS["hevc_vaapi"], "10") == [
-        *HEAD,
-        *("-init_hw_device", "vaapi=va:/dev/dri/renderD128", "-filter_hw_device", "va"),
-        *SOURCE,
-        *("-vf", "format=p010le,hwupload", "-c:v", "hevc_vaapi", "-f", "null", "-"),
-    ]
-    other = hardware_test_argv("ffmpeg", ENCODERS["h264_vaapi"], vaapi_device="/dev/dri/renderD129")
-    assert "vaapi=va:/dev/dri/renderD129" in other
-
 
 #: The ``detect_*`` captures made with :func:`hardware_test_argv` (``detect_h264_amf_10bit`` is not:
 #: h264_amf has no 10-bit pixel format in the definitions).

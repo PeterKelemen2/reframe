@@ -49,7 +49,7 @@ TOTAL LOST: 0
   `test_the_setting_forces_one_node` and `test_a_failing_cache_write_is_not_fatal` do, with
   stronger assertions.
 - `capabilities/test_service.py::test_libplacebo_untested_with_hardware_tests_off`: the
-  detection side is `test_detect.py::test_libplacebo_untested_when_hardware_tests_are_off`
+  detection side is `test_detect.py::test_hardware_tests_off`
   (also asserts no libplacebo run); the setting reaching the detection is
   `test_service.py::test_hardware_tests_off`.
 - `capabilities/test_devices.py::test_has_filter_keeps_its_meaning`: the same assertions
@@ -76,7 +76,7 @@ TOTAL LOST: 0
   `test_real_failures` and `test_driver_errors_are_mapped` is a normalised line.
 - `capabilities/test_hwtest.py::test_placeholders`: private `resolve_placeholders`; the
   unknown-placeholder error is `test_definition_errors`, the substitution is
-  `test_vaapi_command`.
+  `test_the_hardware_captures_ran_the_current_command`.
 - `capabilities/test_hwtest.py::test_uses_vaapi_device`: which encoders get a render node is
   asserted per encoder in `test_detect.py` (`test_hardware_tests_off_keeps_the_forced_vaapi_device`,
   `test_vaapi_uses_the_first_node_that_works`) and `test_service.py::test_every_render_node_is_tried`.
@@ -115,7 +115,7 @@ production change before the commit).
 | # | Mutation | Guards the deleted test | Remaining test that failed |
 |---|----------|-------------------------|----------------------------|
 | 1 | `CapabilityService.wait()` returns the snapshot instead of starting a detection | `test_wait_starts_a_detection` | `test_service.py::test_closest_available` |
-| 2 | `untested_filters = []` in the detection | `test_libplacebo_untested_with_hardware_tests_off` | `test_detect.py::test_libplacebo_works` (first with `-x`) |
+| 2 | `untested_filters = []` in the detection | `test_libplacebo_untested_with_hardware_tests_off` | `test_detect.py::test_everything_works` (first with `-x`) |
 | 3 | the service passes `hardware_tests=True` whatever the setting | same | `test_service.py::test_hardware_tests_off` |
 | 4 | `EncoderSettings.vaapi_device` defaults to `/dev/dri/renderD128` | `test_vaapi_device_setting_defaults_to_automatic` | `test_service.py::test_every_render_node_is_tried` |
 | 5 | `has_filter` is false for a filter whose run test failed | `test_has_filter_keeps_its_meaning` | `test_detect.py::test_libplacebo_without_vulkan` |

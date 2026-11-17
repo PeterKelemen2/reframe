@@ -95,6 +95,10 @@ async def test_everything_works(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo)
     assert first["libx265"] is AVAILABLE
     assert "hevc_nvenc" not in first  # still being tested
     assert all(len(u) >= 1 for u in updates)
+    assert snap.usable_filter("libplacebo") is True
+    assert (snap.filter_failures, snap.untested_filters) == ({}, [])
+    (call,) = [c for c in fake_tools.calls() if "libplacebo" in c]
+    assert call == tuple(filter_test_argv("ffmpeg", "libplacebo")[1:])
 
 
 async def test_driver_errors_are_mapped(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
@@ -195,6 +199,10 @@ async def test_hardware_tests_off(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInf
         assert status.private_options  # the help was still read
     assert encode_calls(fake_tools) == []
     assert snap.status("libx265").state is AVAILABLE
+    assert snap.untested_filters == ["libplacebo"]
+    assert snap.usable_filter("libplacebo") is None
+    assert [c for c in fake_tools.calls() if "libplacebo" in c] == []
+    assert snap.status("hevc_vaapi").device is None  # no node is known without a test
 
 
 async def test_hardware_tests_off_keeps_the_forced_vaapi_device(
@@ -207,8 +215,6 @@ async def test_hardware_tests_off_keeps_the_forced_vaapi_device(
         assert (status.state, status.device) == (EncoderState.UNKNOWN, OTHER_NODE), status
     assert snap.status("hevc_amf").device is None  # not a VAAPI encoder
     assert snap.status("hevc_qsv").device is None
-    automatic = await detect_capabilities(fake_ffmpeg, DEFS, linux(hardware_tests=False))
-    assert automatic.status("hevc_vaapi").device is None  # no node is known without a test
     assert encode_calls(fake_tools) == []
 
 
@@ -481,14 +487,6 @@ def test_vaapi_nodes(tmp_path: Path) -> None:
     assert vaapi_nodes(DetectionOptions(render_nodes=())) == []
 
 
-async def test_libplacebo_works(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
-    snap = await detect_capabilities(fake_ffmpeg, DEFS, LINUX)
-    assert snap.usable_filter("libplacebo") is True
-    assert (snap.filter_failures, snap.untested_filters) == ({}, [])
-    (call,) = [c for c in fake_tools.calls() if "libplacebo" in c]
-    assert call == tuple(filter_test_argv("ffmpeg", "libplacebo")[1:])
-
-
 async def test_libplacebo_without_vulkan(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
     capture = ft.captures()["detect_libplacebo_no_vulkan"]
     assert capture.stderr is not None
@@ -520,15 +518,6 @@ async def test_libplacebo_timeout(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInf
     assert snap.filter_failures == {"libplacebo": "The libplacebo test did not finish within 0.5 s"}
     assert snap.usable_filter("libplacebo") is False
     assert fake_tools.kill_leftovers() == []
-
-
-async def test_libplacebo_untested_when_hardware_tests_are_off(
-    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
-) -> None:
-    snap = await detect_capabilities(fake_ffmpeg, DEFS, linux(hardware_tests=False))
-    assert snap.untested_filters == ["libplacebo"]
-    assert snap.usable_filter("libplacebo") is None
-    assert [c for c in fake_tools.calls() if "libplacebo" in c] == []
 
 
 async def test_libplacebo_not_in_the_build(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:

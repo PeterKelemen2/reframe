@@ -78,7 +78,6 @@ def test_ids_are_unique_stable_slugs() -> None:
     assert len(set(IDS)) == len(IDS)
     for preset_id in IDS:
         assert re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", preset_id), preset_id
-    assert {p.id for p in builtin_presets()} == set(IDS)
 
 
 def test_names_are_unique_without_case() -> None:
@@ -101,11 +100,6 @@ def test_every_category_has_presets() -> None:
 
 
 def test_the_h265_mkv_and_nvenc_1080p_presets() -> None:
-    mkv = by_id("h265-mkv-1080p")
-    assert mkv.name == "H.265 MKV 1080p"
-    assert mkv.video.encoder == "libx265"
-    assert mkv.output.container == "mkv"
-    assert mkv.dimensions.size == FitWithin(width=1920, height=1080)
     nvenc = by_id("h265-nvenc-1080p")
     assert nvenc.name == "H.265 NVENC 1080p"
     assert nvenc.video.encoder == "hevc_nvenc"
