@@ -433,7 +433,7 @@ def test_settings_2_drops_the_mkvpropedit_and_mediainfo_paths_only() -> None:
     settings = load_document("settings", old)
     assert isinstance(settings, AppSettings)
     assert settings.model_dump(mode="json")["tools"] == {
-        "ffmpeg": "/opt/ff/ffmpeg", "ffprobe": None, "future": 1,
+        "ffmpeg": str(Path("/opt/ff/ffmpeg")), "ffprobe": None, "future": 1,
     }  # fmt: skip
 
 

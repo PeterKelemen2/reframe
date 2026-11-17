@@ -347,7 +347,7 @@ async def test_loudness_and_the_bcp47_language_header_edit(
     streams = probe(result.path)["streams"]
     assert [s["codec_type"] for s in streams] == ["video", "audio"]
     assert streams[1]["tags"]["language"] == "por"
-    assert [Path(run[0]).name for run in runs] == ["ffmpeg", "ffmpeg"]  # analyse, encode
+    assert [Path(run[0]).stem for run in runs] == ["ffmpeg", "ffmpeg"]  # analyse, encode
     [edit] = writer.edits
     assert edit.path.parent == tmp_path / "cache" / "clips"
     assert ".part" in edit.path.name

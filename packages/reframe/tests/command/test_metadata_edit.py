@@ -7,7 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from reframe.command import build_plan, in_place_blockers, is_matroska_source, job_type
+from reframe.command import (
+    build_plan,
+    in_place_blockers,
+    is_matroska_source,
+    job_type,
+    quote_posix,
+    quote_windows,
+)
 from reframe.command.header import (
     edit_line,
     fixup_edit,
@@ -220,8 +227,9 @@ def test_fixup_writes_only_the_ietf_tags_iso_639_2_cannot_say() -> None:
 
 
 def test_edit_line_lists_each_track_field_and_value() -> None:
+    movie = str(Path("/media/My Movie.mkv"))
     edit = HeaderEdit(
-        path=Path("/media/My Movie.mkv"),
+        path=Path(movie),
         tracks=[
             TrackHeaderEdit(
                 track_type="audio", number=2, language="por", language_ietf="pt-BR",
@@ -232,15 +240,16 @@ def test_edit_line_lists_each_track_field_and_value() -> None:
         info=InfoHeaderEdit(title="A B"),
     )  # fmt: skip
     assert edit_line(edit, "posix") == (
-        "header_edit '/media/My Movie.mkv' audio 2: language=por language_ietf=pt-BR "
+        f"header_edit {quote_posix(movie)} audio 2: language=por language_ietf=pt-BR "
         """name='Director'"'"'s cut' default=1 forced=0 subtitle 1: delete_name title='A B'"""
     )
     assert edit_line(edit, "windows") == (
-        'header_edit "/media/My Movie.mkv" audio 2: language=por language_ietf=pt-BR '
+        f"header_edit {quote_windows(movie)} audio 2: language=por language_ietf=pt-BR "
         'name="Director\'s cut" default=1 forced=0 subtitle 1: delete_name title="A B"'
     )
     removed = HeaderEdit(path=Path("/m.mkv"), info=InfoHeaderEdit(title=None))
-    assert edit_line(removed, "posix") == "header_edit /m.mkv delete_title"
+    removed_line = f"header_edit {quote_posix(str(removed.path))} delete_title"
+    assert edit_line(removed, "posix") == removed_line
 
 
 def test_metadata_edit_plan_edits_the_source() -> None:
@@ -262,7 +271,9 @@ def test_metadata_edit_plan_edits_the_source() -> None:
         ],
     )
     assert step.description == "Edit the metadata of 1 track of multitrack.mkv in place"
-    assert plan.display == (f"header_edit {src.ref.path} audio 1: language=por language_ietf=pt-BR")
+    assert plan.display == (
+        f"header_edit {quote_posix(str(src.ref.path))} audio 1: language=por language_ietf=pt-BR"
+    )
 
 
 def test_metadata_edit_plan_needs_no_tool() -> None:
@@ -302,9 +313,10 @@ def test_an_mkv_output_gets_the_fixup_without_any_mkvtoolnix() -> None:
             TrackHeaderEdit(track_type="audio", number=1, language="por", language_ietf="pt-BR")
         ],
     )
-    assert f" && header_edit {plan.output_tmp} audio 1: language=por language_ietf=pt-BR && " in (
-        plan.display
-    )
+    assert (
+        f" && header_edit {quote_posix(str(plan.output_tmp))} audio 1: language=por"
+        " language_ietf=pt-BR && "
+    ) in plan.display
 
 
 def test_no_fixup_without_a_tag_iso_639_2_cannot_say_or_outside_mkv() -> None:
