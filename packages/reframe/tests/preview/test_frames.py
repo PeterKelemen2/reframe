@@ -98,19 +98,6 @@ async def test_sample_frames_and_the_cache(tmp_path: Path, fixture_media: Media)
     assert leftovers == []
 
 
-async def test_the_default_count_comes_from_the_settings(
-    tmp_path: Path, fixture_media: Media
-) -> None:
-    settings = AppSettings(preview=PreviewSettings(sample_frames=4))
-    env = make_env(tmp_path / "cache", settings=settings)
-    done, fs = await env.finish(
-        start_frames(env.ctx, fixture_media("letterbox"), count=None, timestamps=None, job=None)
-    )
-    assert done.state is TaskState.DONE, done.error
-    assert isinstance(fs, FrameSet)
-    assert len(fs.frames) == 4
-
-
 async def test_fast_seek_gives_the_frame_of_a_slow_seek(
     tmp_path: Path, fixture_media: Media
 ) -> None:
@@ -225,13 +212,14 @@ async def test_the_cache_keeps_its_size_limit(tmp_path: Path, fixture_media: Med
     old.write_bytes(b"x" * 1000)
     hour_ago = time.time() - 3600
     os.utime(old, (hour_ago, hour_ago))
-    settings = AppSettings(preview=PreviewSettings(cache_size_mb=0))
+    settings = AppSettings(preview=PreviewSettings(cache_size_mb=0, sample_frames=2))
     env = make_env(tmp_path / "cache", settings=settings)
     done, fs = await env.finish(
-        start_frames(env.ctx, fixture_media("letterbox"), count=2, timestamps=None, job=None)
+        start_frames(env.ctx, fixture_media("letterbox"), count=None, timestamps=None, job=None)
     )
     assert done.state is TaskState.DONE, done.error
     assert isinstance(fs, FrameSet)
+    assert len(fs.frames) == 2  # the default count comes from the settings
     assert not old.exists()  # least recently used, over the limit
     assert all(f.path.exists() for f in fs.frames)  # the task's own results stay
 

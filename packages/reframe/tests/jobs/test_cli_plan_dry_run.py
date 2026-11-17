@@ -82,9 +82,6 @@ def test_custom_parameters_are_dry_run_and_errors_printed(movie: Path, dry_run: 
     assert DRY_RUN_NOTE not in out
     assert "Traceback" not in result.stderr
 
-
-def test_dry_run_errors_in_json(movie: Path, dry_run: DryRun) -> None:
-    dry_run.issues = [REFUSED]
     result = invoke("plan", str(movie), "--preset", CUSTOM, "--json")
     assert result.exit_code == EXIT_FAILED
     data: dict[str, Any] = json.loads(result.stdout)

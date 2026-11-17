@@ -18,8 +18,6 @@ from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed
 
 from reframe.models import JobState
-from reframe_server.app import create_app
-from reframe_server.config import ServerConfig
 from reframe_testing import fake_tools as ft
 from reframe_testing.server import PROBE_RULE, Api, LiveServer, receive_json
 from reframe_testing.waiting import wait_until
@@ -337,15 +335,3 @@ async def test_a_job_retried_just_after_its_client_went_away_is_not_cancelled(
         gate.set()
         await api.hub.close()
         assert await states(api) == {job: "waiting"}
-
-
-async def test_the_client_messages_and_the_client_id_are_in_the_openapi_document() -> None:
-    """The frontend's and a client's generated types know the ``detach`` message and the
-    hello's ``client_id``."""
-    document = create_app(ServerConfig(host="127.0.0.1", mode="web", auth="none")).openapi()
-    schemas = document["components"]["schemas"]
-    assert schemas["ClientMessage"]["discriminator"]["mapping"] == {
-        "auth": "#/components/schemas/AuthMessage",
-        "detach": "#/components/schemas/DetachMessage",
-    }
-    assert "client_id" in schemas["Hello"]["required"]

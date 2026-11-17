@@ -39,6 +39,11 @@ def test_the_event_websocket_messages_are_in_the_components(document: dict[str, 
     }
     assert _ref("JobProgressEvent") in schemas["EventMessage"]["properties"]["event"]["oneOf"]
     assert set(schemas["AuthMessage"]["properties"]) == {"type", "token"}
+    assert schemas["ClientMessage"]["discriminator"]["mapping"] == {
+        "auth": _ref("AuthMessage")["$ref"],
+        "detach": _ref("DetachMessage")["$ref"],
+    }
+    assert "client_id" in schemas["Hello"]["required"]
     # No HTTP operation for the WebSocket: a generated client would call it.
     assert "webhooks" not in document
     assert not [path for path in document["paths"] if path.startswith("/api/events")]
