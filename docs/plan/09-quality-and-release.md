@@ -160,7 +160,7 @@ Tier B (if there is time before v1; otherwise after it):
 
 - [x] **Q-6.11** Settings and preset stores (X-07, MOD-01, -03, -05; a decision record). Done
       when: every damaged, newer and too-deep file test passes with the same warning codes.
-- [ ] **Q-6.12** Windows-only paths (X-02, TP-14, TP-15). Done when: the retry, settings, queue,
+- [x] **Q-6.12** Windows-only paths (X-02, TP-14, TP-15). Done when: the retry, settings, queue,
       presets, platform and owner tests pass **on the Windows test VM**.
 - [x] **Q-6.13** Probe and metadata (X-08, X-09, PRB-02, -03, -08, -12, -14). Done when: the
       probe snapshot diff shows only `probe_hash` and the header writer's torn-write tests pass.

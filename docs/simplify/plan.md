@@ -56,7 +56,17 @@ The Q-6 packages were made over more than one session. These notes hold for whoe
   `tests/platform/test_sleep_dbus.py::test_connection_stays_open_for_several_calls_and_closes`,
   and a `ResourceWarning` error in the setup or teardown of
   `packages/reframe-server/tests/test_subtitles.py::test_a_sup_file_is_a_bitmap_counted_in_display_sets`
-  (an unclosed transport left by an earlier test). See `decisions-taken.md` D-25 and D-32.
+  (an unclosed transport left by an earlier test); on Windows also
+  `tests/queue/test_job_keys.py::test_choosing_a_job_never_reads_a_slow_share_on_the_event_loop`
+  (its event-loop pause limit). See `decisions-taken.md` D-25, D-32 and D-45.
+- **On the Windows test VM** (the VM of decision 0070, SSH into Git Bash): the VM cannot fetch
+  from the host, so push into its clone
+  (`git push TestWin@192.168.122.4:Desktop/reframe +m10-hardening:refs/heads/host-sync`, then
+  `git checkout --detach host-sync` there). The full suite with `REFRAME_REQUIRE_FFMPEG=1` and
+  `-m "not needs_gpu and not benchmark"` takes about 12 minutes on its 6 processors with
+  `-n auto`; 3 workers are not faster (the ffmpeg runs already fill the processors). A test
+  that kills, waits for or lists processes by pid must allow for Windows handing a pid out
+  again within milliseconds (D-45).
 - **Agent worktrees** (`isolation: "worktree"`) are created from `main`, not `m10-hardening`:
   each agent first runs `git reset --hard <SHA of the last merge>` and checks `git rev-parse HEAD`
   (D-24). The worktree has no `frontend/node_modules`; for `scripts/gen-api.sh --check` or the

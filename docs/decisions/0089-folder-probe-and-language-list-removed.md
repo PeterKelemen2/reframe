@@ -58,6 +58,21 @@ freshness test, a PyInstaller data entry and a second copy of the language table
   `TaskGroup`).
 - The first `GET /api/languages` in a process costs about 11 ms on Linux.
 
+## Windows check (2026-11-17)
+
+Item 4's check, on the Windows test VM of 0070 with the frozen sidecar (`reframe-server.exe
+--mode web --auth none`, a fresh process and data folder each time, `curl` `time_total` of the
+first and second `GET /api/languages`, six processes each):
+
+| Frozen sidecar | First request | Second request |
+|---|---|---|
+| Before this record (the shipped body, `8996e82`) | 31–37 ms | 1.7–1.9 ms |
+| After it (built at the first request, `98b8b94`) | 58–72 ms | 1.8–5.4 ms |
+
+Building the body costs about 30 ms at the first request on Windows (11 ms on Linux); the
+first request is over item 4's "about 50 ms". Whether the shipped body comes back is the
+owner's decision (pending).
+
 ## Plan changes
 
 - `05-core.md` C-3: the folder probe item becomes `probe_many`; the facade sketch names

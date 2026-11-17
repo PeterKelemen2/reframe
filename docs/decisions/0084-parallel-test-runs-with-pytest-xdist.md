@@ -55,6 +55,26 @@ A trial with `pytest-xdist` 3.8.0 (`-n auto`, 12 workers) at `2e536f4`:
 - A later test-speed audit (fewer slow waits, fixture scopes, redundant tests) can start from
   this baseline.
 
+## Windows (2026-11-17)
+
+Checked on the Windows test VM of 0070 (22H2, 6 processors), `-m "not needs_gpu and not
+benchmark"`, `REFRAME_REQUIRE_FFMPEG=1`:
+
+- xdist itself works on Windows: no worker crash, about 12 minutes with `-n auto` (6 workers);
+  3 workers are not faster.
+- The first runs had failures that moved from run to run (12 with 6 workers, 6 with 3). The
+  cause was in the test helpers, not in xdist: the `fake_tools` fixture's teardown killed
+  processes by logged pid with a 2 s reuse margin, and Windows hands a pid out again within
+  milliseconds, so a teardown killed other workers' processes. Fixed (the margin is 0.01 s on
+  Windows; `docs/simplify/decisions-taken.md` D-45), with two smaller Windows races.
+- After the fix, four runs with `-n auto`: 2 failures (the two races, fixed next), 0, then at
+  the final commit 0 and 1 (8,274 passed, 266 skipped): the one is
+  `test_choosing_a_job_never_reads_a_slow_share_on_the_event_loop`, whose longest event-loop
+  pause was 0.35 s against its 0.3 s limit under load; its real guard (no `stat` on the event
+  loop) passed. It is listed with the known load-sensitive tests in
+  `docs/simplify/plan.md`.
+- So item 5 stays: the Windows CI job runs with `-n auto`; `-n 0` remains the fallback.
+
 ## Plan changes
 
 - `docs/plan/09-quality-and-release.md` Q-2: a note on parallel runs.

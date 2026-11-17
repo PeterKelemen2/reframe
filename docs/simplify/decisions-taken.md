@@ -427,3 +427,52 @@ choices below were taken by the agents or by the orchestrator, with the same dec
 ### D-42 Q-6.12 is not done
 - Owner's scope for this run: Q-6.12 needs the Windows test VM and stays "Not started". Nothing
   depends on it (plan.md).
+
+### D-43 Q-6.12 done in a later session on the Windows test VM
+- The owner started the VM on 2026-11-17 and asked for the remaining Windows checks. Q-6.12 was
+  made by one agent (as in the waves) and merged; its Done-when ran on the VM: the named tests
+  in one process (678 passed, 85 skipped) and `powercfg /requests` with the desktop app built
+  from the merge (started in the logged-on session by a scheduled task; jobs queued with the
+  frozen CLI's `encode --detach`). The request is listed under SYSTEM while a job runs, and is
+  gone after the job ends, after a cancel while it runs, and after three jobs cancelled at
+  their start (each logged "active" then "released"). TP-14's thread had no defect.
+- The agent's tests grew (+41 lines against an estimate of −30): `test_fsretry.py` holds the
+  retry's four cases once instead of in two modules. Kept; rule 2.
+
+### D-44 Tests that assumed Linux are fixed where they fail on Windows
+- Question: the first whole-suite run on the VM since 2026-11-12 had 27 tests that fail on
+  Windows in one process, all from steps done after that run (C-18, C-20, Q-4, Q-5). Not part
+  of Q-6, but the Windows CI job runs them.
+- Chosen: fixed now by one agent with the VM. All 27 were tests, not product defects:
+  expectations with `/` paths or `ffmpeg` without `.exe`, a home folder set with `HOME` only
+  (Windows reads `USERPROFILE`), a child process printing non-ASCII to a cp1252 pipe, a fake
+  changelog written with CRLF, and the dpkg tests of `appimage-libs.py` (Linux build image
+  only) now skip on Windows. Every assertion still checks the same value in the host's form.
+- If the other option: leave them red until the release checklist's CI run.
+
+### D-45 The fake tools' leftover kill spared reused pids only on Linux
+- Question: under xdist the VM's runs had 12 (6 workers) and 6 (3 workers) failures that moved
+  from run to run, most of them a process ending with exit code 15 (psutil's `kill()` on
+  Windows) or a "leftover" pid that was not the test's.
+- Found: `FakeTools.kill_leftovers` (the `fake_tools` fixture's teardown) treated a logged pid
+  as reused only when its process started more than 2 s after the log entry. That margin is
+  for Linux, where psutil's `create_time` can be 1 s off; Windows gives a pid out again within
+  milliseconds, so a teardown killed another worker's process. On Windows the margin is now
+  0.01 s (`create_time` and `time.time_ns` read the same exact clock). Two more Windows-only
+  races in the test helpers were fixed: `set_scenario` replaces `scenario.json` with
+  `reframe.fsretry.replace_file` (a running fake can hold it open), and
+  `test_timeouts_are_errors` gives the encoder that must pass 1.5 s instead of 0.5 s.
+- The product's own leftover kill (`reframe.tools.runner.kill_leftovers`) was checked for the
+  same fault: checked on the VM, a child that `asyncio` has reaped can still be opened by its
+  pid (`OpenProcess` succeeds and gives its exit code) while the caller still has the process
+  object, so Windows has not given that pid out again when the runner's leftover kill runs;
+  unchanged.
+- Result: see the 0084 "Windows" section for the runs after the fix.
+
+### D-46 The first `/api/languages` of the frozen sidecar on Windows
+- 0089 item 4: if the first request with the frozen sidecar on the VM goes over about 50 ms,
+  a shipped body is the fallback. Measured on the VM (six fresh processes each, `curl`
+  `time_total`): before 0089 (the shipped file) 31–37 ms, now 58–72 ms; the second request
+  2 ms in both. Building the list costs about 30 ms on Windows (11 ms on Linux).
+- The owner decides between the fallback and keeping the build at the first request (see
+  0089 "Windows check").
