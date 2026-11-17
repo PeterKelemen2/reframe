@@ -536,20 +536,6 @@ async def test_cancel_during_the_sample_cancels_the_probe(
 
 
 @pytest.mark.anyio
-async def test_a_sample_that_cannot_read_the_file_leaves_the_rates_unknown(
-    fake_tools: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def fail(path: Path, info: MatroskaFile, **kw: Any) -> None:
-        raise PermissionError("denied")
-
-    monkeypatch.setattr(sampling, "sample_clusters", fail)
-    path, probe = _two_audio_file(tmp_path)
-    source = await _fake_prober(fake_tools, probe).probe(path, use_cache=False)
-    assert isinstance(source, MediaSource), source
-    assert source.audio[0].bitrate == BitrateInfo()
-
-
-@pytest.mark.anyio
 @pytest.mark.parametrize("error", [OverflowError, ZeroDivisionError, ValueError])
 async def test_an_error_in_the_sample_leaves_the_rates_unknown(
     fake_tools: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: type
@@ -573,17 +559,6 @@ def _huge_timestamp_scale_file(tmp_path: Path, name: str = "huge.mkv") -> Path:
 
 
 @pytest.mark.anyio
-async def test_a_huge_timestamp_scale_keeps_the_rates_unknown(
-    fake_tools: ft.FakeTools, tmp_path: Path
-) -> None:
-    path = _huge_timestamp_scale_file(tmp_path)
-    probe = _probe_json(tmp_path, path, _video(0), _audio(1), duration=4.0)
-    source = await _fake_prober(fake_tools, probe).probe(path, use_cache=False)
-    assert isinstance(source, MediaSource), source
-    assert [source.video[0].bitrate, source.audio[0].bitrate] == [BitrateInfo(), BitrateInfo()]
-
-
-@pytest.mark.anyio
 async def test_a_huge_timestamp_scale_does_not_fail_the_folder(
     fake_tools: ft.FakeTools, tmp_path: Path
 ) -> None:
@@ -600,6 +575,11 @@ async def test_a_huge_timestamp_scale_does_not_fail_the_folder(
         damaged.name,
         good.name,
     ]
+    assert isinstance(sources[0], MediaSource)
+    assert [sources[0].video[0].bitrate, sources[0].audio[0].bitrate] == [
+        BitrateInfo(),
+        BitrateInfo(),
+    ]
     assert isinstance(sources[1], MediaSource)
     assert sources[1].audio[0].bitrate.source is BitrateSource.ESTIMATED
 
@@ -610,7 +590,7 @@ def _first_sample_times_out(path: Path, info: MatroskaFile, *, stop: Callable[[]
 
 
 def _first_sample_cannot_read(path: Path, info: MatroskaFile, **kw: Any) -> None:
-    raise OSError("the share went away")
+    raise PermissionError("the share went away")
 
 
 def _first_sample_finds_no_cluster(path: Path, info: MatroskaFile, **kw: Any) -> None:
