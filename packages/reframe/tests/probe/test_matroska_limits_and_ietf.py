@@ -264,7 +264,7 @@ def test_a_value_that_is_not_a_language_tag_is_not_used() -> None:
 def test_the_cache_options_name_the_new_reader() -> None:
     """Entries made with MediaInfo's rates and tags, before the sampled rates, or with the
     attachments in the video's estimate are misses."""
-    assert Prober("ffprobe").cache_options()["matroska"] == 4
+    assert Prober("ffprobe").cache_options() == {"matroska": 4}
 
 
 def _copy(fixture_media: Callable[[str], Path], tmp_path: Path, name: str) -> Path:

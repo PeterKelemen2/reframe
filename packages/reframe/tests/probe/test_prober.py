@@ -22,7 +22,6 @@ from reframe.probe import (
     probe_argv,
 )
 from reframe.probe import prober as prober_mod
-from reframe.probe.prober import MATROSKA_READER
 from reframe.tools import CancelToken
 from reframe_testing import fake_tools as ft
 from reframe_testing.waiting import wait_until
@@ -323,10 +322,6 @@ def test_probe_tool_from_tool_info_and_identity(tmp_path: Path) -> None:
     assert ProbeTool.of(tmp_path / "gone").identity() == f"ffprobe at {tmp_path / 'gone'}"
     with pytest.raises(ValueError, match="no path"):
         ProbeTool.of(info.model_copy(update={"path": None}))
-
-
-def test_cache_options_name_the_reader() -> None:
-    assert Prober("ffprobe").cache_options() == {"matroska": MATROSKA_READER}
 
 
 def _packets_json(tmp_path: Path, steps_ms: list[float]) -> Path:

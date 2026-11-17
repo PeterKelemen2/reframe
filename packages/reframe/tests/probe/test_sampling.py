@@ -559,17 +559,6 @@ def _huge_timestamp_scale_file(tmp_path: Path, name: str = "huge.mkv") -> Path:
 
 
 @pytest.mark.anyio
-async def test_a_huge_timestamp_scale_keeps_the_rates_unknown(
-    fake_tools: ft.FakeTools, tmp_path: Path
-) -> None:
-    path = _huge_timestamp_scale_file(tmp_path)
-    probe = _probe_json(tmp_path, path, _video(0), _audio(1), duration=4.0)
-    source = await _fake_prober(fake_tools, probe).probe(path, use_cache=False)
-    assert isinstance(source, MediaSource), source
-    assert [source.video[0].bitrate, source.audio[0].bitrate] == [BitrateInfo(), BitrateInfo()]
-
-
-@pytest.mark.anyio
 async def test_a_huge_timestamp_scale_does_not_fail_the_folder(
     fake_tools: ft.FakeTools, tmp_path: Path
 ) -> None:
@@ -585,6 +574,11 @@ async def test_a_huge_timestamp_scale_does_not_fail_the_folder(
     assert [s.ref.path.name for s in sources if isinstance(s, MediaSource)] == [
         damaged.name,
         good.name,
+    ]
+    assert isinstance(sources[0], MediaSource)
+    assert [sources[0].video[0].bitrate, sources[0].audio[0].bitrate] == [
+        BitrateInfo(),
+        BitrateInfo(),
     ]
     assert isinstance(sources[1], MediaSource)
     assert sources[1].audio[0].bitrate.source is BitrateSource.ESTIMATED
