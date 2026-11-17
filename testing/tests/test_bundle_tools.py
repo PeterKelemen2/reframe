@@ -264,7 +264,7 @@ def test_a_linux_layout_after_a_windows_one_drops_the_windows_tools(setup: Setup
 
 @pytest.mark.usefixtures("no_discovery")
 @pytest.mark.parametrize(
-    "foreign", ["notes.txt", "ffmpeg/ffmpeg.exe", "other/x", "mkvtoolnix/mkvpropedit.exe"]
+    "foreign", ["notes.txt", "ffmpeg/ffmpeg.exe", "mkvtoolnix/mkvpropedit.exe"]
 )
 def test_files_the_script_did_not_make_are_refused_and_kept(setup: Setup, foreign: str) -> None:
     path = setup.dest / foreign

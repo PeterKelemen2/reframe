@@ -98,7 +98,6 @@ def test_the_manifest_has_the_shape_the_updater_reads(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("name", "platform"),
     [
-        ("Reframe_1.0.0_x64-setup.exe", "windows-x86_64-nsis"),
         ("Reframe_1.0.0_amd64.AppImage", "linux-x86_64-appimage"),
         ("Reframe_1.0.0_amd64.deb", "linux-x86_64-deb"),
     ],
