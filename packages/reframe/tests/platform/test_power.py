@@ -64,10 +64,6 @@ class Ticker:
             await settle()
 
 
-async def instant(delay: float) -> None:
-    await asyncio.sleep(0)
-
-
 async def settle() -> None:
     for _ in range(20):
         await asyncio.sleep(0)
