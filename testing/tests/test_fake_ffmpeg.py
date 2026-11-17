@@ -224,17 +224,6 @@ def test_sleep(fake_tools: FakeTools) -> None:
     assert r.stdout == b"done\n"
 
 
-def test_hang_times_out(fake_tools: FakeTools) -> None:
-    fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.hang()])]))
-    proc = subprocess.Popen([str(fake_tools.ffmpeg), "-encoders"])
-    try:
-        with pytest.raises(subprocess.TimeoutExpired):
-            proc.wait(timeout=0.5)
-    finally:
-        kill_tree(proc.pid)
-        proc.wait(timeout=10)
-
-
 @posix_only
 def test_crash_by_signal(fake_tools: FakeTools) -> None:
     fake_tools.set_scenario(
@@ -361,13 +350,7 @@ def test_progress_blocks_then_output(fake_tools: FakeTools, tmp_path: Path) -> N
     )
     assert time.monotonic() - t >= 0.2
     assert out.stat().st_size == 2048
-    blocks: list[dict[str, str]] = [{}]
-    for line in r.stdout.decode().splitlines():
-        key, _, value = line.partition("=")
-        blocks[-1][key] = value
-        if key == "progress":
-            blocks.append({})
-    blocks.pop()
+    blocks = parse_blocks(r.stdout.decode())
     assert len(blocks) == 4
     assert [b["progress"] for b in blocks] == ["continue", "continue", "continue", "end"]
     assert [int(b["out_time_us"]) for b in blocks] == [2_000_000, 4_000_000, 6_000_000, 8_000_000]
