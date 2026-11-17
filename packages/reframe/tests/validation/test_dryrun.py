@@ -15,7 +15,6 @@ from reframe.models import (
     CapabilitySnapshot,
     ChapterSettings,
     JobSettings,
-    MediaSource,
     Severity,
     SourceRef,
     ToolInfo,
@@ -310,33 +309,30 @@ def _tools(status: ToolStatus, path: Path | None = None) -> ToolSet:
     )
 
 
-def _source() -> MediaSource:
-    source: MediaSource = sc.make_source()
-    return source
-
-
 async def test_without_ffmpeg_the_dry_run_is_skipped() -> None:
-    issues = await dry_run(_job(), _source(), CapabilitySnapshot(), _tools(ToolStatus.MISSING))
+    issues = await dry_run(
+        _job(), sc.make_source(), CapabilitySnapshot(), _tools(ToolStatus.MISSING)
+    )
     assert _codes(issues) == [("encoder.dry_run_skipped", "video.encoder", Severity.WARNING)]
 
 
 async def test_passthrough_has_nothing_to_test() -> None:
     job = _job(passthrough=True)
-    found = _tools(ToolStatus.FOUND, Path("/usr/bin/ffmpeg"))
-    assert await dry_run(job, _source(), CapabilitySnapshot(), found) == []
+    found = sc.make_tools()
+    assert await dry_run(job, sc.make_source(), CapabilitySnapshot(), found) == []
 
 
 async def test_a_job_that_cannot_be_planned() -> None:
-    found = _tools(ToolStatus.FOUND, Path("/usr/bin/ffmpeg"))
-    issues = await dry_run(_job(encoder="nope"), _source(), CapabilitySnapshot(), found)
+    found = sc.make_tools()
+    issues = await dry_run(_job(encoder="nope"), sc.make_source(), CapabilitySnapshot(), found)
     assert _codes(issues) == [("encoder.dry_run_failed", "video.encoder", Severity.ERROR)]
 
 
 def test_the_command_ends_with_one_frame_to_null() -> None:
-    found = _tools(ToolStatus.FOUND, Path("/usr/bin/ffmpeg"))
+    found = sc.make_tools()
     job = _job(custom_params="ref=3")
     job.output.path = Path("/out/x.mkv")
-    argv = dry_run_argv(job, _source(), CapabilitySnapshot(), found)
+    argv = dry_run_argv(job, sc.make_source(), CapabilitySnapshot(), found)
     assert argv[:2] == ["-loglevel", "+level+info"]
     assert argv.count("-loglevel") == 1
     assert argv[-5:] == ["-frames:v", "1", "-f", "null", "-"]

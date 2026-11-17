@@ -15,12 +15,8 @@ from reframe.jsonpatch import apply_patch
 from reframe.models import (
     ConstantQuality,
     JobSettings,
-    MediaSource,
     Severity,
     SourceRef,
-    ToolInfo,
-    ToolSet,
-    ToolStatus,
     VideoSettings,
 )
 from reframe.probe import ProbeError
@@ -56,21 +52,6 @@ def _vp9(**video: object) -> JobSettings:
     )
 
 
-def _found_tools() -> ToolSet:
-    def info(name: str) -> ToolInfo:
-        return ToolInfo(name=name, status=ToolStatus.FOUND, path=Path(f"/usr/bin/{name}"))  # type: ignore[arg-type]
-
-    return ToolSet(
-        ffmpeg=info("ffmpeg"),
-        ffprobe=info("ffprobe"),
-    )
-
-
-def _source() -> MediaSource:
-    source: MediaSource = sc.make_source()
-    return source
-
-
 @pytest.mark.parametrize(
     "job",
     [
@@ -89,7 +70,7 @@ async def test_a_refused_parameter_never_starts_ffmpeg(
         raise AssertionError("FFmpeg must not start")
 
     monkeypatch.setattr(dryrun, "run", no_run)
-    issues = await dry_run(job, _source(), sc.make_caps(), _found_tools())
+    issues = await dry_run(job, sc.make_source(), sc.make_caps(), sc.make_tools())
     assert [(i.severity, i.path) for i in issues] == [(Severity.ERROR, "video.custom_params")]
     assert issues[0].code in ("encoder.custom_param_file", "encoder.custom_param_unknown")
     assert len(issues[0].fixes) == 1
@@ -114,7 +95,11 @@ async def test_ffmpeg_runs_in_a_temporary_folder_that_is_removed(
     work = tmp_path / "work"
     work.mkdir()
     issues = await dry_run(
-        _job(custom_params="aq-mode=3"), _source(), sc.make_caps(), _found_tools(), work_dir=work
+        _job(custom_params="aq-mode=3"),
+        sc.make_source(),
+        sc.make_caps(),
+        sc.make_tools(),
+        work_dir=work,
     )
     assert issues == []
     (cwd,) = seen
@@ -138,7 +123,7 @@ async def test_a_relative_source_is_given_to_ffmpeg_as_an_absolute_path(
     monkeypatch.chdir(tmp_path)
     job = _job()
     job.source = SourceRef(path=Path("in.mkv"))
-    await dry_run(job, _source(), sc.make_caps(), _found_tools(), work_dir=tmp_path)
+    await dry_run(job, sc.make_source(), sc.make_caps(), sc.make_tools(), work_dir=tmp_path)
     (argv,) = argvs
     assert argv[argv.index("-i") + 1] == str(tmp_path / "in.mkv")
 
