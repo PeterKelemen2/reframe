@@ -14,7 +14,6 @@ import contextlib
 import ctypes
 import logging
 import os
-import queue
 import sys
 import threading
 from collections.abc import Callable, Coroutine, Sequence
@@ -26,6 +25,7 @@ from typing import Any, Protocol, cast
 from reframe.events import EventBus
 from reframe.models.events import AppWarningEvent
 from reframe.platform import dbus
+from reframe.platform.childproc import _last_error
 
 __all__ = [
     "ES_CONTINUOUS",
@@ -211,7 +211,7 @@ class LogindBackend:
         except Exception as exc:  # whatever it is, IdleAction is unknown (never raises)
             log.debug("logind IdleAction: %s: %s", type(exc).__name__, exc)
             return None
-        _close_fds(reply.fds)
+        dbus.close_fds(reply.fds)
         value = reply.body[0] if reply.signature == "v" and reply.body else None
         return value if isinstance(value, str) else None
 
@@ -249,10 +249,10 @@ class LogindBackend:
             return f"system bus: {type(exc).__name__}: {exc}"
         index = reply.body[0] if reply.signature == "h" and reply.body else None
         if not isinstance(index, int) or not 0 <= index < len(reply.fds):
-            _close_fds(reply.fds)
+            dbus.close_fds(reply.fds)
             return f"Inhibit returned no file descriptor (signature {reply.signature!r})"
         fd = reply.fds[index]
-        _close_fds([f for f in reply.fds if f != fd])
+        dbus.close_fds([f for f in reply.fds if f != fd])
         with contextlib.suppress(OSError):
             os.set_inheritable(fd, False)
         self._fd = fd
@@ -261,17 +261,11 @@ class LogindBackend:
     async def free(self) -> None:
         fd, self._fd = self._fd, None
         if fd is not None:
-            _close_fds([fd])
-
-
-def _close_fds(fds: Sequence[int]) -> None:
-    for fd in fds:
-        with contextlib.suppress(OSError):
-            os.close(fd)
+            dbus.close_fds([fd])
 
 
 def _discard_reply(reply: dbus.Reply) -> None:
-    _close_fds(reply.fds)
+    dbus.close_fds(reply.fds)
 
 
 class _BusConnection(Protocol):
@@ -447,7 +441,7 @@ class SessionInhibitBackend:
                 except dbus.DBusError as exc:
                     errors.append(f"{interface}: {exc}")
                     continue
-                _close_fds(reply.fds)
+                dbus.close_fds(reply.fds)
                 held = _SessionHold(connection, interface, reply.body[0] if reply.body else None)
                 connection = None  # the hold owns it now
                 return held
@@ -503,50 +497,28 @@ def _load_kernel32() -> Kernel32:  # pragma: no cover - Windows only
     raise OSError("kernel32 exists only on Windows")
 
 
-def _last_error() -> int:
-    get = getattr(ctypes, "get_last_error", None)
-    return int(get()) if get is not None else 0
-
-
-class _StateThread:
-    """A thread that owns the execution state: every ``SetThreadExecutionState`` runs here.
-
-    Commands go through a queue; each returns ``(previous_state, last_error)`` through a
-    ``concurrent.futures.Future``. The thread ends after :meth:`stop`.
-    """
-
-    def __init__(self, kernel32: Kernel32, last_error: Callable[[], int]) -> None:
-        self._kernel32 = kernel32
-        self._last_error = last_error
-        self._commands: queue.SimpleQueue[
-            tuple[int, concurrent.futures.Future[tuple[int, int]]] | None
-        ] = queue.SimpleQueue()
-        self.thread = threading.Thread(target=self._run, name="reframe-sleep-inhibit", daemon=True)
-        self.thread.start()
-
-    def _run(self) -> None:
-        while True:
-            command = self._commands.get()
-            if command is None:
-                return
-            flags, future = command
-            if not future.set_running_or_notify_cancel():
-                continue  # pragma: no cover - never cancelled
-            try:
-                previous = int(self._kernel32.SetThreadExecutionState(flags))
-                error = 0 if previous else self._last_error()
-            except Exception as exc:
-                future.set_exception(exc)
-            else:
-                future.set_result((previous, error))
-
-    def submit(self, flags: int) -> concurrent.futures.Future[tuple[int, int]]:
-        future: concurrent.futures.Future[tuple[int, int]] = concurrent.futures.Future()
-        self._commands.put((flags, future))
-        return future
-
-    def stop(self) -> None:
-        self._commands.put(None)
+def _hold_state(
+    kernel32: Kernel32,
+    last_error: Callable[[], int],
+    ready: concurrent.futures.Future[tuple[int, int]],
+    release: threading.Event,
+) -> None:
+    """The thread that owns the execution state: sets it, reports ``(previous_state,
+    last_error)`` through ``ready``, and clears it once ``release`` is set."""
+    if not ready.set_running_or_notify_cancel():
+        return  # the hold was cancelled before the state was set
+    try:
+        previous = int(kernel32.SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED))
+        error = 0 if previous else last_error()
+    except Exception as exc:
+        ready.set_exception(exc)
+        return
+    ready.set_result((previous, error))
+    if not previous:
+        return
+    release.wait()
+    if not kernel32.SetThreadExecutionState(ES_CONTINUOUS):  # pragma: no cover
+        log.warning("SetThreadExecutionState(ES_CONTINUOUS) failed (error %s)", last_error())
 
 
 class WindowsExecutionStateBackend:
@@ -563,12 +535,13 @@ class WindowsExecutionStateBackend:
     ) -> None:
         self._kernel32 = kernel32
         self._last_error = last_error
-        self._thread: _StateThread | None = None
+        self._thread: threading.Thread | None = None
+        self._release = threading.Event()
 
     @property
     def thread(self) -> threading.Thread | None:
         """The thread that holds the execution state (``None`` when not held)."""
-        return self._thread.thread if self._thread is not None else None
+        return self._thread
 
     async def hold(self, why: str) -> str | None:
         if self._thread is not None:
@@ -578,39 +551,33 @@ class WindowsExecutionStateBackend:
         except Exception as exc:  # OSError, AttributeError: a broken or missing kernel32
             return f"kernel32 not available: {exc}"
         self._kernel32 = k32
-        thread = _StateThread(k32, self._last_error)
+        ready: concurrent.futures.Future[tuple[int, int]] = concurrent.futures.Future()
+        release = threading.Event()
+        thread = threading.Thread(
+            target=_hold_state,
+            args=(k32, self._last_error, ready, release),
+            name="reframe-sleep-inhibit",
+            daemon=True,
+        )
+        thread.start()
         try:
-            previous, error = await asyncio.wrap_future(
-                thread.submit(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)
-            )
+            previous, error = await asyncio.wrap_future(ready)
         except asyncio.CancelledError:
-            # The thread may set the state after all: clear it, then end the thread (the
-            # commands run in order).
-            thread.submit(ES_CONTINUOUS)
-            thread.stop()
+            release.set()  # the thread may set the state after all: it clears it, then ends
             raise
         except Exception as exc:  # a broken binding (ctypes.ArgumentError, OSError)
-            thread.stop()
             return f"SetThreadExecutionState failed: {type(exc).__name__}: {exc}"
         if not previous:  # "If the function fails, the return value is NULL."
-            thread.stop()
             return f"SetThreadExecutionState failed (error {error})"
-        self._thread = thread
+        self._thread, self._release = thread, release
         return None
 
     async def free(self) -> None:
-        state_thread, self._thread = self._thread, None
-        if state_thread is None:
+        thread, self._thread = self._thread, None
+        if thread is None:
             return
-        try:
-            # Shielded: a cancelled caller must not cancel the clearing call itself.
-            previous, error = await asyncio.shield(
-                asyncio.wrap_future(state_thread.submit(ES_CONTINUOUS))
-            )
-            if not previous:  # pragma: no cover - nothing to do but log it
-                log.warning("SetThreadExecutionState(ES_CONTINUOUS) failed (error %s)", error)
-        finally:
-            state_thread.stop()  # the thread ends after the clearing call
+        self._release.set()
+        await asyncio.to_thread(thread.join)
 
 
 class _Ticket:

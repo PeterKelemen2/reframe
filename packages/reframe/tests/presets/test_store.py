@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -12,7 +13,6 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from reframe import settings as settings_module
 from reframe.events import EventBus
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
@@ -237,7 +237,7 @@ def test_a_failed_write_changes_nothing(
     bus = EventBus()
     events = bus.subscribe()
     store = PresetStore(tmp_path, bus)
-    monkeypatch.setattr(settings_module, "_replace", full)
+    monkeypatch.setattr(os, "replace", full)
     result = store.save(mine.model_copy(update={"name": "Renamed"}))
     assert isinstance(result, ValidationIssue)
     assert result.code == "presets.write_failed"
@@ -434,7 +434,7 @@ def test_import_with_a_failed_write_imports_nothing(
     def full(source: Path, target: Path) -> None:
         raise OSError(28, "No space left on device", str(target))
 
-    monkeypatch.setattr(settings_module, "_replace", full)
+    monkeypatch.setattr(os, "replace", full)
     result = store.import_(PresetFile(presets=[Preset(id="a", name="A")]))
     assert result.imported == []
     assert result.skipped == ["A"]
@@ -593,7 +593,7 @@ def test_corrupt_file_that_cannot_be_backed_up_is_left_alone(
     def denied(source: Path, target: Path) -> None:
         raise PermissionError(13, "Permission denied", str(source))
 
-    monkeypatch.setattr(settings_module, "_replace", denied)
+    monkeypatch.setattr(os, "replace", denied)
     store = PresetStore(tmp_path)
     assert store.user_presets() == []
     assert store.read_only
