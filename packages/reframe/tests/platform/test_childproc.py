@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import functools
 import os
 import signal
 import subprocess
@@ -176,7 +177,8 @@ def test_windows_job_is_created_lazily(monkeypatch: pytest.MonkeyPatch) -> None:
     assert created == [first]
 
 
-def test_linux_spawn_options() -> None:
+def test_linux_spawn_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(childproc, "_prctl", lambda *args: 0)
     options = childproc.spawn_options("linux")
     assert options["start_new_session"] is True
     assert callable(options["preexec_fn"])
@@ -193,10 +195,44 @@ def test_preexec_sets_pdeathsig() -> None:
         calls.append(args)
         return 0
 
-    preexec = childproc.linux_preexec(prctl=prctl)
+    for traced in (False, True):
+        # not in a forked child: make the parent check pass with getppid()
+        preexec = childproc.linux_preexec(os.getppid(), prctl=prctl, traced=traced)
+        assert preexec is not None
+        preexec()
+    assert calls == [(childproc.PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0)] * 2
+
+
+def test_preexec_kills_itself_when_the_parent_is_already_gone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    preexec = childproc.linux_preexec(parent_pid=-12345, prctl=lambda *a: 0, traced=False)
     assert preexec is not None
     preexec()
-    assert calls == [(childproc.PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0)]
+    assert killed == [(os.getpid(), SIGKILL)]
+
+
+def test_under_a_tracer_the_preexec_is_prctl_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    monkeypatch.setattr(sys, "gettrace", lambda: print)
+
+    def prctl(*args: Any) -> int:
+        return 0
+
+    preexec = childproc.linux_preexec(parent_pid=-12345, prctl=prctl)
+    assert isinstance(preexec, functools.partial)
+    assert (preexec.func, preexec.args) == (prctl, (childproc.PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0))
+    preexec()
+    assert killed == []
+
+
+def test_under_a_tracer_without_prctl_there_is_no_preexec(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(childproc, "_prctl", None)
+    monkeypatch.setattr(childproc, "_load_prctl", lambda: None)
+    assert childproc.linux_preexec(traced=True) is None
 
 
 _LOCKED_TRACER = """
@@ -212,7 +248,8 @@ sys.monitoring.use_tool_id(tool, "test")
 
 def py_start(code, offset):
     if os.getpid() != parent and code.co_filename.startswith(measured):
-        held.acquire()
+        if not held.acquire(timeout=3):
+            os._exit(97)
     return sys.monitoring.DISABLE
 
 sys.monitoring.register_callback(tool, sys.monitoring.events.PY_START, py_start)

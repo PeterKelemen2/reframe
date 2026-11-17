@@ -156,8 +156,9 @@ def long_source(path: Path, seconds: int = 60) -> Path:
     return path
 
 
-# In the child, before ``exec``: SIGINT back to its default disposition. A C callable, so the
-# forked child runs no Python code (see ``childproc.linux_preexec``).
+# In the child, before ``exec``: SIGINT back to its default disposition. A C callable, so a
+# coverage run has none of this module's code to trace in the forked child
+# (see ``childproc.linux_preexec``).
 _default_sigint = functools.partial(signal.signal, signal.SIGINT, signal.SIG_DFL)
 
 

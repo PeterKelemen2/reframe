@@ -70,8 +70,9 @@ async def run_streaming(argv, *, on_stdout_line, on_stderr_line, cancel) -> RunR
 - [ ] `run` returns `RunResult(returncode, stdout, stderr, duration, timed_out, cancelled)`. It
       never raises for a non-zero exit code. It raises only for programming errors.
 - [ ] Timeout and cancel kill the **whole process tree** (psutil).
-- [ ] Child safety: on Linux, set `PR_SET_PDEATHSIG` (ctypes `prctl` in `preexec_fn`, bound with
-      `functools.partial` so no Reframe Python code runs in the forked child:
+- [ ] Child safety: on Linux, set `PR_SET_PDEATHSIG` (ctypes `prctl` in `preexec_fn`; under a
+      tracer such as coverage, `prctl` alone bound with `functools.partial`, so no Reframe Python
+      code runs in the forked child:
       [decision 0092](../decisions/0092-no-reframe-python-code-in-a-forked-child.md)). On
       Windows, children run inside a Job Object with `KILL_ON_JOB_CLOSE`: Reframe puts its own
       process into the job before it starts the first tool, so every child is born in the job

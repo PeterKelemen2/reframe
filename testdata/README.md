@@ -389,6 +389,25 @@ many blocks on a fast machine too. What `C-11`'s parser must handle:
 The fake's `progress(na_blocks=N, na_fields=[...])` action prints the same start-up blocks and
 `N/A` fields (`reframe_testing.fake_tools.progress`).
 
+### Closed output pipes: FFmpeg keeps encoding, ffprobe dies
+
+Checked on 2026-11-18 with the Arch Linux FFmpeg n9.0.2 and a BtbN n8.1.3 build. Both tools were
+started as the runner starts them (stdin from `/dev/null`, stdout and stderr to pipes, Python's
+default `restore_signals`), and both pipe read ends were closed at once:
+
+```sh
+ffmpeg -hide_banner -nostdin -y -progress pipe:1 -re -f lavfi -i testsrc=d=4:r=25 -f null -
+ffprobe -hide_banner -f lavfi -i testsrc=d=4:r=25 -show_frames -of json
+```
+
+| Tool | Result |
+|------|--------|
+| `ffmpeg` | runs the whole 4 s input and exits 0: it ignores `SIGPIPE` |
+| `ffprobe` | ends at once with return code -13 (`SIGPIPE`) |
+
+So an FFmpeg whose parent died without the death signal runs to its end
+([0092](../docs/decisions/0092-no-reframe-python-code-in-a-forked-child.md)).
+
 ### Hardware encoder failures (stderr and exit codes)
 
 Captured with the **pinned build** (`n9.0.2-17-g2a571b6068-20260930`, BtbN gpl-shared,

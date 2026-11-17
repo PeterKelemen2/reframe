@@ -57,8 +57,8 @@ runpy.run_module("reframe.cli", run_name="__main__", alter_sys=True)
 
 
 # In the child, before ``exec``: SIGINT back to its default disposition (a background pytest run
-# would hand it down as ignored). A C callable, so the forked child runs no Python code (see
-# ``childproc.linux_preexec``).
+# would hand it down as ignored). A C callable, so a coverage run has none of this module's code
+# to trace in the forked child (see ``childproc.linux_preexec``).
 _default_sigint = functools.partial(signal.signal, signal.SIGINT, signal.SIG_DFL)
 
 

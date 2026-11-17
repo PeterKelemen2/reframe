@@ -61,13 +61,28 @@ _prctl: Callable[..., int] | None = None
 _prctl_lock = threading.Lock()
 
 
-def linux_preexec(*, prctl: Callable[..., int] | None = None) -> Callable[[], object] | None:
-    """Return a ``preexec_fn`` that sets ``PR_SET_PDEATHSIG = SIGKILL`` in the child, or ``None``
-    where libc has no ``prctl``.
+def _traced() -> bool:
+    """Whether a tracer or profiler (coverage, a debugger) watches this thread's Python code."""
+    if sys.gettrace() is not None or sys.getprofile() is not None:
+        return True
+    monitoring = getattr(sys, "monitoring", None)
+    return monitoring is not None and any(monitoring.get_tool(i) is not None for i in range(6))
 
-    The ``preexec_fn`` is libc's ``prctl`` with its arguments bound, so the forked child runs no
-    Python code before ``exec``. Python code there can wait forever on a lock that another thread
-    held at the fork (a tracer's, such as coverage's), and the parent then waits for the ``exec``.
+
+def linux_preexec(
+    parent_pid: int | None = None,
+    *,
+    prctl: Callable[..., int] | None = None,
+    traced: bool | None = None,
+) -> Callable[[], object] | None:
+    """Return a ``preexec_fn`` that sets ``PR_SET_PDEATHSIG = SIGKILL`` in the child.
+
+    It also kills the child when the parent died before ``prctl`` took effect (the interpreter's
+    at-fork hooks run first, about a millisecond). Under a tracer that check is left out and the
+    ``preexec_fn`` is libc's ``prctl`` with its arguments bound (``None`` without ``prctl``): the
+    tracer would run on Reframe's code in the child and can wait there forever on its own lock,
+    held by another thread at the fork, while the parent waits for the ``exec``.
+
     ``prctl`` is loaded here, in the parent, never in the forked child. The death signal follows
     the thread that forked, not the process, so the fork must happen on a thread that lives as
     long as its children.
@@ -78,9 +93,22 @@ def linux_preexec(*, prctl: Callable[..., int] | None = None) -> Callable[[], ob
             if _prctl is None:
                 _prctl = _load_prctl()
             prctl = _prctl
-    if prctl is None:
-        return None
-    return functools.partial(prctl, PR_SET_PDEATHSIG, int(getattr(signal, "SIGKILL", 9)), 0, 0, 0)
+    sigkill = int(getattr(signal, "SIGKILL", 9))
+    if _traced() if traced is None else traced:
+        if prctl is None:
+            return None
+        return functools.partial(prctl, PR_SET_PDEATHSIG, sigkill, 0, 0, 0)
+    expected_parent = os.getpid() if parent_pid is None else parent_pid
+    bound = prctl
+
+    def preexec() -> None:  # runs in the child between fork() and exec()
+        if bound is not None:
+            bound(PR_SET_PDEATHSIG, sigkill, 0, 0, 0)
+        if os.getppid() != expected_parent:
+            # The parent died before prctl() took effect: do what the death signal would do.
+            os.kill(os.getpid(), sigkill)
+
+    return preexec
 
 
 class _IoCounters(ctypes.Structure):
