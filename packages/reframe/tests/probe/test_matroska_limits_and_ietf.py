@@ -15,7 +15,16 @@ from reframe.models import JobSettings, MediaSource, SourceRef
 from reframe.probe import matroska
 from reframe.probe.matroska import MatroskaError, read_matroska
 from reframe.probe.prober import Prober, apply_matroska
-from reframe_testing.ebml import cluster, element, header, info, track, tracks
+from reframe_testing.ebml import (
+    cluster,
+    element,
+    header,
+    info,
+    track,
+    tracks,
+    with_bogus_seek_entry,
+)
+from reframe_testing.mkvtoolnix import with_bad_tag
 
 from .conftest import parse_probe
 from .test_matroska import _tool, mkvmerge_tracks, propedit, write
@@ -264,32 +273,6 @@ def _copy(fixture_media: Callable[[str], Path], tmp_path: Path, name: str) -> Pa
     return copy
 
 
-def _with_bogus_seek_entry(path: Path) -> None:
-    """Put a Seek entry ``Tracks → 2^64 - 1`` in front of the SeekHead's entries; the Void
-    after the SeekHead gives the room (FFmpeg reserves one), so no other position moves."""
-    data = bytearray(path.read_bytes())
-    _, ebml_size, ebml_header = matroska._header(bytes(data), 0)
-    assert ebml_size is not None
-    seg = ebml_header + ebml_size
-    seg_id, _, seg_header = matroska._header(bytes(data), seg)
-    assert seg_id == _SEGMENT
-    start = seg + seg_header
-    head_id, head_size, head_header = matroska._header(bytes(data), start)
-    assert head_id == _SEEK_HEAD
-    assert head_size is not None
-    payload = bytes(data[start + head_header : start + head_header + head_size])
-    void_at = start + head_header + head_size
-    void_id, void_size, void_header = matroska._header(bytes(data), void_at)
-    assert void_id == 0xEC
-    assert void_size is not None
-    room = head_header + head_size + void_header + void_size
-    new_head = element(_SEEK_HEAD, seek(_TRACKS, 2**64 - 1) + payload)
-    new_void = element(0xEC, b"\0" * (room - len(new_head) - 9))
-    assert len(new_head) + len(new_void) == room
-    data[start : start + room] = new_head + new_void
-    path.write_bytes(bytes(data))
-
-
 @pytest.mark.needs_ffmpeg
 @pytest.mark.anyio
 async def test_probe_of_a_file_with_a_seek_position_past_2_63(
@@ -303,7 +286,7 @@ async def test_probe_of_a_file_with_a_seek_position_past_2_63(
     long = "N" * 6000
     names = [arg for n in (1, 2, 3) for arg in ("--edit", f"track:a{n}", "--set", f"name={long}")]
     propedit(mkvpropedit, copy, *names, "--edit", "track:a2", "--set", "language-ietf=pt-BR")
-    _with_bogus_seek_entry(copy)
+    with_bogus_seek_entry(copy)
     assert _ffprobe_streams(ffprobe, copy) == 7  # FFmpeg skips the entry
     source = await Prober(ffprobe).probe(copy, use_cache=False)
     assert isinstance(source, MediaSource), source
@@ -356,19 +339,6 @@ async def test_bcp47_comes_from_the_track_in_matroska_and_from_the_iso_code_else
     assert (undetermined.video[0].language, undetermined.video[0].language_ietf) == ("und", None)
 
 
-def _with_bad_tag(path: Path, mkvpropedit: str, bad: bytes) -> None:
-    """Write ``LanguageIETF=en-US`` on a1 with mkvpropedit, then put ``bad`` (5 bytes) in its
-    place (mkvpropedit refuses to write such a value)."""
-    assert len(bad) == 5
-    propedit(mkvpropedit, path, "--edit", "track:a1", "--set", "language-ietf=en-US")
-    data = bytearray(path.read_bytes())
-    needle = bytes.fromhex("22B59D85") + b"en-US"
-    assert data.count(needle) == 1
-    at = data.index(needle) + 4
-    data[at : at + 5] = bad
-    path.write_bytes(bytes(data))
-
-
 @pytest.mark.needs_ffmpeg
 @pytest.mark.anyio
 @pytest.mark.parametrize("bad", [b"en_US", b"j\na;x"])
@@ -383,7 +353,7 @@ async def test_probe_of_an_invalid_language_ietf(
     is a valid ``JobSettings``."""
     mkvpropedit, ffprobe = _tool("mkvpropedit"), _tool("ffprobe")
     copy = _copy(fixture_media, tmp_path, "badtag.mkv")
-    _with_bad_tag(copy, mkvpropedit, bad)
+    with_bad_tag(copy, mkvpropedit, bad)
     assert read_matroska(copy).tracks[1].language_ietf == bad.decode()
     if shutil.which("mkvmerge"):
         first_audio = mkvmerge_tracks(copy)[1]

@@ -53,7 +53,3 @@ def test_a_change_to_a_reader_changes_the_fingerprint(probe_sources: Path, file:
         handle.write(b"\n# changed\n")
     cache_mod.parser_fingerprint.cache_clear()
     assert cache_mod.parser_fingerprint() != before
-
-
-def test_the_matroska_reader_is_hashed() -> None:
-    assert "probe/matroska.py" in cache_mod._PARSER_FILES

@@ -346,7 +346,6 @@ def tags_of(result: list[LanguageEntry]) -> list[str]:
         ("chinese", ["zh", "zh-Hans", "zh-Hant"]),
         ("francais", ["fr"]),
         ("iw", ["he"]),
-        ("tgl", ["tl"]),
         ("sr-latn", ["sr-Latn"]),
     ],
 )

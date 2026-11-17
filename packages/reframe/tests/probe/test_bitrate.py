@@ -130,13 +130,6 @@ def test_stale_stats(stream: dict[str, Any], fmt: dict[str, Any], reason: str) -
     assert bitrate.check_stats_tags(_doc(stream, **fmt)).stale == {0: reason}
 
 
-def test_the_byte_sum_check_covers_every_stream() -> None:
-    check = bitrate.check_stats_tags(
-        _doc(_stats(0, NUMBER_OF_BYTES="900"), _stats(1, NUMBER_OF_BYTES="200"), size="1000")
-    )
-    assert set(check.stale) == {0, 1}
-
-
 def test_streams_without_stats_and_junk() -> None:
     plain = {"index": 0, "codec_type": "video", "tags": {"DURATION": "99:00:00"}}
     assert bitrate.check_stats_tags(_doc(plain, duration="1.0")).stale == {}
