@@ -190,3 +190,19 @@ reports stay where they are.
 - **TVL-13, TTK-02, TTK-08, TPM-17, TCD-06**: truly redundant or nearly so, but named by a decision
   record (0014, 0079, 0080, 0008) as guards, so Tier C. A record edit could release them; not
   worth a record change for 1–7 tests each.
+
+## Implementation (Q-7)
+
+The packages are made by agents in the waves of [plan.md](plan.md), merged into the branch
+`q7-trim` (from `m10-hardening` at `1819150`) and merged into `m10-hardening` at the end. The
+choices in D-1 to D-19 stay as written.
+
+### D-20 Sonnet and Haiku agents in place of Opus (owner's choice)
+
+The owner chose Sonnet for the implementation agents and Haiku for the clean removals, in place of
+[plan.md](plan.md) "Which model" (Opus for every package; D-12). Haiku (effort medium) makes only
+the 17 findings that "Which model" lists as plain deletions, row trims or verified helper moves,
+as the first commit of their package; a Sonnet agent then makes the rest of the package on top of
+that commit (effort high, xhigh for Q-7.2, Q-7.8 and Q-7.9). One Sonnet review (effort xhigh) reads
+each package's diff before its wave is merged. Test runs go through a gate that allows 3 runs at
+a time with 4 xdist workers each (as D-2).
