@@ -206,3 +206,11 @@ as the first commit of their package; a Sonnet agent then makes the rest of the 
 that commit (effort high, xhigh for Q-7.2, Q-7.8 and Q-7.9). One Sonnet review (effort xhigh) reads
 each package's diff before its wave is merged. Test runs go through a gate that allows 3 runs at
 a time with 4 xdist workers each (as D-2).
+
+### D-21 Test names in the Q-6 area files follow a deleted test
+
+The Q-6 area files (`docs/simplify/areas/`) name tests as guards. Where a Q-7 package deletes or
+merges such a test, the line names the keeper, also when the finding does not ask for the edit
+(TVL-05 in `validation.md`, TPM-05 in `probe-metadata.md`). The trim reports of 2026-10-17
+(`docs/test-trim-reports/`) stay as written: they are reports of what that trim did, and V2's
+note on TVL-05's test already says it may be deleted.
