@@ -154,7 +154,8 @@ async def test_timeouts_are_errors(fake_tools: ft.FakeTools, fake_ffmpeg: ToolIn
             ]
         )
     )
-    options = linux(test_timeout=0.5)
+    # The passing 8-bit AMF test must finish in time even on a loaded Windows runner.
+    options = linux(test_timeout=1.5)
     started = time.monotonic()
     snap = await detect_capabilities(fake_ffmpeg, DEFS, options)
     assert time.monotonic() - started < 10
@@ -162,13 +163,13 @@ async def test_timeouts_are_errors(fake_tools: ft.FakeTools, fake_ffmpeg: ToolIn
         status = snap.status(encoder)
         assert (status.state, status.reason) == (
             ERROR,
-            "The test encode did not finish within 0.5 s",
+            "The test encode did not finish within 1.5 s",
         )
     amf = snap.status("hevc_amf")
     assert (amf.state, amf.supports_10bit, amf.reason_10bit) == (
         AVAILABLE,
         False,
-        "The test encode did not finish within 0.5 s",
+        "The test encode did not finish within 1.5 s",
     )
     assert fake_tools.kill_leftovers() == []
 

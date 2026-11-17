@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from reframe.fsretry import replace_file
 from reframe_testing import fake_ffmpeg
 
 SCENARIO_ENV = fake_ffmpeg.SCENARIO_ENV
@@ -345,7 +346,7 @@ class FakeTools:
         data = scenario.to_json() if isinstance(scenario, Scenario) else dict(scenario)
         tmp = self.scenario_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        os.replace(tmp, self.scenario_path)
+        replace_file(tmp, self.scenario_path)  # a fake still reading the old one blocks Windows
 
     def env(self, base: Mapping[str, str] | None = None) -> dict[str, str]:
         """An environment for a child process that selects this scenario and log explicitly."""
