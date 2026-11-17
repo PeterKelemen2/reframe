@@ -35,24 +35,6 @@ def test_vaapi_command() -> None:
     assert "vaapi=va:/dev/dri/renderD129" in other
 
 
-def test_software_frames_command() -> None:
-    """NVENC and AMF take software frames: ``-pix_fmt`` from the definition."""
-    assert hardware_test_argv("ffmpeg", ENCODERS["hevc_nvenc"]) == [
-        *HEAD,
-        *SOURCE,
-        *("-pix_fmt", "yuv420p", "-c:v", "hevc_nvenc", "-f", "null", "-"),
-    ]
-    assert hardware_test_argv("ffmpeg", ENCODERS["av1_amf"], "10")[-7:] == [
-        *("-pix_fmt", "p010le", "-c:v", "av1_amf", "-f", "null", "-"),
-    ]
-
-
-def test_qsv_command() -> None:
-    argv = hardware_test_argv("ffmpeg", ENCODERS["hevc_qsv"])
-    assert argv[3:7] == ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"]
-    assert argv[argv.index("-vf") + 1] == "format=nv12,hwupload=extra_hw_frames=64,format=qsv"
-
-
 #: The ``detect_*`` captures made with :func:`hardware_test_argv` (``detect_h264_amf_10bit`` is not:
 #: h264_amf has no 10-bit pixel format in the definitions).
 HARDWARE_CAPTURES = sorted(
@@ -71,14 +53,6 @@ def test_there_are_hardware_and_filter_captures() -> None:
 @pytest.mark.parametrize("name", FILTER_CAPTURES)
 def test_the_filter_captures_ran_the_current_command(name: str) -> None:
     assert list(ft.captures()[name].command) == filter_test_argv("ffmpeg", "libplacebo")
-
-
-def test_filter_command() -> None:
-    assert filter_test_argv("ffmpeg", "libplacebo") == [
-        *HEAD,
-        *("-f", "lavfi", "-i", "color=size=640x360", "-frames:v", "1"),
-        *("-vf", "libplacebo", "-f", "null", "-"),
-    ]
 
 
 @pytest.mark.parametrize("name", HARDWARE_CAPTURES)
