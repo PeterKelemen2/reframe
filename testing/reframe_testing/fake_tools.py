@@ -306,9 +306,11 @@ class Invocation:
 
 
 #: A logged process that started more than this many seconds after its log entry was written
-#: is not ours: the OS gave its pid to a new process. (psutil's ``create_time`` on Linux is
-#: computed from the boot time in whole seconds, so it can be up to 1 s off.)
-_PID_REUSE_TOLERANCE = 2.0
+#: is not ours: the OS gave its pid to a new process. psutil's ``create_time`` on Linux is
+#: computed from the boot time in whole seconds, so it can be up to 1 s off; on Windows it is
+#: exact, and Windows hands a pid out again within milliseconds, so a 2 s margin there kills
+#: other tests' processes (another xdist worker's ffmpeg, exit code 15).
+_PID_REUSE_TOLERANCE = 0.01 if sys.platform == "win32" else 2.0
 
 
 def _read_entry(path: Path) -> dict[str, Any] | None:
