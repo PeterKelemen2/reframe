@@ -18,6 +18,11 @@ from reframe_testing.server import Api, ApiFactory
 pytestmark = pytest.mark.anyio
 
 
+def _home(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() on Windows
+
+
 async def _finished(api: Api, response_json: dict[str, str]) -> TaskInfo:
     return await api.reframe.tasks.wait(response_json["task_id"])
 
@@ -42,9 +47,13 @@ async def test_system_shows_tools_mode_and_the_stores_start_up_problems(
     assert body["settings_read_only"] is True
 
 
-async def test_diagnostics_names_the_logs_folder(api: Api) -> None:
-    body = (await api.client.get("/api/diagnostics")).json()
-    assert body["logs_dir"] == str(api.reframe.data_dir / "logs")
+async def test_diagnostics_names_the_logs_folder(
+    make_api: ApiFactory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _home(monkeypatch, tmp_path / "elsewhere")  # Windows' temp folder is under the home folder
+    async with make_api() as api:
+        body = (await api.client.get("/api/diagnostics")).json()
+        assert body["logs_dir"] == str(api.reframe.data_dir / "logs")
 
 
 async def test_diagnostics_report_has_the_server_tools_encoders_settings_and_logs(
@@ -87,11 +96,11 @@ async def test_diagnostics_never_holds_the_token_or_the_password(
 async def test_diagnostics_paths_under_the_home_folder_start_with_a_tilde(
     make_api: ApiFactory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("HOME", str(tmp_path))
+    _home(monkeypatch, tmp_path)
     async with make_api() as api:
         body = (await api.client.get("/api/diagnostics")).json()
-    assert body["logs_dir"] == "~/data/logs"
-    assert "  folder: ~/data/logs" in body["text"]
+    assert body["logs_dir"] == str(Path("~/data/logs"))
+    assert f"  folder: {Path('~/data/logs')}" in body["text"]
     assert str(tmp_path) not in body["text"]
 
 

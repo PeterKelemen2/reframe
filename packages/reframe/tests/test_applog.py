@@ -120,7 +120,7 @@ def test_each_record_is_a_json_line_with_its_fields_and_context(
         "reframe.queue.test",
         "job j1 started",
     )
-    assert (first["job_id"], first["path"]) == ("j1", "/media/a.mkv")
+    assert (first["job_id"], first["path"]) == ("j1", str(Path("/media/a.mkv")))
     assert "exception" not in first
     assert second["level"] == "error"
     assert "Traceback" in second["exception"]
