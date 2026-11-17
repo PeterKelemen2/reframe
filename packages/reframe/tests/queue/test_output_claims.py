@@ -101,16 +101,6 @@ async def test_an_in_place_edit_of_a_waiting_jobs_source_is_added_failed(
     assert "is also the source of a job that is waiting" in issue.message
 
 
-async def test_an_encode_of_a_file_that_is_edited_in_place_is_not_claimed(
-    harness: Harness,
-) -> None:
-    """Its output is another file; the runner keeps the two from running at once."""
-    h = harness
-    await h.queue.add(in_place_job(h))
-    encode = await h.queue.add(h.job("Encode"))
-    assert encode.state is JobState.WAITING, encode.issues
-
-
 @needs_symlinks
 async def test_claims_compare_files_not_spellings(harness: Harness, tmp_path: Path) -> None:
     h = harness

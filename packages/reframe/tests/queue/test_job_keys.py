@@ -23,6 +23,7 @@ from reframe_testing.links import needs_symlinks
 
 from .conftest import Harness, encode_rule, queue_at, restore_together, store_rows
 from .test_in_place_scheduling import active_for, ended_before_started, in_place_job, queued
+from .test_output_claims import hold_share
 
 pytestmark = pytest.mark.anyio
 
@@ -302,21 +303,7 @@ async def test_busy_while_a_restored_job_waits_for_its_keys(
     job.output.path = share / "Restored.mkv"
     waiting = await h.queue.add(job)
     await h.queue.close()
-    answer = threading.Event()
-    loop_thread = threading.get_ident()
-
-    def held(real: Callable[..., os.stat_result]) -> Callable[..., os.stat_result]:
-        def call(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
-            text = os.fspath(path) if isinstance(path, (str, os.PathLike)) else None
-            on_share = isinstance(text, str) and text.startswith(str(share))
-            if on_share and threading.get_ident() != loop_thread:
-                answer.wait(10)
-            return real(path, *args, **kwargs)
-
-        return call
-
-    monkeypatch.setattr(os, "stat", held(os.stat))
-    monkeypatch.setattr(os, "lstat", held(os.lstat))
+    held = hold_share(monkeypatch, share)
     again = queue_at(h)
     try:
         again.list()
@@ -324,10 +311,10 @@ async def test_busy_while_a_restored_job_waits_for_its_keys(
         await asyncio.sleep(0.1)
         assert again.busy
         assert again.get(waiting.id).state is JobState.WAITING  # type: ignore[union-attr]
-        answer.set()
+        held.answer.set()
         [ended] = await again.wait([waiting.id])
     finally:
-        answer.set()
+        held.answer.set()
         await again.close()
     monkeypatch.undo()
     assert ended.state is JobState.DONE

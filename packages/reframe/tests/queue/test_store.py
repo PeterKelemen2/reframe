@@ -60,9 +60,18 @@ def test_columns_of_the_plan(tmp_path: Path) -> None:
 def test_round_trip_keeps_unknown_fields(tmp_path: Path) -> None:
     path = tmp_path / "queue.sqlite3"
     store = store_at(path)
+    plan = EncodePlan(
+        job_type="encode",
+        steps=[],
+        output_tmp=Path("/o/a.part.mkv"),
+        output_final=Path("/o/a.mkv"),
+        expected_duration=1.0,
+        display="",
+    )
     first = job(
         "a",
         state=JobState.FAILED,
+        plan=plan,
         issues=[ValidationIssue(severity=Severity.ERROR, code="x.y", message="bad")],
         started_at=NOW,
         finished_at=NOW,
@@ -193,21 +202,3 @@ def test_a_corrupt_file_that_cannot_be_moved(
     assert [w.code for w in loaded.warnings] == ["queue.unreadable"]
     assert store.read_only
     store.close()
-
-
-def test_plan_json_round_trip(tmp_path: Path) -> None:
-    path = tmp_path / "queue.sqlite3"
-    store = store_at(path)
-    plan = EncodePlan(
-        job_type="encode",
-        steps=[],
-        output_tmp=Path("/o/a.part.mkv"),
-        output_final=Path("/o/a.mkv"),
-        expected_duration=1.0,
-        display="",
-    )
-    run(store, lambda: store.upsert([row_of(job("a", plan=plan))]))
-    store.close()
-    again = store_at(path)
-    assert run(again, again.load).jobs[0].plan == plan
-    again.close()

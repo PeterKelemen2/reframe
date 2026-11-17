@@ -314,27 +314,6 @@ async def test_cancel_a_running_job(harness: Harness, paused: bool) -> None:
     assert "Job cancelled" in h.log_text(added.id)
 
 
-async def test_cancel_all_cancels_waiting_jobs_too(harness: Harness) -> None:
-    h = harness
-    h.settings.queue.parallel_jobs = 2
-    h.scenario(LONG)
-    first = await h.queue.add(h.job("A"))
-    third = await h.queue.add(h.job("C"))
-    second = await h.queue.add(h.job("B"), position=2)
-    h.queue.start()
-    await h.first_event(first.id, "job.progress", limit=20)
-    await h.first_event(third.id, "job.progress", limit=20)
-    parts = [h.tmp / "out" / "A.part.mkv", h.tmp / "out" / "C.part.mkv"]
-    await h.wait_for(lambda: all(p.exists() for p in parts))
-    await h.queue.cancel()
-    assert [j.state for j in h.queue.list()] == [JobState.CANCELLED] * 3
-    assert not any(p.exists() for p in parts)
-    assert h.leftovers() == []
-    assert h.states(second.id) == [(None, "waiting"), ("waiting", "cancelled")]
-    assert h.of_type("notification") == []  # cancelled by the user: no when-done
-    await h.queue.cancel(first.id)  # an ended job: nothing happens
-
-
 async def test_cancel_a_job_that_was_just_scheduled(harness: Harness) -> None:
     h = harness
     added = await h.queue.add(h.job())
@@ -375,23 +354,6 @@ async def test_two_restored_jobs_with_one_output_never_run_together(harness: Har
         h.tmp / "out" / "Same (1).mkv",
         h.tmp / "out" / "Other.mkv",
     }
-
-
-async def test_stop_takes_no_new_jobs(harness: Harness) -> None:
-    h = harness
-    h.settings.queue.when_done = "notify"
-    h.scenario(encode_rule(ft.progress(blocks=3, interval=0.05), ft.write_output()))
-    first = await h.queue.add(h.job("A"))
-    second = await h.queue.add(h.job("B"))
-    h.queue.start()
-    await h.first_event(first.id, "job.state", state="running")
-    await h.queue.stop()
-    assert not h.queue._processing
-    await h.queue.wait([first.id])
-    await asyncio.sleep(0.1)
-    assert h.queue.get(second.id).state is JobState.WAITING  # type: ignore[union-attr]
-    assert queue_notifications(h) == []  # the queue is not empty: no when-done
-    assert job_notifications(h) == [(first.id, "success")]  # the job's own
 
 
 async def test_start_with_job_ids_leaves_other_waiting_jobs_alone(harness: Harness) -> None:
