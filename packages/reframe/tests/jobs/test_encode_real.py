@@ -5,6 +5,7 @@ from the environment (``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE``, else discovery),
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 import shutil
 import signal
@@ -155,9 +156,9 @@ def long_source(path: Path, seconds: int = 60) -> Path:
     return path
 
 
-def _default_sigint() -> None:
-    """In the child, before ``exec``: SIGINT back to its default disposition."""
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
+# In the child, before ``exec``: SIGINT back to its default disposition. A C callable, so the
+# forked child runs no Python code (see ``childproc.linux_preexec``).
+_default_sigint = functools.partial(signal.signal, signal.SIGINT, signal.SIG_DFL)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGINT; Windows: the mocked tests")

@@ -193,19 +193,45 @@ def test_preexec_sets_pdeathsig() -> None:
         calls.append(args)
         return 0
 
-    preexec = childproc.linux_preexec(os.getppid(), prctl=prctl)
-    preexec()  # we are not in a forked child, so make the parent check pass with getppid()
+    preexec = childproc.linux_preexec(prctl=prctl)
+    assert preexec is not None
+    preexec()
     assert calls == [(childproc.PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0)]
 
 
-def test_preexec_kills_itself_when_the_parent_is_already_gone(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    killed: list[tuple[int, int]] = []
-    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append((pid, sig)))
-    preexec = childproc.linux_preexec(parent_pid=-12345, prctl=lambda *a: 0)
-    preexec()
-    assert killed == [(os.getpid(), SIGKILL)]
+_LOCKED_TRACER = """
+import os, subprocess, sys, threading
+import reframe
+from reframe.platform import childproc
+
+measured = os.path.dirname(reframe.__file__)
+parent = os.getpid()
+held = threading.Lock()
+tool = next(i for i in range(6) if sys.monitoring.get_tool(i) is None)
+sys.monitoring.use_tool_id(tool, "test")
+
+def py_start(code, offset):
+    if os.getpid() != parent and code.co_filename.startswith(measured):
+        held.acquire()
+    return sys.monitoring.DISABLE
+
+sys.monitoring.register_callback(tool, sys.monitoring.events.PY_START, py_start)
+sys.monitoring.set_events(tool, sys.monitoring.events.PY_START)
+options = childproc.spawn_options()
+held.acquire()
+print(subprocess.run(["true"], **options).returncode)
+"""
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="PR_SET_PDEATHSIG is Linux-only")
+def test_a_tracer_lock_held_at_the_fork_does_not_block_a_spawn() -> None:
+    """A tracer that takes a lock on the first call of measured code (as coverage does) blocks a
+    forked child forever when another thread held that lock at the fork, if the ``preexec_fn`` is
+    Reframe's Python code. The stdlib's at-fork hooks still run there; they are not measured."""
+    result = subprocess.run(
+        [sys.executable, "-c", _LOCKED_TRACER], capture_output=True, text=True, timeout=60
+    )
+    assert (result.returncode, result.stdout.strip()) == (0, "0"), result.stderr
 
 
 class _FakePopen:

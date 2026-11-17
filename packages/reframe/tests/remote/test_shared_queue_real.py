@@ -4,6 +4,7 @@ the teardown kills the CLIs and the owners it started (an owner is known by its 
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import signal
@@ -55,10 +56,10 @@ runpy.run_module("reframe.cli", run_name="__main__", alter_sys=True)
 """
 
 
-def _default_sigint() -> None:
-    """In the child, before ``exec``: SIGINT back to its default disposition (a background
-    pytest run would hand it down as ignored)."""
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
+# In the child, before ``exec``: SIGINT back to its default disposition (a background pytest run
+# would hand it down as ignored). A C callable, so the forked child runs no Python code (see
+# ``childproc.linux_preexec``).
+_default_sigint = functools.partial(signal.signal, signal.SIGINT, signal.SIG_DFL)
 
 
 def _own_console() -> dict[str, Any]:

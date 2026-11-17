@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import functools
 import os
 import posixpath
 import signal
@@ -60,14 +61,16 @@ _prctl: Callable[..., int] | None = None
 _prctl_lock = threading.Lock()
 
 
-def linux_preexec(
-    parent_pid: int | None = None, *, prctl: Callable[..., int] | None = None
-) -> Callable[[], None]:
-    """Return a ``preexec_fn`` that sets ``PR_SET_PDEATHSIG = SIGKILL`` in the child.
+def linux_preexec(*, prctl: Callable[..., int] | None = None) -> Callable[[], object] | None:
+    """Return a ``preexec_fn`` that sets ``PR_SET_PDEATHSIG = SIGKILL`` in the child, or ``None``
+    where libc has no ``prctl``.
 
-    ``prctl`` is loaded here, in the parent, never in the forked child. The death signal
-    follows the thread that forked, not the process, so the fork must happen on a thread that
-    lives as long as its children.
+    The ``preexec_fn`` is libc's ``prctl`` with its arguments bound, so the forked child runs no
+    Python code before ``exec``. Python code there can wait forever on a lock that another thread
+    held at the fork (a tracer's, such as coverage's), and the parent then waits for the ``exec``.
+    ``prctl`` is loaded here, in the parent, never in the forked child. The death signal follows
+    the thread that forked, not the process, so the fork must happen on a thread that lives as
+    long as its children.
     """
     global _prctl
     if prctl is None:
@@ -75,18 +78,9 @@ def linux_preexec(
             if _prctl is None:
                 _prctl = _load_prctl()
             prctl = _prctl
-    expected_parent = os.getpid() if parent_pid is None else parent_pid
-    bound = prctl
-    sigkill = int(getattr(signal, "SIGKILL", 9))
-
-    def preexec() -> None:  # runs in the child between fork() and exec()
-        if bound is not None:
-            bound(PR_SET_PDEATHSIG, sigkill, 0, 0, 0)
-        if os.getppid() != expected_parent:
-            # The parent died before prctl() took effect: do what the death signal would do.
-            os.kill(os.getpid(), sigkill)
-
-    return preexec
+    if prctl is None:
+        return None
+    return functools.partial(prctl, PR_SET_PDEATHSIG, int(getattr(signal, "SIGKILL", 9)), 0, 0, 0)
 
 
 class _IoCounters(ctypes.Structure):
@@ -289,8 +283,8 @@ def spawn_options(platform: str | None = None, *, user_facing: bool = False) -> 
         windows_job()  # Reframe joins the job before its first child starts
         return {"creationflags": CREATE_NO_WINDOW}
     options: dict[str, Any] = {"start_new_session": True}
-    if platform.startswith("linux"):
-        options["preexec_fn"] = linux_preexec()
+    if platform.startswith("linux") and (preexec := linux_preexec()) is not None:
+        options["preexec_fn"] = preexec
     return options
 
 
