@@ -48,7 +48,8 @@
       It is never run in CI.
 
 Every pytest run is parallel: `pytest-xdist` `-n auto` is in `addopts` (a full run takes about 6
-minutes on 12 cores instead of about 35). `-n 0` runs in one process. The `benchmark` tests skip
+minutes on 12 cores instead of about 35; `-n auto` starts one worker per physical core, 6 there,
+[decision 0091](../decisions/0091-test-trimming-step.md)). `-n 0` runs in one process. The `benchmark` tests skip
 under xdist and run in one process (`-n 0`) in the CI benchmark job
 ([decision 0084](../decisions/0084-parallel-test-runs-with-pytest-xdist.md)).
 
@@ -179,6 +180,51 @@ Tier B (if there is time before v1; otherwise after it):
       the frontend commands pass.
 
 Tier C findings are not planned; they are listed in [docs/simplify/README.md](../simplify/README.md).
+
+## Q-7 Test trimming
+
+Make the Python suite smaller and faster without losing a guarantee: remove or merge the tests
+whose guarantee another test already gives, and change how the suite is scheduled
+([decision 0091](../decisions/0091-test-trimming-step.md)). An audit at commit `38cf3eb` found the
+candidates and planned the work: [docs/test-audit/](../test-audit/README.md). Each step below is
+one work package of [docs/test-audit/plan.md](../test-audit/plan.md); the package lists its
+findings, files, order and its full "Done when". Every step is done when the `CLAUDE.md`
+commands pass, the whole-run coverage comparison of the plan shows no lost line of `reframe` or
+`reframe_server` (or names it and the test that still pins it), and `docs/status.md` has its row.
+Q-7 does not block the release.
+
+Tier A:
+
+- [ ] **Q-7.1** Validation and batch (TVL-03, -05, -06, -08; TBT-01 to -04).
+- [ ] **Q-7.2** Queue and analysis (TQA-01 to -09). Done when: the queue tests pass 5 times in a
+      row and the verdicts' mutations still fail the merged tests.
+- [ ] **Q-7.3** Probe, metadata and languages (TPM-04 to -08, -14, -15).
+- [ ] **Q-7.4** Command, capabilities, dimensions and definitions (TCD-01 to -05, -09, -11; TDM-02,
+      -04). Done when: the plan snapshots are unchanged.
+- [ ] **Q-7.5** Server, CLI, naming and preview (TSV-01, -02; TCL-01, -04; TNP-01 to -03).
+- [ ] **Q-7.6** Tools, platform and the testing package (TTP-01, -03 to -05; TTK-01, -03 to -05,
+      -07, -09 to -12).
+- [ ] **Q-7.7** Speed (SPD-01, -02, -04 on POSIX, -07; TPM-01; the fetch server's poll). Done when:
+      two full runs on an idle machine pass with the base's count plus 10 and take about 295 s at
+      the base of `38cf3eb` (373 s before).
+
+Tier B:
+
+- [ ] **Q-7.8** Validation grids and cases (TVL-01, -02, -04, -07, -09 to -12). Done when: the
+      strengthened agreement matrix fails on every mutation of the TVL-02 verdict.
+- [ ] **Q-7.9** One validity test per built-in preset (TDM-01, -03). Done when: each planted preset
+      defect fails the merged test and is reported on its own.
+- [ ] **Q-7.10** Server, CLI, naming and preview merges (TSV-03 to -07; TCL-02, -05 to -08; TNP-04,
+      -05).
+- [ ] **Q-7.11** Batch, command and probe merges (TBT-05 to -07; TCD-07, -08, -10; TPM-02, -09 to
+      -11, -13, -16).
+- [ ] **Q-7.12** Shared helpers in tools, platform and the testing package (TTP-06 to -08; TTK-06,
+      -13).
+- [ ] **Q-7.13** Speed (SPD-05, the per-test timeout; SPD-08; the Windows half of SPD-04 on the
+      Windows test VM). Done when: a hanging test ends its worker with a stack dump and the run
+      goes on.
+
+Tier C findings are not planned; they are listed in [docs/test-audit/README.md](../test-audit/README.md).
 
 ## Licensing
 
