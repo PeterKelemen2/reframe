@@ -54,11 +54,6 @@ def test_episode_info(
     assert episode_labels([Path(path)]) == [label]
 
 
-def test_episode_label_with_season() -> None:
-    assert episode_labels([A.path(1, 5)], season=True) == ["S01E05"]
-    assert episode_labels([Path("/tv/Show - 07.mkv")], season=True) == ["E07"]
-
-
 def test_episode_order() -> None:
     names = [
         "Show.S02E01.mkv",
@@ -198,13 +193,10 @@ def test_the_example_season_is_one_group() -> None:
     assert all(not m.differences for m in group.members if m.match == "exact")
 
 
-@pytest.mark.parametrize("level", ["strict", "standard", "loose"])
-def test_one_group_at_every_level(level: str) -> None:
-    (group,) = group_sources(A.season(1), level)  # type: ignore[arg-type]
-    assert len(group.members) == 12
-    assert (
-        group.id != group_sources(A.season(1), "standard" if level != "standard" else "loose")[0].id
-    )
+def test_one_group_at_every_level() -> None:
+    groups = [group_sources(A.season(1), level) for level in MATCH_LEVELS]
+    assert [[len(g.members) for g in found] for found in groups] == [[12]] * 3
+    assert len({found[0].id for found in groups}) == 3
 
 
 def test_two_seasons_of_one_release_are_one_group_at_the_standard_level() -> None:
@@ -316,6 +308,8 @@ def test_episode_labels() -> None:
         "movie.mkv",
     ]
     assert episode_labels(paths[2:], season=True) == ["S01E02", "movie.mkv"]
+    assert episode_labels([A.path(1, 5)], season=True) == ["S01E05"]
+    assert episode_labels([Path("/tv/Show - 07.mkv")], season=True) == ["E07"]
     assert episode_labels([Path("/a/Show.S01E01.mkv"), Path("/a/Show.S02E01.mkv")]) == [
         "S01E01",
         "S02E01",
