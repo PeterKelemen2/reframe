@@ -239,24 +239,6 @@ def test_subtitle_rules() -> None:
     )
 
 
-def test_settings_of_the_other_kind_are_an_error() -> None:
-    wrong_audio = OutputTrackRule(
-        selector=selector("audio", languages=["ja"]), settings=SubtitleOutputSettings()
-    )
-    wrong_sub = OutputTrackRule(
-        selector=selector("subtitle", title_pattern="^Full$"), settings=AudioOutputSettings()
-    )
-    result = resolve_tracks(
-        template(audio=[wrong_audio], subtitles=[wrong_sub]), example(), definitions=DEFS
-    )
-    assert result.draft.audio == []
-    assert result.draft.subtitles == []
-    assert [(i.code, i.path) for i in result.draft.issues] == [
-        ("batch.rule_settings", "audio_rules[0].settings"),
-        ("batch.rule_settings", "subtitle_rules[0].settings"),
-    ]
-
-
 def test_explicit_audio_with_subtitle_defaults_hears_the_explicit_audio() -> None:
     preset = JobTemplate(
         audio_rules=[
@@ -481,9 +463,15 @@ def test_a_track_that_two_rules_take_is_the_first_of_its_language_for_both() -> 
 def test_a_rule_with_settings_of_the_other_kind_is_not_an_exact_cell() -> None:
     e05 = A.recorded(1, 5)
     wrong = audio_rule(languages=["jpn"], settings=SubtitleOutputSettings())
-    result = resolve_tracks(JobTemplate(audio_rules=[wrong]), e05, definitions=DEFS)
-    assert result.draft.audio == []
+    wrong_sub = sub_rule(AudioOutputSettings(), title_pattern="^Full$")
+    result = resolve_tracks(
+        JobTemplate(audio_rules=[wrong], subtitle_rules=[wrong_sub]), e05, definitions=DEFS
+    )
+    assert (result.draft.audio, result.draft.subtitles) == ([], [])
     (cell,) = [m for m in result.matches if m.kind == "audio"]
     assert (cell.status, cell.severity.value if cell.severity else None) == ("missing", "error")
     assert cell.message == "the rule has subtitle settings: it makes no audio track"
-    assert [i.code for i in result.draft.issues] == ["batch.rule_settings"]
+    assert [(i.code, i.path) for i in result.draft.issues] == [
+        ("batch.rule_settings", "audio_rules[0].settings"),
+        ("batch.rule_settings", "subtitle_rules[0].settings"),
+    ]

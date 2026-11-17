@@ -14,12 +14,8 @@ import pytest
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     JobSettings,
-    MediaSource,
     Severity,
     SourceRef,
-    ToolInfo,
-    ToolSet,
-    ToolStatus,
     VideoSettings,
 )
 from reframe.probe import ProbeError
@@ -55,21 +51,6 @@ def _job(custom: str, encoder: str = "libx264") -> JobSettings:
     )
 
 
-def _found_tools() -> ToolSet:
-    def info(name: str) -> ToolInfo:
-        return ToolInfo(name=name, status=ToolStatus.FOUND, path=Path(f"/usr/bin/{name}"))  # type: ignore[arg-type]
-
-    return ToolSet(
-        ffmpeg=info("ffmpeg"),
-        ffprobe=info("ffprobe"),
-    )
-
-
-def _source() -> MediaSource:
-    source: MediaSource = sc.make_source()
-    return source
-
-
 @pytest.mark.parametrize(
     ("custom", "rest"),
     [
@@ -88,7 +69,7 @@ async def test_the_dry_run_never_starts_ffmpeg_with_a_cqm_file(
 
     monkeypatch.setattr(dryrun, "run", no_run)
     job = _job(custom)
-    issues = await dry_run(job, _source(), sc.make_caps(), _found_tools())
+    issues = await dry_run(job, sc.make_source(), sc.make_caps(), sc.make_tools())
     assert [(i.code, i.severity, i.path) for i in issues] == [
         ("encoder.custom_param_file", Severity.ERROR, "video.custom_params")
     ]
@@ -108,7 +89,7 @@ async def test_the_matrix_presets_are_still_dry_run(
         return RunResult(returncode=0, stdout=b"", stderr=b"frame=1\n", duration=0.1)
 
     monkeypatch.setattr(dryrun, "run", fake_run)
-    assert await dry_run(_job(custom), _source(), sc.make_caps(), _found_tools()) == []
+    assert await dry_run(_job(custom), sc.make_source(), sc.make_caps(), sc.make_tools()) == []
     (argv,) = argvs
     assert argv[argv.index("-x264-params:v:0") + 1].endswith(custom)
 

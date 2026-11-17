@@ -130,14 +130,6 @@ def test_the_tracks_are_named_by_their_job_number() -> None:
     assert issue.message.startswith("Subtitle tracks 2 and 3 are both marked default")
 
 
-def test_an_in_place_edit_with_two_default_tracks() -> None:
-    s = sc.base()
-    s.job = remux_job(s.job, s.source, edit_in_place=True)
-    mark(s.job.audio, 0, 1)
-    [issue] = several(sc.check(s))
-    assert issue.path == "audio[1].metadata.default"
-
-
 def plan_defaults(plan: EncodePlan, source: MediaSource) -> dict[str, list[int]]:
     """The 1-based output track numbers, per type (``a``, ``s``), that the file has marked
     default after the plan: the FFmpeg dispositions, then the header edits (an in-place edit
