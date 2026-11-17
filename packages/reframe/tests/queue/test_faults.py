@@ -378,6 +378,8 @@ async def test_collision_auto_rename(harness: Harness) -> None:
     assert final.read_text() == "the user's file"
     assert [i.code for i in ended.issues if i.code.startswith("output.")] == ["output.renamed"]
     assert "Movie.mkv exists: saved as Movie (2).mkv" in h.log_text(ended.id)
+    [note] = h.of_type("notification")  # the job's own: the harness's when-done is "nothing"
+    assert note.message == "Movie (2).mkv"  # type: ignore[union-attr]
 
 
 async def test_collision_overwrite(harness: Harness) -> None:

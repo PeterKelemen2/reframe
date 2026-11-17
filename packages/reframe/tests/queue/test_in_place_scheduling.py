@@ -92,6 +92,8 @@ async def test_an_encode_waits_for_an_in_place_edit_of_its_source(harness: Harne
     h.scenario(encode_rule(ft.progress(blocks=1, end=True)))
     edit = await h.queue.add(in_place_job(h))
     encode = await h.queue.add(h.job("Encode"))
+    # Its output is another file, so it is not claimed; the runner keeps the two apart.
+    assert encode.state is JobState.WAITING, encode.issues
     h.queue.start()
     await h.queue.wait([edit.id, encode.id])
     assert ended_before_started(h, edit.id, encode.id)
