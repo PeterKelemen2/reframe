@@ -34,7 +34,7 @@ SCRIPT = textwrap.dedent(
         "matches": L.matches("zh", "cmn-Hans"),
         "loaded": sorted(m for m in sys.modules if m.split(".")[0] in BLOCKED),
     }
-    print(json.dumps(result, ensure_ascii=False))
+    print(json.dumps(result))
     """
 )
 

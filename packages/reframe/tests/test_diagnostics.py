@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -93,7 +94,7 @@ def test_each_tool_has_status_origin_path_version_flags_libraries_and_reason(
     assert lines[:8] == [
         "  ffmpeg: found",
         "    origin: settings",
-        "    path: ~/bin/ffmpeg",
+        f"    path: {Path('~/bin/ffmpeg')}",
         "    version: n9.0.2",
         "    release: 9.0.2",
         "    build flags: --enable-gpl --prefix=~/ffmpeg_build",
@@ -129,7 +130,7 @@ def test_the_settings_have_their_known_fields_only(tmp_path: Path) -> None:
     lines = section(text, "Settings")
     assert "s3cr3t" not in text
     assert '  diagnostics.log_level = "debug"' in lines
-    assert '  output.naming.output_folder = "~/Videos"' in lines
+    assert f"  output.naming.output_folder = {json.dumps(str(Path('~/Videos')))}" in lines
     assert f"  schema_version = {current_version('settings')}" in lines
 
 
@@ -162,7 +163,7 @@ def test_the_logs_part_lists_the_files_that_exist(tmp_path: Path) -> None:
     (logs / "9f3e2d1c.log").write_bytes(b"job")
     lines = section(report(tmp_path, home=str(tmp_path)), "Logs")
     assert lines == [
-        "  folder: ~/logs",
+        f"  folder: {Path('~/logs')}",
         "  reframe.log: 2.0 KiB",
         "  reframe.log.1: 10 B",
         "  reframe.log.2: 20 B",
