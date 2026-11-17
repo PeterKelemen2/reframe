@@ -22,7 +22,7 @@ import httpx
 import pytest
 from websockets.sync.client import connect
 
-from reframe import settings as settings_module
+from reframe import fsretry
 from reframe.models import ServerEndpoint
 from reframe.queue.lock import LOCK_FILE, StoreLock
 from reframe.tools.discovery import ALLOW_SCRIPT_TOOLS_ENV
@@ -368,7 +368,7 @@ async def test_on_windows_publish_waits_for_a_client_that_has_the_file_open(
             raise PermissionError(13, "Access is denied", str(target))
         replace(source, target)
 
-    monkeypatch.setattr(settings_module, "WINDOWS", True)
+    monkeypatch.setattr(fsretry, "WINDOWS", True)
     monkeypatch.setattr(os, "replace", open_elsewhere)
     async with make_api() as api:
         assert owner.publish(api.app, 8000) == endpoint

@@ -11,12 +11,13 @@ from typing import Any
 
 import pytest
 
+from reframe import fsretry
 from reframe import settings as settings_module
 from reframe.events import EventBus
 from reframe.models import AppSettings, AppWarningEvent
 from reframe.models import migrations as migrations_module
 from reframe.models.migrations import MigrationRegistry, current_version, migrate
-from reframe.settings import REPLACE_ATTEMPTS, JsonDocumentFile, SettingsStore, replace_file
+from reframe.settings import JsonDocumentFile, SettingsStore
 from reframe_testing.helpers import drain, nested
 
 #: A made-up settings.json at schema version 1. Its ``from_the_future`` field is unknown to
@@ -255,7 +256,7 @@ def test_corrupt_file_that_cannot_be_backed_up_is_left_alone(
     def fail(source: Path, target: Path) -> None:
         raise PermissionError(13, "Permission denied", str(source))
 
-    monkeypatch.setattr(settings_module, "_replace", fail)
+    monkeypatch.setattr(os, "replace", fail)
     store = SettingsStore(tmp_path)
     assert store.load() == AppSettings()
     [problem] = store.problems
@@ -287,7 +288,7 @@ def test_write_is_atomic_and_leaves_no_temporary_file(
         seen.append((source, target))
         raise OSError(28, "No space left on device", str(target))
 
-    monkeypatch.setattr(settings_module, "_replace", crash)
+    monkeypatch.setattr(os, "replace", crash)
     warning = store.write(AppSettings.model_validate({"queue": {"parallel_jobs": 3}}))
     assert warning is not None
     assert warning.code == "settings.write_failed"
@@ -315,6 +316,9 @@ def test_unserialisable_data_is_a_failure_not_an_exception(tmp_path: Path) -> No
     assert list(tmp_path.iterdir()) == []
 
 
+REAL_REPLACE = os.replace
+
+
 class FlakyReplace:
     """``os.replace`` that fails ``failures`` times with a Windows sharing violation."""
 
@@ -327,7 +331,7 @@ class FlakyReplace:
         if self.calls <= self.failures:
             # ERROR_SHARING_VIOLATION as Python reports it on Windows
             raise PermissionError(13, "The process cannot access the file", str(target))
-        os.replace(source, target)
+        REAL_REPLACE(source, target)
 
 
 def test_windows_sharing_violation_is_retried(
@@ -335,55 +339,14 @@ def test_windows_sharing_violation_is_retried(
 ) -> None:
     flaky = FlakyReplace(failures=2)
     sleeps: list[float] = []
-    monkeypatch.setattr(settings_module, "WINDOWS", True)
-    monkeypatch.setattr(settings_module, "_replace", flaky)
-    monkeypatch.setattr(settings_module, "_sleep", sleeps.append)
+    monkeypatch.setattr(fsretry, "WINDOWS", True)
+    monkeypatch.setattr(os, "replace", flaky)
+    monkeypatch.setattr(fsretry, "_sleep", sleeps.append)
     store = SettingsStore(tmp_path)
     assert store.write(AppSettings.model_validate({"queue": {"parallel_jobs": 2}})) is None
     assert flaky.calls == 3
     assert sleeps == [0.05, 0.1]
     assert SettingsStore(tmp_path).load().queue.parallel_jobs == 2
-
-
-def test_windows_gives_up_after_the_last_attempt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    flaky = FlakyReplace(failures=100)
-    monkeypatch.setattr(settings_module, "WINDOWS", True)
-    monkeypatch.setattr(settings_module, "_replace", flaky)
-    monkeypatch.setattr(settings_module, "_sleep", lambda seconds: None)
-    warning = SettingsStore(tmp_path).write(AppSettings())
-    assert warning is not None
-    assert warning.code == "settings.write_failed"
-    assert flaky.calls == REPLACE_ATTEMPTS
-    assert list(tmp_path.iterdir()) == []  # the temporary file is gone
-
-
-def test_permission_error_is_not_retried_on_linux(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    flaky = FlakyReplace(failures=1)
-    monkeypatch.setattr(settings_module, "WINDOWS", False)
-    monkeypatch.setattr(settings_module, "_replace", flaky)
-    with pytest.raises(PermissionError):
-        replace_file(tmp_path / "a", tmp_path / "b")
-    assert flaky.calls == 1
-
-
-def test_other_os_errors_are_not_retried_on_windows(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls: list[int] = []
-
-    def gone(source: Path, target: Path) -> None:
-        calls.append(1)
-        raise FileNotFoundError(2, "No such file", str(source))
-
-    monkeypatch.setattr(settings_module, "WINDOWS", True)
-    monkeypatch.setattr(settings_module, "_replace", gone)
-    with pytest.raises(FileNotFoundError):
-        replace_file(tmp_path / "a", tmp_path / "b")
-    assert calls == [1]
 
 
 def test_backup_names_do_not_collide(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -542,6 +505,7 @@ def test_windows_link_target_is_written_mock(
     real.write_text("{", encoding="utf-8")
     link = config / "settings.json"
     monkeypatch.setattr(settings_module, "WINDOWS", True)
+    monkeypatch.setattr(fsretry, "WINDOWS", True)
     monkeypatch.setattr(
         settings_module, "_link_target", lambda path: real if path == link else path
     )
@@ -552,8 +516,8 @@ def test_windows_link_target_is_written_mock(
         seen.append((source, target))
         flaky(source, target)
 
-    monkeypatch.setattr(settings_module, "_replace", replace)
-    monkeypatch.setattr(settings_module, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(os, "replace", replace)
+    monkeypatch.setattr(fsretry, "_sleep", lambda seconds: None)
     store = SettingsStore(config)
     store.load()  # reads "{" through the "link": damaged
     [problem] = store.problems

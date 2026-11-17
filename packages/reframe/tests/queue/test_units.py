@@ -15,6 +15,7 @@ from unittest import mock
 import psutil
 import pytest
 
+from reframe import fsretry
 from reframe.definitions import load_definitions
 from reframe.events import EventBus
 from reframe.models import (
@@ -312,40 +313,27 @@ def test_rename_without_hard_links(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         files.rename_no_replace(a, tmp_path / "c.mkv")
 
 
-def test_windows_rename_and_replace_retry_an_open_target(
+def test_windows_rename_retries_an_open_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Windows: ``os.rename`` refuses an existing target; an open target gives
     ``PermissionError`` (a sharing violation), which is tried again (mocked on Linux)."""
     monkeypatch.setattr(files, "WINDOWS", True)
+    monkeypatch.setattr(fsretry, "WINDOWS", True)
     sleeps: list[float] = []
-    monkeypatch.setattr(files, "_sleep", sleeps.append)
-    calls: list[tuple[str, str]] = []
-    failures = iter([True, True, False, True, False])
+    monkeypatch.setattr(fsretry, "_sleep", sleeps.append)
+    calls: list[str] = []
+    failures = iter([True, True, False])
 
-    def flaky(name: str) -> Any:
-        def call(src: Any, dst: Any) -> None:
-            calls.append((name, Path(dst).name))
-            if next(failures):
-                raise PermissionError(13, "The process cannot access the file")
+    def flaky(src: Any, dst: Any) -> None:
+        calls.append(Path(dst).name)
+        if next(failures):
+            raise PermissionError(13, "The process cannot access the file")
 
-        return call
-
-    monkeypatch.setattr(os, "rename", flaky("rename"))
-    monkeypatch.setattr(os, "replace", flaky("replace"))
+    monkeypatch.setattr(os, "rename", flaky)
     files.rename_no_replace(tmp_path / "a", tmp_path / "b")
-    assert calls == [("rename", "b")] * 3
+    assert calls == ["b"] * 3
     assert sleeps == [0.05, 0.1]
-    files.replace_file(tmp_path / "a", tmp_path / "c")
-    assert calls[3:] == [("replace", "c")] * 2
-
-    def always(src: Any, dst: Any) -> None:
-        raise PermissionError(13, "in use")
-
-    monkeypatch.setattr(os, "replace", always)
-    with pytest.raises(PermissionError):
-        files.replace_file(tmp_path / "a", tmp_path / "c")
-    assert len(sleeps) == 2 + 1 + files.ATTEMPTS - 1
 
 
 def test_remove_files_reports_problems(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -357,8 +345,8 @@ def test_remove_files_reports_problems(tmp_path: Path, monkeypatch: pytest.Monke
     assert not present.exists()
     assert len(problems) == 1
     assert "folder" in problems[0]
-    monkeypatch.setattr(files, "WINDOWS", True)
-    monkeypatch.setattr(files, "_sleep", lambda s: None)
+    monkeypatch.setattr(fsretry, "WINDOWS", True)
+    monkeypatch.setattr(fsretry, "_sleep", lambda s: None)
     locked = tmp_path / "locked.part.mkv"
     locked.write_text("x")
     original = Path.unlink

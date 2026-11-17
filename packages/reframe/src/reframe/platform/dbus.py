@@ -39,6 +39,7 @@ __all__ = [
     "Message",
     "Reply",
     "call",
+    "close_fds",
     "decode_message",
     "encode",
     "encode_method_call",
@@ -386,7 +387,7 @@ def decode_message(data: bytes, fds: list[int]) -> Message:
         with _malformed_is_protocol_error():
             header = _decode_header(data)
     except DBusProtocolError:
-        _close_all(fds)
+        close_fds(fds)
         fds.clear()
         raise
     n_fds = int(header.fields.get(FIELD_UNIX_FDS, 0))
@@ -396,7 +397,7 @@ def decode_message(data: bytes, fds: list[int]) -> Message:
         with _malformed_is_protocol_error():
             body = _decode_body(data, header)
     except DBusProtocolError:
-        _close_all(own_fds)
+        close_fds(own_fds)
         raise
     return Message(header.msg_type, header.serial, header.fields, body, own_fds)
 
@@ -454,7 +455,8 @@ def _decode_body(data: bytes, header: _Header) -> list[str | int]:
     return [reader.value(c) for c in sig]
 
 
-def _close_all(fds: Sequence[int]) -> None:
+def close_fds(fds: Sequence[int]) -> None:
+    """Close each file descriptor; one that is already closed is skipped."""
     for fd in fds:
         with contextlib.suppress(OSError):
             os.close(fd)
@@ -520,7 +522,7 @@ class _Connection:
 
     def close(self) -> None:
         self.closed = True
-        _close_all(self.fds)
+        close_fds(self.fds)
         self.fds.clear()
         with contextlib.suppress(OSError):
             self.sock.close()
@@ -602,7 +604,7 @@ class Connection:
         except BaseException:
             conn.close()
             raise
-        _close_all(reply.fds)
+        close_fds(reply.fds)
         return cls(conn)
 
     @property
@@ -649,10 +651,10 @@ def _wait_reply(conn: _Connection, serial: int) -> Reply:
     while True:
         message = conn.read_message()
         if message.msg_type not in (METHOD_RETURN, ERROR) or message.reply_serial != serial:
-            _close_all(message.fds)  # signals (NameAcquired), stray calls, old replies
+            close_fds(message.fds)  # signals (NameAcquired), stray calls, old replies
             continue
         if message.msg_type == ERROR:
-            _close_all(message.fds)
+            close_fds(message.fds)
             raise _error(message)
         return Reply(message.signature, message.body, message.fds)
 

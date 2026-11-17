@@ -20,6 +20,7 @@ from typing import Any, Literal
 from pydantic import ValidationError
 
 from reframe.events import EventBus
+from reframe.fsretry import replace_file
 from reframe.models.events import AppWarningEvent
 from reframe.models.issues import ValidationIssue
 from reframe.models.migrations import (
@@ -34,7 +35,6 @@ from reframe.models.text import json_text
 
 __all__ = [
     "MAX_DEPTH",
-    "REPLACE_ATTEMPTS",
     "SETTINGS_FILE",
     "DocumentRead",
     "JsonDocumentFile",
@@ -42,7 +42,6 @@ __all__ = [
     "SettingsUpdate",
     "StoreProblems",
     "parse_document",
-    "replace_file",
     "too_deep",
     "validation_detail",
 ]
@@ -50,11 +49,7 @@ __all__ = [
 log = logging.getLogger(__name__)
 
 SETTINGS_FILE = "settings.json"
-#: How often a replace that fails with ``PermissionError`` is tried on Windows.
-REPLACE_ATTEMPTS = 6
-#: The first pause between two tries (seconds); it doubles each time.
-REPLACE_DELAY = 0.05
-#: ``True`` on Windows: a ``PermissionError`` of ``os.replace`` is retried (tests set it).
+#: ``True`` on Windows (tests set it).
 WINDOWS = os.name == "nt"
 #: The deepest nesting (objects and lists, the document itself is level 1) that a settings or
 #: presets document may have. Far below the depth where the parser, Pydantic's ``model_dump``
@@ -91,29 +86,6 @@ def _link_target(path: Path) -> Path:
     except OSError:
         return path
     return Path(os.path.realpath(path))
-
-
-def _replace(source: Path, target: Path) -> None:
-    os.replace(source, target)
-
-
-def _sleep(seconds: float) -> None:
-    time.sleep(seconds)
-
-
-def replace_file(source: Path, target: Path) -> None:
-    """``os.replace(source, target)``; on Windows a ``PermissionError`` (the target is open
-    in another process) is retried a few times before it is raised."""
-    delay = REPLACE_DELAY
-    for attempt in range(REPLACE_ATTEMPTS):
-        try:
-            _replace(source, target)
-            return
-        except PermissionError:
-            if not WINDOWS or attempt == REPLACE_ATTEMPTS - 1:
-                raise
-            _sleep(delay)
-            delay *= 2
 
 
 @dataclass(frozen=True)
