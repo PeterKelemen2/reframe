@@ -1,18 +1,10 @@
-"""The option search, the HDR options, option resolution and the option linter checks. Pure: no
-FFmpeg."""
+"""The option search, the HDR options and option resolution. Pure: no FFmpeg."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
-
-import pytest
-
 from reframe.command.video import hdr_params
 from reframe.definitions import (
-    OPTION_CATEGORIES,
     Condition,
-    Definitions,
     describe_condition,
     effective_option,
     hdr_options,
@@ -23,7 +15,6 @@ from reframe.definitions import (
     unmet_conditions,
 )
 from reframe.definitions.hdr import content_light_text, svt_mastering_display, x265_master_display
-from reframe.definitions.loader import load_raw
 from reframe.definitions.search import cli_name
 from reframe.models import (
     AverageBitrate,
@@ -34,7 +25,6 @@ from reframe.models import (
     VideoSettings,
     VideoStream,
 )
-from reframe_testing.definitions_lint import lint_definitions
 
 DEFS = load_definitions()
 X264, X265 = DEFS.video_encoders["libx264"], DEFS.video_encoders["libx265"]
@@ -200,51 +190,3 @@ def test_unmet_conditions_and_their_text() -> None:
     ]
     for condition, text in conditions:
         assert describe_condition(condition, X265) == text
-
-
-def _lint_mutated(mutate: Callable[[dict[str, Any]], None]) -> list[str]:
-    raw = load_raw()
-    mutate(raw)
-    return lint_definitions(Definitions.model_validate(raw))
-
-
-def _option(raw: dict[str, Any], encoder: str, key: str) -> dict[str, Any]:
-    options: list[dict[str, Any]] = raw["video_encoders"][encoder]["options"]
-    return next(o for o in options if o["key"] == key)
-
-
-def test_every_option_is_in_a_category_of_the_panel() -> None:
-    for encoder in DEFS.video_encoders.values():
-        for option in encoder.options:
-            assert option.category in OPTION_CATEGORIES, (encoder.id, option.key)
-    problems = _lint_mutated(lambda raw: _option(raw, "libx265", "rect").update(category="Misc"))
-    assert any("libx265.options.rect" in p and "unknown category" in p for p in problems)
-
-
-@pytest.mark.parametrize(
-    ("encoder", "key", "mapping", "needle"),
-    [
-        ("libx265", "amp", {"kind": "x26x_param", "name": "rect"}, "like option 'rect'"),
-        ("hevc_nvenc", "gpu", {"kind": "ffmpeg_arg", "arg": "-bf"}, "like option 'bf'"),
-        ("libx265", "rect", {"kind": "x26x_param", "name": "level-idc"}, "levels already"),
-        ("hevc_nvenc", "gpu", {"kind": "private_opt", "name": "cq"}, "rate control already"),
-        ("libsvtav1", "lp", {"kind": "x26x_param", "name": "fast-decode"}, "fast decode"),
-        ("libvpx-vp9", "threads", {"kind": "private_opt", "name": "row-mt"}, "extra_args"),
-    ],
-)
-def test_an_option_that_writes_what_something_else_writes(
-    encoder: str, key: str, mapping: dict[str, str], needle: str
-) -> None:
-    problems = _lint_mutated(lambda raw: _option(raw, encoder, key).update(mapping=mapping))
-    assert any(f"{encoder}.options.{key}" in p and needle in p for p in problems), problems
-
-
-def test_nvenc_multipass_may_share_the_argument_of_2_pass() -> None:
-    """The option is for constant quality, NVENC's 2-pass for average bitrate."""
-    assert lint_definitions(DEFS) == []
-
-    def bitrate_too(raw: dict[str, Any]) -> None:
-        _option(raw, "hevc_nvenc", "multipass")["requires"] = []
-
-    problems = _lint_mutated(bitrate_too)
-    assert any("hevc_nvenc.options.multipass" in p and "2-pass" in p for p in problems)

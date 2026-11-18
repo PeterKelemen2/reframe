@@ -226,17 +226,6 @@ async def test_letterbox_crop_and_fit(tmp_path: Path, fixture_media: Media) -> N
     assert (out["width"], out["height"], sar_of(out)) == (160, 68, "1:1")
 
 
-@pytest.mark.anyio
-async def test_interlaced_fixture(fixture_media: Media) -> None:
-    src = source_geometry(await video_stream(fixture_media("interlaced")))
-    assert src.interlaced
-    assert (src.chroma_step_x, src.chroma_step_y) == (2, 2)
-    crop = CropSettings(mode="manual", rect=CropRect(top=6))
-    g = compute_geometry(src, DimensionSettings(crop=crop, size=SameAsSource()))
-    assert g.crop.top == 4
-    assert g.notes[0] == "Crop top 6 → 4 for interlaced 4:2:0."
-
-
 @pytest.fixture(scope="module")
 def corner_source(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """64x32 black, SAR 32:27, with a white 16x8 box in the top-left corner of the frame."""

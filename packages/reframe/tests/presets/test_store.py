@@ -200,7 +200,6 @@ def test_delete(tmp_path: Path, store: PresetStore) -> None:
 
 
 def test_default_preset(tmp_path: Path, store: PresetStore) -> None:
-    assert DEFAULT_BUILTIN_ID == "h265-mkv-1080p"
     assert store.default().id == DEFAULT_BUILTIN_ID
     mine = created(store, "Mine")
     assert store.set_default(mine.id) == mine

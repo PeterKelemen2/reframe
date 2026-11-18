@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from reframe.definitions import Definitions, load_definitions
+from reframe.definitions import OPTION_CATEGORIES, Definitions, load_definitions
 from reframe.definitions.loader import load_raw
 from reframe_testing.definitions_lint import lint_definitions
 
@@ -461,3 +461,39 @@ def test_audio_fallback_problems_are_reported() -> None:
     assert _has(problems, "libfdk_aac.fallback", "duplicate")
     assert _has(problems, "ac3.fallback", "must end in an encoder of every GPL build")
     assert _has(problems, "eac3.fallback", "needs a fallback chain")
+
+
+def test_every_option_is_in_a_category_of_the_panel() -> None:
+    for encoder in load_definitions().video_encoders.values():
+        for option in encoder.options:
+            assert option.category in OPTION_CATEGORIES, (encoder.id, option.key)
+    problems = _lint_mutated(lambda raw: _option(raw, "libx265", "rect").update(category="Misc"))
+    assert any("libx265.options.rect" in p and "unknown category" in p for p in problems)
+
+
+@pytest.mark.parametrize(
+    ("encoder", "key", "mapping", "needle"),
+    [
+        ("libx265", "amp", {"kind": "x26x_param", "name": "rect"}, "like option 'rect'"),
+        ("hevc_nvenc", "gpu", {"kind": "ffmpeg_arg", "arg": "-bf"}, "like option 'bf'"),
+        ("libx265", "rect", {"kind": "x26x_param", "name": "level-idc"}, "levels already"),
+        ("hevc_nvenc", "gpu", {"kind": "private_opt", "name": "cq"}, "rate control already"),
+        ("libsvtav1", "lp", {"kind": "x26x_param", "name": "fast-decode"}, "fast decode"),
+        ("libvpx-vp9", "threads", {"kind": "private_opt", "name": "row-mt"}, "extra_args"),
+    ],
+)
+def test_an_option_that_writes_what_something_else_writes(
+    encoder: str, key: str, mapping: dict[str, str], needle: str
+) -> None:
+    problems = _lint_mutated(lambda raw: _option(raw, encoder, key).update(mapping=mapping))
+    assert any(f"{encoder}.options.{key}" in p and needle in p for p in problems), problems
+
+
+def test_nvenc_multipass_may_share_the_argument_of_2_pass() -> None:
+    """The option is for constant quality, NVENC's 2-pass for average bitrate."""
+
+    def bitrate_too(raw: dict[str, Any]) -> None:
+        _option(raw, "hevc_nvenc", "multipass")["requires"] = []
+
+    problems = _lint_mutated(bitrate_too)
+    assert any("hevc_nvenc.options.multipass" in p and "2-pass" in p for p in problems)

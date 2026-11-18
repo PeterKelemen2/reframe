@@ -274,15 +274,10 @@ def test_metadata_edit_plan_edits_the_source() -> None:
     assert plan.display == (
         f"header_edit {quote_posix(str(src.ref.path))} audio 1: language=por language_ietf=pt-BR"
     )
-
-
-def test_metadata_edit_plan_needs_no_tool() -> None:
-    job, src = in_place()
-    job.audio[0].metadata.language = "pt-BR"
     none = tools()
     none.ffmpeg.status = ToolStatus.MISSING
     none.ffprobe.status = ToolStatus.MISSING
-    assert [step.kind for step in build_plan(job, src, caps(), none).steps] == ["header_edit"]
+    assert build_plan(job, src, caps(), none, shell="posix") == plan
 
 
 def test_metadata_edit_plan_needs_no_output_path() -> None:
