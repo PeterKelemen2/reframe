@@ -619,6 +619,7 @@ async def test_the_build_that_a_killed_swap_left_aside_is_put_back_at_start(
     marker = installed_build(install)
     previous = _kill_during_the_swap(install)
     caplog.set_level(logging.WARNING, logger="reframe.tools.fetch")
+    caplog.clear()
 
     service = _service(tmp_path, runner.data_dir)
     service.start()
@@ -628,8 +629,12 @@ async def test_the_build_that_a_killed_swap_left_aside_is_put_back_at_start(
     assert not previous.exists()
     assert tools.ffmpeg.status is ToolStatus.FOUND, tools.ffmpeg.reason
     assert tools.ffmpeg.path == install / "bin" / "ffmpeg"
-    assert [r.getMessage() for r in caplog.records] == [
-        f"Put back the FFmpeg build that an interrupted install left in {previous}: {install}"
+    warnings = [r for r in caplog.records if r.name == "reframe.tools.fetch"]
+    assert [(r.levelno, r.getMessage()) for r in warnings] == [
+        (
+            logging.WARNING,
+            f"Put back the FFmpeg build that an interrupted install left in {previous}: {install}",
+        )
     ]
 
 
