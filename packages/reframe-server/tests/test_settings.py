@@ -54,24 +54,11 @@ async def test_an_invalid_patch_is_a_problem_with_its_issues(api: Api) -> None:
 
 
 @pytest.mark.parametrize(
-    "patch",
-    [
-        [{"op": "add", "path": "/tools/ffmpeg", "value": "/bin/sh"}],
-        [{"op": "add", "path": "/tools/extra", "value": "/bin/sh"}],
-    ],
-    ids=["a tool", "an unknown tool key"],
-)
-async def test_a_web_client_cannot_choose_a_program(api: Api, patch: list[dict[str, Any]]) -> None:
-    response = await api.client.put("/api/settings", json=patch)
-    assert (response.status_code, response.json()["code"]) == (403, "settings.tools_forbidden")
-    assert api.reframe.settings.get().tools.model_dump(exclude_none=True) == {}
-
-
-@pytest.mark.parametrize(
     ("tools", "named"),
     [
         (["ffprobe"], ["REFRAME_FFPROBE"]),
         (["ffprobe", "ffmpeg"], ["REFRAME_FFMPEG", "REFRAME_FFPROBE"]),
+        (["extra"], []),
     ],
 )
 async def test_a_refused_program_names_the_variables_of_the_tools_it_sets(
@@ -83,6 +70,7 @@ async def test_a_refused_program_names_the_variables_of_the_tools_it_sets(
     assert (response.status_code, problem["code"]) == (403, "settings.tools_forbidden")
     shown = [variable for variable in ENV_VARS.values() if variable in problem["detail"]]
     assert shown == named
+    assert api.reframe.settings.get().tools.model_dump(exclude_none=True) == {}
 
 
 async def test_a_concurrent_change_cannot_slip_a_program_past_the_check(

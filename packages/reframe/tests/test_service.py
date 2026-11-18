@@ -26,7 +26,7 @@ from reframe.service import (
     Reframe,
     ReframeClosedError,
 )
-from reframe.tools import ENV_VARS, CancelToken
+from reframe.tools import CancelToken
 from reframe_testing import fake_tools as ft
 from reframe_testing.helpers import drain
 from reframe_testing.waiting import wait_until
@@ -55,25 +55,6 @@ def stdout_file(path: Path) -> ft.Action:
 
 def probe_rule(*actions: ft.Action, exit_code: int = 0) -> ft.Rule:
     return ft.Rule(tool="ffprobe", argv_has=["-show_streams"], actions=actions, exit_code=exit_code)
-
-
-@pytest.fixture
-def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """No tool overrides, user folders in ``tmp_path``."""
-    for var in ENV_VARS.values():
-        monkeypatch.delenv(var, raising=False)
-    for name in ("config", "data", "cache"):
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
-    return tmp_path
-
-
-@pytest.fixture
-def fake(env: Path, fake_tools: ft.FakeTools, monkeypatch: pytest.MonkeyPatch) -> ft.FakeTools:
-    """``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE`` point at the fake tools (multitrack probe)."""
-    monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
-    monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
-    fake_tools.set_scenario(ft.Scenario([probe_rule(stdout_file(MULTITRACK))]))
-    return fake_tools
 
 
 @pytest.fixture

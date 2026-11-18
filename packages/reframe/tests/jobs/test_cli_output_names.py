@@ -14,7 +14,7 @@ import pytest
 from reframe.batch import service as batch_service
 from reframe.batch.grouping import episode_key
 from reframe.batch.service import BatchService
-from reframe.cli import EXIT_FAILED, EXIT_OK, IN_PROCESS_ENV
+from reframe.cli import EXIT_FAILED, EXIT_OK
 from reframe.jobs import JobService
 from reframe.models import (
     AppSettings,
@@ -133,6 +133,7 @@ def test_encode_never_writes_another_file_of_the_command(
     assert f"[1/2] {E01} → {copy}" in out
     assert f"[2/2] {E01_OUT} → {folder / 'Anime.Show.S01E01.Pilot (1).mkv'}" in out
     assert "[batch.output_is_source · output.path]" in out
+    assert "[output.overwrite" not in out  # never "will be replaced" next to "never overwritten"
     assert f"The output {E01_OUT} is a source file of this command ([2/2] {E01_OUT})" in out
     assert copy not in outputs_of(queues)
     assert out.splitlines()[-1] == "Summary: 1 done, 0 failed, 0 cancelled, 1 not queued."
@@ -313,13 +314,10 @@ async def test_the_row_order_is_computed_off_the_event_loop(
 
 @pytest.mark.needs_ffmpeg
 def test_batch_never_overwrites_a_file_named_as_an_output_with_the_real_queue(
-    fixture_media: Media, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    fixture_media: Media, tmp_path: Path, dirs: dict[str, Path]
 ) -> None:
     """E01 of ``anime-s01`` and ``multitrack.mkv`` copied as ``Anime.Show.S01E01.Pilot.mkv``,
     with the collision setting *overwrite*: the copy is not overwritten."""
-    for name in ("config", "data", "cache"):
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
-    monkeypatch.setenv(IN_PROCESS_ENV, "1")  # the in-process real queue
     write_settings(tmp_path, collision="overwrite")
     folder = tmp_path / "media" / S01
     folder.mkdir(parents=True)
@@ -358,19 +356,6 @@ def test_a_member_labelled_by_its_file_name_shows_the_name_once(
         f"  {web}",
         f"  E02  {e02}",
     ]
-
-
-def test_encode_does_not_say_will_be_replaced_next_to_never_overwritten(
-    cli_env: ft.FakeTools,
-    queues: Queues,
-    tmp_path: Path,
-) -> None:
-    """With *overwrite*, E01's output is the other file of the folder."""
-    write_settings(tmp_path, collision="overwrite")
-    folder, _e01, _copy = two_sources(cli_env, tmp_path, E01_OUT)
-    result = invoke("encode", str(folder))
-    assert "[batch.output_is_source · output.path]" in result.stdout
-    assert "[output.overwrite" not in result.stdout, result.stdout
 
 
 def test_encode_keeps_the_overwrite_warning_of_a_file_outside_the_command(

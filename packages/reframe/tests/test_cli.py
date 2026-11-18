@@ -6,7 +6,6 @@ import io
 import json
 import os
 import re
-import subprocess
 import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -73,9 +72,8 @@ from reframe.models import (
 )
 from reframe.platform import longpath
 from reframe.service import ProbeError, ProbeErrorKind
-from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
-from reframe_testing.cli import invoke
+from reframe_testing.cli import invoke, run_cli
 
 REPO = Path(__file__).resolve().parents[3]
 PROBES = REPO / "testdata" / "probes"
@@ -174,22 +172,6 @@ def cache_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     monkeypatch.setenv("REFRAME_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.setenv("REFRAME_CONFIG_DIR", str(tmp_path / "config"))
     return tmp_path
-
-
-@pytest.fixture
-def fake_env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_tools: ft.FakeTools
-) -> ft.FakeTools:
-    """The fake ffmpeg and ffprobe, and private folders."""
-    for var in ENV_VARS.values():
-        monkeypatch.delenv(var, raising=False)
-    for name in ("config", "data", "cache"):
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
-    monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
-    monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
-    monkeypatch.delenv("NO_COLOR", raising=False)
-    monkeypatch.delenv("FORCE_COLOR", raising=False)
-    return fake_tools
 
 
 def replay(fake: ft.FakeTools, probe: Path, frames: Path | None = None) -> None:
@@ -318,9 +300,9 @@ def test_garbage_file_real_ffprobe(cache_env: Path) -> None:
 # Refresh with --snapshot-update.
 @pytest.mark.parametrize("name", sorted(INDEX))
 def test_recorded_probe_snapshot(
-    fake_env: ft.FakeTools, tmp_path: Path, name: str, snapshot: SnapshotAssertion
+    cli_env: ft.FakeTools, tmp_path: Path, name: str, snapshot: SnapshotAssertion
 ) -> None:
-    path = recorded_file(tmp_path, name, fake_env)
+    path = recorded_file(tmp_path, name, cli_env)
     result = invoke("probe", str(path), env={"COLUMNS": "120"})
     assert result.exit_code == EXIT_OK, result.stderr
     assert result.stderr == ""
@@ -330,30 +312,8 @@ def test_recorded_probe_snapshot(
     assert without_path_row(result.stdout) == snapshot
 
 
-def test_recorded_badges_and_bitrate_sources(fake_env: ft.FakeTools, tmp_path: Path) -> None:
-    out = invoke("probe", str(recorded_file(tmp_path, "truehd-atmos", fake_env))).stdout
-    rows = table_rows(out)
-    codecs = {row[3] for row in rows.values()}
-    assert {"TrueHD Atmos lossless", "AC-3"} <= codecs
-    assert any(row[6].endswith("(stats tag)") for row in rows.values())
-    assert "(Commentary?)" in out  # title only, no flag: outlined
-    assert 'title contains "Commentary"' in out
-
-    out = invoke("probe", str(recorded_file(tmp_path, "dts-hd-ma", fake_env))).stdout
-    assert "DTS-HD MA lossless" in out
-    assert "(Commentary?)" in out  # the structure heuristic
-
-    out = invoke("probe", str(recorded_file(tmp_path, "pgs", fake_env))).stdout
-    assert "PGS" in out
-    assert "(stats tag)" in out
-    assert f"bitmap 1920{X}1080" in out
-
-    out = invoke("probe", str(recorded_file(tmp_path, "dv-p8", fake_env))).stdout
-    assert "Dolby Vision 8.1" in out
-
-
 def test_a_path_windows_refuses_is_named_as_too_long(
-    fake_env: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    cli_env: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(longpath, "long_paths_enabled", lambda: False)
     path = tmp_path / ("x" * 250) / "movie.mkv"
@@ -362,14 +322,14 @@ def test_a_path_windows_refuses_is_named_as_too_long(
     assert "does not exist" not in line
 
 
-def test_missing_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
+def test_missing_file(cli_env: ft.FakeTools, tmp_path: Path) -> None:
     line = assert_clean_failure(invoke("probe", str(tmp_path / "nope.mkv")), EXIT_NOT_FOUND)
     assert line == f"error: {tmp_path / 'nope.mkv'}: The file does not exist."
     json_result = invoke("probe", "--json", str(tmp_path / "nope.mkv"))
     assert_clean_failure(json_result, EXIT_NOT_FOUND)
 
 
-def test_folder_is_not_a_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
+def test_folder_is_not_a_file(cli_env: ft.FakeTools, tmp_path: Path) -> None:
     line = assert_clean_failure(invoke("probe", str(tmp_path)), EXIT_NOT_FOUND)
     assert "The path is not a file." in line
 
@@ -378,7 +338,7 @@ def test_folder_is_not_a_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     sys.platform == "win32" or getattr(os, "geteuid", lambda: 1)() == 0,
     reason="POSIX permissions (root can read anything)",
 )
-def test_unreadable_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
+def test_unreadable_file(cli_env: ft.FakeTools, tmp_path: Path) -> None:
     """An unreadable file is the facade's one-line exit 3, not click's usage error (exit 2)."""
     path = tmp_path / "locked.mkv"
     path.write_bytes(b"\x1aE\xdf\xa3")
@@ -390,11 +350,11 @@ def test_unreadable_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     finally:
         path.chmod(0o644)
     # Reported before ffprobe reads the file (only discovery's version checks ran).
-    assert all(call == ("-version",) for call in fake_env.calls("ffprobe"))
+    assert all(call == ("-version",) for call in cli_env.calls("ffprobe"))
 
 
-def test_garbage_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
-    fake_env.set_scenario(
+def test_garbage_file(cli_env: ft.FakeTools, tmp_path: Path) -> None:
+    cli_env.set_scenario(
         ft.Scenario(
             [
                 ft.Rule(
@@ -416,8 +376,8 @@ def test_garbage_file(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     assert_clean_failure(invoke("probe", "--json", str(path)), EXIT_FAILED)
 
 
-def test_invalid_ffprobe_output(fake_env: ft.FakeTools, tmp_path: Path) -> None:
-    fake_env.set_scenario(
+def test_invalid_ffprobe_output(cli_env: ft.FakeTools, tmp_path: Path) -> None:
+    cli_env.set_scenario(
         ft.Scenario([ft.Rule(tool="ffprobe", argv_has=["-show_streams"], actions=[ft.stdout("[")])])
     )
     path = tmp_path / "x.mkv"
@@ -426,7 +386,7 @@ def test_invalid_ffprobe_output(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     assert "not JSON" in line
 
 
-def test_missing_ffprobe(fake_env: ft.FakeTools, tmp_path: Path) -> None:
+def test_missing_ffprobe(cli_env: ft.FakeTools, tmp_path: Path) -> None:
     missing = tmp_path / "no" / "ffprobe"
     path = tmp_path / "x.mkv"
     path.write_bytes(b"x")
@@ -441,8 +401,8 @@ def test_missing_ffprobe(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     assert_clean_failure(result, EXIT_NOT_FOUND)
 
 
-def test_broken_ffprobe(fake_env: ft.FakeTools, tmp_path: Path) -> None:
-    fake_env.set_scenario(
+def test_broken_ffprobe(cli_env: ft.FakeTools, tmp_path: Path) -> None:
+    cli_env.set_scenario(
         ft.Scenario(
             [
                 ft.Rule(
@@ -461,8 +421,8 @@ def test_broken_ffprobe(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     assert "error while loading shared libraries" in line
 
 
-def test_too_old_ffprobe(fake_env: ft.FakeTools, tmp_path: Path) -> None:
-    fake_env.set_scenario(
+def test_too_old_ffprobe(cli_env: ft.FakeTools, tmp_path: Path) -> None:
+    cli_env.set_scenario(
         ft.Scenario([ft.Rule(tool="ffprobe", argv_has=["-version"], actions=[ft.version("6.1.1")])])
     )
     path = tmp_path / "x.mkv"
@@ -472,7 +432,7 @@ def test_too_old_ffprobe(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     assert "too old" in line
 
 
-def test_usage_error_exit_code(fake_env: ft.FakeTools) -> None:
+def test_usage_error_exit_code(cli_env: ft.FakeTools) -> None:
     result = invoke("probe")
     assert result.exit_code == EXIT_USAGE
     assert "Traceback" not in result.output
@@ -514,8 +474,8 @@ def test_origin_text() -> None:
     )
 
 
-def test_json_is_only_the_model(fake_env: ft.FakeTools, tmp_path: Path) -> None:
-    path = recorded_file(tmp_path, "ass-fonts", fake_env)
+def test_json_is_only_the_model(cli_env: ft.FakeTools, tmp_path: Path) -> None:
+    path = recorded_file(tmp_path, "ass-fonts", cli_env)
     result = invoke("probe", "--json", str(path))
     assert result.exit_code == EXIT_OK
     assert result.stderr == ""
@@ -526,8 +486,8 @@ def test_json_is_only_the_model(fake_env: ft.FakeTools, tmp_path: Path) -> None:
     assert len(source.attachments) == 2
 
 
-def test_no_colour_when_piped_or_no_color(fake_env: ft.FakeTools, tmp_path: Path) -> None:
-    path = recorded_file(tmp_path, "truehd-atmos", fake_env)
+def test_no_colour_when_piped_or_no_color(cli_env: ft.FakeTools, tmp_path: Path) -> None:
+    path = recorded_file(tmp_path, "truehd-atmos", cli_env)
     assert "\x1b[" not in invoke("probe", str(path)).stdout
     forced = invoke("probe", str(path), env={"FORCE_COLOR": "1"}).stdout
     assert COLOUR_SGR.search(forced), "FORCE_COLOR should give colour"
@@ -555,44 +515,16 @@ def unicode_recording(tmp_path: Path) -> Path:
     return path
 
 
-def run_subprocess(
-    fake: ft.FakeTools, tmp_path: Path, *args: str, encoding: str | None
-) -> subprocess.CompletedProcess[bytes]:
-    env = fake.env()
-    for var in ENV_VARS.values():
-        env.pop(var, None)
-    env.update(
-        REFRAME_FFMPEG=str(fake.ffmpeg),
-        REFRAME_FFPROBE=str(fake.ffprobe),
-        REFRAME_CACHE_DIR=str(tmp_path / "cache-sub"),
-        REFRAME_CONFIG_DIR=str(tmp_path / "config-sub"),
-        COLUMNS="120",
-    )
-    env.pop("PYTHONUTF8", None)
-    env.pop("PYTHONIOENCODING", None)
-    if encoding is not None:
-        env["PYTHONIOENCODING"] = encoding
-    return subprocess.run(
-        [sys.executable, "-m", "reframe.cli", *args],
-        capture_output=True,
-        env=env,
-        timeout=60,
-        check=False,
-    )
-
-
 def test_a_pipe_gets_utf8_when_no_encoding_is_set(
-    fake_env: ft.FakeTools, tmp_path: Path, unicode_recording: Path
+    cli_env: ft.FakeTools, tmp_path: Path, unicode_recording: Path
 ) -> None:
-    replay(fake_env, unicode_recording)
+    replay(cli_env, unicode_recording)
     path = tmp_path / "Film ő 日本 🎬.mkv"
     path.write_bytes(b"x")
-    result = run_subprocess(fake_env, tmp_path, "probe", str(path), encoding=None)
+    result = run_cli(cli_env, tmp_path, "probe", str(path), encoding=None)
     assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
     assert "Film ő 日本 🎬.mkv" in result.stdout.decode("utf-8")
-    missing = run_subprocess(
-        fake_env, tmp_path, "probe", str(tmp_path / "ő 日本.mkv"), encoding=None
-    )
+    missing = run_cli(cli_env, tmp_path, "probe", str(tmp_path / "ő 日本.mkv"), encoding=None)
     assert "ő 日本.mkv" in missing.stderr.decode("utf-8")
 
 
@@ -613,12 +545,12 @@ def test_only_a_windows_stream_without_a_chosen_encoding_becomes_utf8(
 
 
 def test_non_utf8_stdout_does_not_crash(
-    fake_env: ft.FakeTools, tmp_path: Path, unicode_recording: Path
+    cli_env: ft.FakeTools, tmp_path: Path, unicode_recording: Path
 ) -> None:
-    replay(fake_env, unicode_recording)
+    replay(cli_env, unicode_recording)
     path = tmp_path / "movie.mkv"
     path.write_bytes(b"x")
-    result = run_subprocess(fake_env, tmp_path, "probe", str(path), encoding="cp1252")
+    result = run_cli(cli_env, tmp_path, "probe", str(path), encoding="cp1252")
     assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
     out = result.stdout.decode("cp1252")
     assert 'title contains "Kommentár"' in out
@@ -628,7 +560,7 @@ def test_non_utf8_stdout_does_not_crash(
     assert "+-" in out  # ASCII table borders
     assert "Traceback" not in result.stderr.decode("cp1252", "replace")
 
-    as_json = run_subprocess(fake_env, tmp_path, "probe", "--json", str(path), encoding="cp1252")
+    as_json = run_cli(cli_env, tmp_path, "probe", "--json", str(path), encoding="cp1252")
     assert as_json.returncode == 0
     source = MediaSource.model_validate_json(as_json.stdout.decode("ascii"))
     assert "Kommentár コメンタリー" in [a.title for a in source.audio]

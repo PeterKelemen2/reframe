@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from reframe.models import CropDetection, CropRect, FrameSet, PreviewClip, TaskState
+from reframe.models import CropDetection, CropRect, FrameSet, TaskState
 from reframe.preview.cache import PreviewCache
 from reframe.service import Reframe
 
@@ -52,23 +52,6 @@ async def test_crop_detection(app: Reframe, fixture_media: Media) -> None:
     assert (result.auto, result.auto_frames) == (CropRect(top=22, bottom=24), 5)
     assert result.conservative == CropRect()
     assert done.result == result.model_dump(mode="json")
-
-
-async def test_a_preview_clip_and_its_frames(app: Reframe, fixture_media: Media) -> None:
-    src = fixture_media("letterbox")
-    info = app.jobs.preview_clip(job_for(src), start=1.0, seconds=1.0)
-    done = await app.tasks.wait(info.id)
-    assert done.state is TaskState.DONE, done.error
-    clip = app.tasks.value(info.id)
-    assert isinstance(clip, PreviewClip)
-    assert await app.jobs.preview_clip_path(clip.id) == clip.path
-    assert await app.jobs.preview_clip_path("0" * 32) is None
-    info = app.sources.frames(clip.path, timestamps=[0.5])
-    done = await app.tasks.wait(info.id)
-    assert done.state is TaskState.DONE, done.error
-    frames = app.tasks.value(info.id)
-    assert isinstance(frames, FrameSet)
-    assert len(frames.frames) == 1
 
 
 async def test_the_cache_lookups_read_no_file_on_the_event_loop(

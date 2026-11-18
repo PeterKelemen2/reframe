@@ -160,12 +160,10 @@ def test_json_with_errors_has_no_plan(cli_env: ft.FakeTools, tmp_path: Path) -> 
 
 @pytest.mark.needs_ffmpeg
 def test_real_ffmpeg_plan_of_a_fixture(
-    fixture_media: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    fixture_media: object, tmp_path: Path, dirs: dict[str, Path]
 ) -> None:
     assert callable(fixture_media)
     source: Path = fixture_media("multitrack")
-    for name in ("config", "data", "cache"):
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     copy = tmp_path / "media" / "multitrack.mkv"
     copy.parent.mkdir()
     shutil.copy2(source, copy)
