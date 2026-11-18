@@ -277,8 +277,8 @@ marisa-trie ([decision 0081](../decisions/0081-probe-without-mediainfo.md),
       for C-21's copy ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)).
 - [x] The sidecar tells the core where the packaged libva is; discovery finds a downloaded
       build in `<data dir>/tools/ffmpeg/` as today.
-- [x] The notices of the desktop packages drop FFmpeg; the Docker image keeps it and its
-      sources release.
+- [x] The notices of the desktop packages drop FFmpeg (the Docker image's too, since
+      [decision 0094](../decisions/0094-docker-image-without-ffmpeg.md)).
 - [x] D-9's smoke test starts with no FFmpeg, sees the first-run screen list the offered
       builds, installs the `default` build with **Install from file** from the CI cache, and
       then runs the rest of the flow. The package install tests of D-8 check that no FFmpeg is
