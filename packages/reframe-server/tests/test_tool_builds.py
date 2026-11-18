@@ -8,6 +8,7 @@ import io
 import json
 import logging
 import socket
+import sys
 import tarfile
 from collections.abc import Callable
 from pathlib import Path
@@ -17,6 +18,7 @@ import pytest
 
 from reframe.mediatask import TaskFailed
 from reframe.models import TaskInfo, TaskState
+from reframe.queue.lock import LOCK_FILE, StoreLock
 from reframe.service import ToolsService
 from reframe.tasks import TaskContext
 from reframe.tools import ENV_VARS
@@ -32,6 +34,7 @@ FAKE_VERSION = "n9.0.2-17-g2a571b6068-20260930"
 ROOT = "ffmpeg-test-linux64"
 ARCHIVE_NAME = "ffmpeg-test-linux64-gpl-shared.tar.xz"
 
+POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="shell-script tools")
 LINUX_X64_ONLY = pytest.mark.skipif(
     host_platform() != "linux-x64", reason="the fake build archive runs only on a linux-x64 host"
 )
@@ -44,6 +47,23 @@ def _no_tools_found(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     empty = tmp_path / "empty-path"
     empty.mkdir(exist_ok=True)
     monkeypatch.setenv("PATH", str(empty))
+
+
+def _broken_on_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Discovery finds an ffmpeg and an ffprobe on ``PATH`` that do not run."""
+    for var in ENV_VARS.values():
+        monkeypatch.delenv(var, raising=False)
+    folder = tmp_path / "broken-path"
+    folder.mkdir()
+    for name in ("ffmpeg", "ffprobe"):
+        tool = folder / name
+        tool.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        tool.chmod(0o755)
+    monkeypatch.setenv("PATH", str(folder))
+
+
+def _autofetch_lines(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.name == "reframe_server.autofetch"]
 
 
 def _tar_xz(members: list[tuple[str, int, bytes | None]]) -> bytes:
@@ -296,6 +316,9 @@ async def test_a_start_without_ffmpeg_warns_that_reframe_cannot_encode_and_names
     text = warning.getMessage()
     for way_out in ("first-run screen", "REFRAME_FFMPEG_BUILD=default", "set REFRAME_FFMPEG"):
         assert way_out in text
+    # The tools' reasons end with a full stop; joined, they must not stack punctuation.
+    assert ".;" not in text
+    assert ".)" not in text
 
 
 async def test_a_start_with_ffmpeg_does_not_warn(
@@ -344,16 +367,96 @@ def test_the_console_shows_the_download_lines_and_every_warning(
 
 
 async def test_ffmpeg_build_downloads_nothing_when_ffmpeg_is_found(
-    make_api: ApiFactory, monkeypatch: pytest.MonkeyPatch
+    make_api: ApiFactory, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    asked = _fake_fetch(monkeypatch)
+    caplog.set_level(logging.INFO, logger="reframe_server.autofetch")
+    async with make_api(ffmpeg_build="default") as api:
+        await api.app.state.autofetch.wait()
+        problems = (await api.client.get("/api/system")).json()["problems"]
+    assert asked == []
+    assert problems == []
+    assert _autofetch_lines(caplog) == [
+        "REFRAME_FFMPEG_BUILD=default: FFmpeg is found, so nothing is downloaded"
+    ]
+
+
+@POSIX_ONLY
+async def test_ffmpeg_build_downloads_when_the_ffmpeg_on_path_does_not_work(
+    make_api: ApiFactory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _broken_on_path(monkeypatch, tmp_path)
+    asked = _fake_fetch(monkeypatch)
+    async with make_api(ffmpeg_build="compat") as api:
+        await api.app.state.autofetch.wait()
+        tools = (await api.client.get("/api/system")).json()["tools"]
+    assert (tools["ffmpeg"]["origin"], tools["ffmpeg"]["status"]) == ("path", "broken")
+    assert asked == ["compat"]
+
+
+@pytest.mark.parametrize("where", ["env", "settings"])
+async def test_ffmpeg_build_never_replaces_an_override_and_says_why(
+    make_api: ApiFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    where: str,
+) -> None:
+    _no_tools_found(monkeypatch, tmp_path)
+    missing = tmp_path / "gone" / "ffmpeg"
+    if where == "env":
+        monkeypatch.setenv("REFRAME_FFMPEG", str(missing))
+    else:
+        settings = tmp_path / "config" / "settings.json"
+        document = json.loads(settings.read_text(encoding="utf-8"))
+        document["tools"] = {"ffmpeg": str(missing)}
+        settings.write_text(json.dumps(document), encoding="utf-8")
     asked = _fake_fetch(monkeypatch)
     async with make_api(ffmpeg_build="default") as api:
         await api.app.state.autofetch.wait()
+        body = (await api.client.get("/api/system")).json()
+    assert body["tools"]["ffmpeg"]["origin"] == where
     assert asked == []
+    named = "REFRAME_FFMPEG" if where == "env" else "Settings → Tools"
+    [problem] = [p for p in body["problems"] if p["code"] == "tools.fetch_skipped"]
+    assert named in problem["message"]
+    lines = _autofetch_lines(caplog)
+    [skipped] = [line for line in lines if line.startswith("REFRAME_FFMPEG_BUILD")]
+    assert named in skipped
+    assert "never replaces" in skipped
+    [cannot] = [line for line in lines if line.startswith("Reframe cannot encode yet")]
+    assert "REFRAME_FFMPEG_BUILD" not in cannot
+
+
+async def test_ffmpeg_build_downloads_nothing_in_a_server_that_does_not_own_the_data_folder(
+    make_api: ApiFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _no_tools_found(monkeypatch, tmp_path)
+    asked = _fake_fetch(monkeypatch)
+    lock = StoreLock(tmp_path / "data" / LOCK_FILE)
+    assert lock.acquire().owned
+    try:
+        async with make_api(ffmpeg_build="default") as api:
+            await api.app.state.autofetch.wait()
+            body = (await api.client.get("/api/system")).json()
+    finally:
+        lock.release()
+    assert asked == []
+    [problem] = [p for p in body["problems"] if p["code"] == "tools.fetch_skipped"]
+    assert "another Reframe process" in problem["message"]
+    lines = _autofetch_lines(caplog)
+    [skipped] = [line for line in lines if line.startswith("REFRAME_FFMPEG_BUILD")]
+    assert "another Reframe process" in skipped
 
 
 async def test_ffmpeg_build_with_a_wrong_name_is_a_problem_of_the_system_info(
-    make_api: ApiFactory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    make_api: ApiFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     _no_tools_found(monkeypatch, tmp_path)
     asked = _fake_fetch(monkeypatch)
@@ -365,10 +468,19 @@ async def test_ffmpeg_build_with_a_wrong_name_is_a_problem_of_the_system_info(
     assert "'nightly'" in problem["message"]
     assert "default" in problem["detail"]
     assert body["tools"]["ffmpeg"]["status"] == "missing"
+    lines = _autofetch_lines(caplog)
+    [line] = [line for line in lines if line.startswith("REFRAME_FFMPEG_BUILD")]
+    assert line == (
+        "REFRAME_FFMPEG_BUILD=nightly names no offered FFmpeg build (the offered builds: "
+        "default, compat), so nothing is downloaded"
+    )
 
 
 async def test_a_failed_start_up_download_is_a_problem_and_the_server_runs_on(
-    make_api: ApiFactory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    make_api: ApiFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     _no_tools_found(monkeypatch, tmp_path)
 
@@ -383,3 +495,6 @@ async def test_a_failed_start_up_download_is_a_problem_and_the_server_runs_on(
     [problem] = [p for p in response.json()["problems"] if p["code"] == "tools.fetch_failed"]
     assert "'default'" in problem["message"]
     assert problem["detail"] == "the download failed after 4 attempt(s)"
+    # The download's own error line has the reason; this one only says what it means.
+    [line] = [line for line in _autofetch_lines(caplog) if "failed" in line]
+    assert "4 attempt(s)" not in line

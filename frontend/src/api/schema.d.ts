@@ -6846,8 +6846,9 @@ export interface components {
             /**
              * Problems
              * @description Start-up problems of the settings and preset files (a damaged, newer or unreadable
-             *     file), later failed saves, and a failed start-up download of ``REFRAME_FFMPEG_BUILD``
-             *     (``tools.build_unknown``, ``tools.fetch_failed``).
+             *     file), later failed saves, and a wrong, skipped or failed start-up download of
+             *     ``REFRAME_FFMPEG_BUILD`` (``tools.build_unknown``, ``tools.fetch_skipped``,
+             *     ``tools.fetch_failed``).
              */
             problems: components["schemas"]["AppWarningEvent"][];
             /**

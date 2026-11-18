@@ -74,7 +74,8 @@ class ServerConfig(BaseSettings):
     """Stop when this process ends (the desktop shell's pid). ``None``: no watch."""
     ffmpeg_build: str | None = None
     """An offered FFmpeg build (``default``) that the server downloads at start when tool
-    discovery finds no FFmpeg. ``None``: no download without the UI."""
+    discovery finds no usable FFmpeg and no path override. ``None``: no download without the
+    UI."""
 
     @field_validator("endpoint_file", mode="before")
     @classmethod

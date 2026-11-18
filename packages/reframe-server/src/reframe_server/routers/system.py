@@ -36,8 +36,9 @@ class SystemInfo(BaseModel):
     """Each tool's status, path and version, after discovery."""
     problems: list[AppWarningEvent]
     """Start-up problems of the settings and preset files (a damaged, newer or unreadable
-    file), later failed saves, and a failed start-up download of ``REFRAME_FFMPEG_BUILD``
-    (``tools.build_unknown``, ``tools.fetch_failed``)."""
+    file), later failed saves, and a wrong, skipped or failed start-up download of
+    ``REFRAME_FFMPEG_BUILD`` (``tools.build_unknown``, ``tools.fetch_skipped``,
+    ``tools.fetch_failed``)."""
     settings_read_only: bool
     """The settings file is newer than this server or unreadable: changes are not saved."""
 
