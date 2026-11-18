@@ -228,6 +228,11 @@ if (-not $SkipDesktop) {
     }
 }
 
+function Install-OpenSshMsi {
+    $msi = Get-GitHubAsset 'PowerShell/Win32-OpenSSH' '^OpenSSH-Win64-v[\d.]+\.msi$'
+    Invoke-Native 'msiexec.exe' @('/i', "`"$($msi.File)`"", '/qn') | Out-Null
+}
+
 if ($AuthorizedKey) {
     Step 'OpenSSH server'
     if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) {
@@ -238,12 +243,26 @@ if ($AuthorizedKey) {
             # The Windows capability comes from Windows Update, which fails on an unpatched
             # install (0x800f0950). Microsoft's MSI works without it.
             Write-Host "The Windows capability failed ($($_.Exception.Message)); using the Win32-OpenSSH MSI."
-            $msi = Get-GitHubAsset 'PowerShell/Win32-OpenSSH' '^OpenSSH-Win64-v[\d.]+\.msi$'
-            Invoke-Native 'msiexec.exe' @('/i', "`"$($msi.File)`"", '/qn') | Out-Null
+            Install-OpenSshMsi
         }
     }
     Set-Service -Name sshd -StartupType Automatic
-    Start-Service sshd
+    try {
+        Start-Service sshd
+    } catch {
+        # On a trimmed Windows build the capability's sshd.exe can fail to load (0xC0000139,
+        # entry point not found); the MSI brings its own libraries.
+        $sshdPath = (Get-CimInstance Win32_Service -Filter "Name='sshd'").PathName.Trim('"')
+        if ($sshdPath -notlike "$env:windir\*") { throw }
+        Write-Host "The Windows capability's sshd does not start ($($_.Exception.Message)); replacing it with the Win32-OpenSSH MSI."
+        Stop-Service sshd -ErrorAction SilentlyContinue
+        Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Where-Object State -eq 'Installed' |
+            ForEach-Object { Remove-WindowsCapability -Online -Name $_.Name | Out-Null }
+        if (Get-Service sshd -ErrorAction SilentlyContinue) { Invoke-Native 'sc.exe' @('delete', 'sshd') | Out-Null }
+        Install-OpenSshMsi
+        Set-Service -Name sshd -StartupType Automatic
+        Start-Service sshd
+    }
 
     Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue | Remove-NetFirewallRule
     New-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -DisplayName 'OpenSSH Server (sshd)' -Enabled True `

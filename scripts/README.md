@@ -31,7 +31,8 @@ powershell -ExecutionPolicy Bypass -File windows-setup.ps1 [-AuthorizedKey 'ssh-
 ```
 
 - `-AuthorizedKey` installs the OpenSSH server (the Windows capability, or Microsoft's
-  Win32-OpenSSH MSI when Windows Update cannot provide it), opens port 22 and ping, authorizes
+  Win32-OpenSSH MSI when Windows Update cannot provide it or the capability's sshd does not
+  start), opens port 22 and ping, authorizes
   the key, and makes Git Bash the shell of SSH sessions, as CI runs `shell: bash`.
 - `-NoSleep` turns off sleep, hibernation and the display timeout on mains power, for long
   test runs and for tests that drive the desktop.
