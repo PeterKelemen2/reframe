@@ -237,6 +237,10 @@ jobs:
       - name: Build the frozen sidecar
         run: uv run python desktop/sidecar/build.py
 
+      # The app downloads FFmpeg: no ffmpeg.exe, ffprobe.exe or FFmpeg DLL may be packaged.
+      - name: Check that the packaged layout has no FFmpeg
+        run: uv run python desktop/packaging/windows/no-ffmpeg-check.py desktop/src-tauri/resources
+
       - run: npm ci
         working-directory: frontend
       - run: npm ci
@@ -298,6 +302,32 @@ jobs:
             config=(--config "$RUNNER_TEMP/tauri.signing.json")
           fi
           npx tauri build "${config[@]}"
+
+      # 7-Zip reads NSIS installers; an administrative install (msiexec /a) extracts an MSI.
+      - name: Check that the installers contain no FFmpeg
+        shell: pwsh
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'installer-contents'
+          $nsis = @(Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*-setup.exe)
+          $msi = @(Get-ChildItem desktop/src-tauri/target/release/bundle/msi/*.msi)
+          if ($nsis.Count -eq 0 -or $msi.Count -eq 0) {
+            Write-Output "::error::an NSIS or MSI installer is missing"
+            exit 1
+          }
+          foreach ($file in $nsis) {
+            & 7z x -y "-o$work\nsis\$($file.BaseName)" $file.FullName | Out-Null
+            if ($LASTEXITCODE -ne 0) { Write-Output "::error::7z x $($file.Name) failed"; exit 1 }
+          }
+          foreach ($file in $msi) {
+            $arguments = @('/a', "`"$($file.FullName)`"", '/qn', "TARGETDIR=`"$work\msi\$($file.BaseName)`"")
+            $process = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+            if ($process.ExitCode -ne 0) {
+              Write-Output "::error::msiexec /a $($file.Name) exited with $($process.ExitCode)"
+              exit 1
+            }
+          }
+          uv run python desktop/packaging/windows/no-ffmpeg-check.py "$work\nsis" "$work\msi"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Check the installers' Authenticode signatures
         if: steps.signing.outputs.signed == 'true'
