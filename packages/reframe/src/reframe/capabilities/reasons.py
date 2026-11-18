@@ -117,8 +117,6 @@ def _vaapi_driver(match: re.Match[str], ctx: TestContext, _texts: Sequence[str])
 
 
 def _device_creation(match: re.Match[str], ctx: TestContext, _texts: Sequence[str]) -> str:
-    if ctx.family == "qsv":
-        return _NO_QSV
     if ctx.family == "vaapi":
         return f"No VAAPI device ({ctx.device or match['value']})"
     return f"The hardware device could not be created ({match['value']})"
@@ -190,6 +188,12 @@ _RULES: tuple[_Rule, ...] = (
     ),
     # Intel QSV (oneVPL): libavcodec/qsv.c, libavutil/hwcontext_qsv.c
     _Rule(re.compile(r"Error (?:creating|initializing|querying) an? MFX session"), _fixed(_NO_QSV)),
+    # The runtime that an older Intel GPU's driver brings (UHD 620) has no AV1 encoder.
+    _Rule(
+        re.compile(r"^This version of runtime doesn't support AV1 encoding"),
+        _fixed("This Intel GPU cannot encode AV1"),
+        frozenset({"qsv"}),
+    ),
     # VAAPI: libavutil/hwcontext_vaapi.c
     _Rule(re.compile(r"No VA display found for device (?P<device>\S+?)\.?$"), _vaapi_device),
     _Rule(re.compile(r"No VA display found for any default device"), _vaapi_device),

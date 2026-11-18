@@ -1048,7 +1048,8 @@ def hardware_works(tool: str, encoder: str, bit_depth: int) -> bool:
 @pytest.mark.parametrize(
     ("encoder", "fixture", "bit_depth"),
     [("h264_vaapi", "multitrack", 8), ("hevc_vaapi", "hdr10", 10), ("av1_vaapi", "anamorphic", 8),
-     ("hevc_amf", "hdr10", 10), ("h264_amf", "multitrack", 8)],
+     ("hevc_amf", "hdr10", 10), ("h264_amf", "multitrack", 8),
+     ("hevc_qsv", "hdr10", 10), ("h264_qsv", "multitrack", 8)],
 )  # fmt: skip
 async def test_hardware_encode(
     fixture_media: Media,

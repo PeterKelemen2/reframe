@@ -196,6 +196,7 @@ LIBRARY_STRINGS = (
     "Error initializing an MFX session",
     "Error querying a MFX session",
     "MFX_ERR_UNSUPPORTED",
+    "This version of runtime doesn't support AV1 encoding",
     # VAAPI
     "No VA display found for device",
     "No VA display found for any default device",

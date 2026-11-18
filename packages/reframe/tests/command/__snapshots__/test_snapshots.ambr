@@ -829,7 +829,7 @@
 # ---
 # name: test_plan_snapshot[av1_qsv]
   dict({
-    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -init_hw_device qsv=hw -filter_hw_device hw -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=nv12,hwupload=extra_hw_frames=64,format=qsv -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 av1_qsv -b:v:0 4000k -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=nv12 -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 av1_qsv -b:v:0 4000k -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
     'files': list([
     ]),
@@ -845,10 +845,6 @@
           '-progress',
           'pipe:1',
           '-nostats',
-          '-init_hw_device',
-          'qsv=hw',
-          '-filter_hw_device',
-          'hw',
           '-drc_scale:1',
           '0',
           '-i',
@@ -868,7 +864,7 @@
           '-map',
           '0:6',
           '-filter:v:0',
-          'scale=320:180:flags=lanczos,setsar=1/1,format=nv12,hwupload=extra_hw_frames=64,format=qsv',
+          'scale=320:180:flags=lanczos,setsar=1/1,format=nv12',
           '-filter:a:0',
           'aresample=out_chlayout=5.1',
           '-c:v:0',
@@ -3266,7 +3262,7 @@
 # ---
 # name: test_plan_snapshot[h264_qsv]
   dict({
-    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -init_hw_device qsv=hw -filter_hw_device hw -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=nv12,hwupload=extra_hw_frames=64,format=qsv -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 h264_qsv -global_quality:v:0 22 -preset:v:0 slow -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=nv12 -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 h264_qsv -global_quality:v:0 22 -preset:v:0 slow -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
     'files': list([
     ]),
@@ -3282,10 +3278,6 @@
           '-progress',
           'pipe:1',
           '-nostats',
-          '-init_hw_device',
-          'qsv=hw',
-          '-filter_hw_device',
-          'hw',
           '-drc_scale:1',
           '0',
           '-i',
@@ -3305,7 +3297,7 @@
           '-map',
           '0:6',
           '-filter:v:0',
-          'scale=320:180:flags=lanczos,setsar=1/1,format=nv12,hwupload=extra_hw_frames=64,format=qsv',
+          'scale=320:180:flags=lanczos,setsar=1/1,format=nv12',
           '-filter:a:0',
           'aresample=out_chlayout=5.1',
           '-c:v:0',
@@ -4126,7 +4118,7 @@
 # ---
 # name: test_plan_snapshot[hevc_qsv_10bit]
   dict({
-    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -init_hw_device qsv=hw -filter_hw_device hw -i /media/broadcast-hlg.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le,hwupload=extra_hw_frames=64,format=qsv -c:v:0 hevc_qsv -global_quality:v:0 22 -c:a:0 aac -b:a:0 160k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/broadcast-hlg.part.mkv && mv -f -- /out/broadcast-hlg.part.mkv /out/broadcast-hlg.mkv',
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/broadcast-hlg.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le -c:v:0 hevc_qsv -global_quality:v:0 22 -c:a:0 aac -b:a:0 160k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/broadcast-hlg.part.mkv && mv -f -- /out/broadcast-hlg.part.mkv /out/broadcast-hlg.mkv',
     'expected_duration': 1.021,
     'files': list([
     ]),
@@ -4142,10 +4134,6 @@
           '-progress',
           'pipe:1',
           '-nostats',
-          '-init_hw_device',
-          'qsv=hw',
-          '-filter_hw_device',
-          'hw',
           '-i',
           '/media/broadcast-hlg.mkv',
           '-map',
@@ -4153,7 +4141,7 @@
           '-map',
           '0:1',
           '-filter:v:0',
-          'scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le,hwupload=extra_hw_frames=64,format=qsv',
+          'scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le',
           '-c:v:0',
           'hevc_qsv',
           '-global_quality:v:0',

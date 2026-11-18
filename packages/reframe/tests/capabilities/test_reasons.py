@@ -54,16 +54,6 @@ def ctx(encoder: str, device: str | None = None) -> TestContext:
             None,
             UNAVAILABLE,
             "No Intel QSV device (needs an Intel GPU with its media driver)",
-            "Failed to set value 'qsv=hw' for option 'init_hw_device': "
-            "Generic error in an external library",
-        ),
-        (
-            # QSV without the setup arguments: the encoder opens the MFX session itself
-            "hw_hevc_qsv_no_device",
-            "hevc_qsv",
-            None,
-            UNAVAILABLE,
-            "No Intel QSV device (needs an Intel GPU with its media driver)",
             "[hevc_qsv] Error creating a MFX session: -9.",
         ),
         (
@@ -202,6 +192,11 @@ def tagged(encoder: str, *lines: str) -> str:
             "No Intel QSV device (needs an Intel GPU with its media driver)",
         ),
         (
+            "av1_qsv",
+            tagged("av1_qsv", "This version of runtime doesn't support AV1 encoding"),
+            "This Intel GPU cannot encode AV1",
+        ),
+        (
             "h264_vaapi",
             "[VAAPI @ 0x55] No VA display found for any default device.\n",
             "No VAAPI device (/dev/dri/renderD128)",
@@ -237,6 +232,7 @@ def test_the_mapped_texts_are_in_the_pinned_build() -> None:
     assert codec in found["Codec not supported"]
     assert codec in found["10-bit input video is not supported by AMF"]
     assert codec in found["10-bit encoder is not supported by AMD GPU drivers"]
+    assert codec in found["This version of runtime doesn't support AV1 encoding"]
     assert util in found["DLL %s failed to open"]
     assert util in found["libamfrt64.so.1"]
     assert "bin/ffmpeg" in found["Failed to set value '%s' for option '%s': %s"]

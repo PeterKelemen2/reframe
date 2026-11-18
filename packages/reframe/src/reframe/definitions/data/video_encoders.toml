@@ -1,7 +1,9 @@
 # Video encoders. Table key = FFmpeg encoder name.
 #
-# Hardware setup: the VAAPI and AMF setup is checked by real encodes on an AMD GPU
-# (testdata/README.md); NVENC and QSV are NOT verified on their hardware.
+# Hardware setup: the VAAPI and AMF setup is checked by real encodes on an AMD GPU, the QSV
+# setup on an Intel UHD 620 under Windows (testdata/README.md); NVENC is NOT verified on its
+# hardware. NVENC, AMF and QSV take software frames: a QSV upload with a fixed frame pool
+# (`hwupload=extra_hw_frames=N`) fails on that Intel driver (decision 0095).
 # Placeholders: {vaapi_device} (default /dev/dri/renderD128), {sw_pix_fmt} (pix_fmts below).
 #
 # Fallback chains: the same codec on the other hardware families, then software.
@@ -117,7 +119,7 @@ turbo_args = ["-multipass", "qres"]
 full_args = ["-multipass", "fullres"]
 
 [base.qsv]
-help = "Intel Quick Sync Video (Intel integrated graphics and Arc). Not verified on Intel hardware yet."
+help = "Intel Quick Sync Video (Intel integrated graphics and Arc)."
 
 [base.qsv.presets]
 mapping = { kind = "private_opt", name = "preset" }
@@ -624,7 +626,6 @@ handbrake_key = "qsv_h264"
 family = "qsv"
 vendor = "intel"
 pix_fmts = { "8" = "nv12" }
-hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"], filter_tail = ["format={sw_pix_fmt}", "hwupload=extra_hw_frames=64", "format=qsv"] }
 fallback = ["h264_nvenc", "h264_amf", "h264_vaapi", "libx264"]
 extends = "qsv"
 option_sets = ["qsv", "qsv_h264", "qsv_avc_hevc"]
@@ -646,7 +647,6 @@ handbrake_key = "qsv_h265"
 family = "qsv"
 vendor = "intel"
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
-hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"], filter_tail = ["format={sw_pix_fmt}", "hwupload=extra_hw_frames=64", "format=qsv"] }
 fallback = ["hevc_nvenc", "hevc_amf", "hevc_vaapi", "libx265"]
 extends = "qsv"
 option_sets = ["qsv", "qsv_extbrc", "qsv_avc_hevc", "qsv_hevc", "qsv_tiles"]
@@ -668,7 +668,6 @@ handbrake_key = "qsv_av1"
 family = "qsv"
 vendor = "intel"
 pix_fmts = { "8" = "nv12", "10" = "p010le" }
-hardware_setup = { init_args = ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"], filter_tail = ["format={sw_pix_fmt}", "hwupload=extra_hw_frames=64", "format=qsv"] }
 fallback = ["av1_nvenc", "av1_amf", "av1_vaapi", "libsvtav1"]
 extends = "qsv"
 option_sets = ["qsv", "qsv_extbrc", "qsv_tiles"]
