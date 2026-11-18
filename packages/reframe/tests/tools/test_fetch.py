@@ -8,6 +8,7 @@ import http.client
 import json
 import logging
 import os
+import re
 import shutil
 import socket
 import ssl
@@ -197,7 +198,7 @@ def _linux(data: dict[str, Any]) -> dict[str, Any]:
     ("change", "message"),
     [
         (lambda d: d.update(schema_version=2), "schema_version"),
-        (lambda d: d["builds"].pop("default"), "builds.default: missing"),
+        (lambda d: d["builds"].pop("default"), "builds.default: missing (the recommended build)"),
         (lambda d: d.update(builds={}), "builds: expected a non-empty table"),
         (lambda d: d["builds"]["default"].update(version="n9 x"), "must not contain spaces"),
         (lambda d: d["builds"]["default"].update(release_version="6.1"), "is below 7.0"),
@@ -221,7 +222,7 @@ def _linux(data: dict[str, Any]) -> dict[str, Any]:
 def test_a_bad_manifest_is_refused(change: Any, message: str) -> None:
     data = _manifest_data()
     change(data)
-    with pytest.raises(FetchError, match=message.replace("(", r"\(")):
+    with pytest.raises(FetchError, match=re.escape(message)):
         parse_manifest(data)
 
 

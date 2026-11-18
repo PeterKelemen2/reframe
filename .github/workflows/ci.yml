@@ -49,7 +49,7 @@ jobs:
         with:
           enable-cache: true
 
-      # The build that ships goes where Reframe's tool discovery looks for the bundled
+      # The default build goes where Reframe's tool discovery looks for the bundled
       # build, $REFRAME_DATA_DIR/tools/ffmpeg (reframe/paths.py). It is NOT put on PATH, so
       # the tests and the fixture generator use exactly the binary that discovery picks.
       - name: Point REFRAME_DATA_DIR to a temporary folder
@@ -61,7 +61,7 @@ jobs:
           path: ${{ runner.temp }}/reframe-data/tools/ffmpeg
           key: tools-${{ runner.os }}-default-bundled-${{ hashFiles('tools/ffmpeg.toml') }}
 
-      # Downloads (or re-verifies the cached copy of) the build that ships, checks the SHA-256
+      # Downloads (or re-verifies the cached copy of) the default build, checks the SHA-256
       # and the version, and lays it out as a bundled build (bin/, plus lib/ on Linux).
       - name: Install the pinned FFmpeg as the bundled build (tools/ffmpeg.toml)
         run: >-

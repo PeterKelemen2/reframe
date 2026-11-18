@@ -334,7 +334,7 @@ def parse_manifest(data: Mapping[str, object]) -> dict[str, Build]:
             raise FetchError(f"builds.{name}: expected a table")
         builds[name] = _parse_build(name, table)
     if "default" not in builds:
-        raise FetchError("builds.default: missing (the build that ships)")
+        raise FetchError("builds.default: missing (the recommended build)")
     return builds
 
 
