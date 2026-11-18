@@ -102,6 +102,8 @@ addopts = [
     # pytest-xdist: every run is parallel (decision 0084); `-n 0` runs in one process.
     "-n",
     "auto",
+    "--dist",
+    "worksteal",
 ]
 xfail_strict = true
 markers = [

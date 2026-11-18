@@ -168,10 +168,11 @@ TAG_FUNCTIONS = (
 
 
 def _differences(values: Iterable[str], functions: Iterable[str]) -> list[tuple[Any, ...]]:
+    pairs = [(name, getattr(languages, name), getattr(oracle, name)) for name in functions]
     diffs = []
-    for name in functions:
-        ours, theirs = getattr(languages, name), getattr(oracle, name)
-        for value in values:
+    # Tag by tag, so each tag is normalised once and the per-tag caches serve every function.
+    for value in values:
+        for name, ours, theirs in pairs:
             got, want = _call(ours, value), _call(theirs, value)
             if got != want:
                 diffs.append((name, value, want, got))
@@ -189,10 +190,11 @@ def test_listed_languages_with_sample_regions_and_scripts() -> None:
 
 
 @pytest.mark.slow
-def test_listed_languages_with_every_region_and_script() -> None:
+@pytest.mark.parametrize("part", range(8))
+def test_listed_languages_with_every_region_and_script(part: int) -> None:
     regions = _plain(_subtags("region"))
     scripts = _plain(_subtags("script"))
-    tags = _combined(_listed_bases(), regions, scripts)
+    tags = _combined(_listed_bases(), regions, scripts)[part::8]
     functions = ("normalize", "english_name", "native_name", "to_matroska_legacy", "to_mp4")
     assert _differences(tags, functions)[:20] == []
 
@@ -273,8 +275,9 @@ def test_search_names_in_other_locales() -> None:
 
 
 @pytest.mark.slow
-def test_search_every_name_in_every_locale() -> None:
-    assert _search_differences(_locale_names())[:20] == []
+@pytest.mark.parametrize("part", range(4))
+def test_search_every_name_in_every_locale(part: int) -> None:
+    assert _search_differences(_locale_names()[part::4])[:20] == []
 
 
 @functools.cache
