@@ -121,7 +121,8 @@ confirmed with `git status` that no production file was changed.
 
 - `command/test_filtergraph.py::test_setparams_only_for_an_untagged_source` and
   `test_colour_params_is_the_graphs_setparams` overlap. Only the first checks that a tagged
-  source gets no `setparams` in the graph.
+  source gets no `setparams` in the graph. (Q-7.11 merged the second into the first; that
+  assertion stays.)
 - `command/test_filtergraph.py::test_subtitles_filter_opens_awkward_file_names`: the
   `all ' : , ; [ ] \ " $ & mixed` name includes most of the single-character names. I kept them
   all because they are real-tool tests, and Windows may treat names with `:` / `"` differently.

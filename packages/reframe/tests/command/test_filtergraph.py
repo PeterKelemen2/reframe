@@ -275,11 +275,12 @@ def test_empty_custom_filter_is_left_out() -> None:
 
 
 def test_setparams_only_for_an_untagged_source() -> None:
+    setparams = colour_params(stream())
+    assert setparams == "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709"
     untagged = graph(stream(), {"colorspace": FilterConfig(preset="bt2020")})
-    assert "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,zscale=p=bt2020" in (
-        untagged
-    )
+    assert f",{setparams},zscale=p=bt2020" in untagged
     tagged = stream(color=ColorInfo(primaries="bt709", transfer="bt709", matrix="bt709"))
+    assert colour_params(tagged) is None
     assert "setparams" not in graph(tagged, {"colorspace": FilterConfig(preset="bt2020")})
 
 
@@ -387,15 +388,6 @@ def test_is_hdr() -> None:
     assert is_hdr(stream(hdr=HdrInfo(formats=[HdrFormat.DOLBY_VISION])))
     assert not is_hdr(stream(hdr=HdrInfo(formats=[])))
     assert not is_hdr(stream())
-
-
-def test_colour_params_is_the_graphs_setparams() -> None:
-    setparams = colour_params(stream())
-    assert setparams == "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709"
-    tagged = stream(color=ColorInfo(primaries="bt709", transfer="bt709", matrix="bt709"))
-    assert colour_params(tagged) is None
-    untagged = graph(stream(), {"colorspace": FilterConfig(preset="bt2020")})
-    assert f",{setparams},zscale=" in untagged
 
 
 @pytest.mark.parametrize("libplacebo", [True, False])

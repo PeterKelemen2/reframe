@@ -323,3 +323,6 @@ def test_no_fixup_without_a_tag_iso_639_2_cannot_say_or_outside_mkv() -> None:
     job.output.container = "mp4"
     job.output.path = Path("/out/x.mp4")
     assert "header_edit" not in [s.kind for s in build_plan(job, src, caps(), tools()).steps]
+    webm = draft(src, container="webm", audio_encoder="libopus", video={"encoder": "libsvtav1"})
+    webm.audio[0].metadata = TrackMetadata(language="pt-BR")
+    assert "header_edit" not in [s.kind for s in build_plan(webm, src, caps(), tools()).steps]
