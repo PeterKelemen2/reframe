@@ -1837,9 +1837,13 @@ def _option_test_value(option: EncoderOption) -> str:
     return written_text(min(option.max, max(option.min, 2)))
 
 
+#: QSV options that are features of the GPU generation: an Intel UHD 620 refuses them.
+_QSV_GPU_FEATURES = frozenset({"low_power", "tile_cols", "tile_rows"})
+
+
 @pytest.mark.needs_gpu
 @pytest.mark.parametrize(
-    "encoder_id", sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi"))
+    "encoder_id", sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi", "qsv"))
 )
 def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> None:
     """Choices that an older build lacks (``_ADDED_IN``) must fail on that build and work on
@@ -1873,6 +1877,8 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
         jobs.append((f"quality {value}", args, 8))
     jobs.append(("bitrate", [a.replace("{kbps}", "2000") for a in b.args], 8))
     for option in enc.options:
+        if enc.family == "qsv" and option.key in _QSV_GPU_FEATURES:
+            continue
         args, _ = mapping_args(option.mapping, _option_test_value(option))
         jobs.append((f"option {option.key}", args, 8))
 
@@ -1894,7 +1900,7 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
 
 @pytest.mark.needs_gpu
 @pytest.mark.parametrize(
-    "encoder_id", sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi"))
+    "encoder_id", sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi", "qsv"))
 )
 def test_hardware_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Path) -> None:
     """As ``test_quality_range_ends_are_honoured``, on the GPU."""

@@ -3,9 +3,11 @@
 # `ffmpeg_arg` options are generic FFmpeg codec options (`-bf`, `-refs`, `-g`) that every
 # encoder accepts; `private_opt` options come from `ffmpeg -h encoder=<id>`
 # (testing/reframe_testing/fake_data/help_encoder/). AMF and VAAPI options were encoded on an
-# AMD RX 7600, and the options its driver refuses are not offered (testdata/README.md);
-# NVENC and QSV options are NOT verified on a GPU. Whether the GPU honours a value (B-frames
-# on AMD H.265, for example) is up to the driver.
+# AMD RX 7600, and the options its driver refuses are not offered (testdata/README.md).
+# QSV options were encoded on an Intel UHD 620 (Windows); one that GPU refuses or ignores
+# stays offered, since it is a feature of the GPU generation, and the help says so. NVENC
+# options are NOT verified on a GPU. Whether the GPU honours a value (B-frames on AMD H.265,
+# for example) is up to the driver.
 
 [[set.nvenc]]
 key = "bf"
@@ -163,7 +165,7 @@ key = "adaptive_i"
 label = "Adaptive I-frames"
 category = "Frame types / GOP"
 type = "bool"
-help = "Places I-frames at scene changes."
+help = "Places I-frames at scene changes. Some GPUs ignore it (an Intel UHD 620 does)."
 mapping = { kind = "private_opt", name = "adaptive_i" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -172,7 +174,7 @@ key = "adaptive_b"
 label = "Adaptive B-frames"
 category = "Frame types / GOP"
 type = "bool"
-help = "Chooses where to place B-frames."
+help = "Chooses where to place B-frames. Some GPUs ignore it (an Intel UHD 620 does)."
 mapping = { kind = "private_opt", name = "adaptive_b" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -181,7 +183,7 @@ key = "look_ahead"
 label = "Look-ahead"
 category = "Rate control"
 type = "bool"
-help = "VBR with look-ahead (H.264): better bit distribution, more latency and memory."
+help = "Look-ahead rate control (H.264; LA_ICQ at a constant quality): better bit distribution, more latency and memory."
 mapping = { kind = "private_opt", name = "look_ahead" }
 default = { kind = "fixed", value = false }
 
@@ -204,8 +206,9 @@ key = "extbrc"
 label = "Extended rate control"
 category = "Rate control"
 type = "bool"
-help = "Extended bitrate control; needed for look-ahead on H.265 and AV1."
+help = "Extended bitrate control, at a bitrate only; needed for look-ahead on H.265 and AV1."
 mapping = { kind = "private_opt", name = "extbrc" }
+requires = [{ field = "rate_control", value = "bitrate" }]
 default = { kind = "encoder", note = "the driver decides" }
 
 [[set.qsv_extbrc]]
@@ -217,9 +220,9 @@ min = 0
 max = 100
 step = 1
 unit = "frames"
-help = "Frames analysed ahead (needs extended rate control)."
+help = "Frames analysed ahead (needs extended rate control, at a bitrate)."
 mapping = { kind = "private_opt", name = "look_ahead_depth" }
-requires = [{ field = "option:extbrc", value = true }]
+requires = [{ field = "rate_control", value = "bitrate" }, { field = "option:extbrc", value = true }]
 default = { kind = "encoder", note = "the driver decides" }
 
 [[set.amf]]
@@ -640,7 +643,7 @@ key = "low_power"
 label = "Low-power mode"
 category = "Performance"
 type = "bool"
-help = "Uses the fixed-function (VDENC) encoder: faster and more efficient, with fewer features on some GPUs."
+help = "Uses the fixed-function (VDENC) encoder: faster and more efficient, with fewer features on some GPUs. Not every GPU has it: an Intel UHD 620 refuses it for H.265, and for H.264 at a constant quality."
 mapping = { kind = "private_opt", name = "low_power" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -696,7 +699,7 @@ key = "rdo"
 label = "Rate-distortion optimisation"
 category = "Motion / analysis"
 type = "bool"
-help = "Rate-distortion optimised mode decisions: better quality, slower."
+help = "Rate-distortion optimised mode decisions: better quality, slower. An Intel UHD 620 ignores it for H.265."
 mapping = { kind = "private_opt", name = "rdo" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -723,7 +726,7 @@ choices = [
     { value = "auto", label = "Automatic" },
     { value = "off", label = "Off", help = "Best, slowest." },
     { value = "2x", label = "2×" },
-    { value = "4x", label = "4×", help = "Fastest." },
+    { value = "4x", label = "4×", help = "Fastest. Some GPUs use 2× instead (an Intel UHD 620 does)." },
 ]
 help = "Scales the frames down for the look-ahead analysis."
 mapping = { kind = "private_opt", name = "look_ahead_downsampling" }
@@ -753,7 +756,7 @@ key = "transform_skip"
 label = "Transform skip"
 category = "Motion / analysis"
 type = "bool"
-help = "Allows blocks without a transform: helps text and screen content."
+help = "Allows blocks without a transform: helps text and screen content. Some GPUs ignore it (an Intel UHD 620 does)."
 mapping = { kind = "private_opt", name = "transform_skip" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -765,7 +768,7 @@ type = "int"
 min = 0
 max = 64
 step = 1
-help = "Number of tile columns (0 = the driver decides)."
+help = "Number of tile columns (0 = the driver decides). Not every GPU has tiles: an Intel UHD 620 refuses more than one."
 mapping = { kind = "private_opt", name = "tile_cols" }
 default = { kind = "fixed", value = 0 }
 
@@ -777,7 +780,7 @@ type = "int"
 min = 0
 max = 64
 step = 1
-help = "Number of tile rows (0 = the driver decides)."
+help = "Number of tile rows (0 = the driver decides). Not every GPU has tiles: an Intel UHD 620 refuses more than one."
 mapping = { kind = "private_opt", name = "tile_rows" }
 default = { kind = "fixed", value = 0 }
 

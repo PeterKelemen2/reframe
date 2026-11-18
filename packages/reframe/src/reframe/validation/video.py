@@ -955,6 +955,38 @@ def _vp9_rules(video: VideoSettings, opts: _Options) -> list[ValidationIssue]:
     return issues
 
 
+def _qsv_rules(opts: _Options) -> list[ValidationIssue]:
+    # Unset B-frames: the driver uses some.
+    bframes = option_int(opts.written.get("bf"))
+    if bframes == 0:
+        return []
+    name = opts.encoder.label
+    issues: list[ValidationIssue] = []
+    if opts.written.get("p_strategy") == "2":
+        issues.append(
+            warning(
+                "encoder.option_ignored",
+                "video.advanced.p_strategy",
+                f"{name} uses the P-frame pyramid only without B-frames (FFmpeg asks for "
+                f"{opts.label('bf')} 0).",
+                _set_option("bf", 0, "Set B-frames to 0"),
+                remove_option_fix("p_strategy"),
+            )
+        )
+    if opts.encoder.codec == "h264" and option_int(opts.written.get("g")) == 1:
+        issues.append(
+            error(
+                "encoder.option_conflict",
+                "video.advanced.g",
+                f"{name} fails with a keyframe interval of 1 (every frame a keyframe) and "
+                "B-frames.",
+                _set_option("bf", 0, "Set B-frames to 0"),
+                remove_option_fix("g"),
+            )
+        )
+    return issues
+
+
 def video_option_rule_issues(
     video: VideoSettings,
     caps: CapabilitySnapshot,
@@ -990,6 +1022,8 @@ def video_option_rule_issues(
         )
     elif encoder.id == "libvpx-vp9":
         issues += _vp9_rules(video, opts)
+    elif encoder.family == "qsv":
+        issues += _qsv_rules(opts)
     return issues
 
 

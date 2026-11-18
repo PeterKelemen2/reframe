@@ -139,7 +139,35 @@ def cases(h: Any) -> list[Any]:
             video(encoder="libsvtav1", advanced={"irefresh-type": "1", "hierarchical-levels": "3"}),
             video(encoder="libsvtav1", advanced={"irefresh-type": "2", "hierarchical-levels": "3"}),
         ),
+        case(
+            "QSV extended rate control at a constant quality",
+            "encoder.option_inactive",
+            "video.advanced.extbrc",
+            warn,
+            video(encoder="hevc_qsv", advanced={"extbrc": True}),
+            video(
+                encoder="hevc_qsv",
+                rate_control=AverageBitrate(kbps=3000),
+                advanced={"extbrc": True},
+            ),
+        ),
+        case(
+            "QSV P-frame pyramid with B-frames",
+            "encoder.option_ignored",
+            "video.advanced.p_strategy",
+            warn,
+            video(encoder="hevc_qsv", advanced={"p_strategy": "2"}),
+            video(encoder="hevc_qsv", advanced={"p_strategy": "2", "bf": 0}),
+        ),
         # encoder.option_conflict: the encoder refuses to start
+        case(
+            "QSV H.264 every frame a keyframe, with B-frames",
+            "encoder.option_conflict",
+            "video.advanced.g",
+            err,
+            video(encoder="h264_qsv", advanced={"g": 1}),
+            video(encoder="h264_qsv", advanced={"g": 1, "bf": 0}),
+        ),
         case(
             "x265 minimum CU above the CTU",
             "encoder.option_conflict",
