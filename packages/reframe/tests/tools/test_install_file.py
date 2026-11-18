@@ -114,6 +114,11 @@ def host() -> str:
     return found
 
 
+def pinned_name() -> str:
+    """The archive's file name for this platform in :func:`manifest_for`."""
+    return NAME if host() == "linux-x64" else "w.zip"
+
+
 def archive_file(tmp_path: Path, data: bytes, name: str = NAME) -> Path:
     folder = tmp_path / "downloads"
     folder.mkdir(exist_ok=True)
@@ -226,7 +231,11 @@ async def test_a_wrong_sha256_is_refused_before_extraction(
     caplog.set_level(logging.INFO, logger="reframe.tools.fetch")
     final, result = await runner.file(archive, manifest, build="default")
     assert final.state is TaskState.FAILED
-    assert final.error == f"{NAME}: the SHA-256 is {sha256(wrong)}, expected {sha256(data)}"
+    assert final.error == (
+        f"{NAME} is not the archive of the FFmpeg build 'default' for {host()} "
+        f"({pinned_name()}), or it is damaged: the SHA-256 is {sha256(wrong)}, "
+        f"expected {sha256(data)}"
+    )
     assert final.error_code is None
     assert result is None
     assert extracted == []
@@ -248,7 +257,11 @@ async def test_a_wrong_size_is_refused_before_anything_is_copied(
     archive = archive_file(tmp_path, data + b"!")
     final, _ = await runner.file(archive, manifest, build="default")
     assert final.state is TaskState.FAILED
-    assert final.error == f"{NAME}: the size is {len(data) + 1} bytes, expected {len(data)}"
+    assert final.error == (
+        f"{NAME} is not the archive of the FFmpeg build 'default' for {host()} "
+        f"({pinned_name()}), or it is damaged: the size is {len(data) + 1} bytes, "
+        f"expected {len(data)}"
+    )
     assert copies == []
     assert not (runner.data_dir / "tools").exists()
 
@@ -262,7 +275,7 @@ async def test_a_file_that_is_not_an_offered_builds_archive_needs_the_build(
     archive = archive_file(tmp_path, data, name="ffmpeg (1).tar.xz")
     final, _ = await runner.file(archive, manifest)
     assert final.state is TaskState.FAILED
-    pinned = NAME if host() == "linux-x64" else "w.zip"
+    pinned = pinned_name()
     assert final.error == (
         f"ffmpeg (1).tar.xz is not the file name of an offered build's archive for {host()} "
         f"({pinned}): name the build it is"
@@ -302,7 +315,10 @@ async def test_a_renamed_file_installs_with_its_build_and_an_installed_one_is_ch
     final, _ = await runner.file(broken, manifest, build="default")
     assert final.state is TaskState.FAILED
     assert final.error is not None
-    assert "broken.tar.xz: the SHA-256 is" in final.error
+    assert final.error.startswith(
+        f"broken.tar.xz is not the archive of the FFmpeg build 'default' for linux-x64 ({NAME}), "
+        "or it is damaged: the SHA-256 is"
+    )
     assert installed_build(result.install_dir) == marker
 
 

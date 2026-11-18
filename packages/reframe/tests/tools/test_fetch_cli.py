@@ -438,8 +438,9 @@ def test_fetch_file_refuses_a_wrong_archive(
         assert result.exit_code == EXIT_USAGE
         return
     error = (
-        f"error: the install failed: {NAME}: the SHA-256 is {sha256(wrong.read_bytes())}, "
-        f"expected {sha256(data)}"
+        f"error: the install failed: {NAME} is not the archive of the FFmpeg build 'default' "
+        f"for linux-x64 ({NAME}), or it is damaged: the SHA-256 is "
+        f"{sha256(wrong.read_bytes())}, expected {sha256(data)}"
     )
     assert assert_clean_failure(result, EXIT_FAILED) == [error]
     assert result.stderr.splitlines() == [error]
@@ -460,7 +461,11 @@ def test_a_failed_install_is_one_line_in_a_real_process(
     assert result.returncode == EXIT_FAILED
     stderr = result.stderr.decode("utf-8").splitlines()
     assert len(stderr) == 1, stderr
-    assert stderr[0].startswith("error: the install failed: ffmpeg.tar.xz: the size is 22 bytes")
+    assert stderr[0].startswith(
+        "error: the install failed: ffmpeg.tar.xz is not the archive of the FFmpeg build "
+        "'default' for "
+    )
+    assert "or it is damaged: the size is 22 bytes, expected " in stderr[0]
 
 
 def test_fetch_file_usage_errors(

@@ -20,6 +20,9 @@ async function quietly<T>(action: () => Promise<T>): Promise<T | null> {
   }
 }
 
+/** An offered build to download, or an archive file checked against `build`. */
+export type InstallSource = { build: string } | { path: string; build?: string }
+
 /** What a download or a file install came to. */
 export interface InstallOutcome {
   /** The build is installed and the tools were found again. */
@@ -85,14 +88,14 @@ export function useBundledTools() {
     return removePaths()
   }
 
-  /** Downloads the offered build `build`, or installs the archive file at `path`. */
+  /** Downloads an offered build, or installs an archive file. */
   async function install(
-    source: { build: string } | { path: string },
+    source: InstallSource,
     options: ToolsTaskOptions = {},
   ): Promise<InstallOutcome> {
     const task = await quietly(() =>
       'path' in source
-        ? system.installToolsFile(source.path, undefined, options)
+        ? system.installToolsFile(source.path, source.build, options)
         : system.fetchTools(source.build, options),
     )
     if (task?.state !== 'done') {

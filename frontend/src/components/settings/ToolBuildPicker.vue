@@ -13,7 +13,7 @@ import { useSystemStore } from '@/stores/system'
 
 import RefusalList from './RefusalList.vue'
 import { originText, type ToolInfo } from './tools'
-import { useBundledTools } from './useBundledTools'
+import { type InstallSource, useBundledTools } from './useBundledTools'
 
 type ToolBuildOffer = Schemas['ToolBuildOffer']
 
@@ -74,10 +74,7 @@ function sizeOf(offer: ToolBuildOffer): string | null {
   return typeof offer.size === 'number' ? formatBytes(offer.size, t, n) : null
 }
 
-async function run(
-  kind: 'download' | 'file',
-  source: { build: string } | { path: string },
-): Promise<void> {
+async function run(kind: 'download' | 'file', source: InstallSource): Promise<void> {
   running.value = kind
   offline.value = false
   issues.value = []
@@ -101,7 +98,7 @@ async function installFile(): Promise<void> {
   if (busy.value) return
   const [path] = await platform.pickFiles({ multiple: false, filters: ARCHIVE_FILTERS })
   if (path === undefined) return
-  await run('file', { path })
+  await run('file', { path, build: chosen.value ?? undefined })
 }
 
 const opened = ref(new Set<string>())

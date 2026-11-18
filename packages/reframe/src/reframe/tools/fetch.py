@@ -162,6 +162,21 @@ class FetchError(Exception):
         self.code = code
 
 
+class _Mismatch(FetchError):
+    """A file whose size or SHA-256 is not the pinned one; ``why`` says which."""
+
+    def __init__(self, path: Path, why: str) -> None:
+        super().__init__(f"{path.name}: {why}")
+        self.why = why
+
+
+def _not_the_archive(source: Path, build: Build, pbuild: PlatformBuild, why: str) -> FetchError:
+    return FetchError(
+        f"{source.name} is not the archive of the FFmpeg build {build.name!r} for "
+        f"{pbuild.platform} ({pbuild.file_name}), or it is damaged: {why}"
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class PlatformBuild:
     """One downloadable archive of a build (``[builds.<name>.platforms.<platform>]``)."""
@@ -491,10 +506,10 @@ def verify_file(path: Path, sha256: str, size: int, cancel: CancelToken | None =
     """:raises FetchError: unless ``path`` has exactly the pinned size and SHA-256."""
     actual_size = path.stat().st_size
     if actual_size != size:
-        raise FetchError(f"{path.name}: the size is {actual_size} bytes, expected {size}")
+        raise _Mismatch(path, f"the size is {actual_size} bytes, expected {size}")
     actual = sha256_file(path, cancel)
     if actual != sha256:
-        raise FetchError(f"{path.name}: the SHA-256 is {actual}, expected {sha256}")
+        raise _Mismatch(path, f"the SHA-256 is {actual}, expected {sha256}")
 
 
 def archive_size(path: Path) -> int:
@@ -530,18 +545,16 @@ def copy_checked(
                 _check_cancel(cancel)
                 written += len(chunk)
                 if written > size:
-                    raise FetchError(
-                        f"{source.name}: the file is larger than the pinned size of {size} bytes"
-                    )
+                    raise _Mismatch(source, f"the file is larger than {size} bytes")
                 digest.update(chunk)
                 dst.write(chunk)
                 if progress is not None:
                     progress(written)
         if written != size:
-            raise FetchError(f"{source.name}: the size is {written} bytes, expected {size}")
+            raise _Mismatch(source, f"the size is {written} bytes, expected {size}")
         actual = digest.hexdigest()
         if actual != sha256:
-            raise FetchError(f"{source.name}: the SHA-256 is {actual}, expected {sha256}")
+            raise _Mismatch(source, f"the SHA-256 is {actual}, expected {sha256}")
     except BaseException:
         dest.unlink(missing_ok=True)
         raise
@@ -915,14 +928,17 @@ class _Job:
             self.report(end, "Checking the size and SHA-256")
             verify_file(archive, pbuild.sha256, pbuild.size, cancel)
         else:
-            copy_checked(
-                self.source,
-                archive,
-                sha256=pbuild.sha256,
-                size=pbuild.size,
-                cancel=cancel,
-                progress=progress,
-            )
+            try:
+                copy_checked(
+                    self.source,
+                    archive,
+                    sha256=pbuild.sha256,
+                    size=pbuild.size,
+                    cancel=cancel,
+                    progress=progress,
+                )
+            except _Mismatch as e:
+                raise _not_the_archive(self.source, self.build, pbuild, e.why) from None
         self.report(_EXTRACT, f"Extracting {archive.name}")
         staging = work / "extract"
         staging.mkdir()
@@ -1167,7 +1183,8 @@ async def _fetch_steps(
     log.info("%s", job.start_line())
     if source is not None and size != pbuild.size:
         # Refused before anything is copied or extracted.
-        raise FetchError(f"{source.name}: the size is {size} bytes, expected {pbuild.size}")
+        why = f"the size is {size} bytes, expected {pbuild.size}"
+        raise _not_the_archive(source, chosen, pbuild, why)
 
     def result(downloaded: bool) -> ToolFetchResult:
         return ToolFetchResult(
@@ -1184,7 +1201,10 @@ async def _fetch_steps(
     if await _in_thread(cancel, lambda: is_installed(install_dir, pbuild, cancel, libva=libva)):
         if source is not None:
             ctx.progress(None, f"Checking the SHA-256 of {source.name}")
-            await _in_thread(cancel, verify_file, source, pbuild.sha256, pbuild.size, cancel)
+            try:
+                await _in_thread(cancel, verify_file, source, pbuild.sha256, pbuild.size, cancel)
+            except _Mismatch as e:
+                raise _not_the_archive(source, chosen, pbuild, e.why) from None
         if native:
             ctx.progress(_CHECK + 2, "Running tool discovery")
             await rescan()

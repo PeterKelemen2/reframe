@@ -294,10 +294,11 @@ describe('the Tools section', () => {
       expect(offline.text()).toContain('path')
     })
 
-    it('installs an archive file that the file dialog picks', async () => {
+    it('installs an archive file that the file dialog picks as the chosen build', async () => {
       const { wrapper, system } = await mountTools(systemInfo({ mode: 'web' }))
       vi.spyOn(platform, 'pickFiles').mockResolvedValue(['/media/ffmpeg-n9.0.2-linux64.tar.xz'])
       system.installToolsFile = vi.fn<typeof system.installToolsFile>(async () => ended('done'))
+      await wrapper.find('[data-build="compat"] input[type="radio"]').setValue(true)
       await wrapper.find('[data-action="install-file"]').trigger('click')
       await flushPromises()
       expect(platform.pickFiles).toHaveBeenCalledExactlyOnceWith({
@@ -306,7 +307,7 @@ describe('the Tools section', () => {
       })
       expect(system.installToolsFile).toHaveBeenCalledExactlyOnceWith(
         '/media/ffmpeg-n9.0.2-linux64.tar.xz',
-        undefined,
+        'compat',
         { showsOffline: true },
       )
     })

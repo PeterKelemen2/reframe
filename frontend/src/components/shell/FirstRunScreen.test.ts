@@ -417,7 +417,7 @@ describe('the offered FFmpeg builds', () => {
     expect(request?.filters).toEqual(['xz', 'zip'])
     finish(request!, [archive])
     await flushPromises()
-    expect(system.installToolsFile).toHaveBeenCalledExactlyOnceWith(archive, undefined, {
+    expect(system.installToolsFile).toHaveBeenCalledExactlyOnceWith(archive, 'default', {
       showsOffline: true,
     })
     expect(system.ffmpegProblem).toBeNull()
