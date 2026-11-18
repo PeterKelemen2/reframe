@@ -296,7 +296,7 @@ start-up (exit 2)
      Dockerfile pins the exact packages). Runs as a non-root user (`PUID`/`PGID` env).
   4. Volumes: `/config`, `/data` (queue DB, logs, cache), `/media` (read), `/output` (write).
   5. `HEALTHCHECK` on `/api/health`.
-- [ ] **No FFmpeg in the image** ([decision 0094](../decisions/0094-docker-image-without-ffmpeg.md)): the `tools` stage and
+- [x] **No FFmpeg in the image** ([decision 0094](../decisions/0094-docker-image-without-ffmpeg.md)): the `tools` stage and
       `/opt/reframe/tools/ffmpeg/` go; the image's notices drop FFmpeg; the compose example
       says that the download lives in `/data` and shows `REFRAME_FFMPEG_BUILD`; the deploy
       tests check that the image has no `ffmpeg`/`ffprobe` and that a download in a running

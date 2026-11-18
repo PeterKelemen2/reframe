@@ -272,14 +272,14 @@ marisa-trie ([decision 0081](../decisions/0081-probe-without-mediainfo.md),
       orphan processes. On Windows: *(Windows testing phase)*.
 
 ### D-10 Packages without FFmpeg
-- [ ] `scripts/bundle-tools.py` and the package builds put no FFmpeg into `resources/tools/`;
+- [x] `scripts/bundle-tools.py` and the package builds put no FFmpeg into `resources/tools/`;
       on Linux they ship the pinned libva in `resources/tools/libva/` (AppImage, .deb, .rpm)
       for C-21's copy ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)).
-- [ ] The sidecar tells the core where the packaged libva is; discovery finds a downloaded
+- [x] The sidecar tells the core where the packaged libva is; discovery finds a downloaded
       build in `<data dir>/tools/ffmpeg/` as today.
-- [ ] The notices of the desktop packages drop FFmpeg; the Docker image keeps it and its
+- [x] The notices of the desktop packages drop FFmpeg; the Docker image keeps it and its
       sources release.
-- [ ] D-9's smoke test starts with no FFmpeg, sees the first-run screen list the offered
+- [x] D-9's smoke test starts with no FFmpeg, sees the first-run screen list the offered
       builds, installs the `default` build with **Install from file** from the CI cache, and
       then runs the rest of the flow. The package install tests of D-8 check that no FFmpeg is
       in the packages and that a build installed after the install finds the packaged libva.
