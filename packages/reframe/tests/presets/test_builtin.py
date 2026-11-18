@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -14,17 +13,23 @@ from reframe.definitions import Definitions, load_definitions
 from reframe.models import (
     BUILT_IN_CATEGORIES,
     AverageBitrate,
+    CapabilitySnapshot,
     ConstantQuality,
+    EncoderState,
+    EncoderStatus,
     FitWithin,
     Preset,
     PresetFile,
     Rational,
     SameAsSource,
+    Severity,
     VideoSettings,
     VideoStream,
 )
 from reframe.presets import DEFAULT_BUILTIN_ID, builtin_presets
+from reframe.validation import validate_template
 from reframe.validation.video import video_custom_param_override_issues
+from reframe_testing.encoders import LAVFI_VIDEO, run_ffmpeg_capture, sei_text
 
 BUILTIN_JSON = (
     Path(__file__).resolve().parents[2] / "src" / "reframe" / "presets" / "data" / "builtin.json"
@@ -122,8 +127,7 @@ def test_builtin_presets_returns_copies() -> None:
     assert builtin_presets()[0].video.encoder != "changed"
 
 
-@pytest.mark.parametrize("preset", PRESETS, ids=IDS)
-def test_video_uses_only_definition_values(preset: Preset, defs: Definitions) -> None:
+def _video_uses_only_definition_values(preset: Preset, defs: Definitions) -> None:
     video = preset.video
     assert video.encoder in defs.video_encoders
     encoder = defs.video_encoders[video.encoder]
@@ -176,8 +180,7 @@ def test_custom_parameters_hold_only_what_no_option_can(defs: Definitions) -> No
     assert found == [("av1-mkv-2160p-4k", "video.advanced.keyint")]  # keyint=10s: seconds
 
 
-@pytest.mark.parametrize("preset", PRESETS, ids=IDS)
-def test_filters_use_only_definition_values(preset: Preset, defs: Definitions) -> None:
+def _filters_use_only_definition_values(preset: Preset, defs: Definitions) -> None:
     for filter_id, config in preset.filters.root.items():
         assert filter_id in defs.filters
         implementation = defs.filters[filter_id].implementation_for(config)
@@ -187,8 +190,7 @@ def test_filters_use_only_definition_values(preset: Preset, defs: Definitions) -
             assert config.tune in {t.id for t in implementation.tunes}
 
 
-@pytest.mark.parametrize("preset", PRESETS, ids=IDS)
-def test_audio_uses_only_definition_values(preset: Preset, defs: Definitions) -> None:
+def _audio_uses_only_definition_values(preset: Preset, defs: Definitions) -> None:
     container = defs.containers[preset.output.container]
     audio = preset.audio_defaults
     outputs: list[tuple[str, str, int | None]] = []
@@ -212,6 +214,37 @@ def test_audio_uses_only_definition_values(preset: Preset, defs: Definitions) ->
     for codec in audio.passthru.allowed:
         name = defs.passthru_codecs[codec].codec_name
         assert "*" in container.audio.copy_codecs or name in container.audio.copy_codecs
+
+
+def _everything_available(defs: Definitions) -> CapabilitySnapshot:
+    return CapabilitySnapshot(
+        encoders={
+            encoder_id: EncoderStatus(
+                id=encoder_id, state=EncoderState.AVAILABLE, in_build=True, supports_10bit=True
+            )
+            for encoder_id in [*defs.video_encoders, *defs.audio_encoders]
+        },
+        filters=None,
+    )
+
+
+@pytest.mark.parametrize("preset", PRESETS, ids=IDS)
+def test_builtin_preset_is_valid(
+    preset: Preset, defs: Definitions, subtests: pytest.Subtests
+) -> None:
+    """Each check is its own subtest, so a preset with several defects reports every one."""
+    with subtests.test(msg="video"):
+        _video_uses_only_definition_values(preset, defs)
+    with subtests.test(msg="filters"):
+        _filters_use_only_definition_values(preset, defs)
+    with subtests.test(msg="audio"):
+        _audio_uses_only_definition_values(preset, defs)
+    issues = validate_template(preset, _everything_available(defs), subject=preset.name)
+    with subtests.test(msg="template errors"):
+        assert [i for i in issues if i.severity is Severity.ERROR] == []
+    # lint_defaults runs inside validate_template; its notes and warnings fail here too.
+    with subtests.test(msg="defaults lint"):
+        assert [i for i in issues if i.code.startswith("defaults.")] == []
 
 
 #: The HandBrake 1.11.2 values of each built-in. The text column is space-separated: encoder,
@@ -495,22 +528,11 @@ def _args(video: VideoSettings) -> list[str]:
 
 
 def _settings_sei(video: VideoSettings, out: Path) -> str:
-    from reframe_testing import media
-
-    ffmpeg = media.find_ffmpeg()
-    assert ffmpeg is not None
     pix_fmts = load_definitions().video_encoders[video.encoder].pix_fmts
-    source = ["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25", "-frames:v", "3"]
     pix_fmt = ["-pix_fmt", pix_fmts[str(video.bit_depth)]]  # type: ignore[index]
-    subprocess.run(
-        [ffmpeg, "-hide_banner", "-nostdin", "-y", *source, *pix_fmt, *_args(video), str(out)],
-        capture_output=True,
-        check=True,
-        timeout=120,
-    )
-    match = re.search(rb"options: ([ -~]+)", out.read_bytes())
-    assert match is not None, "no encoder settings SEI"
-    return match.group(1).decode()
+    result = run_ffmpeg_capture([*LAVFI_VIDEO, "-frames:v", "3", *pix_fmt, *_args(video), str(out)])
+    assert result.returncode == 0, result.stderr[-2000:]
+    return sei_text(out)
 
 
 def _params(video: VideoSettings) -> dict[str, str]:
@@ -525,21 +547,16 @@ BAD_PARAM = re.compile(r"unknown option|error parsing option", re.IGNORECASE)
 
 def run_params(encoder: str, bit_depth: int, params: str, defs: Definitions) -> str:
     """Encode 10 frames with ``params``; returns FFmpeg's warnings."""
-    from reframe_testing import media
-
-    ffmpeg = media.find_ffmpeg()
-    assert ffmpeg is not None
     definition = defs.video_encoders[encoder]
     assert definition.params_arg is not None
     pix_fmt = definition.pix_fmts[str(bit_depth)]  # type: ignore[index]
-    result = subprocess.run(
+    result = run_ffmpeg_capture(
         [
-            ffmpeg, "-hide_banner", "-nostdin", "-v", "warning",
+            "-v", "warning",
             "-f", "lavfi", "-i", "testsrc2=s=320x240:r=25:d=0.4",
             "-c:v", encoder, "-pix_fmt", pix_fmt, definition.params_arg, params,
             "-f", "null", "-",
-        ],
-        capture_output=True, text=True, timeout=120, check=False,
+        ]
     )  # fmt: skip
     assert result.returncode == 0, result.stderr[-2000:]
     return result.stderr

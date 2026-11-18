@@ -71,6 +71,24 @@ def test_an_empty_query_lists_every_option_in_order() -> None:
     assert search_options(X265.options, "  -  ") == X265.options
 
 
+def test_every_software_encoder_has_options_in_each_main_category() -> None:
+    """VP9 has no colour options of its own (FFmpeg's colour tags apply)."""
+    main = {
+        "Rate control",
+        "Frame types / GOP",
+        "Psycho-visual",
+        "Loop filters",
+        "HDR / colour",
+        "Performance",
+    }
+    software = {k: e for k, e in DEFS.video_encoders.items() if not e.hardware}
+    assert "libvpx-vp9" in software
+    for encoder_id, encoder in software.items():
+        expected = main - {"HDR / colour"} if encoder_id == "libvpx-vp9" else main
+        assert expected <= {o.category for o in encoder.options}, encoder_id
+    assert "Motion / analysis" in {o.category for o in DEFS.video_encoders["libx265"].options}
+
+
 HDR = VideoStream.model_validate(
     {
         "index": 0,

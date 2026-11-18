@@ -132,7 +132,9 @@ confirmed with `git status` that no production file was changed.
   rows are the two halves of one `or`. Auto and manual crop with a rect follow the same path.
   These are C-5 "Done when" table tests, so I kept them.
 - `presets/test_builtin.py`: the four per-preset parametrized checks (26 presets × 4) all
-  follow the same code path, but each validates a different data item, so I kept them.
+  follow the same code path, but each validates a different data item, so I kept them. (Q-7.9
+  merged the video, filters and audio checks into `test_builtin_preset_is_valid`, one subtest
+  each; `test_values_come_from_handbrake` stays.)
 - `command/test_tracks.py::test_every_written_value_is_one_the_encoder_can_do`: one test over
   a 9 900-case Cartesian product. It is fast and is the only test that catches M6, so I kept it
   whole.
