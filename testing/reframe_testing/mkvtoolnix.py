@@ -7,14 +7,23 @@ it carry the ``needs_mkvtoolnix`` marker, and are skipped where it is not instal
 from __future__ import annotations
 
 import shutil
+import subprocess
 from typing import TYPE_CHECKING
 
 import pytest
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from reframe.models import HeaderEdit
 
-__all__ = ["MKVTOOLNIX_TOOLS", "mkvpropedit_args", "mkvtoolnix_problem", "mkvtoolnix_tool"]
+__all__ = [
+    "MKVTOOLNIX_TOOLS",
+    "mkvpropedit_args",
+    "mkvtoolnix_problem",
+    "mkvtoolnix_tool",
+    "with_bad_tag",
+]
 
 MKVTOOLNIX_TOOLS = ("mkvmerge", "mkvinfo", "mkvpropedit")
 
@@ -70,3 +79,20 @@ def mkvpropedit_args(edit: HeaderEdit) -> list[str]:
         else:
             args += ["--set", f"title={edit.info.title}"]
     return args
+
+
+def with_bad_tag(path: Path, mkvpropedit: str, bad: bytes) -> None:
+    """Write ``LanguageIETF=en-US`` on a1 with mkvpropedit, then put ``bad`` (5 bytes) in its
+    place (mkvpropedit refuses to write such a value)."""
+    assert len(bad) == 5
+    subprocess.run(
+        [mkvpropedit, str(path), "--edit", "track:a1", "--set", "language-ietf=en-US"],
+        check=True,
+        capture_output=True,
+    )
+    data = bytearray(path.read_bytes())
+    needle = bytes.fromhex("22B59D85") + b"en-US"
+    assert data.count(needle) == 1
+    at = data.index(needle) + 4
+    data[at : at + 5] = bad
+    path.write_bytes(bytes(data))

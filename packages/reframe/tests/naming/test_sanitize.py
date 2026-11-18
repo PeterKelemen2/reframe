@@ -278,12 +278,6 @@ def test_folder_parts_have_the_full_255_bytes() -> None:
     assert parts[0] == "é" * 127
 
 
-def test_multibyte_characters_are_never_split() -> None:
-    part, _ = _one("日本語" * 40, extension="mkv")
-    assert len(part.encode()) <= 250
-    part.encode().decode("utf-8")
-
-
 def test_no_extension() -> None:
     parts, _ = sanitize_segments([[Piece("name")]], extension="", fallback="f")
     assert parts == ["name"]

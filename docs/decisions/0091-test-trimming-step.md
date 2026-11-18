@@ -1,6 +1,6 @@
 # 0091 — A test-trimming step (Q-7) in M10
 
-- Status: accepted; audit done 2026-11-17, the steps are not started
+- Status: accepted; audit done 2026-11-17, steps Q-7.1 to Q-7.13 done 2026-11-18
 - Date: 2026-11-17
 - Steps: Q-7 (new: Q-7.1 to Q-7.13), Q-2; M10
 

@@ -12,13 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from reframe.models import MediaSource
 from reframe.probe import matroska
 from reframe.probe.matroska import MatroskaError, read_matroska, tracks_by_kind
-from reframe.probe.prober import Prober, apply_matroska
 from reframe_testing.ebml import cluster, element, header, info, track, tracks, uint
-
-from .conftest import parse_probe
 
 
 def write(tmp_path: Path, data: bytes, name: str = "t.mkv") -> Path:
@@ -141,30 +137,6 @@ def test_scan_gives_up_after_max_top_level(tmp_path: Path, monkeypatch: pytest.M
         read_matroska(write(tmp_path, data))
 
 
-def test_apply_matroska_sets_ietf_by_kind_and_order() -> None:
-    source = parse_probe("fixtures/multitrack.mkv")
-    data = matroska.MatroskaFile(
-        doc_type="matroska",
-        tracks=[
-            matroska.MatroskaTrack(kind="video"),
-            matroska.MatroskaTrack(kind="audio", language_ietf="pt-BR"),
-            matroska.MatroskaTrack(kind="audio"),
-            matroska.MatroskaTrack(kind="audio", language_ietf="en-GB"),
-            *(matroska.MatroskaTrack(kind="subtitle") for _ in range(3)),
-        ],
-    )
-    assert apply_matroska(source, data)
-    assert [a.language_ietf for a in source.audio] == ["pt-BR", None, "en-GB"]
-    data.tracks.pop()
-    fresh = parse_probe("fixtures/multitrack.mkv")
-    assert not apply_matroska(fresh, data)
-    assert fresh.warnings[-1] == (
-        "The file has 2 subtitle tracks, ffprobe shows 3: the BCP 47 languages (LanguageIETF) "
-        "were not read."
-    )
-    assert all(a.language_ietf is None for a in fresh.audio)
-
-
 def _tool(name: str) -> str:
     found = shutil.which(name)
     if found is None:
@@ -217,37 +189,6 @@ def test_generated_fixture_and_mkvpropedit_edits(
     subprocess.run([mkvpropedit, str(copy), *args], check=True, capture_output=True)
     same_as_mkvmerge(copy)
     assert read_matroska(copy).tracks[1].name == long
-
-
-@pytest.mark.needs_ffmpeg
-@pytest.mark.anyio
-async def test_probe_shows_language_ietf(
-    fixture_media: Callable[[str], Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    mkvpropedit = _tool("mkvpropedit")
-    ffprobe = _tool("ffprobe")
-    copy = tmp_path / "m.mkv"
-    shutil.copyfile(fixture_media("multitrack"), copy)
-    propedit(
-        mkvpropedit, copy, "--edit", "track:a1", "--set", "language=hun", "--set",
-        "language-ietf=hu", "--edit", "track:a2", "--set", "language=por", "--set",
-        "language-ietf=pt-BR",
-    )  # fmt: skip
-    source = await Prober(ffprobe).probe(copy)
-    assert isinstance(source, MediaSource)
-    assert [(a.language, a.language_ietf) for a in source.audio] == [
-        ("hun", "hu"), ("por", "pt-BR"), ("eng", None),
-    ]  # fmt: skip
-    # A file the reader cannot read keeps ffprobe's view (no warning: only BCP 47 is unknown).
-    monkeypatch.setattr(matroska, "read_matroska", _raise)
-    again = await Prober(ffprobe).probe(copy)
-    assert isinstance(again, MediaSource)
-    assert [a.language_ietf for a in again.audio] == [None, None, None]
-    assert not any("Matroska" in w for w in again.warnings)
-
-
-def _raise(path: object) -> matroska.MatroskaFile:
-    raise MatroskaError("damaged")
 
 
 class _ShortReads(io.BytesIO):

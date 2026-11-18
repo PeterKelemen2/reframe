@@ -22,18 +22,12 @@ from hypothesis import strategies as st
 from reframe.tools import CancelToken, kill_process_tree, run, run_streaming
 from reframe.tools import runner as runner_mod
 from reframe_testing import fake_tools as ft
-from reframe_testing.waiting import wait_until
+from reframe_testing.processes import alive
+from reframe_testing.waiting import wait_until, wait_until_sync
 
 pytestmark = pytest.mark.anyio
 
 POSIX = os.name == "posix"
-
-
-def _alive(pid: int) -> bool:
-    try:
-        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
-    except psutil.Error:
-        return False
 
 
 def _scenario(tools: ft.FakeTools, *rules: ft.Rule) -> None:
@@ -148,7 +142,7 @@ async def test_timeout_kills_the_process(fake_tools: ft.FakeTools) -> None:
     assert 1.4 <= elapsed < 10
     assert b"started" in result.stderr
     for pid in fake_tools.pids():
-        assert not _alive(pid)
+        assert not alive(pid)
 
 
 async def test_timeout_kills_the_whole_tree(fake_tools: ft.FakeTools) -> None:
@@ -161,7 +155,7 @@ async def test_timeout_kills_the_whole_tree(fake_tools: ft.FakeTools) -> None:
     roles = {inv.role for inv in fake_tools.invocations()}
     assert roles == {"main", "grandchild"}
     for pid in fake_tools.pids():
-        assert not _alive(pid), f"process {pid} survived the tree kill"
+        assert not alive(pid), f"process {pid} survived the tree kill"
 
 
 @pytest.mark.skipif(not POSIX, reason="SIGTERM handling exists on POSIX only")
@@ -186,7 +180,7 @@ async def test_cancel_from_a_coroutine(fake_tools: ft.FakeTools) -> None:
     assert token.cancelled
     assert latency < 1.0, f"cancel took {latency:.3f} s"
     for pid in fake_tools.pids():
-        assert not _alive(pid)
+        assert not alive(pid)
 
 
 async def test_cancel_from_another_thread_reacts_quickly(fake_tools: ft.FakeTools) -> None:
@@ -219,7 +213,7 @@ async def test_cancel_from_another_thread_reacts_quickly(fake_tools: ft.FakeTool
     latency = returned_at - cancelled_at[0]
     # The token wakes the loop at once; the rest is the kill and the reap.
     assert latency < 1.0, f"cancel took {latency:.3f} s"
-    assert not any(_alive(pid) for pid in fake_tools.pids())
+    assert not any(alive(pid) for pid in fake_tools.pids())
 
 
 async def test_token_reaction_time_is_below_100_ms() -> None:
@@ -263,7 +257,7 @@ async def test_cancelling_the_calling_task_kills_the_tree(fake_tools: ft.FakeToo
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    await wait_until(lambda: not any(_alive(pid) for pid in fake_tools.pids()), limit=10)
+    await wait_until(lambda: not any(alive(pid) for pid in fake_tools.pids()), limit=10)
 
 
 async def test_cancel_after_exit_is_a_normal_result(fake_tools: ft.FakeTools) -> None:
@@ -322,7 +316,7 @@ async def test_a_grandchild_holding_the_pipe_does_not_block(tmp_path: Path) -> N
         assert result.returncode == 0
         assert not result.timed_out
         assert elapsed < 2 * runner_mod.PIPE_DRAIN_GRACE + 5
-        assert not _alive(grandchild), "the grandchild that held the pipe is still running"
+        assert not alive(grandchild), "the grandchild that held the pipe is still running"
     finally:
         with contextlib.suppress(psutil.Error):
             psutil.Process(grandchild).kill()
@@ -434,7 +428,7 @@ async def test_streaming_cancel_from_a_callback(fake_tools: ft.FakeTools) -> Non
     assert result.cancelled
     assert len(fake_tools.pids()) == 2
     for pid in fake_tools.pids():
-        assert not _alive(pid)
+        assert not alive(pid)
 
 
 async def test_streaming_callback_error_kills_and_propagates(fake_tools: ft.FakeTools) -> None:
@@ -451,7 +445,7 @@ async def test_streaming_callback_error_kills_and_propagates(fake_tools: ft.Fake
                 on_stderr_line=None,
                 cancel=None,
             )
-    await wait_until(lambda: not any(_alive(pid) for pid in fake_tools.pids()))
+    await wait_until(lambda: not any(alive(pid) for pid in fake_tools.pids()))
 
 
 async def test_streaming_keeps_the_tail(fake_tools: ft.FakeTools) -> None:
@@ -540,7 +534,7 @@ def test_kill_process_tree_kills_children_first(tmp_path: Path) -> None:
             inv.pid for inv in tools.invocations() if inv.role == "grandchild"
         }
         psutil.wait_procs(killed, timeout=5)
-        assert not any(_alive(pid) for pid in tools.pids())
+        assert not any(alive(pid) for pid in tools.pids())
     finally:
         tools.kill_leftovers()
         if proc.poll() is None:
@@ -558,9 +552,9 @@ def test_kill_process_tree_can_keep_the_root(tmp_path: Path) -> None:
         while len(tools.pids()) < 2 and time.monotonic() < deadline:
             time.sleep(0.02)
         grandchildren = [inv.pid for inv in tools.invocations() if inv.role == "grandchild"]
-        killed = kill_process_tree(proc.pid, kill_root=False)
-        psutil.wait_procs(killed, timeout=5)
-        assert not any(_alive(pid) for pid in grandchildren)
+        kill_process_tree(proc.pid, kill_root=False)
+        wait_until_sync(lambda: not any(alive(pid) for pid in grandchildren), 5)
+        assert not any(alive(pid) for pid in grandchildren)
         root = psutil.Process(proc.pid)
         assert root.status() != psutil.STATUS_STOPPED  # resumed after the kill
         assert proc.poll() is None
@@ -608,7 +602,7 @@ async def test_on_start_gets_the_pid_of_the_running_process() -> None:
     code = "import time; print('ready', flush=True); time.sleep(0.3)"
 
     def on_start(pid: int) -> None:
-        seen.append((pid, _alive(pid)))
+        seen.append((pid, alive(pid)))
 
     async with asyncio.timeout(30):
         result = await run_streaming(
@@ -620,16 +614,16 @@ async def test_on_start_gets_the_pid_of_the_running_process() -> None:
         )
     assert result.ok
     assert len(seen) == 1
-    pid, alive = seen[0]
-    assert alive
-    assert not _alive(pid)
+    pid, was_alive = seen[0]
+    assert was_alive
+    assert not alive(pid)
 
 
 async def test_the_pid_lets_the_caller_suspend_and_resume_the_tree() -> None:
     # The queue runner pauses a job with psutil suspend()/resume().
     lines: list[str] = []
     pids: list[int] = []
-    code = "import time\nfor i in range(400):\n    print(i, flush=True)\n    time.sleep(0.01)"
+    code = "import time\nfor i in range(100):\n    print(i, flush=True)\n    time.sleep(0.01)"
     task = asyncio.ensure_future(
         run_streaming(
             [ft.PYTHON, "-c", code],  # not a Windows venv launcher, whose child prints on
@@ -649,7 +643,7 @@ async def test_the_pid_lets_the_caller_suspend_and_resume_the_tree() -> None:
     proc.resume()
     result = await asyncio.wait_for(task, 60)
     assert result.ok
-    assert lines[-1] == "399"
+    assert lines[-1] == "99"
 
 
 async def test_a_raising_on_start_kills_the_process_and_propagates() -> None:
@@ -668,7 +662,7 @@ async def test_a_raising_on_start_kills_the_process_and_propagates() -> None:
             on_start=on_start,
         )
     assert pids
-    await wait_until(lambda: not _alive(pids[0]))
+    await wait_until(lambda: not alive(pids[0]))
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="a frozen Linux app's library path")

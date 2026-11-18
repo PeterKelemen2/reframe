@@ -205,26 +205,6 @@ async def test_clip_starts_the_task_with_the_job_and_window(
 
 
 @pytest.mark.needs_ffmpeg
-async def test_a_clip_task_result_leads_to_a_playable_url(
-    api: Api, fixture_media: FixtureMedia
-) -> None:
-    file = api.add_fixture("multitrack", fixture_media)
-    await _source(api, file)
-    body = {"job": await _job(api, file), "start": 0.0, "seconds": 1.0}
-    response = await api.client.post("/api/preview/clip", json=body)
-    info = await api.reframe.tasks.wait(response.json()["task_id"])
-    assert info.state is TaskState.DONE, info.error
-    clip_id = PreviewClip.model_validate(info.result).id
-    link = await api.client.get(f"/api/preview/clips/{clip_id}/link")
-    assert link.status_code == 200
-    assert str(api.reframe.cache_dir) not in link.text
-    url = link.json()["url"]
-    assert 3590 < _lifetime(url, f"/api/preview/clips/{clip_id}") <= 3600
-    part = await api.anonymous.get(url, headers={"range": "bytes=0-9"})
-    assert (part.status_code, len(part.content)) == (206, 10)
-
-
-@pytest.mark.needs_ffmpeg
 async def test_frames_of_a_clip_are_decoded_from_the_clip(
     api: Api, fixture_media: FixtureMedia
 ) -> None:
@@ -253,6 +233,13 @@ async def test_frames_of_a_clip_are_decoded_from_the_clip(
     ]
     png = await api.anonymous.get(frames[1]["url"])
     assert (png.status_code, png.headers["content-type"]) == (200, "image/png")
+    link = await api.client.get(f"/api/preview/clips/{clip_id}/link")
+    assert link.status_code == 200
+    assert str(api.reframe.cache_dir) not in link.text
+    url = link.json()["url"]
+    assert 3590 < _lifetime(url, f"/api/preview/clips/{clip_id}") <= 3600
+    part = await api.anonymous.get(url, headers={"range": "bytes=0-9"})
+    assert (part.status_code, len(part.content)) == (206, 10)
 
 
 async def test_frames_of_a_clip_not_in_the_cache_is_404(api: Api) -> None:

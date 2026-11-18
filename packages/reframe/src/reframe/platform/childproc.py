@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import functools
 import os
 import posixpath
 import signal
@@ -60,14 +61,31 @@ _prctl: Callable[..., int] | None = None
 _prctl_lock = threading.Lock()
 
 
+def _traced() -> bool:
+    """Whether a tracer or profiler (coverage, a debugger) watches this thread's Python code."""
+    if sys.gettrace() is not None or sys.getprofile() is not None:
+        return True
+    monitoring = getattr(sys, "monitoring", None)
+    return monitoring is not None and any(monitoring.get_tool(i) is not None for i in range(6))
+
+
 def linux_preexec(
-    parent_pid: int | None = None, *, prctl: Callable[..., int] | None = None
-) -> Callable[[], None]:
+    parent_pid: int | None = None,
+    *,
+    prctl: Callable[..., int] | None = None,
+    traced: bool | None = None,
+) -> Callable[[], object] | None:
     """Return a ``preexec_fn`` that sets ``PR_SET_PDEATHSIG = SIGKILL`` in the child.
 
-    ``prctl`` is loaded here, in the parent, never in the forked child. The death signal
-    follows the thread that forked, not the process, so the fork must happen on a thread that
-    lives as long as its children.
+    It also kills the child when the parent died before ``prctl`` took effect (the interpreter's
+    at-fork hooks run first, about a millisecond). Under a tracer that check is left out and the
+    ``preexec_fn`` is libc's ``prctl`` with its arguments bound (``None`` without ``prctl``): the
+    tracer would run on Reframe's code in the child and can wait there forever on its own lock,
+    held by another thread at the fork, while the parent waits for the ``exec``.
+
+    ``prctl`` is loaded here, in the parent, never in the forked child. The death signal follows
+    the thread that forked, not the process, so the fork must happen on a thread that lives as
+    long as its children.
     """
     global _prctl
     if prctl is None:
@@ -75,9 +93,13 @@ def linux_preexec(
             if _prctl is None:
                 _prctl = _load_prctl()
             prctl = _prctl
+    sigkill = int(getattr(signal, "SIGKILL", 9))
+    if _traced() if traced is None else traced:
+        if prctl is None:
+            return None
+        return functools.partial(prctl, PR_SET_PDEATHSIG, sigkill, 0, 0, 0)
     expected_parent = os.getpid() if parent_pid is None else parent_pid
     bound = prctl
-    sigkill = int(getattr(signal, "SIGKILL", 9))
 
     def preexec() -> None:  # runs in the child between fork() and exec()
         if bound is not None:
@@ -289,8 +311,8 @@ def spawn_options(platform: str | None = None, *, user_facing: bool = False) -> 
         windows_job()  # Reframe joins the job before its first child starts
         return {"creationflags": CREATE_NO_WINDOW}
     options: dict[str, Any] = {"start_new_session": True}
-    if platform.startswith("linux"):
-        options["preexec_fn"] = linux_preexec()
+    if platform.startswith("linux") and (preexec := linux_preexec()) is not None:
+        options["preexec_fn"] = preexec
     return options
 
 

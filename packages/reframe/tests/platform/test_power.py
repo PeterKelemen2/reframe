@@ -64,10 +64,6 @@ class Ticker:
             await settle()
 
 
-async def instant(delay: float) -> None:
-    await asyncio.sleep(0)
-
-
 async def settle() -> None:
     for _ in range(20):
         await asyncio.sleep(0)
@@ -124,21 +120,6 @@ async def test_full_countdown_phases_in_order_then_the_executor_runs() -> None:
     await service.close()
 
 
-async def test_sleep_runs_the_sleep_action() -> None:
-    service, subscription, executor = make(countdown=3, ticker=Ticker())
-    service._sleep = instant
-    service.schedule("sleep")
-    await settle()
-    assert phases(countdown_events(subscription)) == [
-        ("started", 3),
-        ("tick", 2),
-        ("tick", 1),
-        ("executing", 0),
-    ]
-    assert executor.actions == ["sleep"]
-    assert [e for e in drain(subscription) if isinstance(e, AppWarningEvent)] == []
-
-
 async def test_quit_only_publishes_executing() -> None:
     ticker = Ticker()
     service, subscription, executor = make(countdown=2, ticker=ticker)
@@ -156,7 +137,8 @@ async def test_a_fractional_countdown_reaches_whole_seconds_first() -> None:
     service, subscription, executor = make(countdown=2.5, ticker=ticker)
     service.schedule("sleep")
     await ticker.step(3)
-    assert phases(countdown_events(subscription)) == [
+    published = drain(subscription)
+    assert phases([e for e in published if isinstance(e, PowerCountdownEvent)]) == [
         ("started", 3),
         ("tick", 2),
         ("tick", 1),
@@ -164,6 +146,7 @@ async def test_a_fractional_countdown_reaches_whole_seconds_first() -> None:
     ]
     assert ticker.delays == [0.5, 1.0, 1.0]
     assert executor.actions == ["sleep"]
+    assert [e for e in published if isinstance(e, AppWarningEvent)] == []
 
 
 async def test_zero_countdown_executes_without_ticks() -> None:
@@ -519,6 +502,7 @@ async def test_the_deadline_uses_the_wall_clock() -> None:
     service.schedule("shutdown")
     after = datetime.now(UTC)
     (started,) = countdown_events(subscription)
+    assert started.seconds_left == 60
     assert started.deadline is not None
     assert before + timedelta(seconds=60) <= started.deadline <= after + timedelta(seconds=60)
     await service.close()
@@ -535,14 +519,3 @@ def test_schedule_needs_a_running_event_loop() -> None:
 def test_invalid_countdown(countdown: float) -> None:
     with pytest.raises(ValueError, match="countdown"):
         PowerService(EventBus(), countdown=countdown)
-
-
-async def test_defaults() -> None:
-    events = EventBus()
-    subscription = events.subscribe(max_queue=10)
-    service = PowerService(events, executor=FakeExecutor())
-    service.schedule("shutdown")
-    started = countdown_events(subscription)
-    assert COUNTDOWN_SECONDS == 60.0
-    assert phases(started) == [("started", 60)]
-    await service.close()

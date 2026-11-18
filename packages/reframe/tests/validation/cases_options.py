@@ -82,22 +82,6 @@ def cases(h: Any) -> list[Any]:
                 advanced={"dynamic-rd": 2.0, "vbv-maxrate": 8000, "vbv-bufsize": 8000},
             ),
         ),
-        case(
-            "x264 VBV maximum rate without a buffer",
-            "encoder.option_inactive",
-            "video.advanced.vbv-maxrate",
-            warn,
-            video(encoder="libx264", advanced={"vbv-maxrate": 5000}),
-            video(encoder="libx264", advanced={"vbv-maxrate": 5000, "vbv-bufsize": 6000}),
-        ),
-        case(
-            "x265 VBV buffer without a maximum rate at a constant quality",
-            "encoder.option_inactive",
-            "video.advanced.vbv-bufsize",
-            warn,
-            video(encoder="libx265", advanced={"vbv-bufsize": 5000}),
-            video(encoder="libx265", rate_control=AverageBitrate(), advanced={"vbv-bufsize": 5000}),
-        ),
         # encoder.option_ignored: the encoder changes the value without an error
         case(
             "x264 Blu-ray compatibility lowers the B-frames",
@@ -213,21 +197,6 @@ def cases(h: Any) -> list[Any]:
             video(**vp9, advanced={"qmin": 30}),
         ),
         # other option and custom parameter errors
-        case(
-            "x265 mastering display that x265 cannot parse",
-            "encoder.option_invalid",
-            "video.advanced.master-display",
-            err,
-            video(encoder="libx265", bit_depth=10, advanced={"master-display": "garbage"}),
-            video(
-                encoder="libx265",
-                bit_depth=10,
-                advanced={
-                    "master-display": "G(13250,34500)B(7500,3000)R(34000,16000)"
-                    "WP(15635,16450)L(10000000,1)"
-                },
-            ),
-        ),
         case(
             "x265 custom parameter that writes a file",
             "encoder.custom_param_file",

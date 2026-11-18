@@ -42,9 +42,8 @@ from reframe.models import (
     TrackSelector,
     ValidationIssue,
 )
-from reframe.presets import builtin_presets
 
-from .defaults_tracks import audio, source
+from .defaults_tracks import EXAMPLE_CODEC_RULES, audio, source
 
 CATCH_ALL = AudioCodecRule(codec="aac", mixdown="up_to_5.1", max_bitrate=256)
 
@@ -104,18 +103,8 @@ def check_fixes(template: JobTemplate) -> list[ValidationIssue]:
 
 def test_clean_defaults() -> None:
     assert lint_defaults(AudioDefaults()) == []
-    example = defaults(
-        rule(["hu"], "5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=320),
-        rule(["en"], "5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=384),
-        rule(None, "stereo_or_less", codec="aac", mixdown="stereo", max_bitrate=160),
-        rule(None, codec="libopus", mixdown="up_to_5.1", max_bitrate=256, if_fits="reencode"),
-    )
+    example = AudioDefaults(codec_rules=EXAMPLE_CODEC_RULES)
     assert lint_defaults(example) == []
-
-
-@pytest.mark.parametrize("preset", builtin_presets(), ids=lambda p: p.id)
-def test_builtin_presets_are_clean(preset: Any) -> None:
-    assert lint(preset) == []
 
 
 @pytest.mark.parametrize(
@@ -332,11 +321,8 @@ def test_codec_not_in_container() -> None:
     assert lint_defaults(bad, container="webm") == []
 
 
-EXAMPLE = defaults(
-    rule(["hu"], "5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=320),
-    rule(["en"], "5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=384),
-    rule(None, "stereo_or_less", codec="aac", mixdown="stereo", max_bitrate=160),
-    rule(None, codec="libopus", mixdown="up_to_5.1", max_bitrate=256, if_fits="reencode"),
+EXAMPLE = AudioDefaults(
+    codec_rules=EXAMPLE_CODEC_RULES,
     selection=TrackSelection(languages=["hu", "en"], tracks_per_language="all"),
 )
 
@@ -359,11 +345,14 @@ def test_rules_this_source_does_not_use() -> None:
         "Rule 2 (English, 5.1 or more) is not used by any track of this source."
     )
     # The catch-all is never reported (here no track uses it either).
-    english = lint_with_source(EXAMPLE, source([audio(1, "eng", "ac3", 6, 448)]))
+    eng = source([audio(1, "eng", "ac3", 6, 448)])
+    english = lint_with_source(EXAMPLE, eng)
     assert found(english) == [
         ("defaults.rule_unused", "audio_defaults.codec_rules[0]"),
         ("defaults.rule_unused", "audio_defaults.codec_rules[2]"),
     ]
+    # The draft has no other issue for this source.
+    assert resolve_tracks(JobTemplate(audio_defaults=EXAMPLE), eng).draft.issues == english
     # No audio at all: nothing is "unused".
     assert lint_with_source(EXAMPLE, source()) == []
 

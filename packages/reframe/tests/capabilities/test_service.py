@@ -285,6 +285,14 @@ async def test_rescan_cancels_the_running_detection(
 
 
 async def test_rescan_ignores_the_cache(harness: Harness, fake_tools: ft.FakeTools) -> None:
+    calls = 0
+
+    def fingerprint() -> str:
+        nonlocal calls
+        calls += 1
+        return GPU
+
+    harness.service = harness.make(gpu_fingerprint=fingerprint)
     harness.service.start()
     await harness.service.wait()
     fake_tools.clear_log()
@@ -294,6 +302,7 @@ async def test_rescan_ignores_the_cache(harness: Harness, fake_tools: ft.FakeToo
     events = changed(drain(harness.subscription))
     assert {s.state for s in events[0].encoders} == {CHECKING}
     assert encode_calls(fake_tools)
+    assert calls == 1  # the fingerprint is read once, not on every rescan
 
 
 async def test_waits_for_tool_discovery(harness: Harness) -> None:
@@ -382,24 +391,6 @@ async def test_tools_changed_with_another_version_detects_again(harness: Harness
     await wait_until(lambda: harness.service.snapshot.ffmpeg_version == "n9.1")
     final = await harness.service.wait()
     assert final.ffmpeg_version == "n9.1"
-
-
-async def test_the_gpu_fingerprint_is_read_once(fake_tools: ft.FakeTools, tmp_path: Path) -> None:
-    calls = 0
-
-    def fingerprint() -> str:
-        nonlocal calls
-        calls += 1
-        return GPU
-
-    h = Harness(fake_tools, tmp_path / "caps", gpu_fingerprint=fingerprint)
-    try:
-        h.service.start()
-        await h.service.wait()
-        await h.service.rescan()
-        assert calls == 1
-    finally:
-        await h.close()
 
 
 async def test_a_failing_gpu_fingerprint_is_not_fatal(

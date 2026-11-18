@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import functools
 import os
 import signal
 import subprocess
@@ -176,7 +177,8 @@ def test_windows_job_is_created_lazily(monkeypatch: pytest.MonkeyPatch) -> None:
     assert created == [first]
 
 
-def test_linux_spawn_options() -> None:
+def test_linux_spawn_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(childproc, "_prctl", lambda *args: 0)
     options = childproc.spawn_options("linux")
     assert options["start_new_session"] is True
     assert callable(options["preexec_fn"])
@@ -193,9 +195,12 @@ def test_preexec_sets_pdeathsig() -> None:
         calls.append(args)
         return 0
 
-    preexec = childproc.linux_preexec(os.getppid(), prctl=prctl)
-    preexec()  # we are not in a forked child, so make the parent check pass with getppid()
-    assert calls == [(childproc.PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0)]
+    for traced in (False, True):
+        # not in a forked child: make the parent check pass with getppid()
+        preexec = childproc.linux_preexec(os.getppid(), prctl=prctl, traced=traced)
+        assert preexec is not None
+        preexec()
+    assert calls == [(childproc.PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0)] * 2
 
 
 def test_preexec_kills_itself_when_the_parent_is_already_gone(
@@ -203,9 +208,67 @@ def test_preexec_kills_itself_when_the_parent_is_already_gone(
 ) -> None:
     killed: list[tuple[int, int]] = []
     monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append((pid, sig)))
-    preexec = childproc.linux_preexec(parent_pid=-12345, prctl=lambda *a: 0)
+    preexec = childproc.linux_preexec(parent_pid=-12345, prctl=lambda *a: 0, traced=False)
+    assert preexec is not None
     preexec()
     assert killed == [(os.getpid(), SIGKILL)]
+
+
+def test_under_a_tracer_the_preexec_is_prctl_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    monkeypatch.setattr(sys, "gettrace", lambda: print)
+
+    def prctl(*args: Any) -> int:
+        return 0
+
+    preexec = childproc.linux_preexec(parent_pid=-12345, prctl=prctl)
+    assert isinstance(preexec, functools.partial)
+    assert (preexec.func, preexec.args) == (prctl, (childproc.PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0))
+    preexec()
+    assert killed == []
+
+
+def test_under_a_tracer_without_prctl_there_is_no_preexec(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(childproc, "_prctl", None)
+    monkeypatch.setattr(childproc, "_load_prctl", lambda: None)
+    assert childproc.linux_preexec(traced=True) is None
+
+
+_LOCKED_TRACER = """
+import os, subprocess, sys, threading
+import reframe
+from reframe.platform import childproc
+
+measured = os.path.dirname(reframe.__file__)
+parent = os.getpid()
+held = threading.Lock()
+tool = next(i for i in range(6) if sys.monitoring.get_tool(i) is None)
+sys.monitoring.use_tool_id(tool, "test")
+
+def py_start(code, offset):
+    if os.getpid() != parent and code.co_filename.startswith(measured):
+        if not held.acquire(timeout=3):
+            os._exit(97)
+    return sys.monitoring.DISABLE
+
+sys.monitoring.register_callback(tool, sys.monitoring.events.PY_START, py_start)
+sys.monitoring.set_events(tool, sys.monitoring.events.PY_START)
+options = childproc.spawn_options()
+held.acquire()
+print(subprocess.run(["true"], **options).returncode)
+"""
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="PR_SET_PDEATHSIG is Linux-only")
+def test_a_tracer_lock_held_at_the_fork_does_not_block_a_spawn() -> None:
+    """A tracer that takes a lock on the first call of measured code (as coverage does) blocks a
+    forked child forever when another thread held that lock at the fork, if the ``preexec_fn`` is
+    Reframe's Python code. The stdlib's at-fork hooks still run there; they are not measured."""
+    result = subprocess.run(
+        [sys.executable, "-c", _LOCKED_TRACER], capture_output=True, text=True, timeout=60
+    )
+    assert (result.returncode, result.stdout.strip()) == (0, "0"), result.stderr
 
 
 class _FakePopen:

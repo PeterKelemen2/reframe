@@ -6,6 +6,10 @@ encoder with itself.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from reframe.probe.matroska import _header
+
 _UNKNOWN_SIZE = bytes([0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
 
 
@@ -70,3 +74,32 @@ def cluster() -> bytes:
 
 def simple_block(track_number: int, size: int) -> bytes:
     return element(0xA3, bytes([0x80 | track_number, 0, 0, 0x80]) + b"\xab" * size)
+
+
+def with_bogus_seek_entry(path: Path) -> None:
+    """Put a Seek entry ``Tracks -> 2^64 - 1`` in front of the SeekHead's entries; the Void
+    after the SeekHead gives the room (FFmpeg reserves one), so no other position moves."""
+    data = bytearray(path.read_bytes())
+    _, ebml_size, ebml_header = _header(bytes(data), 0)
+    assert ebml_size is not None
+    seg = ebml_header + ebml_size
+    seg_id, _, seg_header = _header(bytes(data), seg)
+    assert seg_id == 0x18538067
+    start = seg + seg_header
+    head_id, head_size, head_header = _header(bytes(data), start)
+    assert head_id == 0x114D9B74
+    assert head_size is not None
+    payload = bytes(data[start + head_header : start + head_header + head_size])
+    void_at = start + head_header + head_size
+    void_id, void_size, void_header = _header(bytes(data), void_at)
+    assert void_id == 0xEC
+    assert void_size is not None
+    room = head_header + head_size + void_header + void_size
+    bogus = element(
+        0x4DBB, element(0x53AB, bytes.fromhex("1654AE6B")) + element(0x53AC, b"\xff" * 8)
+    )
+    new_head = element(0x114D9B74, bogus + payload)
+    new_void = element(0xEC, b"\0" * (room - len(new_head) - 9))
+    assert len(new_head) + len(new_void) == room
+    data[start : start + room] = new_head + new_void
+    path.write_bytes(bytes(data))

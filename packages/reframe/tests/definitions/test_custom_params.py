@@ -32,6 +32,10 @@ def test_the_split_keeps_the_typed_text() -> None:
         ("vstats_file", "a:b", r"vs\tats_file=a\:b "),
         ("x", "1", "x"),
     ]
+    params = split_custom_params(" ref=4 :bogus:path=C\\:/x::")
+    assert [(p.name, p.value) for p in params] == [("ref", "4"), ("bogus", "1"), ("path", "C:/x")]
+    assert [p.raw for p in params] == ["ref=4 ", "bogus", "path=C\\:/x"]
+    assert split_custom_params("") == []
 
 
 def test_a_quoted_colon_or_a_drive_colon_continues_the_parameter() -> None:

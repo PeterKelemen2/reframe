@@ -34,6 +34,8 @@ from reframe.models import (
     TrackDecision,
 )
 
+from .defaults_tracks import EXAMPLE_CODEC_RULES
+
 DEFS = load_definitions()
 
 _LAYOUTS = {1: "mono", 2: "stereo", 6: "5.1(side)", 8: "7.1"}
@@ -85,26 +87,7 @@ def summary(track: AudioOutputTrack) -> tuple[str, str | None, str | None, int |
 
 
 #: Hungarian and English 5.1 rules, a stereo rule and a catch-all.
-EXAMPLE_RULES = AudioDefaults(
-    codec_rules=[
-        AudioCodecRule(
-            languages=["hu"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1",
-            max_bitrate=320, if_fits="passthru",
-        ),
-        AudioCodecRule(
-            languages=["en"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1",
-            max_bitrate=384, if_fits="passthru",
-        ),
-        AudioCodecRule(
-            languages=None, source_channels="stereo_or_less", codec="aac", mixdown="stereo",
-            max_bitrate=160, if_fits="passthru",
-        ),
-        AudioCodecRule(
-            languages=None, source_channels="any", codec="libopus", mixdown="up_to_5.1",
-            max_bitrate=256, if_fits="reencode",
-        ),
-    ]
-)  # fmt: skip
+EXAMPLE_RULES = AudioDefaults(codec_rules=EXAMPLE_CODEC_RULES)
 
 #: Source tracks, each with the rule, output and reason that the example gives.
 EXAMPLE = [

@@ -5,6 +5,17 @@
 - Steps: Q-2, Q-6
 - Amended the same day: the owner asked that every test run uses xdist, so `-n auto` moved
   into `addopts` (items 1, 4, 5).
+- Amended 2026-11-18 (Q-7.7): the scheduler is `--dist worksteal`, set in `addopts`. An idle
+  worker takes tests from the queue of the busiest one, so a file of long tests no longer ends
+  the run alone on one worker. `worksteal` ignores `@pytest.mark.xdist_group`, so the advice in
+  "Consequences" to use it with `--dist loadgroup` no longer applies. `-n 0` and `--pdb` are
+  unchanged: xdist then runs no scheduler.
+- Amended 2026-11-18 (Q-7.13): `pytest-timeout` ends a test that runs longer than 600 s
+  (`timeout_method = "thread"`, the only method on Windows). Under xdist the worker ends, xdist
+  starts a new one and the run goes on; `faulthandler_timeout = 590` prints the stack of the
+  hang, because xdist does not show pytest-timeout's own dump. syrupy's `UserWarning` after a
+  worker crash is ignored, as `filterwarnings = ["error"]` would turn it into an exception that
+  hides the summary. `-n 0 --pdb` is unchanged: the timeout does not fire under a debugger.
 
 ## Context
 
@@ -48,8 +59,8 @@ A trial with `pytest-xdist` 3.8.0 (`-n auto`, 12 workers) at `2e536f4`:
 
 - A full local run takes about 6 minutes instead of about 35.
 - Tests that depend on the length of the temporary path or on running alone in the process can
-  fail under xdist and pass alone. Fix the test (as in item 3), or mark it to run in one
-  worker with `@pytest.mark.xdist_group` and `--dist loadgroup`.
+  fail under xdist and pass alone. Fix the test (as in item 3). The `xdist_group` mark does
+  nothing under `worksteal` (see the 2026-11-18 amendment).
 - Timing budgets do not run in a default local run any more (item 4); run them alone with
   `-n 0` after a change that can make the probe or the preview slower.
 - A later test-speed audit (fewer slow waits, fixture scopes, redundant tests) can start from

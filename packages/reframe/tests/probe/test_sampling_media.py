@@ -107,18 +107,8 @@ def _generated(tmp_path: Path) -> Path:
          "-cluster_time_limit", "500", str(out)],
         check=True,
     )  # fmt: skip
+    assert out.stat().st_size > 8 * 1024 * 1024
     return out
-
-
-@pytest.mark.needs_ffmpeg
-async def test_a_multi_cluster_ffmpeg_file_is_sampled_at_offsets(
-    prober: Prober, tmp_path: Path
-) -> None:
-    path = _generated(tmp_path)
-    assert path.stat().st_size > 8 * 1024 * 1024
-    source = await _probe(prober, path)
-    assert check_against_the_block_scan(source, path) == 2
-    assert 10 <= (source.video[0].bitrate.samples or 0) <= 32
 
 
 def _remuxed(source: Path, out: Path) -> Path:

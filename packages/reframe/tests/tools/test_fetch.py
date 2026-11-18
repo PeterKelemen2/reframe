@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import os
 import shutil
@@ -11,9 +10,8 @@ import sys
 import tarfile
 import time
 import tomllib
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
@@ -37,16 +35,18 @@ from reframe.tools.fetch import (
     parse_manifest,
     start_fetch,
 )
+from reframe_testing.scripts import load_script
 
 from .fetch_server import (
     FAKE_VERSION,
     LINUX_ROOT,
+    POSIX_ONLY,
     WINDOWS_ROOT,
     Archive,
     LocalServer,
+    archive_ext,
     fake_archive,
     foreign_platform,
-    local_server,
     sha256,
     tar_dir,
     tar_file,
@@ -58,16 +58,6 @@ from .fetch_server import (
 
 REPO = Path(__file__).resolve().parents[4]
 REPO_MANIFEST = REPO / "tools" / "ffmpeg.toml"
-SCRIPT = REPO / "scripts" / "fetch-tools.py"
-POSIX_ONLY = pytest.mark.skipif(
-    sys.platform == "win32" or host_platform() != "linux-x64",
-    reason="the fake Linux build runs only on a linux-x64 host",
-)
-
-
-@pytest.fixture
-def server() -> Iterator[LocalServer]:
-    yield from local_server()
 
 
 def _toolset() -> ToolSet:
@@ -153,18 +143,8 @@ def test_packaged_manifest_is_a_copy_of_tools_ffmpeg_toml() -> None:
     assert packaged == repo, "copy tools/ffmpeg.toml to packages/reframe/src/reframe/tools/"
 
 
-def _load_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("fetch_tools_script", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module  # dataclasses look the module up by name
-    spec.loader.exec_module(module)
-    return module
-
-
 def test_the_core_and_the_script_read_the_manifest_alike() -> None:
-    script = _load_script()
+    script = load_script("fetch-tools.py", "fetch_tools_script")
     ours = load_manifest()
     theirs = script.load_manifest(REPO_MANIFEST)
     assert sorted(ours) == sorted(theirs) == ["default", "override-test"]
@@ -451,7 +431,7 @@ async def _installed_foreign(
     """A foreign build installed first (the "old" build of the failure tests)."""
     other = foreign_platform()
     data = fake_archive(other, tmp_path / "work")
-    path = f"/old.{_ext(other)}"
+    path = f"/old.{archive_ext(other)}"
     server.add(path, data)
     manifest = write_manifest(
         tmp_path / "old.toml", {"default": [Archive(server.url(path), data, other)]}
@@ -463,10 +443,6 @@ async def _installed_foreign(
     return other, result.install_dir, marker
 
 
-def _ext(platform: str) -> str:
-    return "zip" if platform == "windows-x64" else "tar.xz"
-
-
 @pytest.mark.anyio
 async def test_a_bad_checksum_installs_nothing_and_keeps_the_old_build(
     tmp_path: Path, server: LocalServer, fetch: Fetch
@@ -476,11 +452,11 @@ async def test_a_bad_checksum_installs_nothing_and_keeps_the_old_build(
     # server sends the old archive: the same size, another SHA-256.
     data = fake_archive(other, tmp_path / "work")
     files = sorted(p.relative_to(install) for p in install.rglob("*") if p.is_file())
-    server.add(f"/new.{_ext(other)}", data)
+    server.add(f"/new.{archive_ext(other)}", data)
     pinned = sha256(b"another build")
     manifest = write_manifest(
         tmp_path / "new.toml",
-        {"default": [Archive(server.url(f"/new.{_ext(other)}"), data, other, sha=pinned)]},
+        {"default": [Archive(server.url(f"/new.{archive_ext(other)}"), data, other, sha=pinned)]},
     )
     final, result = await fetch(manifest, platform=other)
     assert final.state is TaskState.FAILED
@@ -498,9 +474,10 @@ async def test_a_longer_download_stops_at_the_pinned_size(
 ) -> None:
     other = foreign_platform()
     data = fake_archive(other, tmp_path / "work")
-    route = server.add(f"/a.{_ext(other)}", data, extra=b"x" * 200_000)
+    route = server.add(f"/a.{archive_ext(other)}", data, extra=b"x" * 200_000)
     manifest = write_manifest(
-        tmp_path / "m.toml", {"default": [Archive(server.url(f"/a.{_ext(other)}"), data, other)]}
+        tmp_path / "m.toml",
+        {"default": [Archive(server.url(f"/a.{archive_ext(other)}"), data, other)]},
     )
     final, _ = await fetch(manifest, platform=other)
     assert final.state is TaskState.FAILED
@@ -517,9 +494,10 @@ async def test_a_short_download_fails_the_size_check(
 ) -> None:
     other = foreign_platform()
     data = fake_archive(other, tmp_path / "work")
-    server.add(f"/a.{_ext(other)}", data[:100])
+    server.add(f"/a.{archive_ext(other)}", data[:100])
     manifest = write_manifest(
-        tmp_path / "m.toml", {"default": [Archive(server.url(f"/a.{_ext(other)}"), data, other)]}
+        tmp_path / "m.toml",
+        {"default": [Archive(server.url(f"/a.{archive_ext(other)}"), data, other)]},
     )
     final, _ = await fetch(manifest, platform=other)
     assert final.state is TaskState.FAILED
@@ -535,9 +513,10 @@ async def test_server_errors_are_retried(
     monkeypatch.setattr(fetch_module, "_sleep", lambda seconds, cancel: waits.append(seconds))
     other = foreign_platform()
     data = fake_archive(other, tmp_path / "work")
-    route = server.add(f"/a.{_ext(other)}", data, fail=[503, 500])
+    route = server.add(f"/a.{archive_ext(other)}", data, fail=[503, 500])
     manifest = write_manifest(
-        tmp_path / "m.toml", {"default": [Archive(server.url(f"/a.{_ext(other)}"), data, other)]}
+        tmp_path / "m.toml",
+        {"default": [Archive(server.url(f"/a.{archive_ext(other)}"), data, other)]},
     )
     final, _ = await fetch(manifest, platform=other)
     assert final.state is TaskState.DONE, final.error
@@ -549,9 +528,10 @@ async def test_server_errors_are_retried(
 async def test_not_found_is_not_retried(tmp_path: Path, server: LocalServer, fetch: Fetch) -> None:
     other = foreign_platform()
     data = fake_archive(other, tmp_path / "work")
-    route = server.add(f"/a.{_ext(other)}", data, fail=[404])
+    route = server.add(f"/a.{archive_ext(other)}", data, fail=[404])
     manifest = write_manifest(
-        tmp_path / "m.toml", {"default": [Archive(server.url(f"/a.{_ext(other)}"), data, other)]}
+        tmp_path / "m.toml",
+        {"default": [Archive(server.url(f"/a.{archive_ext(other)}"), data, other)]},
     )
     final, _ = await fetch(manifest, platform=other)
     assert final.state is TaskState.FAILED
@@ -574,7 +554,7 @@ async def test_a_connection_error_gives_up_after_the_attempts(
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
-    url = f"http://127.0.0.1:{port}/a.{_ext(other)}"
+    url = f"http://127.0.0.1:{port}/a.{archive_ext(other)}"
     manifest = write_manifest(tmp_path / "m.toml", {"default": [Archive(url, data, other)]})
     final, _ = await fetch(manifest, platform=other)
     assert final.state is TaskState.FAILED
@@ -637,10 +617,10 @@ async def test_an_unsafe_or_broken_archive_installs_nothing(
         data = tar_xz([(tar_dir(LINUX_ROOT), None), (tar_file(f"{LINUX_ROOT}/bin/ffmpeg"), b"x")])
     else:
         platform, data = "linux-x64", _tar_case(kind)
-    server.add(f"/a.{_ext(platform)}", data)
+    server.add(f"/a.{archive_ext(platform)}", data)
     manifest = write_manifest(
         tmp_path / "m.toml",
-        {"default": [Archive(server.url(f"/a.{_ext(platform)}"), data, platform)]},
+        {"default": [Archive(server.url(f"/a.{archive_ext(platform)}"), data, platform)]},
     )
     host = host_platform()
     final, _ = await fetch(manifest, platform=platform)
@@ -752,9 +732,10 @@ async def test_a_folder_that_fetch_did_not_install_is_never_replaced(
     install.mkdir(parents=True)
     (install / "my-build.txt").write_text("mine")
     data = fake_archive(other, tmp_path / "work")
-    route = server.add(f"/a.{_ext(other)}", data)
+    route = server.add(f"/a.{archive_ext(other)}", data)
     manifest = write_manifest(
-        tmp_path / "m.toml", {"default": [Archive(server.url(f"/a.{_ext(other)}"), data, other)]}
+        tmp_path / "m.toml",
+        {"default": [Archive(server.url(f"/a.{archive_ext(other)}"), data, other)]},
     )
     final, _ = await fetch(manifest, platform=other)
     assert final.state is TaskState.FAILED
@@ -777,9 +758,10 @@ async def test_a_file_at_the_install_path_is_refused(
     install.parent.mkdir(parents=True)
     install.write_text("a file")
     data = fake_archive(other, tmp_path / "work")
-    server.add(f"/a.{_ext(other)}", data)
+    server.add(f"/a.{archive_ext(other)}", data)
     manifest = write_manifest(
-        tmp_path / "m.toml", {"default": [Archive(server.url(f"/a.{_ext(other)}"), data, other)]}
+        tmp_path / "m.toml",
+        {"default": [Archive(server.url(f"/a.{archive_ext(other)}"), data, other)]},
     )
     final, _ = await fetch(manifest, platform=other)
     assert final.state is TaskState.FAILED
@@ -794,7 +776,8 @@ async def test_unknown_build_and_platform(
     other = foreign_platform()
     data = b"x"
     manifest = write_manifest(
-        tmp_path / "m.toml", {"default": [Archive(server.url(f"/a.{_ext(other)}"), data, other)]}
+        tmp_path / "m.toml",
+        {"default": [Archive(server.url(f"/a.{archive_ext(other)}"), data, other)]},
     )
     final, _ = await fetch(manifest, build="nightly")
     assert final.state is TaskState.FAILED
@@ -824,38 +807,9 @@ async def test_an_unsupported_host_needs_a_platform(
 
 
 @pytest.mark.anyio
-async def test_cancel_stops_the_download_and_installs_nothing(
-    tmp_path: Path, server: LocalServer
-) -> None:
-    other = foreign_platform()
-    data = fake_archive(other, tmp_path / "work") + b"\0" * (2 << 20)  # ~2 MiB, slow
-    route = server.add(f"/a.{_ext(other)}", data, delay=0.05)
-    manifest = write_manifest(
-        tmp_path / "m.toml", {"default": [Archive(server.url(f"/a.{_ext(other)}"), data, other)]}
-    )
-    tasks = TaskManager()
-
-    async def rescan() -> ToolSet:
-        return _toolset()
-
-    data_dir = tmp_path / "data"
-    info = start_fetch(tasks, data_dir=data_dir, rescan=rescan, platform=other, manifest=manifest)
-    deadline = asyncio.get_running_loop().time() + 30
-    while not leftovers(data_dir) or route.requests == 0:
-        assert asyncio.get_running_loop().time() < deadline
-        await asyncio.sleep(0.02)
-    await asyncio.sleep(0.2)  # a few blocks are written
-    assert tasks.cancel(info.id)
-    final = await asyncio.wait_for(tasks.wait(info.id), 30)
-    assert final.state is TaskState.CANCELLED
-    assert leftovers(data_dir) == []
-    assert not install_dir_for(data_dir, other, host_platform()).exists()
-
-
-@pytest.mark.anyio
 async def test_a_cancel_stops_a_slow_download_at_once(tmp_path: Path, server: LocalServer) -> None:
     other = foreign_platform()
-    url = f"/slow.{_ext(other)}"
+    url = f"/slow.{archive_ext(other)}"
     data = fake_archive(other, tmp_path / "work") + b"\0" * (4 << 20)
     route = server.add(url, data, delay=0.4)
     manifest = write_manifest(
@@ -873,12 +827,13 @@ async def test_a_cancel_stops_a_slow_download_at_once(tmp_path: Path, server: Lo
         await asyncio.sleep(0.02)
     await asyncio.sleep(0.6)
     started = time.monotonic()
-    tasks.cancel(info.id)
+    assert tasks.cancel(info.id)
     final = await asyncio.wait_for(tasks.wait(info.id), 60)
     elapsed = time.monotonic() - started
     assert final.state is TaskState.CANCELLED
     assert elapsed < 2.5, elapsed
     assert leftovers(data_dir) == []
+    assert not install_dir_for(data_dir, other, host_platform()).exists()
 
 
 @POSIX_ONLY
@@ -936,7 +891,7 @@ async def test_a_killed_fetchs_work_folder_is_removed_by_the_next_fetch(
 ) -> None:
     """A killed fetch leaves its work folder. A fresh one stays: another fetch may be running."""
     other = foreign_platform()
-    url = f"/a.{_ext(other)}"
+    url = f"/a.{archive_ext(other)}"
     data = fake_archive(other, tmp_path / "work")
     server.add(url, data)
     manifest = write_manifest(
@@ -1018,15 +973,15 @@ async def test_the_script_and_the_core_recognise_each_others_install(
     tmp_path: Path, server: LocalServer, fetch: Fetch
 ) -> None:
     """The script and ``reframe tools fetch`` recognise each other's install by its marker."""
-    script = _load_script()
+    script = load_script("fetch-tools.py", "fetch_tools_script")
     other = foreign_platform()
     data = fake_archive(other, tmp_path / "work")
-    https = f"https://example.invalid/build.{_ext(other)}"
+    https = f"https://example.invalid/build.{archive_ext(other)}"
     script_manifest = write_manifest(
         tmp_path / "s.toml", {"default": [Archive(https, data, other)]}
     )
-    route = server.add(f"/build.{_ext(other)}", data)
-    local = server.url(f"/build.{_ext(other)}")
+    route = server.add(f"/build.{archive_ext(other)}", data)
+    local = server.url(f"/build.{archive_ext(other)}")
     manifest = write_manifest(tmp_path / "m.toml", {"default": [Archive(local, data, other)]})
     build = script.load_manifest(script_manifest)["default"]
     install = install_dir_for(fetch.data_dir, other, host_platform())

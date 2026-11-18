@@ -115,7 +115,6 @@ def test_descriptors_of_the_example_episode_with_the_commentary() -> None:
         (audio(1, "mp3"), "mpeg_audio"),
         (audio(1, "pcm_s24le"), "pcm"),
         (audio(1, "flac"), "flac"),
-        (audio(1, "opus"), "opus"),
         (audio(1, codec=None), None),  # type: ignore[arg-type]
         (subtitle(1, "subrip"), "text"),
         (subtitle(1, "ass"), "text"),

@@ -187,13 +187,11 @@ def defs(change: Callable[[Definitions], None]) -> Mod:
     return mod
 
 
-def ffmpeg_status(status: ToolStatus | None) -> Mod:
+def ffmpeg_status(status: ToolStatus) -> Mod:
     """ffmpeg from a Settings path with ``status``; "Use bundled" removes the path, and the
     rediscovery then finds the bundled ffmpeg."""
 
     def mod(s: Any) -> None:
-        if status is None:
-            return
         use_bundled = Fix(
             label="Use bundled FFmpeg",
             patch=[RemoveOp(path="/tools/ffmpeg")],
@@ -337,7 +335,7 @@ CASES: list[Case] = [
         "",
         ERR,
         ffmpeg_status(ToolStatus.MISSING),
-        ffmpeg_status(None),
+        nothing,
     ),
     Case(
         "ffmpeg too old",
@@ -345,7 +343,7 @@ CASES: list[Case] = [
         "",
         ERR,
         ffmpeg_status(ToolStatus.TOO_OLD),
-        ffmpeg_status(None),
+        nothing,
     ),
     Case(
         "ffmpeg broken",
@@ -353,7 +351,7 @@ CASES: list[Case] = [
         "",
         ERR,
         ffmpeg_status(ToolStatus.BROKEN),
-        ffmpeg_status(None),
+        nothing,
     ),
     Case(
         "unknown video encoder",
@@ -1506,7 +1504,12 @@ def test_positive(case: Case) -> None:
     assert {i.severity for i in matching} == {case.severity}
 
 
-@pytest.mark.parametrize("case", CASES, ids=[c.id for c in CASES])
+#: A negative of `nothing` is the clean job itself, so `test_clean_job_has_no_issues` is the
+#: negative test of those codes and running `check` on it again would add nothing.
+NEGATIVE_CASES = [c for c in CASES if c.negative is not nothing]
+
+
+@pytest.mark.parametrize("case", NEGATIVE_CASES, ids=[c.id for c in NEGATIVE_CASES])
 def test_negative(case: Case) -> None:
     issues = sc.check(build(case.negative))
     assert not sc.found(issues, case.code, case.path), issues

@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import importlib.util
 import io
 import os
 import stat
-import sys
 import tarfile
 import tomllib
 import urllib.error
@@ -17,29 +15,18 @@ import zipfile
 from collections.abc import Callable
 from email.message import Message
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
 
+from reframe_testing.scripts import load_script
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = REPO_ROOT / "scripts" / "fetch-tools.py"
 MANIFEST = REPO_ROOT / "tools" / "ffmpeg.toml"
 ROOT = "ffmpeg-test-linux64"
 
 
-def _load_script() -> ModuleType:
-    # The script name has a hyphen, so it cannot be imported by name.
-    spec = importlib.util.spec_from_file_location("fetch_tools", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module  # dataclasses look the module up by name
-    spec.loader.exec_module(module)
-    return module
-
-
-ft = _load_script()
+ft = load_script("fetch-tools.py")
 
 
 def _manifest_data() -> dict[str, Any]:
@@ -251,18 +238,16 @@ def test_verify_file_accepts_matching_file(tmp_path: Path) -> None:
     ft.verify_file(path, _sha256(b"payload"), 7)
 
 
-def test_verify_file_rejects_wrong_hash(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("sha256", "size", "match"),
+    [(_sha256(b"other!!"), 7, "SHA-256"), (_sha256(b"payload"), 8, "size")],
+    ids=["wrong hash", "wrong size"],
+)
+def test_verify_file_rejects(tmp_path: Path, sha256: str, size: int, match: str) -> None:
     path = tmp_path / "a.bin"
     path.write_bytes(b"payload")
-    with pytest.raises(ft.ChecksumError, match="SHA-256"):
-        ft.verify_file(path, _sha256(b"other!!"), 7)
-
-
-def test_verify_file_rejects_wrong_size(tmp_path: Path) -> None:
-    path = tmp_path / "a.bin"
-    path.write_bytes(b"payload")
-    with pytest.raises(ft.ChecksumError, match="size"):
-        ft.verify_file(path, _sha256(b"payload"), 8)
+    with pytest.raises(ft.ChecksumError, match=match):
+        ft.verify_file(path, sha256, size)
 
 
 def test_install_fails_on_checksum_mismatch_before_extracting(tmp_path: Path) -> None:
@@ -396,9 +381,8 @@ def test_install_fails_when_ffprobe_is_missing(tmp_path: Path) -> None:
         ft.install(_build(pbuild), pbuild, tmp_path, downloader=_copier(archive, []))
 
 
-def test_main_prints_only_the_bin_dir(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsysbinary: pytest.CaptureFixture[bytes]
-) -> None:
+def _cli_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A manifest for `main` whose download is the good tar and whose host is not linux-x64."""
     archive = _good_tar()
     pbuild = _platform_build(archive)
     manifest = tmp_path / "ffmpeg.toml"
@@ -427,6 +411,13 @@ ffprobe = "bin/ffprobe"
     monkeypatch.setattr(ft, "download", lambda url, dest, **_: dest.write_bytes(archive))
     # Pretend the host is another platform so the fake binaries are not executed.
     monkeypatch.setattr(ft, "detect_platform", lambda *a: "windows-x64")
+    return manifest
+
+
+def test_main_prints_only_the_bin_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsysbinary: pytest.CaptureFixture[bytes]
+) -> None:
+    manifest = _cli_manifest(tmp_path, monkeypatch)
 
     code = ft.main(
         ["--platform", "linux-x64", "--dest", str(tmp_path / "tools"), "--manifest", str(manifest)]
@@ -539,34 +530,7 @@ def test_install_bundled_replaces_an_older_install(tmp_path: Path) -> None:
 def test_main_install_dir_prints_its_bin_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsysbinary: pytest.CaptureFixture[bytes]
 ) -> None:
-    archive = _good_tar()
-    pbuild = _platform_build(archive)
-    manifest = tmp_path / "ffmpeg.toml"
-    manifest.write_text(
-        f"""
-schema_version = 1
-[builds.default]
-version = "n9.0-test"
-release_version = "9.0"
-license = "GPL-3.0-or-later"
-source_repository = "https://example.invalid/ffmpeg"
-source_commit = "{"0" * 40}"
-release_tag = "test"
-[builds.default.platforms.linux-x64]
-url = "{pbuild.url}"
-sha256 = "{pbuild.sha256}"
-size = {pbuild.size}
-format = "tar.xz"
-root = "{ROOT}"
-bin_dir = "bin"
-ffmpeg = "bin/ffmpeg"
-ffprobe = "bin/ffprobe"
-""",
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(ft, "download", lambda url, dest, **_: dest.write_bytes(archive))
-    # Pretend the host is another platform so the fake binaries are not executed.
-    monkeypatch.setattr(ft, "detect_platform", lambda *a: "windows-x64")
+    manifest = _cli_manifest(tmp_path, monkeypatch)
     target = tmp_path / "data" / "tools" / "ffmpeg"
     code = ft.main(
         ["--platform", "linux-x64", "--install-dir", str(target), "--manifest", str(manifest)]

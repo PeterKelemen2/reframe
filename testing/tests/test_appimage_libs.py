@@ -3,32 +3,18 @@ the built AppDir against them."""
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import stat
 import struct
 import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = REPO_ROOT / "scripts" / "appimage-libs.py"
+from reframe_testing.scripts import load_script
 
-
-def _load_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("appimage_libs", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-al = _load_script()
+al = load_script("appimage-libs.py")
 
 # dpkg's info files are named "package:arch.list", which is not a Windows file name, and
 # dpkg-query exists only in the Linux build image the script runs in.
@@ -149,10 +135,8 @@ def test_a_listed_package_that_is_not_installed_is_an_error(fake_dpkg: Path, pac
 @pytest.mark.parametrize(
     ("relative", "package"),
     [
-        ("usr/lib/libgtk-3.so.0", "libgtk-3-0"),
         ("usr/lib/gtk-3.0/3.0.0/immodules/im-xim.so", "libgtk-3-0"),
         ("usr/lib/im-xim.so", "libgtk-3-0"),
-        ("usr/lib/libblkid.so.1", "libblkid1"),
         ("usr/share/doc/libxau6/copyright", "libxau6"),
     ],
 )

@@ -491,7 +491,7 @@ A final review of the fix rounds (reviewer R-A, on `core-complete` 5dbf152) foun
   `OutputClaims`' `batch.output_is_source` error was added to the draft's issues with C-8's
   `output.overwrite` warning still there; the batch path already left it out. The CLI now
   leaves `output.overwrite` out of that job's issues (`cli._with_claims`). Tests:
-  `test_encode_does_not_say_will_be_replaced_next_to_never_overwritten` (the reviewer's),
+  `test_encode_never_writes_another_file_of_the_command` (the reviewer's),
   `test_encode_keeps_the_overwrite_warning_of_a_file_outside_the_command`.
 - **RA-5: a member labelled by its file name shows the name once.** For two releases of one
   episode `episode_labels` gives the file name, and `render_group` printed the label column

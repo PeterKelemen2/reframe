@@ -274,15 +274,10 @@ def test_metadata_edit_plan_edits_the_source() -> None:
     assert plan.display == (
         f"header_edit {quote_posix(str(src.ref.path))} audio 1: language=por language_ietf=pt-BR"
     )
-
-
-def test_metadata_edit_plan_needs_no_tool() -> None:
-    job, src = in_place()
-    job.audio[0].metadata.language = "pt-BR"
     none = tools()
     none.ffmpeg.status = ToolStatus.MISSING
     none.ffprobe.status = ToolStatus.MISSING
-    assert [step.kind for step in build_plan(job, src, caps(), none).steps] == ["header_edit"]
+    assert build_plan(job, src, caps(), none, shell="posix") == plan
 
 
 def test_metadata_edit_plan_needs_no_output_path() -> None:
@@ -328,3 +323,6 @@ def test_no_fixup_without_a_tag_iso_639_2_cannot_say_or_outside_mkv() -> None:
     job.output.container = "mp4"
     job.output.path = Path("/out/x.mp4")
     assert "header_edit" not in [s.kind for s in build_plan(job, src, caps(), tools()).steps]
+    webm = draft(src, container="webm", audio_encoder="libopus", video={"encoder": "libsvtav1"})
+    webm.audio[0].metadata = TrackMetadata(language="pt-BR")
+    assert "header_edit" not in [s.kind for s in build_plan(webm, src, caps(), tools()).steps]

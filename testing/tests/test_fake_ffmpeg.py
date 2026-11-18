@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import contextlib
 import ctypes
@@ -224,17 +225,6 @@ def test_sleep(fake_tools: FakeTools) -> None:
     assert r.stdout == b"done\n"
 
 
-def test_hang_times_out(fake_tools: FakeTools) -> None:
-    fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.hang()])]))
-    proc = subprocess.Popen([str(fake_tools.ffmpeg), "-encoders"])
-    try:
-        with pytest.raises(subprocess.TimeoutExpired):
-            proc.wait(timeout=0.5)
-    finally:
-        kill_tree(proc.pid)
-        proc.wait(timeout=10)
-
-
 @posix_only
 def test_crash_by_signal(fake_tools: FakeTools) -> None:
     fake_tools.set_scenario(
@@ -361,13 +351,7 @@ def test_progress_blocks_then_output(fake_tools: FakeTools, tmp_path: Path) -> N
     )
     assert time.monotonic() - t >= 0.2
     assert out.stat().st_size == 2048
-    blocks: list[dict[str, str]] = [{}]
-    for line in r.stdout.decode().splitlines():
-        key, _, value = line.partition("=")
-        blocks[-1][key] = value
-        if key == "progress":
-            blocks.append({})
-    blocks.pop()
+    blocks = parse_blocks(r.stdout.decode())
     assert len(blocks) == 4
     assert [b["progress"] for b in blocks] == ["continue", "continue", "continue", "end"]
     assert [int(b["out_time_us"]) for b in blocks] == [2_000_000, 4_000_000, 6_000_000, 8_000_000]
@@ -755,8 +739,8 @@ def test_the_fake_runs_with_the_base_interpreter_not_a_venv_launcher(
     assert base == ft.PYTHON
     assert fake_tools.argv("ffprobe")[0] == base
     win = ft.make_fake_tools(tmp_path / "win", platform="win32")
-    run_line = next(line for line in win.ffmpeg.read_text().splitlines() if "--fake-tool" in line)
-    assert run_line.startswith(f'"{base}" -I ')
+    run_line = next(line for line in win.ffmpeg.read_text().splitlines() if "-I -c" in line)
+    assert run_line.startswith(f'"{base}" -I -c ')
     fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.spawn_grandchild(), ft.hang()])]))
     proc = subprocess.Popen([str(fake_tools.ffmpeg), "-i", "x", "y.mkv"])
     try:
@@ -788,13 +772,34 @@ def test_windows_launcher_written_on_any_os(tmp_path: Path) -> None:
         f'if not defined REFRAME_FAKE_FFMPEG_SCENARIO set "REFRAME_FAKE_FFMPEG_SCENARIO={scen}"'
         in lines
     )
-    run_line = next(line for line in lines if "--fake-tool" in line)
+    run_line = next(line for line in lines if "-I -c" in line)
+    code = (
+        f"import sys; sys.path.append({str(ft.SCRIPT.parent)!r}); import fake_ffmpeg; "
+        "sys.exit(fake_ffmpeg.main('ffmpeg', sys.argv[1:]))"
+    )
     assert run_line == (
-        '"C:\\Program Files\\Python313\\python.exe" -I '
-        f'"{str(ft.SCRIPT).replace("%", "%%")}" --fake-tool ffmpeg %*'
+        f'"C:\\Program Files\\Python313\\python.exe" -I -c "{code.replace("%", "%%")}" %*'
     )
     assert lines[-2] == "exit /b %ERRORLEVEL%"
-    assert "--fake-tool ffprobe %*" in tools.ffprobe.read_text()
+    assert "main('ffprobe', sys.argv[1:]))\" %*" in tools.ffprobe.read_text()
+
+
+def test_windows_launcher_takes_a_folder_with_an_apostrophe(tmp_path: Path) -> None:
+    """``repr`` of such a path is a double-quoted literal, which a quoted .cmd argument cannot
+    hold; a backslash and a percent sign in the folder must survive too."""
+    folder = "C:\\Users\\O'Brien\\100%\\testing"
+    text = ft.windows_launcher(
+        "ffmpeg",
+        python="python.exe",
+        script=Path(folder) / "fake_ffmpeg.py",
+        scenario=tmp_path,
+        log=tmp_path,
+    )
+    run_line = next(line for line in text.splitlines() if "-I -c" in line)
+    code = run_line.removeprefix('"python.exe" -I -c "').removesuffix('" %*').replace("%%", "%")
+    assert run_line.count('"') == 4
+    literal = code.split("sys.path.append(")[1].split("); import")[0]
+    assert ast.literal_eval(literal) == str(Path(folder))
 
 
 def test_windows_launcher_rejects_double_quotes(tmp_path: Path) -> None:
@@ -809,7 +814,7 @@ def test_windows_launcher_rejects_double_quotes(tmp_path: Path) -> None:
 
 
 def test_script_cli_entry_point(fake_tools: FakeTools) -> None:
-    """The form the Windows launcher uses: ``python fake_ffmpeg.py --fake-tool ffmpeg ...``."""
+    """The form of ``FakeTools.argv``: ``python fake_ffmpeg.py --fake-tool ffmpeg ...``."""
     r = subprocess.run(
         [sys.executable, str(ft.SCRIPT), "--fake-tool", "ffmpeg", "-version"],
         capture_output=True,

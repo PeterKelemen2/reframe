@@ -21,6 +21,7 @@ from reframe.tools.discovery import (
     locate_tools,
 )
 from reframe_testing import fake_tools as ft
+from reframe_testing.processes import alive
 
 WINDOWS = sys.platform == "win32"
 
@@ -128,37 +129,8 @@ async def test_settings_path_wins_over_bundled(tmp_path: Path, empty_path: str) 
     assert tools.ffprobe.origin is ToolOrigin.SETTINGS
     assert tools.ffprobe.next_to_ffmpeg
     assert tools.ffprobe.path == settings_tools.ffprobe
-
-
-@pytest.mark.anyio
-async def test_a_bundled_build_is_reported_while_an_override_works(
-    tmp_path: Path, empty_path: str
-) -> None:
-    settings_tools = _fake(tmp_path / "custom")
-    root = tmp_path / "root"
-    _fake(root / "ffmpeg" / "bin")
-    tools = await discover_tools(
-        {"ffmpeg": str(settings_tools.ffmpeg)},
-        environ=_env(),
-        bundled_roots=[root],
-        search_path=empty_path,
-    )
-    assert tools.ffmpeg.origin is ToolOrigin.SETTINGS
-    assert tools.ffmpeg.status is ToolStatus.FOUND
     assert tools.ffmpeg.bundled
     assert tools.ffprobe.bundled
-
-
-@pytest.mark.anyio
-async def test_no_bundled_build_is_reported_without_one(tmp_path: Path) -> None:
-    path_dir = tmp_path / "path"
-    _fake(path_dir)
-    tools = await discover_tools(
-        environ=_env(), bundled_roots=[tmp_path / "no-root"], search_path=str(path_dir)
-    )
-    assert tools.ffmpeg.origin is ToolOrigin.PATH
-    assert not tools.ffmpeg.bundled
-    assert not tools.ffprobe.bundled
 
 
 @pytest.mark.anyio
@@ -189,6 +161,8 @@ async def test_path_is_used_without_a_bundled_build(tmp_path: Path) -> None:
     assert await asyncio.to_thread(os.path.samefile, tools.ffmpeg.path, on_path.ffmpeg)
     assert tools.ffprobe.origin is ToolOrigin.PATH
     assert tools.ffmpeg.env == {}  # LIBVA_DRIVERS_PATH only for the bundled build
+    assert not tools.ffmpeg.bundled
+    assert not tools.ffprobe.bundled
 
 
 def test_bundled_build_in_the_folder_itself(tmp_path: Path, empty_path: str) -> None:
@@ -893,15 +867,6 @@ def test_main_reports_and_checks_the_origin(
         main(["--require", "ffmpeeg"])
 
 
-def _alive(pid: int) -> bool:
-    import psutil
-
-    try:
-        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
-    except psutil.Error:
-        return False
-
-
 @pytest.mark.anyio
 async def test_cancelled_discovery_leaves_no_process(tmp_path: Path, empty_path: str) -> None:
     """Cancelling discovery leaves no version-check process behind.
@@ -923,4 +888,4 @@ async def test_cancelled_discovery_leaves_no_process(tmp_path: Path, empty_path:
     pids = fake.pids()
     task.cancel()
     await asyncio.wait({task})
-    assert [pid for pid in pids if _alive(pid)] == []
+    assert [pid for pid in pids if alive(pid)] == []

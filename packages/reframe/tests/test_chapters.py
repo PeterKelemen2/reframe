@@ -193,23 +193,20 @@ def test_a_file_without_chapters_is_refused() -> None:
 
 
 @pytest.mark.parametrize(
-    ("data", "names", "codes"),
+    "data",
     [
-        ("﻿1,Ősz\n".encode(), ["Ősz"], []),
-        ("﻿1,Ősz\n".encode("utf-16-le"), ["Ősz"], []),
-        ("﻿1,Ősz\n".encode("utf-16-be"), ["Ősz"], []),
-        ("1,Café\n".encode("latin-1"), ["Café"], ["chapters.not_utf8"]),
+        ("﻿1,Ősz\n".encode()),
+        ("﻿1,Ősz\n".encode("utf-16-le")),
+        ("﻿1,Ősz\n".encode("utf-16-be")),
     ],
 )
-def test_the_file_is_read_as_utf8_utf16_or_latin1(
-    tmp_path: Path, data: bytes, names: list[str], codes: list[str]
-) -> None:
+def test_the_file_is_read_as_utf8_or_utf16(tmp_path: Path, data: bytes) -> None:
     file = tmp_path / "chapters.csv"
     file.write_bytes(data)
     result = read_chapter_file(file)
     assert isinstance(result, ChapterImport)
-    assert [c.name for c in result.chapters] == names
-    assert [i.code for i in result.issues] == codes
+    assert [c.name for c in result.chapters] == ["Ősz"]
+    assert result.issues == []
 
 
 def test_a_file_over_the_limit_is_not_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

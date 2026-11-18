@@ -135,12 +135,6 @@ def test_real_failures(
     assert (failure.state, failure.reason, failure.detail) == (state, reason, detail)
 
 
-def test_the_last_line_is_never_the_reason() -> None:
-    text = stderr("detect_hevc_nvenc_no_driver")
-    assert text.strip().splitlines()[-1] == "Conversion failed!"
-    assert "Conversion failed" not in explain_failure(text, ctx("hevc_nvenc")).reason
-
-
 NVENC_API = "Driver does not support the required nvenc API version. Required: 13.0 Found: 12.1"
 
 

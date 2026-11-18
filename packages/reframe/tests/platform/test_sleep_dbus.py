@@ -347,24 +347,6 @@ def test_call_with_extra_descriptors_returns_them_all() -> None:
     assert open_fds() == before
 
 
-def test_error_reply_raises_dbus_error() -> None:
-    before = open_fds()
-    with fake_bus(Scenario(inhibit="error")) as address, pytest.raises(dbus.DBusError) as info:
-        _call(address)
-    assert info.value.name == "org.freedesktop.DBus.Error.AccessDenied"
-    assert info.value.message == "Permission denied"
-    assert str(info.value) == "org.freedesktop.DBus.Error.AccessDenied: Permission denied"
-    assert open_fds() == before
-
-
-def test_hello_error_raises() -> None:
-    with (
-        fake_bus(Scenario(hello_error=True)) as address,
-        pytest.raises(dbus.DBusError, match=r"Error\.Failed: no"),
-    ):
-        _call(address)
-
-
 def test_refused_authentication_raises_protocol_error() -> None:
     with (
         fake_bus(Scenario(auth="REJECTED EXTERNAL")) as address,
@@ -522,11 +504,14 @@ def test_connection_close_after_an_error_reply_frees_the_socket() -> None:
     with fake_bus(Scenario(inhibit="error")) as address:
         connection = dbus.Connection.open(address)
         try:
-            with pytest.raises(dbus.DBusError):
+            with pytest.raises(dbus.DBusError) as info:
                 connection.call(destination="x.y", path="/", interface="x.y", member="Z")
         finally:
             connection.close()
         assert connection.closed
+    assert info.value.name == "org.freedesktop.DBus.Error.AccessDenied"
+    assert info.value.message == "Permission denied"
+    assert str(info.value) == "org.freedesktop.DBus.Error.AccessDenied: Permission denied"
     assert open_fds() == before
 
 
@@ -534,7 +519,7 @@ def test_connection_open_failure_closes_the_socket() -> None:
     before = open_fds()
     with (
         fake_bus(Scenario(hello_error=True)) as address,
-        pytest.raises(dbus.DBusError),
+        pytest.raises(dbus.DBusError, match=r"Error\.Failed: no"),
     ):
         dbus.Connection.open(address)
     assert open_fds() == before

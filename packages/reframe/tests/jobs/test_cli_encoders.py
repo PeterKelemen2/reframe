@@ -11,7 +11,7 @@ from reframe.cli import EXIT_NO_TOOL, EXIT_OK, encoder_text
 from reframe.models import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe_testing import fake_tools as ft
 from reframe_testing.capabilities import detect_rule
-from reframe_testing.cli import invoke
+from reframe_testing.cli import invoke, run_cli
 
 NVENC_LINE = "hevc_nvenc — unavailable: NVIDIA driver not found"
 
@@ -36,31 +36,21 @@ def test_first_run_checks_then_lists_every_encoder(cli_env: ft.FakeTools) -> Non
     assert not any("checking…" in line for line in out)
 
 
-def test_second_run_prints_the_cache_at_once(cli_env: ft.FakeTools) -> None:
-    assert invoke("encoders").exit_code == EXIT_OK
-    result = invoke("encoders")
-    assert result.exit_code == EXIT_OK, result.output
-    out = lines(result.stdout)
+def test_the_cache_is_printed_then_the_changes(cli_env: ft.FakeTools) -> None:
+    assert invoke("encoders").exit_code == EXIT_OK  # every test encode works: cached
+    unchanged = invoke("encoders")
+    assert unchanged.exit_code == EXIT_OK, unchanged.output
+    out = lines(unchanged.stdout)
     assert "(cached result of " in out[0]
     assert "Checking again…" in out
     cached = out[1 : out.index("Checking again…")]
     assert "libx265 — available" in cached
     assert out[-1].endswith("(no changes).")
 
-
-def test_no_nvidia_driver(cli_env: ft.FakeTools) -> None:
-    """The real FFmpeg text of a machine without the NVIDIA driver."""
     cli_env.set_scenario(ft.Scenario([detect_rule("detect_hevc_nvenc_no_driver")]))
-    result = invoke("encoders")
-    assert result.exit_code == EXIT_OK, result.output
-    assert NVENC_LINE in lines(result.stdout)
-
-
-def test_a_status_that_changes_after_the_cache_is_printed_again(cli_env: ft.FakeTools) -> None:
-    assert invoke("encoders").exit_code == EXIT_OK  # every test encode works: cached
-    cli_env.set_scenario(ft.Scenario([detect_rule("detect_hevc_nvenc_no_driver")]))
-    result = invoke("encoders")
-    out = lines(result.stdout)
+    changed = invoke("encoders")
+    assert changed.exit_code == EXIT_OK, changed.output
+    out = lines(changed.stdout)
     checking_again = out.index("Checking again…")
     assert "hevc_nvenc — available" in out[:checking_again]
     assert NVENC_LINE in out[checking_again:]
@@ -127,32 +117,8 @@ def test_a_legacy_windows_console_encoding_does_not_crash(
 ) -> None:
     """cp1252 (a Windows console) has the dash but no arrow: what it cannot encode is
     replaced, never a ``UnicodeEncodeError``."""
-    import subprocess
-    import sys
-
-    from reframe.tools import ENV_VARS
-
-    env = cli_env.env()
-    for var in ENV_VARS.values():
-        env.pop(var, None)
-    env.update(
-        REFRAME_FFMPEG=str(cli_env.ffmpeg),
-        REFRAME_FFPROBE=str(cli_env.ffprobe),
-        REFRAME_CACHE_DIR=str(tmp_path / "cache-sub"),
-        REFRAME_CONFIG_DIR=str(tmp_path / "config-sub"),
-        REFRAME_DATA_DIR=str(tmp_path / "data-sub"),
-        PYTHONIOENCODING="cp1252",
-        COLUMNS="120",
-    )
-    env.pop("PYTHONUTF8", None)
     for args in (["encoders"], ["name", str(tmp_path / "Movie.2016.1080p" / "m→v.mkv")]):
-        result = subprocess.run(
-            [sys.executable, "-m", "reframe.cli", *args],
-            capture_output=True,
-            env=env,
-            timeout=60,
-            check=False,
-        )
+        result = run_cli(cli_env, tmp_path, *args, encoding="cp1252")
         assert result.returncode == 0, result.stderr.decode("cp1252", "replace")
         out = result.stdout.decode("cp1252")
         assert "Traceback" not in result.stderr.decode("cp1252", "replace")

@@ -4,7 +4,6 @@ batches, the heartbeat, slow and stuck clients, and shutdown."""
 from __future__ import annotations
 
 import asyncio
-import functools
 import itertools
 import json
 import logging
@@ -39,12 +38,12 @@ from reframe.models import (
     TaskProgressEvent,
     TaskState,
 )
+from reframe.tasks import TaskContext
 from reframe_server import __main__ as entry
 from reframe_server import security
 from reframe_server.app import create_app
 from reframe_server.config import ServerConfig
 from reframe_server.events import EventHub
-from reframe_server.folders import hide_server_folders
 from reframe_testing.server import Api, LiveServer, receive_json
 from reframe_testing.waiting import wait_until
 
@@ -431,7 +430,8 @@ async def test_an_idle_connection_gets_heartbeats(api: Api) -> None:
 async def test_a_task_event_names_the_cache_folder_by_its_label(api: Api) -> None:
     """A task's message, error and result can name files in the server's cache folder: the
     client gets ``<cache>`` in their place in ``task.progress`` and ``task.done``, never where
-    the server keeps its files."""
+    the server keeps its files. The app's own hub does it, for events published by hand and for
+    a task the real task manager runs."""
     cache = str(api.reframe.cache_dir)
     frame = str(api.reframe.cache_dir / "frames" / "f.png")
     shown = frame.replace(cache, "<cache>")
@@ -443,16 +443,24 @@ async def test_a_task_event_names_the_cache_folder_by_its_label(api: Api) -> Non
         error=f"kept {frame}",
         result={"frames": [frame]},
     )
-    hide = functools.partial(hide_server_folders, api.reframe)
     running = TaskInfo(id="task-1", kind="frames", state=TaskState.RUNNING, message=frame)
-    async with serving(api, hide=hide) as server, signed_in(server, api) as client:
+
+    async def work(_ctx: TaskContext) -> dict[str, str]:
+        return {"path": frame}
+
+    async with api.live() as server, signed_in(server, api) as client:
         api.reframe.events.publish(TaskProgressEvent(task=running))
         api.reframe.events.publish(TaskDoneEvent(task=task))
-        events = await client.events_until(lambda event: event["type"] == "task.done")
-    assert [e["task"]["message"] for e in events if e["type"] == "task.progress"] == [shown]
-    sent = events[-1]["task"]
+        started = api.reframe.tasks.start("test", work, result_json=lambda value: value)
+        events = await client.events_until(
+            lambda event: event["type"] == "task.done" and event["task"]["id"] == started.id
+        )
+    by_hand = [e for e in events if e.get("task", {}).get("id") == "task-1"]
+    assert [e["task"]["message"] for e in by_hand if e["type"] == "task.progress"] == [shown]
+    sent = by_hand[-1]["task"]
     assert (sent["message"], sent["error"]) == (f"wrote {shown}", f"kept {shown}")
     assert sent["result"] == {"frames": [shown]}
+    assert events[-1]["task"]["result"] == {"path": shown}
 
 
 async def test_a_reconnect_starts_a_new_sequence(api: Api) -> None:
@@ -520,22 +528,14 @@ async def test_a_disconnect_frees_the_subscription(api: Api) -> None:
         await wait_until(lambda: (api.hub.connections, bus.subscriber_count) == (0, before))
 
 
-async def test_a_client_that_drops_while_the_hub_waits_to_send(
-    api: Api, subscriptions: list[Subscription]
-) -> None:
-    bus = api.reframe.events
-    before = bus.subscriber_count
-    async with serving(api) as server, signed_in(server, api) as client:
-        await stall(bus, client, subscriptions[0])
-        client.connection.transport.abort()
-        await wait_until(lambda: (api.hub.connections, bus.subscriber_count) == (0, before))
-
-
 async def test_a_client_that_drops_while_the_hub_waits_to_send_has_its_jobs_cancelled(
     api: Api, subscriptions: list[Subscription]
 ) -> None:
     """A CLI that stopped reading is killed: the send that waits for it fails, and its
-    attached job is cancelled all the same (uvicorn queues the disconnect first)."""
+    attached job is cancelled all the same (uvicorn queues the disconnect first), and the hub
+    frees the connection and its subscription."""
+    bus = api.reframe.events
+    before = bus.subscriber_count
     source = api.media_file()
     draft = await api.reframe.jobs.draft(source, output=api.output / "Show.mkv")
     assert isinstance(draft, JobDraft)
@@ -545,9 +545,10 @@ async def test_a_client_that_drops_while_the_hub_waits_to_send_has_its_jobs_canc
             "/api/queue", json={"jobs": [job], "attach": client.hello["client_id"]}
         )
         [added] = response.json()
-        await stall(api.reframe.events, client, subscriptions[0])
+        await stall(bus, client, subscriptions[0])
         client.connection.transport.abort()
         [ended] = await asyncio.wait_for(api.reframe.queue.wait([added["id"]]), 10)
+        await wait_until(lambda: (api.hub.connections, bus.subscriber_count) == (0, before))
     assert ended.state is JobState.CANCELLED
 
 

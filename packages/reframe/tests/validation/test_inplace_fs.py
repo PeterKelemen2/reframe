@@ -101,9 +101,3 @@ def test_read_only_source_fix_writes_a_new_file_with_a_new_path() -> None:
     after = s.apply(fix).validate()
     assert not sc.found(after, "inplace.source_not_writable")
     assert not sc.found(after, "output.same_as_source")
-
-
-def test_read_only_source_through_the_view() -> None:
-    s = in_place()
-    s.fs.writable_file = lambda path: False
-    assert sc.found(s.validate(), "inplace.source_not_writable")

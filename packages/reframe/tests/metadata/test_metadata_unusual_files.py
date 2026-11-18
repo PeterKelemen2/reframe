@@ -10,66 +10,13 @@ from pathlib import Path
 import pytest
 
 from reframe.models import JobDraft, JobState
-from reframe_testing.ebml import element
-from reframe_testing.mkvtoolnix import mkvtoolnix_tool
+from reframe_testing.ebml import with_bogus_seek_entry
+from reframe_testing.mkvtoolnix import mkvtoolnix_tool, with_bad_tag
 
 from .test_metadata_edit_real import Env, draft_remux, env, mkvmerge, reprobe, run
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.anyio]
 __all__ = ["env"]
-
-
-def _header(data: bytes, pos: int) -> tuple[int, int, int]:
-    """``(id, size, header length)`` of the element at ``pos`` (known sizes only)."""
-    first = data[pos]
-    id_len = 8 - first.bit_length() + 1
-    element_id = int.from_bytes(data[pos : pos + id_len], "big")
-    size_first = data[pos + id_len]
-    size_len = 8 - size_first.bit_length() + 1
-    raw = int.from_bytes(data[pos + id_len : pos + id_len + size_len], "big")
-    size = raw & ((1 << (7 * size_len)) - 1)
-    return element_id, size, id_len + size_len
-
-
-def with_bogus_seek_entry(path: Path) -> None:
-    """A Seek entry ``Tracks → 2^64 - 1`` in front of the SeekHead's entries, in the Void
-    after it."""
-    data = bytearray(path.read_bytes())
-    _, ebml_size, ebml_header = _header(bytes(data), 0)
-    seg = ebml_header + ebml_size
-    seg_id, _, seg_header = _header(bytes(data), seg)
-    assert seg_id == 0x18538067
-    start = seg + seg_header
-    head_id, head_size, head_header = _header(bytes(data), start)
-    assert head_id == 0x114D9B74
-    payload = bytes(data[start + head_header : start + head_header + head_size])
-    void_id, void_size, void_header = _header(bytes(data), start + head_header + head_size)
-    assert void_id == 0xEC
-    room = head_header + head_size + void_header + void_size
-    bogus = element(
-        0x4DBB, element(0x53AB, bytes.fromhex("1654AE6B")) + element(0x53AC, b"\xff" * 8)
-    )
-    new_head = element(0x114D9B74, bogus + payload)
-    new_void = element(0xEC, b"\0" * (room - len(new_head) - 9))
-    assert len(new_head) + len(new_void) == room
-    data[start : start + room] = new_head + new_void
-    path.write_bytes(bytes(data))
-
-
-def with_bad_tag(path: Path, bad: bytes) -> None:
-    """``LanguageIETF`` of a1 = ``bad`` (5 bytes): mkvpropedit writes ``en-US``, then the bytes
-    are replaced (mkvpropedit does not write an invalid tag)."""
-    subprocess.run(
-        [mkvtoolnix_tool("mkvpropedit"), str(path), "--edit", "track:a1",
-         "--set", "language-ietf=en-US"],
-        check=True, capture_output=True,
-    )  # fmt: skip
-    data = bytearray(path.read_bytes())
-    needle = bytes.fromhex("22B59D85") + b"en-US"
-    assert data.count(needle) == 1
-    at = data.index(needle) + 4
-    data[at : at + 5] = bad
-    path.write_bytes(bytes(data))
 
 
 async def test_the_reprobe_shows_only_the_files_bcp47_tags(env: Env) -> None:
@@ -103,7 +50,7 @@ async def test_the_reprobe_shows_only_the_files_bcp47_tags(env: Env) -> None:
 async def test_a_file_with_an_invalid_language_ietf_can_be_drafted_and_planned(
     env: Env, bad: bytes
 ) -> None:
-    with_bad_tag(env.source, bad)
+    with_bad_tag(env.source, mkvtoolnix_tool("mkvpropedit"), bad)
     app = await env.app()
     try:
         draft = await app.jobs.draft(env.source)

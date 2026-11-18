@@ -190,3 +190,88 @@ reports stay where they are.
 - **TVL-13, TTK-02, TTK-08, TPM-17, TCD-06**: truly redundant or nearly so, but named by a decision
   record (0014, 0079, 0080, 0008) as guards, so Tier C. A record edit could release them; not
   worth a record change for 1–7 tests each.
+
+## Implementation (Q-7)
+
+The packages are made by agents in the waves of [plan.md](plan.md), merged into the branch
+`q7-trim` (from `m10-hardening` at `1819150`) and merged into `m10-hardening` at the end. The
+choices in D-1 to D-19 stay as written.
+
+### D-20 Sonnet and Haiku agents in place of Opus (owner's choice)
+
+The owner chose Sonnet for the implementation agents and Haiku for the clean removals, in place of
+[plan.md](plan.md) "Which model" (Opus for every package; D-12). Haiku (effort medium) makes only
+the 17 findings that "Which model" lists as plain deletions, row trims or verified helper moves,
+as the first commit of their package; a Sonnet agent then makes the rest of the package on top of
+that commit (effort high, xhigh for Q-7.2, Q-7.8 and Q-7.9). One Sonnet review (effort xhigh) reads
+each package's diff before its wave is merged. Test runs go through a gate that allows 3 runs at
+a time with 4 xdist workers each (as D-2).
+
+### D-21 Test names in the Q-6 area files follow a deleted test
+
+The Q-6 area files (`docs/simplify/areas/`) name tests as guards. Where a Q-7 package deletes or
+merges such a test, the line names the keeper, also when the finding does not ask for the edit
+(TVL-05 in `validation.md`, TPM-05 in `probe-metadata.md`). A trim report of 2026-10-17
+(`docs/test-trim-reports/`) changes only where a finding names the line (R.md for TCD-01 and
+TCD-03, T.md for TTP-05), as plan.md's rules say; where the line tells what that trim did, the
+old name stays and a note names the keeper (T.md line 28). V2's line on TVL-05's test stays: the
+finding does not name it, and it already says the test may be deleted.
+
+### D-22 A merge keeps an assertion that another test also makes
+
+TCL-01's verdict says the exit code of the deleted `test_no_nvidia_driver` is also checked by
+`test_first_run_checks_then_lists_every_encoder`. The package carried `assert result.exit_code ==
+EXIT_OK` into the keeper anyway; the review flagged it as a change no finding names. Kept: the
+plan's rule is that a merge keeps every assertion, and the line only makes the keeper stricter.
+
+### D-23 A trim-report line that names a removed test gets a note even when no finding names it
+
+`docs/test-trim-reports/N.md` names `test_property_normalize_variants_of_an_entry` as a keep; TPM-16
+(Q-7.11) replaced it, and its "Docs and history" says "none". The line gets the D-21 kind of note
+(the old name stays, the note names the keeper), so that no document names a test that no longer
+exists without saying where it went.
+
+### D-24 SPD-08: the sources are cached, the CLI polls stay
+
+SPD-08's change has two halves: generate each source once into the fixture cache, and poll the
+owner's HTTP API instead of the CLI where the CLI's output is not what the test checks. The finding
+itself says the poll change "touches what the test exercises", and plan.md's Q-7.13 text names only
+the sources. By the order "less risk; when in doubt keep the test", Q-7.13 caches the sources
+(`reframe_testing.media` recipes in `testdata/media/queue-sources/`, built with `-y -nostdin` into
+a temporary folder) and leaves the CLI polls as they are.
+If the owner wants the polls changed: a later package swaps `Home.state` for an HTTP read where the
+test checks no CLI output (about 0.77 s per poll on Linux, more on Windows).
+
+### D-25 TDM-03's moved test goes into the file the finding names
+
+TDM-03 moves `test_every_software_encoder_has_options_in_each_main_category` out of `needs_ffmpeg`
+into `definitions/test_options_search_hdr.py`, "next to the category test". Q-7.4 had since moved
+that category test into `definitions/test_lint.py`. The moved test is unchanged and needs no FFmpeg
+in either file, so nothing depends on the choice; it stays in the file the finding names.
+
+### Result of the implementation
+
+- All 13 packages are done; no finding was skipped. Each package was reviewed (one review per
+  package diff) and its review findings were fixed before the merge; each package's whole-run
+  coverage was compared with its wave's base (two base runs from wave 2 on, because the base runs
+  themselves vary): every lost line was a timing or test-order line, a test whose setup hit the
+  known unclosed-transport `ResourceWarning` in that run, or a line only a fresh checkout's
+  fixture generation reaches.
+- Tests: 464 removed, 14 added (Q-7.7's 10 split ids, one launcher test, three child-process
+  tests of 0092): 8,616 → 8,166 collected.
+- Test code lines (no blanks, comments or docstrings; this run's counter gives 80,696 at the
+  start where the audit's gave 80,773): 80,696 → 79,780, the packages −965 and 0092's fix +49.
+- Full run on the owner's machine, idle, 6 workers, twice each: 356.3 / 355.4 s at `1819150` →
+  287.8 / 287.6 s at the end (−19 %). Q-7.7 alone measured 353.9 → 280.9 / 278.4 s; the per-test
+  timeout, the `subtests` of Q-7.9 and the later packages' moves cost back a few seconds.
+- Windows VM (6 processors): the full suite at the end, 7,827 passed and 2 failed under host load
+  (`test_detect.py::test_no_encoder_list[...]`, `test_cli_client.py::test_after_a_lost_connection_...`
+  `[the saved queue]`; neither touched by Q-7; both files pass twice in parallel and alone) in
+  13 min 28 s. Q-7.13's VM run found one real Windows failure in Q-7.10's merged test (a path
+  literal with `/`), fixed in `976dd53`.
+- Outside the plan: two whole-suite coverage runs hung on a forked child before `exec`; fixed in
+  C-1 ([0092](../decisions/0092-no-reframe-python-code-in-a-forked-child.md)).
+- Known flaky, not fixed (not part of Q-7): an unclosed `_UnixReadPipeTransport` from an earlier
+  test fails whichever test is running when it is collected (`ResourceWarning` under
+  `filterwarnings = error`); it showed up in about half of this run's whole-suite runs, most often
+  in `reframe-server/tests/test_subtitles.py`.

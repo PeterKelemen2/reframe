@@ -386,7 +386,12 @@ def test_positive(case: Case) -> None:
     assert all(f.target == "template" for i in issues for f in i.fixes)
 
 
-@pytest.mark.parametrize("case", CASES, ids=[c.id for c in CASES])
+#: A negative of `nothing` is the clean template itself, so `test_clean_template_has_no_issues`
+#: is the negative test of those codes and running `check_template` on it again would add nothing.
+NEGATIVE_CASES = [c for c in CASES if c.negative is not nothing]
+
+
+@pytest.mark.parametrize("case", NEGATIVE_CASES, ids=[c.id for c in NEGATIVE_CASES])
 def test_negative(case: Case) -> None:
     issues = sc.check_template(build(case.negative))
     assert not sc.found(issues, case.code, case.path), issues

@@ -138,12 +138,13 @@ the oracle `tests/languages/oracle.py` is the library-based module as it was). C
 prefixes, every grandfathered and redundant tag, every variant with its prefixes, deprecated
 scripts, regions and variants on four languages, every key of the language and territory alias
 tables, 98 odd inputs), the 418 listed base languages with 34 regions and 20 scripts (22,572
-tags), the 38,345 names of the listed languages in every CLDR locale and 30,676 forms of them
-with words added or letters cut (the prefix match: `achenés` → `yif`), 3,302 picker queries and
-959 locale names for `search`, 65,416 `matches` / `same_language` pairs, hypothesis on any
+tags: `validate` and `entry` only; the other functions only on region `172` and script `Kawi`,
+which the registry does not have), the 38,345 names of the listed languages in every CLDR
+locale, 3,302 picker queries for `search`, 65,416 `matches` / `same_language` pairs, hypothesis on any
 input. Slow part: the listed languages with every region and script (215,688 tags), every
 registry language with 3 regions and 2 scripts (41,070), every key of both name tables with the
-added and cut forms (195,201), `search` for all 38,345 locale names. Functions: `normalize`,
+added and cut forms (195,201; the prefix match: `achenés` → `yif`), `search` for all 38,345
+locale names. Functions: `normalize`,
 `validate`, `english_name`, `native_name`, `to_matroska_legacy`, `to_mp4`, `to_matroska_ietf`,
 `base_language`, `short_code`, `entry`, `language_list`, `search`, `matches`, `same_language`.
 No difference. Time on the AMD desktop: fast part 19 s, slow part about 130 s; CI runs both

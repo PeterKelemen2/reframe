@@ -23,6 +23,7 @@ from reframe.models import (
     AudioRuleExtras,
     AudioStream,
     Mixdown,
+    ReplaceOp,
     RuleMixdown,
     Severity,
     ValidationIssue,
@@ -48,6 +49,7 @@ MIXDOWN_CODES = {"audio.mixdown_unsupported", "audio.mixdown_upmix"}
 LAYOUTS: dict[str, tuple[int, str | None]] = {
     "mono": (1, "mono"),
     "stereo": (2, "stereo"),
+    "3.0": (3, "3.0"),
     "5.1": (6, "5.1"),
     "5.1(side)": (6, "5.1(side)"),
     "7.1": (8, "7.1"),
@@ -280,6 +282,19 @@ def check_notes(
         )
         assert shown in notes[code].message, notes[code]
     assert set(notes) == expected, (encoder.id, track, notes)
+    assert all(i.severity is Severity.INFO for i in notes.values()), notes
+
+    if not downmixed:
+        for code in MIXDOWN_CODES & set(notes):
+            # The fix names the layout the builder writes, not just one with the same argv, and
+            # never a layout that adds channels or needs a matrix encoding the source lacks.
+            [fix] = notes[code].fixes
+            [op] = fix.patch
+            assert isinstance(op, ReplaceOp)
+            assert op.value == planned.mixdown, (code, fix)
+            assert op.value != "dpl2", fix
+            if op.value is not None and stream.channels > 0:
+                assert DEFS.mixdowns[op.value].channels <= stream.channels, fix
 
     for issue in notes.values():
         for fix in issue.fixes:

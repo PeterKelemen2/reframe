@@ -130,6 +130,8 @@ async def test_the_same_request_gives_the_cached_clip(
 ) -> None:
     src = fixture_media("letterbox")
     env = make_env(tmp_path / "cache")
+    # The cache folder may be slow (a network share, a disk that spins up): no read on the loop.
+    on_loop = file_reads_on_this_thread(monkeypatch, tmp_path / "cache")
     first = await clip(env, lossless(src), start=0.5, seconds=1.0)
 
     async def no_encode(*args: object, **kwargs: object) -> object:
@@ -138,6 +140,7 @@ async def test_the_same_request_gives_the_cached_clip(
     monkeypatch.setattr("reframe.preview.clip.run_streaming", no_encode)
     again = await clip(env, lossless(src), start=0.5, seconds=1.0)
     assert again == first
+    assert on_loop == [], on_loop
     other = lossless(src)
     other.dimensions.crop.rect = CropRect(left=40, right=40)
     monkeypatch.undo()
@@ -205,19 +208,6 @@ async def test_a_clip_made_meanwhile_by_another_run(
     assert len(refused) == 1
     assert refused[0].startswith(".tmp-")
     assert no_leftovers(tmp_path / "cache" / "clips") == []
-
-
-async def test_the_clip_cache_is_read_off_the_event_loop(
-    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The cache folder may be slow (a network share, a disk that spins up)."""
-    src = fixture_media("letterbox")
-    env = make_env(tmp_path / "cache")
-    on_loop = file_reads_on_this_thread(monkeypatch, tmp_path / "cache")
-    first = await clip(env, lossless(src), start=0.5, seconds=1.0)
-    again = await clip(env, lossless(src), start=0.5, seconds=1.0)
-    assert again == first
-    assert on_loop == [], on_loop
 
 
 async def test_the_encoded_frames_are_the_output_frames(

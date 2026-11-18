@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import sys
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -32,18 +30,14 @@ from reframe_testing.cli import invoke
 
 from .fetch_server import (
     FAKE_VERSION,
+    POSIX_ONLY,
     Archive,
     LocalServer,
+    archive_ext,
     fake_archive,
     foreign_platform,
-    local_server,
     sha256,
     write_manifest,
-)
-
-POSIX_ONLY = pytest.mark.skipif(
-    sys.platform == "win32" or host_platform() != "linux-x64",
-    reason="the fake Linux build runs only on a linux-x64 host",
 )
 
 
@@ -53,11 +47,6 @@ def assert_clean_failure(result: Result, code: int) -> list[str]:
     errors = [line for line in result.stderr.splitlines() if line.startswith("error: ")]
     assert errors, result.stderr
     return errors
-
-
-@pytest.fixture
-def server() -> Iterator[LocalServer]:
-    yield from local_server()
 
 
 @pytest.fixture
@@ -79,23 +68,8 @@ def fake(env: Path, fake_tools: ft.FakeTools, monkeypatch: pytest.MonkeyPatch) -
     return fake_tools
 
 
-def _ext(platform: str) -> str:
-    return "zip" if platform == "windows-x64" else "tar.xz"
-
-
 def use_manifest(monkeypatch: pytest.MonkeyPatch, manifest: Path) -> None:
     monkeypatch.setattr(fetch_module, "DEFAULT_MANIFEST", manifest)
-
-
-def test_status_prints_the_lines_of_python_m_reframe_tools(fake: ft.FakeTools, env: Path) -> None:
-    result = invoke("tools", "status")
-    assert result.exit_code == EXIT_OK, result.output
-    lines = result.stdout.splitlines()
-    assert lines[0] == f"ffmpeg       found    env      {fake.ffmpeg}  {FAKE_VERSION}"
-    assert lines[1] == f"ffprobe      found    env      {fake.ffprobe}  {FAKE_VERSION}"
-    install = env / "tools" / "ffmpeg"
-    assert lines[2] == f'Fetched build: none ("reframe tools fetch" installs it into {install}).'
-    assert result.stderr == ""
 
 
 def test_status_json_is_the_toolset(fake: ft.FakeTools) -> None:
@@ -136,14 +110,21 @@ def test_status_json_still_exits_4(env: Path) -> None:
     assert result.stdout.lstrip().startswith("{")
 
 
-def test_status_lines_are_shared_with_python_m_reframe_tools(fake: ft.FakeTools) -> None:
+def test_status_lines_are_shared_with_python_m_reframe_tools(fake: ft.FakeTools, env: Path) -> None:
     from reframe.tools import discover_tools
 
     tools = asyncio.run(discover_tools())
     lines = status_lines(tools)
     result = invoke("tools", "status")
+    assert result.exit_code == EXIT_OK, result.output
     assert [line.split()[0] for line in lines] == ["ffmpeg", "ffprobe"]
     assert result.stdout.splitlines()[: len(lines)] == lines
+    out = result.stdout.splitlines()
+    assert out[0] == f"ffmpeg       found    env      {fake.ffmpeg}  {FAKE_VERSION}"
+    assert out[1] == f"ffprobe      found    env      {fake.ffprobe}  {FAKE_VERSION}"
+    install = env / "tools" / "ffmpeg"
+    assert out[2] == f'Fetched build: none ("reframe tools fetch" installs it into {install}).'
+    assert result.stderr == ""
 
 
 def test_fetched_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -290,7 +271,7 @@ def test_unknown_build_and_platform_are_usage_errors(
         monkeypatch,
         write_manifest(
             tmp_path / "m.toml",
-            {"default": [Archive(f"https://example.invalid/a.{_ext(other)}", b"x", other)]},
+            {"default": [Archive(f"https://example.invalid/a.{archive_ext(other)}", b"x", other)]},
         ),
     )
     result = invoke("tools", "fetch", "--build", "nightly")
@@ -324,7 +305,7 @@ async def test_ctrl_c_stops_the_download(
 ) -> None:
     """Cancelling the task is what asyncio.run does on Ctrl+C."""
     other = foreign_platform()
-    ext = _ext(other)
+    ext = archive_ext(other)
     data = fake_archive(other, tmp_path / "work") + b"\0" * (2 << 20)
     route = server.add(f"/a.{ext}", data, delay=0.05)
     use_manifest(

@@ -24,12 +24,11 @@ from reframe.models import (
     SourceRef,
     ValidationIssue,
 )
-from reframe.queue import QueueService
 from reframe.queue.store import QueueStore, row_of
 from reframe.settings import MAX_DEPTH, TOO_DEEP, too_deep
 from reframe_testing.helpers import nested
 
-from .conftest import Harness
+from .conftest import Harness, queue_at
 
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
 
@@ -284,21 +283,6 @@ def test_a_store_that_saves_nothing_gives_no_warning(tmp_path: Path) -> None:
     run(store, lambda: store.upsert([row_of(job("deep", extra=nested(MAX_DEPTH)))]))
     assert store.warnings == []
     store.close()
-
-
-def queue_at(h: Harness) -> QueueService:
-    """A second queue on the same data folder (a restarted Reframe)."""
-    from reframe.platform.sleep import SleepInhibitor
-
-    return QueueService(
-        h.events,
-        lambda: h.settings.model_copy(deep=True),
-        data_dir=h.tmp / "data",
-        tools=h.tools,
-        capabilities=h.caps,
-        sources=h.sources,
-        inhibitor=SleepInhibitor([], h.events),
-    )
 
 
 def codes(h: Harness) -> list[str]:
