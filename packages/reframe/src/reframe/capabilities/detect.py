@@ -389,6 +389,7 @@ class _Detection:
                 reason=first_failure.reason,
                 detail=first_failure.detail,
                 build_mismatch=first_failure.build_mismatch,
+                build_mismatch_cause=first_failure.cause,
                 device=None,
                 checked_at=_now(),
             )

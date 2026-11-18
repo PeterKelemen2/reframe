@@ -107,6 +107,47 @@ def test_a_build_mismatch_ends_with_a_hint(cli_env: ft.FakeTools) -> None:
     assert not any(line.startswith("hint:") for line in lines(invoke("tools", "status").stdout))
 
 
+def system_library_missing(encoder: str) -> ft.Rule:
+    """The test encode of ``encoder`` fails as without the system's libva-drm (real line)."""
+    text = (
+        "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: "
+        "libva-drm.so.2: cannot open shared object file: No such file or directory\n"
+    )
+    return ft.Rule(actions=[ft.stderr(text)], exit_code=134, argv_has=["-c:v", encoder])
+
+
+LIBRARY_HINT = (
+    "hint: {} a system library (libva) that is missing or older than this FFmpeg build "
+    "expects: install or update it, or use your own FFmpeg (REFRAME_FFMPEG / tools.ffmpeg). "
+    "The desktop app ships a libva that its downloaded FFmpeg uses."
+)
+
+
+def test_a_system_library_mismatch_names_the_library_not_another_build(
+    cli_env: ft.FakeTools,
+) -> None:
+    cli_env.set_scenario(
+        ft.Scenario([system_library_missing("h264_qsv"), system_library_missing("hevc_qsv")])
+    )
+    result = invoke("encoders")
+    assert result.exit_code == EXIT_OK, result.output
+    out = lines(result.stdout)
+    assert out[-1] == LIBRARY_HINT.format("h264_qsv, hevc_qsv need")
+    assert not any("--build" in line for line in out)
+    status = invoke("tools", "status")
+    assert lines(status.stdout)[-1] == LIBRARY_HINT.format("h264_qsv, hevc_qsv need")
+
+    # both causes: the driver's hint first, each with its own encoders
+    cli_env.set_scenario(
+        ft.Scenario([nvenc_driver_too_old("hevc_nvenc"), system_library_missing("h264_qsv")])
+    )
+    out = lines(invoke("encoders").stdout)
+    assert out[-2:] == [
+        HINT.format("hevc_nvenc needs"),
+        LIBRARY_HINT.format("h264_qsv needs"),
+    ]
+
+
 def test_json_waits_for_the_result(cli_env: ft.FakeTools) -> None:
     result = invoke("encoders", "--json")
     assert result.exit_code == EXIT_OK, result.output

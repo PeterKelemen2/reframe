@@ -1109,8 +1109,7 @@ async def run_encoders(*, as_json: bool) -> int:
             snapshot = await _follow_encoders(console, capabilities, subscription, started)
         tools = await app.tools.status()
         if not as_json:
-            hint = _hint(snapshot.encoders.values(), tools, await _builds(app), app.data_dir)
-            if hint is not None:
+            for hint in _hints(snapshot.encoders.values(), tools, await _builds(app), app.data_dir):
                 _say(console, hint)
     if as_json:
         _write_json(snapshot)
@@ -3217,18 +3216,32 @@ def other_build(in_use: str | None, builds: ToolBuilds | None) -> str:
     return next((name for name in names if name != in_use), FALLBACK_BUILD)
 
 
-def build_mismatch_hint(statuses: Iterable[EncoderStatus], other: str) -> str | None:
-    """The ``hint:`` line for the encoders that this FFmpeg build cannot use on this computer;
-    ``None`` when there is none."""
-    ids = [status.id for status in statuses if status.build_mismatch]
-    if not ids:
-        return None
-    verb = "needs" if len(ids) == 1 else "need"
-    return (
-        f"hint: {', '.join(ids)} {verb} newer system software than this FFmpeg build "
-        f"expects: update the driver, or use another build (reframe tools fetch --build "
-        f"{other}, or REFRAME_FFMPEG / tools.ffmpeg)."
-    )
+def build_mismatch_hints(statuses: Iterable[EncoderStatus], other: str) -> list[str]:
+    """The ``hint:`` lines for the encoders that this FFmpeg build cannot use on this computer:
+    one per cause. Another build cannot fix a system library, so only a driver's line names
+    one."""
+    mismatches = [status for status in statuses if status.build_mismatch]
+    library = [s.id for s in mismatches if s.build_mismatch_cause == "system_library"]
+    driver = [s.id for s in mismatches if s.id not in library]
+    hints = []
+    if driver:
+        hints.append(
+            f"hint: {', '.join(driver)} {_need(driver)} newer system software than this FFmpeg "
+            f"build expects: update the driver, or use another build (reframe tools fetch "
+            f"--build {other}, or REFRAME_FFMPEG / tools.ffmpeg)."
+        )
+    if library:
+        hints.append(
+            f"hint: {', '.join(library)} {_need(library)} a system library (libva) that is "
+            "missing or older than this FFmpeg build expects: install or update it, or use your "
+            "own FFmpeg (REFRAME_FFMPEG / tools.ffmpeg). The desktop app ships a libva that its "
+            "downloaded FFmpeg uses."
+        )
+    return hints
+
+
+def _need(ids: Sequence[str]) -> str:
+    return "needs" if len(ids) == 1 else "need"
 
 
 async def _builds(app: Reframe) -> ToolBuilds | None:
@@ -3238,10 +3251,11 @@ async def _builds(app: Reframe) -> ToolBuilds | None:
         return None
 
 
-def _hint(
+def _hints(
     statuses: Iterable[EncoderStatus], tools: ToolSet, builds: ToolBuilds | None, data_dir: Path
-) -> str | None:
-    return build_mismatch_hint(statuses, other_build(build_in_use(tools, builds, data_dir), builds))
+) -> list[str]:
+    other = other_build(build_in_use(tools, builds, data_dir), builds)
+    return build_mismatch_hints(statuses, other)
 
 
 def tool_problem(info: ToolInfo) -> str:
@@ -3298,8 +3312,8 @@ async def _cached_encoders(subscription: Subscription, app: Reframe) -> list[Enc
 
 async def run_tools_status(*, as_json: bool) -> int:
     """``reframe tools status``: the discovery result, the downloaded build and, when the cached
-    detection result says so, the build-mismatch hint. Returns the exit code."""
-    hint = None
+    detection result says so, the build-mismatch hints. Returns the exit code."""
+    hints: list[str] = []
     async with open_reframe() as app:
         # Subscribed before the first await: the detection publishes the cached statuses once.
         subscription = app.events.subscribe(types={"capabilities.changed"})
@@ -3312,14 +3326,14 @@ async def run_tools_status(*, as_json: bool) -> int:
             async with subscription:
                 statuses = await _cached_encoders(subscription, app)
             builds = await _builds(app)
-            hint = _hint(statuses, tools, builds, data_dir)
+            hints = _hints(statuses, tools, builds, data_dir)
     if as_json:
         _write_json(tools)
     else:
         console = make_console()
         _print_tool_lines(console, tools)
         _say(console, fetched_text(data_dir, builds), "dim")
-        if hint is not None:
+        for hint in hints:
             _say(console, hint)
     problems = [tools.get(name) for name in REQUIRED_TOOLS if not tools.get(name).usable]
     for info in problems:

@@ -497,9 +497,12 @@ Captured on 2026-11-18 on a Windows 10 VM with a GeForce GTX 1050 Ti (Pascal) an
 
 With the `compat` build (n8.1.3, release/8.1) the same computer has `h264_nvenc` (8-bit only)
 and `hevc_nvenc`; `av1_nvenc` stays unavailable ("No NVIDIA GPU that can encode AV1"). Both
-lines map to `build_mismatch` (`test_reasons.py`), as do the `implib-gen` lines of a system
-libva too old or missing for the build; a missing driver or device, a 10-bit-only limit and a
-filter never do.
+lines map to `build_mismatch` with the cause `driver` (`test_reasons.py`), and the
+`implib-gen` lines of a system libva too old or missing for the build to the cause
+`system_library` (another build does not help there: `libavutil`, `libavcodec` and
+`libavfilter` of both the `default` and the `compat` build carry `implib-gen: libva` stubs and
+their `lib/` has no libva, checked 2026-11-18); a missing driver or device, a 10-bit-only
+limit and a filter never do.
 
 `libavcodec/nvenc.c` at the pinned commit (`nvenc_load_libraries`) prints the driver
 requirement line also after a failed load of the NVENC library (`Cannot load
