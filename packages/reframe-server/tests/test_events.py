@@ -460,7 +460,7 @@ async def test_a_task_event_names_the_cache_folder_by_its_label(api: Api) -> Non
     sent = by_hand[-1]["task"]
     assert (sent["message"], sent["error"]) == (f"wrote {shown}", f"kept {shown}")
     assert sent["result"] == {"frames": [shown]}
-    assert events[-1]["task"]["result"] == {"path": "<cache>/frames/f.png"}
+    assert events[-1]["task"]["result"] == {"path": shown}
 
 
 async def test_a_reconnect_starts_a_new_sequence(api: Api) -> None:
