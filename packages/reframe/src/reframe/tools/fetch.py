@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import errno
+import functools
 import hashlib
 import http.client
 import json
@@ -31,6 +32,7 @@ import posixpath
 import re
 import shutil
 import socket
+import ssl
 import stat
 import sys
 import tarfile
@@ -80,6 +82,7 @@ __all__ = [
     "offered_builds",
     "packaged_libva",
     "parse_manifest",
+    "restore_previous_build",
     "start_fetch",
     "start_install_file",
 ]
@@ -98,8 +101,10 @@ USER_AGENT = f"reframe/{__version__} (tools fetch)"
 #: Hosts that may serve a manifest URL over plain ``http`` (tests with a local server).
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
-#: Download attempts (network errors and HTTP 429 / 5xx are retried with back-off).
+#: Download attempts for an error in the middle of the transfer, and for HTTP 429 / 5xx.
 ATTEMPTS = 4
+#: Attempts for a refused or timed-out connection: the server is most likely not there.
+CONNECT_ATTEMPTS = 2
 #: Socket timeout of the download (seconds without data).
 SOCKET_TIMEOUT = 20.0
 #: Seconds the ``-version`` check of each binary may take.
@@ -344,7 +349,7 @@ def parse_manifest(data: Mapping[str, object]) -> dict[str, Build]:
             raise FetchError(f"builds.{name}: expected a table")
         builds[name] = _parse_build(name, table)
     if "default" not in builds:
-        raise FetchError("builds.default: missing (the build that ships)")
+        raise FetchError("builds.default: missing (the recommended build)")
     return builds
 
 
@@ -421,42 +426,51 @@ def download(
     attempts: int = ATTEMPTS,
     timeout: float = SOCKET_TIMEOUT,
 ) -> None:
-    """Download ``url`` to ``dest`` (worker thread). Network errors and HTTP 429 / 5xx are
-    retried with back-off; a response longer than ``size`` stops at once (a wrong or hostile
-    server cannot fill the disk) and is not retried. A server that cannot be reached at all is
-    a :class:`FetchError` with the code :data:`FETCH_OFFLINE`."""
+    """Download ``url`` to ``dest`` (worker thread). Errors in the middle of the transfer and
+    HTTP 429 / 5xx are retried with back-off, a refused or timed-out connection once, and no
+    name resolution, an unreachable network and a TLS failure never. A response longer than
+    ``size`` stops at once (a wrong or hostile server cannot fill the disk) and is not retried.
+    A server that cannot be reached at all is a :class:`FetchError` with the code
+    :data:`FETCH_OFFLINE`."""
     for attempt in range(1, attempts + 1):
         error: Exception
+        connected = False
         try:
             request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(request, timeout=timeout) as response, dest.open("wb") as f:
-                written = 0
-                # read1 returns what has arrived, so a slow server does not keep a cancel
-                # waiting for a whole block.
-                while chunk := response.read1(CHUNK):
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                connected = True
+                with dest.open("wb") as f:
+                    written = 0
+                    # read1 returns what has arrived, so a slow server does not keep a cancel
+                    # waiting for a whole block.
+                    while chunk := response.read1(CHUNK):
+                        _check_cancel(cancel)
+                        written += len(chunk)
+                        if written > size:
+                            raise FetchError(
+                                f"{url}: the download is larger than the pinned size of "
+                                f"{size} bytes"
+                            )
+                        f.write(chunk)
+                        if progress is not None:
+                            progress(written)
                     _check_cancel(cancel)
-                    written += len(chunk)
-                    if written > size:
-                        raise FetchError(
-                            f"{url}: the download is larger than the pinned size of {size} bytes"
-                        )
-                    f.write(chunk)
-                    if progress is not None:
-                        progress(written)
-                _check_cancel(cancel)
             return
         except (FetchError, _Stopped):
             dest.unlink(missing_ok=True)
             raise
         except urllib.error.HTTPError as e:
-            retryable = e.code == 429 or e.code >= 500
+            limit = attempts if e.code == 429 or e.code >= 500 else 1
             error = e
             e.close()  # an HTTPError holds the response body open
-        except (OSError, http.client.HTTPException, ValueError) as e:  # URLError is an OSError
-            retryable = not isinstance(e, ValueError)
+        except ValueError as e:  # a URL that urllib cannot open
+            limit = 1
+            error = e
+        except (OSError, http.client.HTTPException) as e:  # URLError is an OSError
+            limit = attempts if connected else _connect_attempts(e, attempts)
             error = e
         dest.unlink(missing_ok=True)
-        if not retryable or attempt == attempts:
+        if attempt >= limit:
             why = _offline_reason(error)
             if why is not None:
                 host = urllib.parse.urlsplit(url).hostname or url
@@ -466,6 +480,19 @@ def download(
                 )
             raise FetchError(f"the download failed after {attempt} attempt(s): {url}: {error}")
         _sleep(2.0**attempt, cancel)
+
+
+def _connect_attempts(error: BaseException, attempts: int) -> int:
+    """The attempts of a download whose connection failed with ``error``: another try cannot
+    help without name resolution, without a route or with a failed TLS handshake."""
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    if isinstance(reason, (ssl.SSLError, socket.gaierror)) or (
+        isinstance(reason, OSError) and reason.errno in _OFFLINE_ERRNOS
+    ):
+        return 1
+    if isinstance(reason, (ConnectionRefusedError, TimeoutError)):
+        return min(attempts, CONNECT_ATTEMPTS)
+    return attempts
 
 
 def _offline_reason(error: BaseException) -> str | None:
@@ -741,15 +768,17 @@ def packaged_libva(roots: Sequence[Path], data_dir: Path) -> Path | None:
 
 def _libva_layout(libva: Path) -> dict[str, str | None]:
     """The libva libraries of the folder ``libva`` by name: the target of a link to another of
-    them, else ``None`` (copied as a file). :raises FetchError: a soname is missing."""
+    them, else ``None`` (copied as a file). :raises FetchError: a soname is missing, or links
+    loop or leave the folder."""
     names = {entry.name: entry for entry in libva.iterdir() if _LIBVA_FILE_RE.match(entry.name)}
     layout: dict[str, str | None] = {}
     for name, entry in sorted(names.items()):
+        _check_libva_links(libva, name)
         target = os.readlink(entry) if entry.is_symlink() else None
-        if target is not None and target in names and target != name:
+        if target is not None and target in names:
             layout[name] = target
         elif entry.is_file():
-            layout[name] = None  # a file, or a link that leaves the folder: its content
+            layout[name] = None  # a file, or a link to another file of the folder: its content
     while dangling := [name for name, target in layout.items() if target and target not in layout]:
         for name in dangling:
             del layout[name]
@@ -757,6 +786,24 @@ def _libva_layout(libva: Path) -> dict[str, str | None]:
         if soname not in layout:
             raise FetchError(f"the packaged libva in {libva} has no {soname}")
     return layout
+
+
+def _check_libva_links(libva: Path, name: str) -> None:
+    """:raises FetchError: the links from ``name`` loop or leave the folder ``libva``."""
+    chain = [name]
+    while (libva / chain[-1]).is_symlink():
+        target = os.readlink(libva / chain[-1])
+        if target in ("", ".", "..") or "/" in target or "\\" in target:
+            raise FetchError(
+                f"the packaged libva in {libva} is broken: the link {chain[-1]} -> {target!r} "
+                "leaves the folder"
+            )
+        if target in chain:
+            raise FetchError(
+                f"the packaged libva in {libva} is broken: its links loop: "
+                + " -> ".join([*chain, target])
+            )
+        chain.append(target)
 
 
 def libva_files(libva: Path, cancel: CancelToken | None = None) -> dict[str, str]:
@@ -771,7 +818,8 @@ def libva_files(libva: Path, cancel: CancelToken | None = None) -> dict[str, str
 
 def add_libva(root: Path, libva: Path) -> None:
     """Copy the libva libraries of the folder ``libva`` into ``root/lib``, each link as a link
-    (the layout of the bundled Linux build). :raises FetchError: a soname is missing."""
+    (the layout of the bundled Linux build). :raises FetchError: a soname is missing, or links
+    loop or leave the folder (nothing is copied)."""
     layout = _libva_layout(libva)
     lib = root / "lib"
     lib.mkdir(exist_ok=True)
@@ -832,7 +880,8 @@ def _retry_on_permission(
 
 def _swap_into_place(new: Path, install_dir: Path, aside: Path) -> None:
     """Move ``new`` to ``install_dir``; an old build is moved to ``aside`` first (removed with
-    the work folder) and moved back if the new one cannot be moved."""
+    the work folder) and moved back if the new one cannot be moved, or by
+    :func:`restore_previous_build` after a kill."""
     old = install_dir.exists() or install_dir.is_symlink()
     try:
         if old:
@@ -849,6 +898,45 @@ def _swap_into_place(new: Path, install_dir: Path, aside: Path) -> None:
             f"cannot replace {install_dir}: {e.strerror or e}. Close the programs that use "
             "it and fetch again"
         ) from e
+
+
+def restore_previous_build(install_dir: Path, platform: str) -> Path | None:
+    """Put back the build that a fetch killed between the two renames of its swap left in
+    ``.fetch-*/previous``: only when ``install_dir`` is missing and that build's marker
+    (for ``platform``) and files are intact. Never fails; returns the folder it came from."""
+    if install_dir.exists() or install_dir.is_symlink():
+        return None
+    found: list[tuple[float, Path]] = []
+    try:
+        candidates = [work / "previous" for work in install_dir.parent.glob(".fetch-*")]
+    except OSError:
+        return None
+    for previous in candidates:
+        try:
+            if previous.is_symlink() or not previous.is_dir():
+                continue
+            marker = installed_build(previous)
+            files = marker.get("files") if marker is not None else None
+            if marker is None or marker.get("platform") != platform or not files:
+                continue
+            if tree_digest(previous) == files:
+                found.append(((previous / MARKER_NAME).stat().st_mtime, previous))
+        except OSError:
+            continue
+    if not found:
+        return None
+    previous = max(found)[1]
+    try:
+        _retry_on_permission(functools.partial(previous.rename, install_dir))
+    except OSError as e:
+        log.warning("Cannot put back the FFmpeg build in %s: %s", previous, e.strerror or e)
+        return None
+    log.warning(
+        "Put back the FFmpeg build that an interrupted install left in %s: %s",
+        previous,
+        install_dir,
+    )
+    return previous
 
 
 @dataclass(slots=True)
@@ -1170,6 +1258,8 @@ async def _fetch_steps(
     native = target == host
     if not (native and target.startswith("linux")):
         libva = None
+    if libva is not None:
+        await asyncio.to_thread(_libva_layout, libva)  # a broken one fails before the download
     job = _Job(
         chosen,
         pbuild,
@@ -1198,6 +1288,7 @@ async def _fetch_steps(
         )
 
     ctx.progress(None, f"Checking the build in {install_dir}")
+    await asyncio.to_thread(restore_previous_build, install_dir, target)
     if await _in_thread(cancel, lambda: is_installed(install_dir, pbuild, cancel, libva=libva)):
         if source is not None:
             ctx.progress(None, f"Checking the SHA-256 of {source.name}")

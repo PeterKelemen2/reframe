@@ -41,7 +41,7 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-CACHE_FORMAT = 2
+CACHE_FORMAT = 3
 #: Switching between a few ffmpeg builds keeps their results.
 MAX_ENTRIES = 8
 #: The modules whose source decides what a detection produces.

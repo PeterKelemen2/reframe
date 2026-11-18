@@ -504,10 +504,11 @@ MISSING_LIBVA_DRM = (
 @pytest.mark.parametrize("encoder", ["h264_nvenc", "hevc_nvenc", "av1_nvenc"])
 def test_an_nvidia_driver_too_old_for_the_build_is_a_build_mismatch_real(encoder: str) -> None:
     failure = explain_failure(tagged(encoder, *NVENC_DRIVER_TOO_OLD), ctx(encoder), returncode=1)
-    assert (failure.state, failure.reason, failure.build_mismatch) == (
+    assert (failure.state, failure.reason, failure.build_mismatch, failure.cause) == (
         UNAVAILABLE,
         "NVIDIA driver too old: NVENC needs driver 610.00 or newer",
         True,
+        "driver",
     )
     assert failure.detail == f"[{encoder}] {NVENC_DRIVER_TOO_OLD[0]}"
 
@@ -517,7 +518,7 @@ def test_either_nvenc_driver_line_alone_is_a_build_mismatch(line: str) -> None:
     failure = explain_failure(tagged("hevc_nvenc", line), ctx("hevc_nvenc"), returncode=1)
     assert failure.state is UNAVAILABLE
     assert failure.reason.startswith("NVIDIA driver too old")
-    assert failure.build_mismatch is True
+    assert (failure.build_mismatch, failure.cause) == (True, "driver")
 
 
 @pytest.mark.parametrize("text", [OLD_LIBVA, MISSING_LIBVA_DRM], ids=["too-old", "missing"])
@@ -526,7 +527,11 @@ def test_a_system_library_too_old_or_missing_for_the_build_is_a_build_mismatch(
     text: str, encoder: str
 ) -> None:
     failure = explain_failure(text, ctx(encoder), returncode=-6)
-    assert (failure.state, failure.build_mismatch) == (UNAVAILABLE, True)
+    assert (failure.state, failure.build_mismatch, failure.cause) == (
+        UNAVAILABLE,
+        True,
+        "system_library",
+    )
 
 
 @pytest.mark.parametrize(
@@ -546,7 +551,7 @@ def test_a_missing_driver_device_or_10bit_limit_is_no_build_mismatch_real(
     returncode = ft.captures()[capture].exit_code
     failure = explain_failure(stderr(capture), ctx(encoder), returncode=returncode)
     assert failure.state is UNAVAILABLE
-    assert failure.build_mismatch is False
+    assert (failure.build_mismatch, failure.cause) == (False, None)
 
 
 @pytest.mark.parametrize(
@@ -567,7 +572,7 @@ def test_the_amd_10bit_driver_text_and_missing_nvidia_parts_are_no_build_mismatc
 ) -> None:
     failure = explain_failure(tagged(encoder, line), ctx(encoder), returncode=1)
     assert failure.state is UNAVAILABLE
-    assert failure.build_mismatch is False
+    assert (failure.build_mismatch, failure.cause) == (False, None)
 
 
 def test_a_driver_without_its_nvenc_library_is_no_build_mismatch() -> None:
@@ -584,4 +589,4 @@ def test_a_driver_without_its_nvenc_library_is_no_build_mismatch() -> None:
 def test_a_filter_is_never_a_build_mismatch() -> None:
     failure = explain_failure(OLD_LIBVA, FILTER, returncode=-6)
     assert failure.state is UNAVAILABLE
-    assert failure.build_mismatch is False
+    assert (failure.build_mismatch, failure.cause) == (False, None)

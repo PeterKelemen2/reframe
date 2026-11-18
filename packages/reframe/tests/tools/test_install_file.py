@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -355,18 +356,88 @@ def test_add_libva_keeps_the_links_of_the_bundled_layout(tmp_path: Path) -> None
 
 
 @POSIX_ONLY
-def test_add_libva_copies_plain_files_and_links_that_leave_the_folder(tmp_path: Path) -> None:
+def test_add_libva_copies_plain_files(tmp_path: Path) -> None:
     libva = libva_folder(tmp_path / "libva", links=False)
-    (tmp_path / "elsewhere.so").write_bytes(b"libva-drm elsewhere")
-    (libva / "libva-drm.so.2").unlink()
-    (libva / "libva-drm.so.2").symlink_to(tmp_path / "elsewhere.so")
     root = tmp_path / "build"
     root.mkdir()
     add_libva(root, libva)
     lib = root / "lib"
     assert sorted(p.name for p in lib.iterdir()) == ["libva-drm.so.2", "libva.so.2"]
     assert not any(p.is_symlink() for p in lib.iterdir())
-    assert (lib / "libva-drm.so.2").read_bytes() == b"libva-drm elsewhere"
+    assert (lib / "libva-drm.so.2").read_bytes() == b"libva-drm 2.24"
+
+
+def _relink(libva: Path, name: str, target: str | Path) -> None:
+    (libva / name).unlink(missing_ok=True)
+    (libva / name).symlink_to(target)
+
+
+#: A packaged libva that is refused: its links (name, target; ``OUTSIDE``: a file next to the
+#: folder) and the error.
+OUTSIDE = "<outside>"
+BROKEN_LIBVA: dict[str, tuple[list[tuple[str, str]], str]] = {
+    "loop": (
+        [("libva.so.2.2400.0", "libva.so.2")],
+        r"its links loop: libva\.so\.2 -> libva\.so\.2\.2400\.0 -> libva\.so\.2",
+    ),
+    "self": (
+        [("libva-drm.so.2", "libva-drm.so.2")],
+        r"its links loop: libva-drm\.so\.2 -> libva-drm\.so\.2",
+    ),
+    "absolute": (
+        [("libva-drm.so.2", OUTSIDE)],
+        r"the link libva-drm\.so\.2 -> '/.*/elsewhere\.so' leaves the folder",
+    ),
+    "parent": (
+        [("libva-drm.so.2", "../elsewhere.so")],
+        r"the link libva-drm\.so\.2 -> '\.\./elsewhere\.so' leaves the folder",
+    ),
+    "through-another-link": (
+        [("libva.so.2.2400", "../elsewhere.so"), ("libva.so.2", "libva.so.2.2400")],
+        r"the link libva\.so\.2\.2400 -> '\.\./elsewhere\.so' leaves the folder",
+    ),
+}
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("case", sorted(BROKEN_LIBVA))
+def test_a_packaged_libva_whose_links_loop_or_leave_the_folder_is_refused(
+    tmp_path: Path, case: str
+) -> None:
+    libva = libva_folder(tmp_path / "libva")
+    outside = tmp_path / "elsewhere.so"
+    outside.write_bytes(b"libva-drm elsewhere")
+    links, message = BROKEN_LIBVA[case]
+    for name, target in links:
+        _relink(libva, name, outside if target == OUTSIDE else target)
+    root = tmp_path / "build"
+    root.mkdir()
+    with pytest.raises(FetchError, match=rf"^the packaged libva in {re.escape(str(libva))} is "
+                       rf"broken: {message}"):  # fmt: skip
+        add_libva(root, libva)
+    assert list(root.iterdir()) == []
+
+
+@POSIX_ONLY
+@pytest.mark.anyio
+async def test_a_broken_packaged_libva_fails_the_fetch_before_the_download(
+    tmp_path: Path, server: LocalServer, runner: Runner
+) -> None:
+    data = fake_archive("linux-x64", tmp_path / "work")
+    route = server.add(f"/{NAME}", data)
+    manifest = write_manifest(
+        tmp_path / "m.toml", {"default": [Archive(server.url(f"/{NAME}"), data, "linux-x64")]}
+    )
+    libva = libva_folder(tmp_path / "app" / "tools" / "libva")
+    _relink(libva, "libva.so.2.2400.0", "libva.so.2")
+    final, result = await runner.fetch(manifest, libva=libva)
+    assert final.state is TaskState.FAILED
+    assert final.error is not None
+    assert final.error.startswith(f"the packaged libva in {libva} is broken: its links loop")
+    assert result is None
+    assert route.requests == 0
+    assert not (runner.data_dir / "tools" / "ffmpeg").exists()
+    assert leftovers(runner.data_dir) == []
 
 
 @POSIX_ONLY
@@ -523,3 +594,124 @@ def test_an_installed_build_whose_pin_changed_is_outdated(tmp_path: Path) -> Non
         FAKE_VERSION,
         True,
     )
+
+
+def _kill_during_the_swap(install: Path) -> Path:
+    """The state that a fetch killed between the two renames of its swap leaves: the installed
+    build in ``<work>/previous``, the new one in ``<work>/extract``, no install folder."""
+    work = install.parent / ".fetch-killed"
+    (work / "extract" / "new-build" / "bin").mkdir(parents=True)
+    (work / "extract" / "new-build" / "bin" / "ffmpeg").write_bytes(b"the new build")
+    install.rename(work / "previous")
+    return work / "previous"
+
+
+def _service(tmp_path: Path, data_dir: Path) -> ToolsService:
+    return ToolsService(
+        EventBus(),
+        AppSettings,
+        bundled_roots=[tmp_path / "app" / "tools", data_dir / "tools"],
+        tasks=TaskManager(),
+        data_dir=data_dir,
+    )
+
+
+@pytest.fixture
+def no_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in ENV_VARS.values():
+        monkeypatch.delenv(var, raising=False)
+    empty = tmp_path / "empty-path"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+
+
+@POSIX_ONLY
+@pytest.mark.anyio
+@pytest.mark.usefixtures("no_tools")
+async def test_the_build_that_a_killed_swap_left_aside_is_put_back_at_start(
+    tmp_path: Path, runner: Runner, caplog: pytest.LogCaptureFixture
+) -> None:
+    data = fake_archive("linux-x64", tmp_path / "work")
+    final, result = await runner.file(
+        archive_file(tmp_path, data), manifest_for(tmp_path, data, "linux-x64")
+    )
+    assert final.state is TaskState.DONE, final.error
+    install = result.install_dir
+    marker = installed_build(install)
+    previous = _kill_during_the_swap(install)
+    caplog.set_level(logging.WARNING, logger="reframe.tools.fetch")
+    caplog.clear()
+
+    service = _service(tmp_path, runner.data_dir)
+    service.start()
+    tools = await service.status()
+    await service.close()
+    assert installed_build(install) == marker
+    assert not previous.exists()
+    assert tools.ffmpeg.status is ToolStatus.FOUND, tools.ffmpeg.reason
+    assert tools.ffmpeg.path == install / "bin" / "ffmpeg"
+    warnings = [r for r in caplog.records if r.name == "reframe.tools.fetch"]
+    assert [(r.levelno, r.getMessage()) for r in warnings] == [
+        (
+            logging.WARNING,
+            f"Put back the FFmpeg build that an interrupted install left in {previous}: {install}",
+        )
+    ]
+
+
+@POSIX_ONLY
+@pytest.mark.anyio
+@pytest.mark.usefixtures("no_tools")
+@pytest.mark.parametrize("damage", ["changed-file", "no-marker", "other-platform", "installed"])
+async def test_a_build_left_aside_stays_there_unless_it_is_intact_and_missing(
+    tmp_path: Path, runner: Runner, damage: str
+) -> None:
+    data = fake_archive("linux-x64", tmp_path / "work")
+    final, result = await runner.file(
+        archive_file(tmp_path, data), manifest_for(tmp_path, data, "linux-x64")
+    )
+    assert final.state is TaskState.DONE, final.error
+    install = result.install_dir
+    previous = _kill_during_the_swap(install)
+    if damage == "changed-file":
+        (previous / "LICENSE.txt").write_bytes(b"changed")
+    elif damage == "no-marker":
+        (previous / MARKER_NAME).unlink()
+    elif damage == "other-platform":
+        marker = json.loads((previous / MARKER_NAME).read_text())
+        (previous / MARKER_NAME).write_text(json.dumps(marker | {"platform": "linux-arm64"}))
+    else:
+        install.mkdir()  # an empty folder at the install path: left as it is
+    service = _service(tmp_path, runner.data_dir)
+    tools = await service.status()
+    await service.close()
+    assert previous.is_dir()
+    assert install.is_dir() is (damage == "installed")
+    assert tools.ffmpeg.status is ToolStatus.MISSING
+
+
+@pytest.mark.anyio
+async def test_a_fetch_puts_the_build_left_aside_back_before_it_removes_old_work_folders(
+    tmp_path: Path, server: LocalServer, runner: Runner
+) -> None:
+    """Even when the killed fetch's work folder is old enough to be removed."""
+    other = foreign_platform()
+    data = fake_archive(other, tmp_path / "work")
+    route = server.add(f"/a.{archive_ext(other)}", data)
+    url = server.url(f"/a.{archive_ext(other)}")
+    manifest = write_manifest(tmp_path / "m.toml", {"default": [Archive(url, data, other)]})
+    final, result = await runner.fetch(manifest, platform=other)
+    assert final.state is TaskState.DONE, final.error
+    install = result.install_dir
+    marker = installed_build(install)
+    previous = _kill_during_the_swap(install)
+    old = time.time() - 7 * 3600
+    for path in [previous.parent, *previous.parent.rglob("*")]:
+        os.utime(path, (old, old), follow_symlinks=False)
+
+    final, again = await runner.fetch(manifest, platform=other)
+    assert final.state is TaskState.DONE, final.error
+    assert again.downloaded is False
+    assert route.requests == 1
+    assert installed_build(install) == marker
+    assert not previous.exists()

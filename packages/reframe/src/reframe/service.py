@@ -64,8 +64,11 @@ from reframe.settings import MAX_DEPTH, SettingsStore, SettingsUpdate, too_deep,
 from reframe.tasks import TaskManager
 from reframe.tools import CancelToken, discover_tools
 from reframe.tools.fetch import (
+    host_platform,
+    install_dir_for,
     offered_builds,
     packaged_libva,
+    restore_previous_build,
     start_fetch,
     start_install_file,
 )
@@ -104,7 +107,8 @@ class ToolsService:
     """Which external tools Reframe uses, and re-scans.
 
     Discovery runs in the background: :meth:`start` returns at once, :meth:`status` waits for
-    it, :attr:`current` does not. Every finished discovery publishes ``tools.changed``.
+    it, :attr:`current` does not. Every finished discovery publishes ``tools.changed``. The
+    first one puts back a downloaded build that an install killed during its swap left aside.
     :meth:`fetch` downloads a pinned FFmpeg build into ``<data dir>/tools/ffmpeg``,
     :meth:`install_file` installs one from its archive file.
     """
@@ -126,6 +130,7 @@ class ToolsService:
         self._task: asyncio.Task[ToolSet] | None = None
         self._current: ToolSet | None = None
         self._closed = False
+        self._restore: asyncio.Future[None] | None = None
 
     @property
     def current(self) -> ToolSet | None:
@@ -214,6 +219,12 @@ class ToolsService:
             libva=self._libva(),
         )
 
+    def _restore_build(self) -> None:
+        """Put back the downloaded build that a killed install left aside (worker thread)."""
+        host = host_platform()
+        if host is not None:
+            restore_previous_build(install_dir_for(self._data_dir, host, host), host)
+
     def _libva(self) -> Path | None:
         """The libva that the Linux app packages for a downloaded build."""
         linux = sys.platform.startswith("linux")
@@ -235,6 +246,9 @@ class ToolsService:
         return task
 
     async def _discover(self) -> ToolSet:
+        if self._restore is None:
+            self._restore = asyncio.ensure_future(asyncio.to_thread(self._restore_build))
+        await asyncio.wait({self._restore})  # a cancel of this wait leaves the restore running
         tools = await discover_tools(self._settings().tools, bundled_roots=self._bundled_roots)
         self._current = tools
         self._events.publish(ToolsChangedEvent(tools=tools))

@@ -146,6 +146,11 @@ async def test_driver_errors_are_mapped(fake_tools: ft.FakeTools, fake_ffmpeg: T
     )
 
 
+#: What the pinned build prints without the system's libva-drm (real line).
+MISSING_LIBVA_DRM = (
+    "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: "
+    "libva-drm.so.2: cannot open shared object file: No such file or directory\n"
+)
 #: What the pinned build prints with an NVIDIA driver older than its NVENC needs (real lines).
 NVENC_DRIVER_TOO_OLD = (
     "[{0} @ 0x55] Driver does not support the required nvenc API version. Required: 13.1 "
@@ -167,20 +172,33 @@ async def test_a_build_mismatch_reaches_the_encoder_status(
                 ),
                 detect_rule("detect_hevc_nvenc_no_driver", encoder="h264_nvenc"),
                 detect_rule("detect_h264_amf_10bit", encoder="av1_amf", ten_bit=True),
+                ft.Rule(
+                    actions=[ft.stderr(MISSING_LIBVA_DRM)],
+                    exit_code=134,
+                    argv_has=["-c:v", "h264_qsv"],
+                ),
             ]
         )
     )
     snap = await detect_capabilities(fake_ffmpeg, DEFS, LINUX)
+    qsv = snap.status("h264_qsv")
+    assert (qsv.state, qsv.build_mismatch, qsv.build_mismatch_cause) == (
+        UNAVAILABLE,
+        True,
+        "system_library",
+    )
     hevc = snap.status("hevc_nvenc")
-    assert (hevc.state, hevc.reason, hevc.build_mismatch) == (
+    assert (hevc.state, hevc.reason, hevc.build_mismatch, hevc.build_mismatch_cause) == (
         UNAVAILABLE,
         "NVIDIA driver too old: NVENC needs driver 610.00 or newer",
         True,
+        "driver",
     )
-    assert snap.status("h264_nvenc").build_mismatch is False  # no driver at all
+    no_driver = snap.status("h264_nvenc")
+    assert (no_driver.build_mismatch, no_driver.build_mismatch_cause) == (False, None)
     av1 = snap.status("av1_amf")  # 10-bit only: usable in 8-bit
     assert (av1.state, av1.supports_10bit, av1.build_mismatch) == (AVAILABLE, False, False)
-    assert [s.id for s in snap.encoders.values() if s.build_mismatch] == ["hevc_nvenc"]
+    assert {s.id for s in snap.encoders.values() if s.build_mismatch} == {"hevc_nvenc", "h264_qsv"}
 
 
 async def test_timeouts_are_errors(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:

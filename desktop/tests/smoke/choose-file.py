@@ -10,30 +10,43 @@ import sys
 import time
 from collections.abc import Iterator
 
-from Xlib import XK, X, display
+from Xlib import XK, X, display, error
 from Xlib.ext import xtest
 from Xlib.xobject.drawable import Window
 
 DIALOG_ROLE = b"GtkFileChooserDialog"
+#: A window destroyed while the tree is read (a tooltip, a closing dialog).
+GONE = (error.BadWindow, error.BadDrawable)
 
 
 def _windows(window: Window) -> Iterator[Window]:
-    for child in window.query_tree().children:
+    try:
+        children = window.query_tree().children
+    except GONE:
+        return
+    for child in children:
         yield child
         yield from _windows(child)
+
+
+def _is_dialog(window: Window, pid: int, net_wm_pid: int, role: int) -> bool:
+    try:
+        owner = window.get_full_property(net_wm_pid, X.AnyPropertyType)
+        if owner is None or owner.value[0] != pid:
+            return False
+        if window.get_attributes().map_state != X.IsViewable:
+            return False
+        name = window.get_full_property(role, X.AnyPropertyType)
+    except GONE:
+        return False
+    return name is not None and bytes(name.value) == DIALOG_ROLE
 
 
 def _dialog(screen: display.Display, pid: int) -> Window | None:
     net_wm_pid = screen.intern_atom("_NET_WM_PID")
     role = screen.intern_atom("WM_WINDOW_ROLE")
     for window in _windows(screen.screen().root):
-        owner = window.get_full_property(net_wm_pid, X.AnyPropertyType)
-        if owner is None or owner.value[0] != pid:
-            continue
-        if window.get_attributes().map_state != X.IsViewable:
-            continue
-        name = window.get_full_property(role, X.AnyPropertyType)
-        if name is not None and bytes(name.value) == DIALOG_ROLE:
+        if _is_dialog(window, pid, net_wm_pid, role):
             return window
     return None
 

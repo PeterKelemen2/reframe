@@ -1,6 +1,7 @@
 # Pinned FFmpeg builds.
 #
-# CI and every package use this file, so the tests run against the binaries that ship.
+# CI and `reframe tools fetch` use this file, so the tests run against the builds that
+# users download.
 # `scripts/fetch-tools.py` downloads a build, verifies the SHA-256 before it extracts anything,
 # and checks that `ffmpeg -version` / `ffprobe -version` print `version` below.
 # See tools/README.md for how to update a pin.
@@ -17,9 +18,9 @@
 
 schema_version = 1
 
-# The build that ships and that the main CI jobs test against.
+# The recommended build, the one that the main CI jobs test against.
 [builds.default]
-description = "Shipped build: BtbN FFmpeg-Builds, release/9.0, GPL, shared libraries"
+description = "Recommended build: BtbN FFmpeg-Builds, release/9.0, GPL, shared libraries"
 # The user may choose it: the first-run screen and Settings → Tools show `label` and `summary`.
 offered = true
 label = "Recommended"
@@ -57,7 +58,8 @@ bin_dir = "bin"
 ffmpeg = "bin/ffmpeg"
 ffprobe = "bin/ffprobe"
 
-# Only the arm64 Docker image ships it; the desktop packages are x64.
+# For arm64 Linux (a server or the arm64 Docker image downloads it); the desktop packages
+# are x64 only.
 [builds.default.platforms.linux-arm64]
 url = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n9.0.2-17-g2a571b6068-linuxarm64-gpl-shared-9.0.tar.xz"
 sha256 = "706ccdbc8b0537646345532713a9b6750c0a6258cc001ec1c0379754f0ae730a"
@@ -80,8 +82,8 @@ ffmpeg = "bin/ffmpeg.exe"
 ffprobe = "bin/ffprobe.exe"
 
 # A different build for the CI job that tests the path override: REFRAME_FFMPEG and
-# REFRAME_FFPROBE point to it. It is older than the shipped build but above the minimum
-# FFmpeg version (7.0). It is never shipped.
+# REFRAME_FFPROBE point to it. It is older than the default build but above the minimum
+# FFmpeg version (7.0). Users get the same pin as `compat`: keep the two equal.
 [builds.override-test]
 description = "Override-path test build: BtbN FFmpeg-Builds, release/8.1, GPL, shared libraries"
 version = "n8.1.3-9-g29e619e767-20260930"

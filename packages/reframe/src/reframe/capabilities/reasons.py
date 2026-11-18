@@ -15,7 +15,7 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from reframe.models.capabilities import EncoderState
+from reframe.models.capabilities import BuildMismatchCause, EncoderState
 from reframe.tools.exitcodes import crashed
 
 __all__ = [
@@ -67,8 +67,12 @@ class Failure:
     reason: str
     detail: str | None = None
     """The FFmpeg line the reason comes from (pointer addresses removed)."""
-    build_mismatch: bool = False
-    """The build needs newer system software than the computer has (``EncoderStatus``)."""
+    cause: BuildMismatchCause | None = None
+    """What the build needs that the computer lacks (``EncoderStatus.build_mismatch_cause``)."""
+
+    @property
+    def build_mismatch(self) -> bool:
+        return self.cause is not None
 
 
 _Reason = Callable[[re.Match[str], TestContext, Sequence[str]], str]
@@ -80,7 +84,7 @@ class _Rule:
     reason: _Reason
     families: frozenset[str] | None = None
     """Only for these encoder families (``None``: any)."""
-    build_mismatch: bool = False
+    mismatch: BuildMismatchCause | None = None
 
 
 def _fixed(text: str) -> _Reason:
@@ -153,7 +157,7 @@ _RULES: tuple[_Rule, ...] = (
             r"Required: (?P<required>[\d.]+) Found: (?P<found>[\d.]+)"
         ),
         _nvenc_too_old,
-        build_mismatch=True,
+        mismatch="driver",
     ),
     _Rule(
         re.compile(r"Cannot load (?:libcuda\.so[\d.]*|nvcuda\.dll)"),
@@ -165,7 +169,7 @@ _RULES: tuple[_Rule, ...] = (
         re.compile(r"Cannot load (?P<lib>libnvidia-encode\.so[\d.]*|nvEncodeAPI(?:64)?\.dll)"),
         lambda m, _ctx, _t: f"The NVIDIA driver has no NVENC library ({m['lib']})",
     ),
-    _Rule(_NVENC_DRIVER, lambda m, _ctx, _t: _nvenc_driver(m["driver"]), build_mismatch=True),
+    _Rule(_NVENC_DRIVER, lambda m, _ctx, _t: _nvenc_driver(m["driver"]), mismatch="driver"),
     _Rule(re.compile(r"No CUDA capable devices found"), _fixed("No NVIDIA GPU found")),
     _Rule(
         re.compile(r"^No capable devices found"),
@@ -275,7 +279,7 @@ _RULES: tuple[_Rule, ...] = (
         lambda m, _ctx, _t: (
             f"The system's {m['lib']} is too old for this FFmpeg build (it has no {m['symbol']})"
         ),
-        build_mismatch=True,
+        mismatch="system_library",
     ),
     _Rule(
         # The dlopen error names the library that is missing: the stub's own, or one it needs.
@@ -284,7 +288,7 @@ _RULES: tuple[_Rule, ...] = (
             r"(?:(?P<missing>[^:\s]+): cannot open shared object file|(?P<error>.*))"
         ),
         _library_not_loaded,
-        build_mismatch=True,
+        mismatch="system_library",
     ),
     # A hardware device option failed (fftools) and no device line said why.
     _Rule(
@@ -352,8 +356,8 @@ def explain_failure(stderr: str, ctx: TestContext, *, returncode: int | None = N
             if match is not None:
                 reason = rule.reason(match, ctx, texts)
                 # libplacebo falls back to zscale: a filter never asks for another build.
-                mismatch = rule.build_mismatch and ctx.family != "filter"
-                return Failure(EncoderState.UNAVAILABLE, reason, line, build_mismatch=mismatch)
+                cause = rule.mismatch if ctx.family != "filter" else None
+                return Failure(EncoderState.UNAVAILABLE, reason, line, cause=cause)
     detail = informative_line(stderr, ctx.encoder)
     test = f"the {ctx.encoder} test" if ctx.family == "filter" else "the test encode"
     crash = _crash(returncode)
