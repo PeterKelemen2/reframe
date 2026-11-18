@@ -3285,7 +3285,7 @@ def _print_tool_lines(console: Console, tools: ToolSet) -> None:
 
 async def _cached_encoders(subscription: Subscription, app: Reframe) -> list[EncoderStatus]:
     """The encoder statuses that the detection shows first: the cached result of this ffmpeg
-    (empty when there is none, or after :data:`CACHED_ENCODERS_WAIT`)."""
+    (all ``checking`` when there is none; empty after :data:`CACHED_ENCODERS_WAIT`)."""
     try:
         async with asyncio.timeout(CACHED_ENCODERS_WAIT):
             async for event in subscription:
