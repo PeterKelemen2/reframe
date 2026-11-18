@@ -455,7 +455,7 @@ async def test_a_task_event_names_the_cache_folder_by_its_label(api: Api) -> Non
         events = await client.events_until(
             lambda event: event["type"] == "task.done" and event["task"]["id"] == started.id
         )
-    by_hand = [e for e in events if e["task"]["id"] == "task-1"]
+    by_hand = [e for e in events if e.get("task", {}).get("id") == "task-1"]
     assert [e["task"]["message"] for e in by_hand if e["type"] == "task.progress"] == [shown]
     sent = by_hand[-1]["task"]
     assert (sent["message"], sent["error"]) == (f"wrote {shown}", f"kept {shown}")
