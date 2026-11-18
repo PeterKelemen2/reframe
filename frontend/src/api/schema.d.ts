@@ -7059,6 +7059,18 @@ export interface components {
              * @description Bytes of this platform's archive; ``None`` when the build has none for this platform.
              */
             size?: number | null;
+            /**
+             * Archive Url
+             * @description Where this platform's archive is downloaded from, to install it from a file on a
+             *     computer without a connection; ``None`` when the build has none for this platform.
+             */
+            archive_url?: string | null;
+            /**
+             * Sha256
+             * @description The SHA-256 of this platform's archive (64 lowercase hex digits), which an install
+             *     checks; ``None`` when the build has none for this platform.
+             */
+            sha256?: string | null;
         };
         /**
          * ToolBuilds

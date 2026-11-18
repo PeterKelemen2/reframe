@@ -142,7 +142,12 @@ async def test_builds_lists_the_offered_builds_with_this_platforms_size(api: Api
     assert any("github.com/FFmpeg/FFmpeg/commit/" in link for link in default["source_links"])
     platform = host_platform()
     if platform is not None:
-        assert default["size"] == load_manifest()["default"].platforms[platform].size
+        pinned = load_manifest()["default"].platforms[platform]
+        assert (default["size"], default["archive_url"], default["sha256"]) == (
+            pinned.size,
+            pinned.url,
+            pinned.sha256,
+        )
     assert body["installed"] is None
 
 

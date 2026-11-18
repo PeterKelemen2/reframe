@@ -492,6 +492,9 @@ def test_the_offered_builds_and_the_installed_one(tmp_path: Path) -> None:
     )
     assert (default.license, default.size, compat.size) == ("GPL-3.0-or-later", 1000, None)
     assert default.source_links == ["https://example.invalid/ffmpeg/commit/0000000"]
+    # What to download on another computer when this one has no connection.
+    assert (default.archive_url, default.sha256) == (url, sha256(data))
+    assert (compat.archive_url, compat.sha256) == (None, None)
     assert builds.installed is None
 
 

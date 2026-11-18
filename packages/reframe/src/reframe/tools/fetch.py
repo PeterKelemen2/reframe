@@ -1334,8 +1334,10 @@ def offered_builds(
     manifest."""
     builds = load_manifest(manifest)
     host = host_platform() if platform is None else platform
-    offers = [
-        ToolBuildOffer(
+
+    def offer(build: Build) -> ToolBuildOffer:
+        archive = build.platforms.get(host) if host is not None else None
+        return ToolBuildOffer(
             name=build.name,
             label=build.label,
             summary=build.summary,
@@ -1343,13 +1345,12 @@ def offered_builds(
             release_version=build.release_version,
             license=build.license,
             source_links=_source_links(build),
-            size=build.platforms[host].size
-            if host is not None and host in build.platforms
-            else None,
+            size=None if archive is None else archive.size,
+            archive_url=None if archive is None else archive.url,
+            sha256=None if archive is None else archive.sha256,
         )
-        for build in builds.values()
-        if build.offered
-    ]
+
+    offers = [offer(build) for build in builds.values() if build.offered]
     installed: InstalledToolBuild | None = None
     if host is not None:
         marker = installed_build(install_dir_for(Path(data_dir), host, host))

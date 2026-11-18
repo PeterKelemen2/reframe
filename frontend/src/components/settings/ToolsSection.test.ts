@@ -255,6 +255,13 @@ describe('the Tools section', () => {
       details.dispatchEvent(new Event('toggle'))
       await flushPromises()
       expect(first.find('details a').attributes('href')).toContain('github.com/FFmpeg/FFmpeg')
+      expect(first.find('details summary').text()).toBe('Source code and archive')
+      expect(first.find('[data-field="archive-url"]').attributes('href')).toBe(
+        toolBuilds().builds?.[0]?.archive_url,
+      )
+      expect(first.find('[data-field="archive-sha256"]').text()).toBe(
+        '01a9764d0b5364b66cfeb4617557c64321b0e232e172ec73f0a701c5f7694326',
+      )
       expect((first.find('input[type="radio"]').element as HTMLInputElement).checked).toBe(true)
     })
 
@@ -285,6 +292,7 @@ describe('the Tools section', () => {
     it('says that the download server cannot be reached and points to a file or a path', async () => {
       const { wrapper, system } = await mountTools(systemInfo({ mode: 'desktop' }))
       fetchEnds(system, 'failed', { error_code: 'tools.fetch_offline' })
+      await wrapper.find('[data-build="compat"] input[type="radio"]').setValue(true)
       await wrapper.find('[data-action="download"]').trigger('click')
       await flushPromises()
       const offline = wrapper.find('[data-field="offline"]')
@@ -292,6 +300,15 @@ describe('the Tools section', () => {
       expect(offline.text()).toContain('The download server cannot be reached')
       expect(offline.text()).toContain('archive file')
       expect(offline.text()).toContain('path')
+      // The chosen build's archive, to download on a computer with a connection.
+      const compat = toolBuilds().builds?.[1]
+      expect(offline.find('[data-field="offline-archive"]').text()).toBe(
+        'The archive of Older NVIDIA drivers (compat): ' +
+          `${compat?.archive_url} · SHA-256 ${compat?.sha256}`,
+      )
+      expect(offline.find('[data-field="offline-archive"] a').attributes('href')).toBe(
+        compat?.archive_url,
+      )
     })
 
     it('installs an archive file that the file dialog picks as the chosen build', async () => {
