@@ -477,8 +477,11 @@ def windows_launcher(tool: Tool, *, python: str, script: Path, scenario: Path, l
     """Text of the Windows ``.cmd`` launcher for ``tool`` (CRLF line ends)."""
     # One line (a .cmd line cannot hold a newline): the same import as the POSIX launcher, so
     # the interpreter loads the cached bytecode of the fake and does not compile it per call.
+    # A literal with no double quote, which a quoted .cmd argument cannot hold: ``repr`` would
+    # use one for a path with an apostrophe.
+    folder = "'" + str(script.parent).replace("\\", "\\\\").replace("'", "\\x27") + "'"
     code = (
-        f"import sys; sys.path.append({str(script.parent)!r}); import {script.stem}; "
+        f"import sys; sys.path.append({folder}); import {script.stem}; "
         f"sys.exit({script.stem}.main({tool!r}, sys.argv[1:]))"
     )
     lines = [

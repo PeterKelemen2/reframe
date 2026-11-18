@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import asyncio
 import contextlib
 import ctypes
@@ -780,7 +781,25 @@ def test_windows_launcher_written_on_any_os(tmp_path: Path) -> None:
         f'"C:\\Program Files\\Python313\\python.exe" -I -c "{code.replace("%", "%%")}" %*'
     )
     assert lines[-2] == "exit /b %ERRORLEVEL%"
-    assert "main('ffprobe', sys.argv[1:])" in tools.ffprobe.read_text()
+    assert "main('ffprobe', sys.argv[1:]))\" %*" in tools.ffprobe.read_text()
+
+
+def test_windows_launcher_takes_a_folder_with_an_apostrophe(tmp_path: Path) -> None:
+    """``repr`` of such a path is a double-quoted literal, which a quoted .cmd argument cannot
+    hold; a backslash and a percent sign in the folder must survive too."""
+    folder = "C:\\Users\\O'Brien\\100%\\testing"
+    text = ft.windows_launcher(
+        "ffmpeg",
+        python="python.exe",
+        script=Path(folder) / "fake_ffmpeg.py",
+        scenario=tmp_path,
+        log=tmp_path,
+    )
+    run_line = next(line for line in text.splitlines() if "-I -c" in line)
+    code = run_line.removeprefix('"python.exe" -I -c "').removesuffix('" %*').replace("%%", "%")
+    assert run_line.count('"') == 4
+    literal = code.split("sys.path.append(")[1].split("); import")[0]
+    assert ast.literal_eval(literal) == str(Path(folder))
 
 
 def test_windows_launcher_rejects_double_quotes(tmp_path: Path) -> None:
