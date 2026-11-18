@@ -64,6 +64,12 @@ case $kind in
         && fail "the package still asks for MKVToolNix or MediaInfo" ;;
 esac
 ok "no MKVToolNix or MediaInfo in the dependencies"
+# The FFmpeg download checks the server's certificate against the system's CA store.
+case $kind in
+    deb) dpkg-query -W -f '${Depends}\n' reframe | grep -q 'ca-certificates' ;;
+    rpm) rpm -q --requires reframe | grep -q 'ca-certificates' ;;
+esac || fail "the package does not depend on ca-certificates"
+ok "the package depends on ca-certificates"
 
 app=/usr/lib/Reframe
 libva=$app/tools/libva
@@ -135,6 +141,7 @@ if [ -c /dev/dri/renderD128 ]; then
         -frames:v 1 -f null - > "$work/vaapi.log" 2>&1 \
         || { grep -v '^ *[0-9]*:' "$work/vaapi.log" | tail -20; fail "ffmpeg -init_hw_device vaapi"; }
     loaded=$(sed -n 's/.*calling init: \(.*\/libva\.so\.2\)$/\1/p' "$work/vaapi.log" | head -n 1)
+    [ -n "$loaded" ] && loaded=$(realpath -m "$loaded")
     [ "$loaded" = "$installed/lib/libva.so.2" ] || fail "FFmpeg loaded ${loaded:-no libva.so.2}"
     version=$(sed -n 's/.*libva: VA-API version \([0-9.]*\).*/\1/p' "$work/vaapi.log" | head -n 1)
     driver=$(sed -n 's/.*VAAPI driver: \(.*\)\.$/\1/p' "$work/vaapi.log" | head -n 1)

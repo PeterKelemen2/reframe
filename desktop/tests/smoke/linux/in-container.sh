@@ -11,6 +11,9 @@ uv sync --frozen
 uv run python scripts/bundle-tools.py --platform linux-x64
 uv run python desktop/sidecar/build.py
 (cd frontend && npm ci --no-audit --no-fund)
+# The build copies the resources next to the binary but leaves what an older layout put there
+# (an FFmpeg in the cache volume), which the app would find.
+rm -rf "$CARGO_TARGET_DIR/release/tools"
 (cd desktop && npm ci --no-audit --no-fund && npx tauri build --no-bundle)
 cargo install --locked tauri-driver@2.1.0
 
