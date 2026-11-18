@@ -57,6 +57,56 @@ def test_the_cache_is_printed_then_the_changes(cli_env: ft.FakeTools) -> None:
     assert out[-1].endswith("(1 changed since the cached result).")
 
 
+def nvenc_driver_too_old(encoder: str) -> ft.Rule:
+    """The test encode of ``encoder`` fails as with an NVIDIA driver older than the build needs
+    (the real lines of the pinned build with driver 582.78)."""
+    text = (
+        f"[{encoder} @ 0x55] Driver does not support the required nvenc API version. Required: "
+        f"13.1 Found: 13.0\n[{encoder} @ 0x55] The minimum required Nvidia driver for nvenc is "
+        "610.00 or newer\nConversion failed!\n"
+    )
+    return ft.Rule(actions=[ft.stderr(text)], exit_code=1, argv_has=["-c:v", encoder])
+
+
+HINT = (
+    "hint: {} newer system software than this FFmpeg build expects: update the driver, or use "
+    "another build (reframe tools fetch --build compat, or REFRAME_FFMPEG / tools.ffmpeg)."
+)
+
+
+def test_a_build_mismatch_ends_with_a_hint(cli_env: ft.FakeTools) -> None:
+    cli_env.set_scenario(
+        ft.Scenario(
+            [
+                nvenc_driver_too_old("h264_nvenc"),
+                nvenc_driver_too_old("hevc_nvenc"),
+                detect_rule("detect_hevc_nvenc_no_driver", encoder="av1_nvenc"),
+            ]
+        )
+    )
+    result = invoke("encoders")
+    assert result.exit_code == EXIT_OK, result.output
+    out = lines(result.stdout)
+    too_old = "unavailable: NVIDIA driver too old: NVENC needs driver 610.00 or newer"
+    assert f"hevc_nvenc — {too_old}" in out
+    assert "av1_nvenc — unavailable: NVIDIA driver not found" in out
+    assert out[-2].startswith("Done in ")
+    assert out[-1] == HINT.format("h264_nvenc, hevc_nvenc need")
+
+    # tools status shows the hint of the cached result
+    status = invoke("tools", "status")
+    assert status.exit_code == EXIT_OK, status.output
+    assert lines(status.stdout)[-1] == HINT.format("h264_nvenc, hevc_nvenc need")
+
+    # without a build mismatch there is no hint
+    cli_env.set_scenario(ft.Scenario([nvenc_driver_too_old("hevc_nvenc")]))
+    out = lines(invoke("encoders").stdout)
+    assert out[-1] == HINT.format("hevc_nvenc needs")
+    cli_env.set_scenario(ft.Scenario([]))
+    assert not any(line.startswith("hint:") for line in lines(invoke("encoders").stdout))
+    assert not any(line.startswith("hint:") for line in lines(invoke("tools", "status").stdout))
+
+
 def test_json_waits_for_the_result(cli_env: ft.FakeTools) -> None:
     result = invoke("encoders", "--json")
     assert result.exit_code == EXIT_OK, result.output

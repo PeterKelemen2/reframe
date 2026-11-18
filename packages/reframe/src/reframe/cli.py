@@ -78,7 +78,14 @@ from reframe.models.preset import Preset
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.tasks import TaskInfo, TaskState
 from reframe.models.text import json_text
-from reframe.models.tools import ToolFetchResult, ToolInfo, ToolName, ToolOrigin, ToolSet
+from reframe.models.tools import (
+    ToolBuilds,
+    ToolFetchResult,
+    ToolInfo,
+    ToolName,
+    ToolOrigin,
+    ToolSet,
+)
 from reframe.platform.longpath import missing_text
 from reframe.presets import ConflictPolicy, ImportResult
 from reframe.queue import (
@@ -96,9 +103,11 @@ from reframe.service import ProbeError, ProbeErrorKind, Reframe
 from reframe.textfile import NotARegularFileError, open_regular
 from reframe.tools.__main__ import status_lines
 from reframe.tools.fetch import (
+    FETCH_OFFLINE,
     MARKER_NAME,
     PLATFORMS,
     FetchError,
+    choose_build,
     host_platform,
     install_dir_for,
     installed_build,
@@ -1095,6 +1104,10 @@ async def run_encoders(*, as_json: bool) -> int:
         else:
             snapshot = await _follow_encoders(console, capabilities, subscription, started)
         tools = await app.tools.status()
+        if not as_json:
+            hint = _hint(snapshot.encoders.values(), tools, await _builds(app), app.data_dir)
+            if hint is not None:
+                _say(console, hint)
     if as_json:
         _write_json(snapshot)
     if not tools.ffmpeg.usable:
@@ -3156,12 +3169,75 @@ _EXIT_HELP_TOOLS_STATUS = "Exit codes: 0 ffmpeg and ffprobe can be used; 4 one o
 _EXIT_HELP_TOOLS_FETCH = (
     "Exit codes: 0 installed, or already installed with every file intact; 1 the download, "
     "the size or SHA-256 check, the archive or the version check failed, or no build is "
-    "pinned for this computer; 2 usage error, unknown build, or no archive for the platform; "
-    "130 interrupted (Ctrl+C: the download stops, and the last line says whether the build "
-    "was installed before the interrupt)."
+    "pinned for this computer; 2 usage error, unknown build, no archive for the platform, or "
+    "an archive file that is not an offered build's (name the build with --build); 3 the "
+    "archive file does not exist; 130 interrupted (Ctrl+C: the download stops, and the last "
+    "line says whether the build was installed before the interrupt)."
 )
 #: The tools without which Reframe cannot probe or encode.
 REQUIRED_TOOLS: tuple[ToolName, ...] = ("ffmpeg", "ffprobe")
+#: The build that the build-mismatch hint names when no other offered build fits better.
+FALLBACK_BUILD = "compat"
+#: Seconds ``reframe tools status`` waits for the cached encoder statuses.
+CACHED_ENCODERS_WAIT = 15.0
+
+
+def offered_builds_text() -> str:
+    """The offered builds of the pinned manifest for ``reframe tools fetch --help``."""
+    try:
+        builds = load_manifest()
+    except FetchError:  # pragma: no cover - the manifest ships with the package
+        return ""
+    offered = [f"{b.name} ({b.label}): {b.summary}" for b in builds.values() if b.offered]
+    return "\n\n".join(["Builds to choose:", *offered]) if offered else ""
+
+
+def build_in_use(tools: ToolSet | None, builds: ToolBuilds | None, data_dir: Path) -> str | None:
+    """The name of the downloaded build when tool discovery uses its ffmpeg, else ``None``."""
+    host = host_platform()
+    if tools is None or builds is None or builds.installed is None or host is None:
+        return None
+    path = tools.ffmpeg.path
+    install_dir = install_dir_for(data_dir, host, host)
+    if path is None or not Path(path).is_relative_to(install_dir):
+        return None
+    return builds.installed.name
+
+
+def other_build(in_use: str | None, builds: ToolBuilds | None) -> str:
+    """The offered build to suggest instead of the build in use (``in_use``: the downloaded
+    build's name, ``None`` for any other FFmpeg)."""
+    names = [offer.name for offer in builds.builds] if builds is not None else []
+    if in_use is None and (FALLBACK_BUILD in names or not names):
+        return FALLBACK_BUILD
+    return next((name for name in names if name != in_use), FALLBACK_BUILD)
+
+
+def build_mismatch_hint(statuses: Iterable[EncoderStatus], other: str) -> str | None:
+    """The ``hint:`` line for the encoders that this FFmpeg build cannot use on this computer;
+    ``None`` when there is none."""
+    ids = [status.id for status in statuses if status.build_mismatch]
+    if not ids:
+        return None
+    verb = "needs" if len(ids) == 1 else "need"
+    return (
+        f"hint: {', '.join(ids)} {verb} newer system software than this FFmpeg build "
+        f"expects: update the driver, or use another build (reframe tools fetch --build "
+        f"{other}, or REFRAME_FFMPEG / tools.ffmpeg)."
+    )
+
+
+async def _builds(app: Reframe) -> ToolBuilds | None:
+    try:
+        return await app.tools.builds()
+    except FetchError:  # pragma: no cover - the manifest ships with the package
+        return None
+
+
+def _hint(
+    statuses: Iterable[EncoderStatus], tools: ToolSet, builds: ToolBuilds | None, data_dir: Path
+) -> str | None:
+    return build_mismatch_hint(statuses, other_build(build_in_use(tools, builds, data_dir), builds))
 
 
 def tool_problem(info: ToolInfo) -> str:
@@ -3173,8 +3249,9 @@ def tool_problem(info: ToolInfo) -> str:
     return text
 
 
-def fetched_text(data_dir: Path) -> str:
-    """The line about the build that ``reframe tools fetch`` installed (from its marker)."""
+def fetched_text(data_dir: Path, builds: ToolBuilds | None = None) -> str:
+    """The line about the build that ``reframe tools fetch`` installed (from its marker), and
+    whether it is outdated (from ``builds``)."""
     host = host_platform()
     if host is None:
         return "Fetched build: no FFmpeg build is pinned for this computer."
@@ -3182,10 +3259,19 @@ def fetched_text(data_dir: Path) -> str:
     marker = installed_build(install_dir)
     if marker is None:
         return f'Fetched build: none ("reframe tools fetch" installs it into {install_dir}).'
-    return (
+    text = (
         f"Fetched build: {marker.get('version')} ({marker.get('build')}, "
         f"{marker.get('platform')}) in {install_dir}."
     )
+    installed = builds.installed if builds is not None else None
+    if builds is not None and installed is not None and installed.outdated:
+        pinned = next((b.version for b in builds.builds if b.name == installed.name), None)
+        what = f"{pinned} as" if pinned else "another version of"
+        text += (
+            f' It is outdated: this release pins {what} "{installed.name}" '
+            f'("reframe tools fetch --build {installed.name}" installs it).'
+        )
+    return text
 
 
 def _print_tool_lines(console: Console, tools: ToolSet) -> None:
@@ -3193,17 +3279,44 @@ def _print_tool_lines(console: Console, tools: ToolSet) -> None:
         _say(console, line)
 
 
+async def _cached_encoders(subscription: Subscription, app: Reframe) -> list[EncoderStatus]:
+    """The encoder statuses that the detection shows first: the cached result of this ffmpeg
+    (empty when there is none, or after :data:`CACHED_ENCODERS_WAIT`)."""
+    try:
+        async with asyncio.timeout(CACHED_ENCODERS_WAIT):
+            async for event in subscription:
+                if isinstance(event, CapabilitiesChangedEvent):
+                    break
+    except TimeoutError:
+        return []
+    return list(app.capabilities.snapshot.encoders.values())
+
+
 async def run_tools_status(*, as_json: bool) -> int:
-    """``reframe tools status``: the discovery result. Returns the exit code."""
+    """``reframe tools status``: the discovery result, the downloaded build and, when the cached
+    detection result says so, the build-mismatch hint. Returns the exit code."""
+    hint = None
     async with open_reframe() as app:
+        # Subscribed before the first await: the detection publishes the cached statuses once.
+        subscription = app.events.subscribe(types={"capabilities.changed"})
         tools = await app.tools.status()
         data_dir = app.data_dir
+        builds = None
+        if as_json:
+            subscription.close()
+        else:
+            async with subscription:
+                statuses = await _cached_encoders(subscription, app)
+            builds = await _builds(app)
+            hint = _hint(statuses, tools, builds, data_dir)
     if as_json:
         _write_json(tools)
     else:
         console = make_console()
         _print_tool_lines(console, tools)
-        _say(console, fetched_text(data_dir), "dim")
+        _say(console, fetched_text(data_dir, builds), "dim")
+        if hint is not None:
+            _say(console, hint)
     problems = [tools.get(name) for name in REQUIRED_TOOLS if not tools.get(name).usable]
     for info in problems:
         _error(tool_problem(info))
@@ -3275,20 +3388,27 @@ async def _follow_task(
     return await app.tasks.wait(task_id)
 
 
-async def run_tools_fetch(*, build: str, platform: str | None) -> int:
-    """``reframe tools fetch``: the pinned build through the ``tools_fetch`` task (progress,
-    then the tool lines). Returns the exit code; Ctrl+C stops the download (exit 130)."""
+async def run_tools_fetch(
+    *, build: str | None, platform: str | None, archive: Path | None = None
+) -> int:
+    """``reframe tools fetch``: a pinned build, downloaded or from its archive file
+    (``archive``), through the ``tools_fetch`` task (progress, then the tool lines). Returns the
+    exit code; Ctrl+C stops the download (exit 130)."""
     try:
         builds = load_manifest()
     except FetchError as exc:  # pragma: no cover - the manifest ships with the package
         _error(f"the pinned-build manifest cannot be read: {exc}")
         return EXIT_FAILED
-    chosen = builds.get(build)
-    if chosen is None:
-        names = ", ".join(f'"{name}"' for name in sorted(builds))
-        _error(f'there is no build "{build}" in the manifest. Builds: {names}.')
-        return EXIT_USAGE
     host = host_platform()
+    if archive is not None:
+        if platform is not None:
+            _error("--file installs a build for this computer: leave out --platform.")
+            return EXIT_USAGE
+        if not await asyncio.to_thread(archive.is_file):
+            _error(f"{archive}: there is no such file.")
+            return EXIT_NOT_FOUND
+    elif build is None:
+        build = "default"
     target = platform or host
     if target is None:
         _error(
@@ -3296,24 +3416,38 @@ async def run_tools_fetch(*, build: str, platform: str | None) -> int:
             f"another computer ({', '.join(PLATFORMS)})."
         )
         return EXIT_FAILED
-    archive = chosen.platforms.get(target)
-    if archive is None:
-        _error(f'the build "{build}" has no archive for {target}.')
+    if build is not None and build not in builds:
+        names = ", ".join(f'"{name}"' for name in sorted(builds))
+        _error(f'there is no build "{build}" in the manifest. Builds: {names}.')
+        return EXIT_USAGE
+    try:
+        chosen = choose_build(builds, build, target, archive)
+    except FetchError as exc:
+        _error(f"{exc} (--build NAME).")
+        return EXIT_USAGE
+    pinned = chosen.platforms.get(target)
+    if pinned is None:
+        _error(f'the build "{chosen.name}" has no archive for {target}.')
         return EXIT_USAGE
     console = make_console()
-    _say(console, f"FFmpeg {chosen.version} ({chosen.name}, {target}): {archive.url}")
+    source = archive if archive is not None else pinned.url
+    _say(console, f"FFmpeg {chosen.version} ({chosen.name}, {target}): {source}")
     async with open_reframe() as app:
         install_dir = install_dir_for(app.data_dir, target, host)
         before = _marker_identity(install_dir)
         subscription = app.events.subscribe(types={"task.progress", "task.done"})
-        info = app.tools.fetch(build=build, platform=target)
+        if archive is not None:
+            info = app.tools.install_file(archive, build=chosen.name)
+        else:
+            info = app.tools.fetch(build=chosen.name, platform=target)
         view = FetchView(console)
         try:
             final = await _follow_task(app, subscription, info.id, view)
         except asyncio.CancelledError:
             _uncancel()
             view.close()
-            print("Interrupted: stopping the download…", file=sys.stderr)
+            what = "download" if archive is None else "install"
+            print(f"Interrupted: stopping the {what}…", file=sys.stderr)
             app.tasks.cancel(info.id)
             ended = await app.tasks.wait(info.id)
             marker = installed_build(install_dir)
@@ -3321,7 +3455,7 @@ async def run_tools_fetch(*, build: str, platform: str | None) -> int:
             if ended.state is TaskState.DONE or (
                 # The interrupt came after the swap (tool discovery, the clean-up): the new
                 # build is in place.
-                replaced and marker is not None and marker.get("sha256") == archive.sha256
+                replaced and marker is not None and marker.get("sha256") == pinned.sha256
             ):
                 print(
                     printable(
@@ -3339,7 +3473,15 @@ async def run_tools_fetch(*, build: str, platform: str | None) -> int:
         if final.state is not TaskState.DONE:
             failed = final.state is TaskState.FAILED
             reason = (final.error or "no reason given") if failed else "it was cancelled"
-            _error(f"the fetch failed: {reason}")
+            _error(f"the {'fetch' if archive is None else 'install'} failed: {reason}")
+            if final.error_code == FETCH_OFFLINE:
+                print(
+                    printable(
+                        f"hint: download {pinned.url} on another computer, then run "
+                        '"reframe tools fetch --file ARCHIVE" here.'
+                    ),
+                    file=sys.stderr,
+                )
             return EXIT_FAILED
         result = app.tasks.value(info.id)
         assert isinstance(result, ToolFetchResult)
@@ -3642,7 +3784,8 @@ def build_app() -> typer.Typer:
 
         The cached result is printed at once (or "checking…" when there is none), then every
         status that the running detection changes, one line per encoder, for example
-        "hevc_nvenc — unavailable: NVIDIA driver not found"."""
+        "hevc_nvenc — unavailable: NVIDIA driver not found". A "hint:" line follows when an
+        encoder needs newer system software (a driver) than this FFmpeg build expects."""
         _run(run_encoders(as_json=as_json))
 
     @app.command(epilog=_EXIT_HELP_PLAN)
@@ -3849,7 +3992,7 @@ def build_app() -> typer.Typer:
 
     tools_app = typer.Typer(
         no_args_is_help=True,
-        help="Which FFmpeg and ffprobe Reframe uses; fetch the pinned FFmpeg build.",
+        help="Which FFmpeg and ffprobe Reframe uses; fetch a pinned FFmpeg build.",
     )
     app.add_typer(tools_app, name="tools")
 
@@ -3861,21 +4004,28 @@ def build_app() -> typer.Typer:
     ) -> None:
         """Show each tool: status, origin (env, settings, bundled, path), path, version and
         the reason when it cannot be used, then the build that "reframe tools fetch"
-        installed.
+        installed (and whether this release pins another version of it), and a hint when the
+        last encoder check found encoders that need newer system software than the build.
 
         The order of the search: the REFRAME_FFMPEG / REFRAME_FFPROBE variables, Settings >
         Tools, the bundled build (also the fetched one in <data dir>/tools/ffmpeg), then PATH
         (only without a bundled build)."""
         _run(run_tools_status(as_json=as_json))
 
-    @tools_app.command("fetch", epilog=_EXIT_HELP_TOOLS_FETCH)
+    offered = offered_builds_text()
+    fetch_epilog = f"{offered}\n\n{_EXIT_HELP_TOOLS_FETCH}" if offered else _EXIT_HELP_TOOLS_FETCH
+
+    @tools_app.command("fetch", epilog=fetch_epilog)
     def tools_fetch(
         build: Annotated[
-            str,
+            str | None,
             typer.Option(
-                "--build", metavar="NAME", help="The build of the manifest: default, override-test."
+                "--build",
+                metavar="NAME",
+                help="The build of the manifest (the builds to choose are listed below). "
+                "Default: default; with --file, the build whose archive has the file's name.",
             ),
-        ] = "default",
+        ] = None,
         target: Annotated[
             Literal["linux-x64", "windows-x64"] | None,
             typer.Option(
@@ -3884,15 +4034,24 @@ def build_app() -> typer.Typer:
                 "ffmpeg-<platform>, which this computer does not use. Default: this computer.",
             ),
         ] = None,
+        archive: Annotated[
+            Path | None,
+            typer.Option(
+                "--file",
+                metavar="ARCHIVE",
+                help="Install the build from its archive file (downloaded on another "
+                "computer) instead of downloading it. It is checked as a download is.",
+            ),
+        ] = None,
     ) -> None:
-        """Download the pinned FFmpeg build and install it as the bundled build in
-        <data dir>/tools/ffmpeg, where tool discovery finds it.
+        """Download a pinned FFmpeg build (or take its archive file) and install it as the
+        bundled build in <data dir>/tools/ffmpeg, where tool discovery finds it.
 
         The size and SHA-256 of the archive are checked before anything is extracted;
         ffmpeg -version and ffprobe -version must print the pinned version before the build
         replaces the one installed before. A build that is installed and intact is not
         downloaded again."""
-        _run(run_tools_fetch(build=build, platform=target))
+        _run(run_tools_fetch(build=build, platform=target, archive=archive))
 
     presets_app = typer.Typer(
         no_args_is_help=True, help="List, export and import presets (built-in and user)."
