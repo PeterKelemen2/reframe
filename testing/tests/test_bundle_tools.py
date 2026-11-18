@@ -18,7 +18,6 @@ import pytest
 from reframe.tools.fetch import FetchError
 from reframe_testing.scripts import load_script
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 FF_ROOT = "ffmpeg-test-win64"
 LINUX_ROOT = "ffmpeg-test-linux64"
 

@@ -14,9 +14,6 @@ import pytest
 
 from reframe_testing.scripts import load_script
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-
-
 al = load_script("appimage-libs.py")
 
 # dpkg's info files are named "package:arch.list", which is not a Windows file name, and
