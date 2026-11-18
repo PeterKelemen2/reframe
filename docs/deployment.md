@@ -125,7 +125,8 @@ time, each with its own notices.
 
 5. Get FFmpeg: the first-run screen offers the download (or **Install from file** with an
    archive in `/media`). Or set `REFRAME_FFMPEG_BUILD: default` in the compose file, and the
-   server downloads it at start when `/data` has none. The download stays in `/data`, so keep
+   server downloads it at start when no usable FFmpeg is found (an override you set is never
+   replaced). The download stays in `/data`, so keep
    that folder: [Getting FFmpeg](user/ffmpeg.md#docker).
 
 `docker compose stop` stops a running encode and removes its partial file; the job is

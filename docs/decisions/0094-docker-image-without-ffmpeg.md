@@ -1,6 +1,6 @@
 # 0094 — The Docker image contains no FFmpeg either
 
-- Status: accepted
+- Status: accepted; item 3 is superseded by [0097](0097-ffmpeg-build-env-and-offered-builds-only.md)
 - Date: 2026-11-18
 - Steps: S-6 (reopened), S-8, D-10; supersedes item 1's Docker part of
   [0093](0093-ffmpeg-download-and-build-choice.md)

@@ -376,10 +376,11 @@ M10.
 - [x] `GET /api/system/tools/builds`: the offered builds (name, label, summary, version,
       licence, source links, size for this platform) and the installed downloaded build with
       `outdated`.
-- [x] `POST /api/system/tools/install-file` `{path}` → 202: install an archive file from a path
-      on the server (desktop mode; in web mode the path must be inside a media root). A task
-      like `tools/fetch`.
-- [x] `REFRAME_FFMPEG_BUILD` ([decision 0094](../decisions/0094-docker-image-without-ffmpeg.md) item 3): when set to an offered build and discovery
+- [x] `POST /api/system/tools/install-file` `{path, build?}` → 202: install an archive file from a
+      path on the server (desktop mode; in web mode the path must be inside a media root). A
+      task like `tools/fetch`. Here and in `tools/fetch`, a build that is not offered is 422
+      `tools.build_not_offered` ([decision 0097](../decisions/0097-ffmpeg-build-env-and-offered-builds-only.md)).
+- [x] `REFRAME_FFMPEG_BUILD` ([decision 0097](../decisions/0097-ffmpeg-build-env-and-offered-builds-only.md), superseding 0094 item 3): when set to an offered build and discovery
       finds no usable FFmpeg at server start (none, or one on `PATH` that is too old or does
       not run: a downloaded build ranks above `PATH`), the server starts that build's download
       (a `tools_fetch` task). It never replaces an environment or Settings path, usable or
