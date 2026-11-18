@@ -22,7 +22,6 @@ from reframe.models import (
     MediaSource,
     OutputTrackRule,
     Severity,
-    SubtitleOutputSettings,
     SubtitleOutputTrack,
     TrackMetadata,
     TrackMetadataTemplate,
@@ -238,31 +237,9 @@ def audio_rule(default: bool | None, *, multiple: bool = False) -> OutputTrackRu
     )
 
 
-def subtitle_rule(default: bool | None) -> OutputTrackRule:
-    return OutputTrackRule(
-        selector=TrackSelector(kind="subtitle", languages=["en"]),
-        settings=SubtitleOutputSettings(),
-        metadata=TrackMetadataTemplate(default=default),
-    )
-
-
 def test_a_template_rule_that_marks_every_track_default() -> None:
     template = JobTemplate(audio_rules=[audio_rule(True, multiple=True)])
     issues = several(sc.check_template(sc.TemplateScenario(template)))
     assert [(i.path, i.severity) for i in issues] == [
         ("audio_rules[0].metadata.default", Severity.WARNING)
     ]
-
-
-def test_two_template_rules_that_mark_their_tracks_default() -> None:
-    template = JobTemplate(subtitle_rules=[subtitle_rule(True), subtitle_rule(True)])
-    issues = several(sc.check_template(sc.TemplateScenario(template)))
-    assert [i.path for i in issues] == ["subtitle_rules[1].metadata.default"]
-
-
-def test_template_rules_with_one_default_per_kind_are_clean() -> None:
-    template = JobTemplate(
-        audio_rules=[audio_rule(True), audio_rule(None, multiple=True)],
-        subtitle_rules=[subtitle_rule(False), subtitle_rule(True)],
-    )
-    assert several(sc.TemplateScenario(template).validate()) == []

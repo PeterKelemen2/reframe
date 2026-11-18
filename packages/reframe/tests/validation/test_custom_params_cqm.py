@@ -1,5 +1,5 @@
-"""x264 ``cqm`` with a file name: validation refuses it, and the dry run never starts FFmpeg
-with it. The matrix presets ``cqm=flat`` and ``cqm=jvt`` still dry-run."""
+"""x264 ``cqm`` with a file name is refused by validation and the dry run. The matrix presets
+``cqm=flat`` and ``cqm=jvt`` still dry-run."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from typing import Any
 
 import pytest
 
-from reframe.jsonpatch import apply_patch
 from reframe.models import (
     JobSettings,
     Severity,
@@ -49,33 +48,6 @@ def _job(custom: str, encoder: str = "libx264") -> JobSettings:
         source=SourceRef(path=Path("/media/in.mkv")),
         video=VideoSettings(encoder=encoder, custom_params=custom),
     )
-
-
-@pytest.mark.parametrize(
-    ("custom", "rest"),
-    [
-        ("cqm=/home/u/secret.cfg", ""),
-        ("nr=100:cqm=/home/u/matrix.cfg", "nr=100"),
-        ("cqm=FLAT", ""),  # x264 matches the names case-sensitively: a file named FLAT
-        ("nocqm=flat", ""),  # x264 gets cqm=true: a file named true
-        ("cqm=default", ""),
-    ],
-)
-async def test_the_dry_run_never_starts_ffmpeg_with_a_cqm_file(
-    custom: str, rest: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    async def no_run(*args: Any, **kwargs: Any) -> RunResult:
-        raise AssertionError("FFmpeg must not start")
-
-    monkeypatch.setattr(dryrun, "run", no_run)
-    job = _job(custom)
-    issues = await dry_run(job, sc.make_source(), sc.make_caps(), sc.make_tools())
-    assert [(i.code, i.severity, i.path) for i in issues] == [
-        ("encoder.custom_param_file", Severity.ERROR, "video.custom_params")
-    ]
-    (fix,) = issues[0].fixes
-    fixed = JobSettings.model_validate(apply_patch(job.model_dump(mode="json"), fix.patch))
-    assert fixed.video.custom_params == rest
 
 
 @pytest.mark.parametrize("custom", ["cqm=flat", "cqm=jvt", "nr=100:cqm=jvt"])

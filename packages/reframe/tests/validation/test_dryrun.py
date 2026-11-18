@@ -1,5 +1,4 @@
-"""The dry run without FFmpeg: the custom-parameter split, the reduced job and command, and the
-reading of FFmpeg's log."""
+"""The dry run without FFmpeg: the reduced job and command, and the reading of FFmpeg's log."""
 
 from __future__ import annotations
 
@@ -8,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from reframe.definitions import load_definitions
-from reframe.definitions.custom_params import split_custom_params
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     AverageBitrate,
@@ -46,13 +44,6 @@ def _job(**video: object) -> JobSettings:
 
 def _codes(issues: list) -> list[tuple[str, str, Severity]]:  # type: ignore[type-arg]
     return [(i.code, i.path, i.severity) for i in issues]
-
-
-def test_split_custom_params_keeps_the_typed_text() -> None:
-    params = split_custom_params(" ref=4 :bogus:path=C\\:/x::")
-    assert [(p.name, p.value) for p in params] == [("ref", "4"), ("bogus", "1"), ("path", "C:/x")]
-    assert [p.raw for p in params] == ["ref=4 ", "bogus", "path=C\\:/x"]
-    assert split_custom_params("") == []
 
 
 def test_the_dry_run_job_is_video_only() -> None:

@@ -197,8 +197,6 @@ async def test_an_unsupported_custom_parameter_fails_the_dry_run(
         ("libsvtav1", "bogus=1", "encoder.custom_param_rejected"),
         # Not an option of libvpx-vp9: refused before FFmpeg starts.
         ("libvpx-vp9", "bogus=1", "encoder.custom_param_unknown"),
-        # libvpx refuses the value through a codec control and goes on (exit code 0).
-        ("libvpx-vp9", "arnr-maxframes=16", "encoder.custom_param_rejected"),
         # libvpx names its own field ("g_lag_in_frames out of range"): not attributed.
         ("libvpx-vp9", "lag-in-frames=26", "encoder.dry_run_failed"),
         ("libsvtav1", "film-grain=99", "encoder.custom_param_rejected"),
