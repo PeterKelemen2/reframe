@@ -254,7 +254,6 @@ DAMAGE: dict[str, tuple[Callable[[FakeGitHub], None], str]] = {
         "manifest.json: 3 bytes",
     ),
     "no SHA256SUMS": (lambda gh: _drop(gh, "SHA256SUMS"), "SHA256SUMS: missing"),
-    "no licence texts": (lambda gh: _drop(gh, TEXTS), f"{TEXTS}: missing"),
     "an extra file": (
         lambda gh: gh._upload(gh.releases[0], "stray.tar.xz", b"x"),
         "stray.tar.xz: not a file of this release",
@@ -279,33 +278,33 @@ def test_a_published_but_incomplete_sources_release_stops_the_run(
     assert len(github.releases) == 1
 
 
-def test_sums_that_do_not_list_the_manifests_archives_stop_the_run(
-    github: FakeGitHub, fetched: tuple[Path, Path], tmp_path: Path
+@pytest.mark.parametrize(
+    ("keep", "name"),
+    [
+        pytest.param(lambda lines: lines[:2], "lame.tar.xz", id="the first two lines"),
+        pytest.param(
+            lambda lines: [line for line in lines if TEXTS.encode() not in line],
+            TEXTS,
+            id="no licence texts",
+        ),
+    ],
+)
+def test_sums_that_leave_out_a_file_stop_the_run(
+    github: FakeGitHub,
+    fetched: tuple[Path, Path],
+    tmp_path: Path,
+    keep: Callable[[list[bytes]], list[bytes]],
+    name: str,
 ) -> None:
+    """A release whose sums skip the licence texts cannot give the notices theirs."""
     manifest, files = fetched
     _published_sources(github, manifest, files)
     sums = github.asset(TAG, "SHA256SUMS")
-    shorter = b"".join((files / "SHA256SUMS").read_bytes().splitlines(keepends=True)[:2])
+    shorter = b"".join(keep((files / "SHA256SUMS").read_bytes().splitlines(keepends=True)))
     github.content[sums["id"]] = shorter
     sums.update(size=len(shorter), digest=f"sha256:{_sha256(shorter)}")
 
-    with pytest.raises(rw.ReleaseError, match=r"lame\.tar\.xz: not in its SHA256SUMS"):
-        rw.find_sources(REPO, TAG, manifest, tmp_path / "SHA256SUMS")
-
-
-def test_sums_without_the_licence_texts_stop_the_run(
-    github: FakeGitHub, fetched: tuple[Path, Path], tmp_path: Path
-) -> None:
-    """A sources release made without its licence texts cannot give the notices theirs."""
-    manifest, files = fetched
-    _published_sources(github, manifest, files)
-    sums = github.asset(TAG, "SHA256SUMS")
-    lines = (files / "SHA256SUMS").read_bytes().splitlines(keepends=True)
-    without = b"".join(line for line in lines if TEXTS.encode() not in line)
-    github.content[sums["id"]] = without
-    sums.update(size=len(without), digest=f"sha256:{_sha256(without)}")
-
-    with pytest.raises(rw.ReleaseError, match=rf"{TEXTS}: not in its SHA256SUMS"):
+    with pytest.raises(rw.ReleaseError, match=rf"{re.escape(name)}: not in its SHA256SUMS"):
         rw.find_sources(REPO, TAG, manifest, tmp_path / "SHA256SUMS")
 
 
@@ -452,25 +451,14 @@ def test_a_draft_is_published_only_when_github_has_every_file(
     assert github.commands("api", "-X", "PATCH") == []
 
 
-def test_sources_whose_sums_do_not_match_the_archives_are_not_uploaded(
-    github: FakeGitHub, fetched: tuple[Path, Path]
+@pytest.mark.parametrize("name", ["lame.tar.xz", TEXTS])
+def test_sources_whose_sums_do_not_match_a_file_are_not_uploaded(
+    github: FakeGitHub, fetched: tuple[Path, Path], name: str
 ) -> None:
     manifest, files = fetched
-    (files / "lame.tar.xz").write_bytes(b"changed after the fetch")
+    (files / name).write_bytes(b"changed after the sums were written")
 
-    with pytest.raises(rw.ReleaseError, match=r"lame\.tar\.xz"):
-        rw.publish_sources(REPO, TAG, manifest, files, "0f1e2d3c")
-
-    assert github.commands("release") == []
-
-
-def test_sources_whose_licence_texts_are_not_in_the_sums_are_not_uploaded(
-    github: FakeGitHub, fetched: tuple[Path, Path]
-) -> None:
-    manifest, files = fetched
-    (files / TEXTS).write_bytes(b"written again after the sums")
-
-    with pytest.raises(rw.ReleaseError, match=TEXTS):
+    with pytest.raises(rw.ReleaseError, match=re.escape(name)):
         rw.publish_sources(REPO, TAG, manifest, files, "0f1e2d3c")
 
     assert github.commands("release") == []

@@ -25,7 +25,7 @@ LOST packages/reframe/src/reframe/platform/power.py: lines [495] branches []
 TOTAL LOST: 1
 ```
 
-`PowerService.countdown` was covered only by `test_defaults`, so that test was restored.
+`PowerService.countdown` was covered only by `test_the_deadline_uses_the_wall_clock`, so that test was restored.
 
 After that the gate showed losses only in `capabilities/` (detect.py, parse.py, service.py:357).
 The background capability detection that `Reframe.create` starts in the facade and CLI fetch
@@ -112,7 +112,7 @@ queue, so a short step can be lost. It passes without coverage. Report it to the
 
 ## Restored after a check
 
-- `platform/test_power.py::test_defaults`: the coverage gate (`PowerService.countdown` getter).
+- `platform/test_power.py::test_the_deadline_uses_the_wall_clock`: the coverage gate (`PowerService.countdown` getter).
 - `tools/test_fetch.py::test_a_bad_manifest_is_refused[ftp://…]`: two mutations were caught by
   no other test (see below).
 - `platform/test_sleep_backends.py::test_windows_backend_accepts_a_mock_kernel32`: it is the

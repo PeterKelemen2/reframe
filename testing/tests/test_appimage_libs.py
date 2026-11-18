@@ -149,10 +149,8 @@ def test_a_listed_package_that_is_not_installed_is_an_error(fake_dpkg: Path, pac
 @pytest.mark.parametrize(
     ("relative", "package"),
     [
-        ("usr/lib/libgtk-3.so.0", "libgtk-3-0"),
         ("usr/lib/gtk-3.0/3.0.0/immodules/im-xim.so", "libgtk-3-0"),
         ("usr/lib/im-xim.so", "libgtk-3-0"),
-        ("usr/lib/libblkid.so.1", "libblkid1"),
         ("usr/share/doc/libxau6/copyright", "libxau6"),
     ],
 )

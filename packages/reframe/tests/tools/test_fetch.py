@@ -824,35 +824,6 @@ async def test_an_unsupported_host_needs_a_platform(
 
 
 @pytest.mark.anyio
-async def test_cancel_stops_the_download_and_installs_nothing(
-    tmp_path: Path, server: LocalServer
-) -> None:
-    other = foreign_platform()
-    data = fake_archive(other, tmp_path / "work") + b"\0" * (2 << 20)  # ~2 MiB, slow
-    route = server.add(f"/a.{_ext(other)}", data, delay=0.05)
-    manifest = write_manifest(
-        tmp_path / "m.toml", {"default": [Archive(server.url(f"/a.{_ext(other)}"), data, other)]}
-    )
-    tasks = TaskManager()
-
-    async def rescan() -> ToolSet:
-        return _toolset()
-
-    data_dir = tmp_path / "data"
-    info = start_fetch(tasks, data_dir=data_dir, rescan=rescan, platform=other, manifest=manifest)
-    deadline = asyncio.get_running_loop().time() + 30
-    while not leftovers(data_dir) or route.requests == 0:
-        assert asyncio.get_running_loop().time() < deadline
-        await asyncio.sleep(0.02)
-    await asyncio.sleep(0.2)  # a few blocks are written
-    assert tasks.cancel(info.id)
-    final = await asyncio.wait_for(tasks.wait(info.id), 30)
-    assert final.state is TaskState.CANCELLED
-    assert leftovers(data_dir) == []
-    assert not install_dir_for(data_dir, other, host_platform()).exists()
-
-
-@pytest.mark.anyio
 async def test_a_cancel_stops_a_slow_download_at_once(tmp_path: Path, server: LocalServer) -> None:
     other = foreign_platform()
     url = f"/slow.{_ext(other)}"
@@ -873,12 +844,13 @@ async def test_a_cancel_stops_a_slow_download_at_once(tmp_path: Path, server: Lo
         await asyncio.sleep(0.02)
     await asyncio.sleep(0.6)
     started = time.monotonic()
-    tasks.cancel(info.id)
+    assert tasks.cancel(info.id)
     final = await asyncio.wait_for(tasks.wait(info.id), 60)
     elapsed = time.monotonic() - started
     assert final.state is TaskState.CANCELLED
     assert elapsed < 2.5, elapsed
     assert leftovers(data_dir) == []
+    assert not install_dir_for(data_dir, other, host_platform()).exists()
 
 
 @POSIX_ONLY

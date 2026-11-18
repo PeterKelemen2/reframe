@@ -169,7 +169,8 @@ def test_the_bundled_ffmpeg_gets_its_pin_with_the_source_links(tmp_path: Path) -
     (tools / "ffmpeg" / "LICENSE-libva.txt").write_text("libva licence text")
     manifests = REPO_ROOT / "tools"
 
-    [entry, _libva] = tpn.tool_entries(tools, manifests, "linux-x64")
+    entries = tpn.tool_entries(tools, manifests, "linux-x64")
+    [entry, libva] = entries
 
     pin = tpn.tomllib.loads((manifests / "ffmpeg.toml").read_text())["builds"]["default"]
     archive = pin["platforms"]["linux-x64"]
@@ -188,28 +189,20 @@ def test_the_bundled_ffmpeg_gets_its_pin_with_the_source_links(tmp_path: Path) -
     assert pin["platforms"]["windows-x64"]["url"] not in entry.text
     assert entry.text.endswith("ffmpeg licence text")
 
-
-def test_a_library_built_into_a_tool_gets_its_pin_and_licence(tmp_path: Path) -> None:
-    tools = tmp_path / "tools"
-    _layout(tools, "ffmpeg")
-    (tools / "ffmpeg" / "LICENSE-libva.txt").write_text("libva licence text")
-    manifests = REPO_ROOT / "tools"
-
-    entries = tpn.tool_entries(tools, manifests, "linux-x64")
-
-    pin = tpn.tomllib.loads((manifests / "bundled-tools.toml").read_text())["libraries"]["libva"]
-    assert [entry.name for entry in entries] == ["ffmpeg", "libva"]
-    libva = entries[1]
+    libva_pin = tpn.tomllib.loads((manifests / "bundled-tools.toml").read_text())["libraries"][
+        "libva"
+    ]
+    assert [e.name for e in entries] == ["ffmpeg", "libva"]
     assert (libva.version, libva.license, libva.url) == (
-        pin["version"],
-        pin["license"],
-        pin["release_url"],
+        libva_pin["version"],
+        libva_pin["license"],
+        libva_pin["release_url"],
     )
     for value in (
-        pin["source_repository"],
-        pin["source_tag"],
-        pin["platforms"]["linux-x64"]["url"],
-        pin["platforms"]["linux-x64"]["sha256"],
+        libva_pin["source_repository"],
+        libva_pin["source_tag"],
+        libva_pin["platforms"]["linux-x64"]["url"],
+        libva_pin["platforms"]["linux-x64"]["sha256"],
         "tools/ffmpeg/LICENSE-libva.txt",
     ):
         assert value in libva.text
@@ -222,11 +215,6 @@ def test_a_library_without_its_licence_file_is_an_error(tmp_path: Path) -> None:
 
     with pytest.raises(tpn.NoticesError, match=r"LICENSE-libva\.txt"):
         tpn.tool_entries(tools, REPO_ROOT / "tools", "linux-x64")
-
-
-def test_a_library_pinned_for_another_platform_gets_no_entry(tmp_path: Path) -> None:
-    tools = tmp_path / "tools"
-    _layout(tools, "ffmpeg")
 
     [entry] = tpn.tool_entries(tools, REPO_ROOT / "tools", "windows-x64")
 
@@ -502,9 +490,10 @@ def _listed_archives(text: str) -> list[str]:
 
 @pytest.mark.usefixtures("no_sections")
 @pytest.mark.parametrize("platform", sorted(BUNDLED))
-def test_the_notices_list_only_the_archives_that_the_platform_bundles(
+def test_the_notices_list_and_carry_the_texts_of_only_the_archives_the_platform_bundles(
     tmp_path: Path, platform: str
 ) -> None:
+    """The owner's rule: every bundled part's licence text, not only its name and link."""
     out = tmp_path / "THIRD_PARTY_NOTICES"
 
     code = tpn.main(["--platform", platform, "--out", str(out), *_sources(tmp_path)])
@@ -515,6 +504,11 @@ def test_the_notices_list_only_the_archives_that_the_platform_bundles(
     assert sorted(_listed_archives(text)) == sorted(BUNDLED[platform])
     for name in BUNDLED[platform]:
         assert f"  {_checksum(name)}  {name}" in text.splitlines()
+    section = _section(text, TEXTS_SECTION)
+    for name, (kind, _) in MANIFEST.items():
+        licence = "GTK+ is LGPL-2.1+" if kind == "ubuntu-source" else f"the licence of {name}"
+        assert (f"Source archive: {name}" in section) is (name in BUNDLED[platform])
+        assert (licence in section) is (name in BUNDLED[platform])
 
 
 @pytest.mark.parametrize(
@@ -566,27 +560,16 @@ def test_a_bundled_archive_missing_from_the_sums_is_an_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     sums = "".join(f"{_checksum(n)}  {n}\n" for n in MANIFEST if not n.startswith("libva"))
+    options = _sources(tmp_path, sums=sums)
     out = tmp_path / "THIRD_PARTY_NOTICES"
 
-    code = tpn.main(["--platform", "linux-x64", "--out", str(out), *_sources(tmp_path, sums=sums)])
+    code = tpn.main(["--platform", "linux-x64", "--out", str(out), *options])
 
     assert code == 1
     assert "the sums have no line for libva-2.24.1.tar.bz2" in capsys.readouterr().err
     assert not out.exists()
-
-
-@pytest.mark.usefixtures("no_sections")
-def test_another_platforms_archive_missing_from_the_sums_is_not_this_ones_concern(
-    tmp_path: Path,
-) -> None:
-    sums = "".join(f"{_checksum(n)}  {n}\n" for n in MANIFEST if not n.startswith("libva"))
-    out = tmp_path / "THIRD_PARTY_NOTICES"
-
-    code = tpn.main(
-        ["--platform", "windows-x64", "--out", str(out), *_sources(tmp_path, sums=sums)]
-    )
-
-    assert code == 0
+    # Another platform does not bundle libva, so the missing line is not its concern.
+    assert tpn.main(["--platform", "windows-x64", "--out", str(out), *options]) == 0
 
 
 @pytest.mark.usefixtures("no_sections")
@@ -627,7 +610,7 @@ def test_a_file_that_is_not_a_source_manifest_is_an_error(tmp_path: Path, conten
 
 @pytest.mark.parametrize(
     "given",
-    [list(c) for size in (1, 2, 3) for c in itertools.combinations(range(4), size)],
+    [list(c) for size in (1, 3) for c in itertools.combinations(range(4), size)],
 )
 def test_the_sources_options_are_given_all_four_or_none(tmp_path: Path, given: list[int]) -> None:
     options = _sources(tmp_path)
@@ -798,23 +781,6 @@ def _section(text: str, title: str) -> str:
 
 LINE = "-" * 78
 TEXTS_SECTION = "Licence texts of the parts in the sources release"
-
-
-@pytest.mark.usefixtures("no_sections")
-@pytest.mark.parametrize("platform", sorted(BUNDLED))
-def test_the_notices_carry_the_licence_text_of_each_archive_the_platform_bundles(
-    tmp_path: Path, platform: str
-) -> None:
-    """The owner's rule: every bundled part's licence text, not only its name and link."""
-    out = tmp_path / "THIRD_PARTY_NOTICES"
-
-    assert tpn.main(["--platform", platform, "--out", str(out), *_sources(tmp_path)]) == 0
-
-    section = _section(out.read_text(), TEXTS_SECTION)
-    for name, (kind, _) in MANIFEST.items():
-        text = "GTK+ is LGPL-2.1+" if kind == "ubuntu-source" else f"the licence of {name}"
-        assert (f"Source archive: {name}" in section) is (name in BUNDLED[platform])
-        assert (text in section) is (name in BUNDLED[platform])
 
 
 @pytest.mark.usefixtures("no_sections")

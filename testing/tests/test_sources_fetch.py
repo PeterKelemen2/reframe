@@ -374,6 +374,9 @@ def test_an_ubuntu_source_package_is_its_dsc_and_every_file_it_lists(
     ]
     # Its licence comes from the build image's /usr/share/doc, not from this archive.
     assert _texts(out) == {}
+    with tarfile.open(out / entry["archive"]) as tar:
+        members = tar.getmembers()
+    assert {(m.uid, m.gid, m.uname, m.gname, m.mtime) for m in members} == {(0, 0, "", "", 0)}
 
 
 def test_a_dsc_of_another_version_is_an_error(
@@ -527,19 +530,6 @@ def test_the_same_tree_packs_to_the_same_bytes_at_any_time(tmp_path: Path) -> No
     sf.pack(tree, tmp_path / "second.tar.xz")
 
     assert (tmp_path / "first.tar.xz").read_bytes() == (tmp_path / "second.tar.xz").read_bytes()
-
-
-def test_an_ubuntu_archive_keeps_no_owner_or_time_of_the_fetching_host(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    entry = _launchpad(tmp_path, monkeypatch)
-
-    sf.fetch_all([entry], tmp_path / "out")
-
-    with tarfile.open(tmp_path / "out" / entry["archive"]) as tar:
-        members = tar.getmembers()
-    assert members
-    assert {(m.uid, m.gid, m.uname, m.gname, m.mtime) for m in members} == {(0, 0, "", "", 0)}
 
 
 @pytest.mark.parametrize("name", ["../../etc/cron.d/x", "sub/x.tar.xz", ".hidden"])

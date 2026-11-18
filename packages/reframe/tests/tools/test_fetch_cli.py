@@ -87,17 +87,6 @@ def use_manifest(monkeypatch: pytest.MonkeyPatch, manifest: Path) -> None:
     monkeypatch.setattr(fetch_module, "DEFAULT_MANIFEST", manifest)
 
 
-def test_status_prints_the_lines_of_python_m_reframe_tools(fake: ft.FakeTools, env: Path) -> None:
-    result = invoke("tools", "status")
-    assert result.exit_code == EXIT_OK, result.output
-    lines = result.stdout.splitlines()
-    assert lines[0] == f"ffmpeg       found    env      {fake.ffmpeg}  {FAKE_VERSION}"
-    assert lines[1] == f"ffprobe      found    env      {fake.ffprobe}  {FAKE_VERSION}"
-    install = env / "tools" / "ffmpeg"
-    assert lines[2] == f'Fetched build: none ("reframe tools fetch" installs it into {install}).'
-    assert result.stderr == ""
-
-
 def test_status_json_is_the_toolset(fake: ft.FakeTools) -> None:
     import json
 
@@ -136,14 +125,21 @@ def test_status_json_still_exits_4(env: Path) -> None:
     assert result.stdout.lstrip().startswith("{")
 
 
-def test_status_lines_are_shared_with_python_m_reframe_tools(fake: ft.FakeTools) -> None:
+def test_status_lines_are_shared_with_python_m_reframe_tools(fake: ft.FakeTools, env: Path) -> None:
     from reframe.tools import discover_tools
 
     tools = asyncio.run(discover_tools())
     lines = status_lines(tools)
     result = invoke("tools", "status")
+    assert result.exit_code == EXIT_OK, result.output
     assert [line.split()[0] for line in lines] == ["ffmpeg", "ffprobe"]
     assert result.stdout.splitlines()[: len(lines)] == lines
+    out = result.stdout.splitlines()
+    assert out[0] == f"ffmpeg       found    env      {fake.ffmpeg}  {FAKE_VERSION}"
+    assert out[1] == f"ffprobe      found    env      {fake.ffprobe}  {FAKE_VERSION}"
+    install = env / "tools" / "ffmpeg"
+    assert out[2] == f'Fetched build: none ("reframe tools fetch" installs it into {install}).'
+    assert result.stderr == ""
 
 
 def test_fetched_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
