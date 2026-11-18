@@ -146,6 +146,43 @@ async def test_driver_errors_are_mapped(fake_tools: ft.FakeTools, fake_ffmpeg: T
     )
 
 
+#: What the pinned build prints with an NVIDIA driver older than its NVENC needs (real lines).
+NVENC_DRIVER_TOO_OLD = (
+    "[{0} @ 0x55] Driver does not support the required nvenc API version. Required: 13.1 "
+    "Found: 13.0\n[{0} @ 0x55] The minimum required Nvidia driver for nvenc is 610.00 or newer\n"
+    "Conversion failed!\n"
+)
+
+
+async def test_a_build_mismatch_reaches_the_encoder_status(
+    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
+) -> None:
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                ft.Rule(
+                    actions=[ft.stderr(NVENC_DRIVER_TOO_OLD.format("hevc_nvenc"))],
+                    exit_code=1,
+                    argv_has=["-c:v", "hevc_nvenc"],
+                ),
+                detect_rule("detect_hevc_nvenc_no_driver", encoder="h264_nvenc"),
+                detect_rule("detect_h264_amf_10bit", encoder="av1_amf", ten_bit=True),
+            ]
+        )
+    )
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, LINUX)
+    hevc = snap.status("hevc_nvenc")
+    assert (hevc.state, hevc.reason, hevc.build_mismatch) == (
+        UNAVAILABLE,
+        "NVIDIA driver too old: NVENC needs driver 610.00 or newer",
+        True,
+    )
+    assert snap.status("h264_nvenc").build_mismatch is False  # no driver at all
+    av1 = snap.status("av1_amf")  # 10-bit only: usable in 8-bit
+    assert (av1.state, av1.supports_10bit, av1.build_mismatch) == (AVAILABLE, False, False)
+    assert [s.id for s in snap.encoders.values() if s.build_mismatch] == ["hevc_nvenc"]
+
+
 async def test_timeouts_are_errors(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
     fake_tools.set_scenario(
         ft.Scenario(

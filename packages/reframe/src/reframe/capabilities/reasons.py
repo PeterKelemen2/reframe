@@ -67,6 +67,8 @@ class Failure:
     reason: str
     detail: str | None = None
     """The FFmpeg line the reason comes from (pointer addresses removed)."""
+    build_mismatch: bool = False
+    """The build needs newer system software than the computer has (``EncoderStatus``)."""
 
 
 _Reason = Callable[[re.Match[str], TestContext, Sequence[str]], str]
@@ -78,6 +80,7 @@ class _Rule:
     reason: _Reason
     families: frozenset[str] | None = None
     """Only for these encoder families (``None``: any)."""
+    build_mismatch: bool = False
 
 
 def _fixed(text: str) -> _Reason:
@@ -88,11 +91,18 @@ def _codec(ctx: TestContext) -> str:
     return ctx.codec_label or "this format"
 
 
+_NVENC_DRIVER = re.compile(r"minimum required Nvidia driver for nvenc is (?P<driver>\S+?) or newer")
+
+
+def _nvenc_driver(driver: str) -> str:
+    return f"NVIDIA driver too old: NVENC needs driver {driver} or newer"
+
+
 def _nvenc_too_old(match: re.Match[str], _ctx: TestContext, texts: Sequence[str]) -> str:
     for text in texts:
-        minimum = re.search(r"minimum required Nvidia driver for nvenc is (\S+?) or newer", text)
+        minimum = _NVENC_DRIVER.search(text)
         if minimum is not None:
-            return f"NVIDIA driver too old: NVENC needs driver {minimum[1]} or newer"
+            return _nvenc_driver(minimum["driver"])
     return f"NVIDIA driver too old (NVENC API {match['found']}, needs {match['required']})"
 
 
@@ -145,11 +155,19 @@ _RULES: tuple[_Rule, ...] = (
             r"Required: (?P<required>[\d.]+) Found: (?P<found>[\d.]+)"
         ),
         _nvenc_too_old,
+        build_mismatch=True,
     ),
     _Rule(
         re.compile(r"Cannot load (?:libcuda\.so[\d.]*|nvcuda\.dll)"),
         _fixed("NVIDIA driver not found"),
     ),
+    # A driver without its NVENC library (a container without the "video" capability): FFmpeg
+    # prints the driver requirement after it, but another build would not help.
+    _Rule(
+        re.compile(r"Cannot load (?P<lib>libnvidia-encode\.so[\d.]*|nvEncodeAPI(?:64)?\.dll)"),
+        lambda m, _ctx, _t: f"The NVIDIA driver has no NVENC library ({m['lib']})",
+    ),
+    _Rule(_NVENC_DRIVER, lambda m, _ctx, _t: _nvenc_driver(m["driver"]), build_mismatch=True),
     _Rule(re.compile(r"No CUDA capable devices found"), _fixed("No NVIDIA GPU found")),
     _Rule(
         re.compile(r"^No capable devices found"),
@@ -253,6 +271,7 @@ _RULES: tuple[_Rule, ...] = (
         lambda m, _ctx, _t: (
             f"The system's {m['lib']} is too old for this FFmpeg build (it has no {m['symbol']})"
         ),
+        build_mismatch=True,
     ),
     _Rule(
         # The dlopen error names the library that is missing: the stub's own, or one it needs.
@@ -261,6 +280,7 @@ _RULES: tuple[_Rule, ...] = (
             r"(?:(?P<missing>[^:\s]+): cannot open shared object file|(?P<error>.*))"
         ),
         _library_not_loaded,
+        build_mismatch=True,
     ),
     # A hardware device option failed (fftools) and no device line said why.
     _Rule(
@@ -326,7 +346,10 @@ def explain_failure(stderr: str, ctx: TestContext, *, returncode: int | None = N
         for line, text in lines:
             match = rule.pattern.search(text)
             if match is not None:
-                return Failure(EncoderState.UNAVAILABLE, rule.reason(match, ctx, texts), line)
+                reason = rule.reason(match, ctx, texts)
+                # libplacebo falls back to zscale: a filter never asks for another build.
+                mismatch = rule.build_mismatch and ctx.family != "filter"
+                return Failure(EncoderState.UNAVAILABLE, reason, line, build_mismatch=mismatch)
     detail = informative_line(stderr, ctx.encoder)
     test = f"the {ctx.encoder} test" if ctx.family == "filter" else "the test encode"
     crash = _crash(returncode)
