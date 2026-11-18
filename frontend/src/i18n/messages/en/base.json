@@ -40,7 +40,8 @@
   "issues": {
     "none": "No issues",
     "show": "Show",
-    "showField": "Show the field: {message}"
+    "showField": "Show the field: {message}",
+    "otherFfmpeg": "Use another FFmpeg…"
   },
   "primevue": {
     "accept": "Yes",

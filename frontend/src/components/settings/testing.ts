@@ -52,6 +52,36 @@ export function tool(name: ToolInfo['name'], extra: Partial<ToolInfo> = {}): Too
   } as ToolInfo
 }
 
+/** The offered builds as the server lists them on linux-x64, none installed. */
+export function toolBuilds(extra: Partial<Schemas['ToolBuilds']> = {}): Schemas['ToolBuilds'] {
+  return {
+    builds: [
+      {
+        name: 'default',
+        label: 'Recommended',
+        summary: 'The build Reframe is tested with. NVIDIA NVENC needs driver 610 or newer.',
+        version: 'n9.0.2-17-g2a571b6068-20260930',
+        release_version: '9.0.2',
+        license: 'GPL-3.0-or-later',
+        source_links: ['https://github.com/FFmpeg/FFmpeg/commit/2a571b6'],
+        size: 68_653_636,
+      },
+      {
+        name: 'compat',
+        label: 'Older NVIDIA drivers',
+        summary: 'For NVIDIA drivers older than 610 (GeForce 10 and older).',
+        version: 'n8.1.3-9-g29e619e767-20260930',
+        release_version: '8.1.3',
+        license: 'GPL-3.0-or-later',
+        source_links: ['https://github.com/FFmpeg/FFmpeg/commit/29e619e'],
+        size: 66_000_000,
+      },
+    ],
+    installed: null,
+    ...extra,
+  }
+}
+
 export function systemInfo(
   extra: Partial<SystemInfo> = {},
   tools: Partial<Record<ToolInfo['name'], Partial<ToolInfo>>> = {},
@@ -73,11 +103,13 @@ export function systemInfo(
  */
 export class SettingsServer extends FakeServer {
   document = defaultSettings()
+  builds = toolBuilds()
   refuse: (ops: JsonPatchOp[]) => Response | undefined = () => undefined
 
   constructor() {
     super()
     this.on('GET /api/settings', () => structuredClone(this.document))
+    this.on('GET /api/system/tools/builds', () => structuredClone(this.builds))
     this.on('PUT /api/settings', ({ body }) => {
       const ops = body as JsonPatchOp[]
       const refused = this.refuse(ops)

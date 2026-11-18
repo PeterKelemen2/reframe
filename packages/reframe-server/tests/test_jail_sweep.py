@@ -136,6 +136,12 @@ INPUTS = [
         lambda _, p, __: Request("post", "/api/subtitles/inspect", {"path": p}),
     ),
     PathInput(
+        "system_install_tools_file",
+        "path",
+        "media",
+        lambda _, p, __: Request("post", "/api/system/tools/install-file", {"path": p}),
+    ),
+    PathInput(
         "jobs_explain",
         "template",
         "output",

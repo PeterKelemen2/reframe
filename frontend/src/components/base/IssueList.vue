@@ -2,16 +2,19 @@
 import Button from 'primevue/button'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 
 import type { Fix, ValidationIssue } from '@/api/types'
 import { useEditorStore } from '@/stores/editor'
+import { useSystemStore } from '@/stores/system'
 import { useUiStore } from '@/stores/ui'
 
 import { bySeverity, SEVERITY_ICON, useSeverityLabel } from './severity'
 
 /**
  * Issues, most severe first, each with its fix buttons (`editor.applyFix`) and a link to its
- * field (`ui.reveal(issue.path)`). Used by the Summary tab and the status bar.
+ * field (`ui.reveal(issue.path)`). An unavailable video encoder that another FFmpeg build can
+ * make available adds *Use another FFmpeg…*. Used by the Summary tab and the status bar.
  */
 const props = defineProps<{
   issues: ValidationIssue[]
@@ -22,11 +25,23 @@ const props = defineProps<{
 const { t } = useI18n()
 const severityLabel = useSeverityLabel()
 const editor = useEditorStore()
+const system = useSystemStore()
 const ui = useUiStore()
+const router = useRouter()
 
 const sorted = computed(() => bySeverity(props.issues))
 /** The fix being applied: every fix button waits for it, so that two patches never race. */
 const applying = ref<Fix | null>(null)
+
+function buildMismatch(issue: ValidationIssue): boolean {
+  if (issue.code !== 'encoder.unavailable' || issue.path !== 'video.encoder') return false
+  const encoder = editor.job?.video?.encoder
+  return encoder !== undefined && system.encoderStatus(encoder)?.build_mismatch === true
+}
+
+async function otherFfmpeg(): Promise<void> {
+  await router.push({ name: 'settings', hash: '#tools' })
+}
 
 async function applyFix(fix: Fix): Promise<void> {
   if (applying.value !== null) return
@@ -78,6 +93,15 @@ async function applyFix(fix: Fix): Promise<void> {
           :loading="applying === fix"
           :disabled="applying !== null"
           @click="applyFix(fix)"
+        />
+        <Button
+          v-if="buildMismatch(issue)"
+          class="rf-issue__other-ffmpeg"
+          size="small"
+          severity="secondary"
+          outlined
+          :label="t('base.issues.otherFfmpeg')"
+          @click="otherFfmpeg"
         />
       </span>
     </li>

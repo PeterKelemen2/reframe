@@ -50,12 +50,31 @@ async function mountBanner(options: { fromPreset?: boolean; issues?: ValidationI
   }
   await openJob()
   useValidationStore().issues = options.issues ?? [unavailable()]
-  const { wrapper } = await mountShell(EncoderBanner, { pinia: setup.pinia })
+  const { wrapper, router } = await mountShell(EncoderBanner, { pinia: setup.pinia })
   mounted.push(wrapper)
-  return { ...setup, wrapper }
+  return { ...setup, wrapper, router }
 }
 
 describe('the missing-encoder banner', () => {
+  it('offers another FFmpeg when the build needs newer system software, and opens Settings → Tools', async () => {
+    const { wrapper, system, router } = await mountBanner()
+    expect(wrapper.find('.encoder-banner__other-ffmpeg').exists()).toBe(false)
+    const encoders = { ...system.capabilities!.encoders }
+    encoders.hevc_nvenc = {
+      ...encoders.hevc_nvenc!,
+      state: 'unavailable',
+      reason: 'NVIDIA driver too old: NVENC needs driver 610.00 or newer',
+      build_mismatch: true,
+    }
+    system.capabilities = { ...system.capabilities!, encoders }
+    await flushPromises()
+    const other = wrapper.find('.encoder-banner__other-ffmpeg')
+    expect(other.text()).toBe('Use another FFmpeg…')
+    await other.trigger('click')
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('settings'))
+    expect(router.currentRoute.value.hash).toBe('#tools')
+  })
+
   it("names the preset, the encoder and the detection's reason", async () => {
     const { wrapper } = await mountBanner({ fromPreset: true })
     expect(wrapper.find('.encoder-banner__message').text()).toBe(

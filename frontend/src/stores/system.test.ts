@@ -244,20 +244,59 @@ describe('the system store', () => {
     ])
   })
 
-  it('names the running FFmpeg download while it runs', async () => {
+  it('names the running FFmpeg download while it runs, then reads the tools and builds', async () => {
     const store = useSystemStore()
     const tasks = useTasksStore()
     server.on(
       'POST /api/system/tools/fetch',
       () => new Response(JSON.stringify({ task_id: 'f1' }), { status: 202 }),
     )
-    const fetching = store.fetchTools()
+    server.on('GET /api/system/tools/builds', {
+      builds: [],
+      installed: { name: 'compat', version: 'n8.1', outdated: false },
+    })
+    const fetching = store.fetchTools('compat')
     await settle()
     expect(store.toolsFetch).toBe('f1')
+    expect(server.requests.at(-1)?.body).toEqual({ build: 'compat' })
     tasks.onTaskDone({ type: 'task.done', task: { id: 'f1', kind: 'tools_fetch', state: 'done' } })
-    await fetching
+    expect((await fetching).state).toBe('done')
     expect(store.toolsFetch).toBeNull()
     expect(store.info?.tools.ffmpeg.status).toBe('found')
+    expect(store.builds?.installed?.name).toBe('compat')
+  })
+
+  it('installs an archive file, and leaves an offline download to the screen without a toast', async () => {
+    const store = useSystemStore()
+    const tasks = useTasksStore()
+    server.on(
+      'POST /api/system/tools/install-file',
+      () => new Response(JSON.stringify({ task_id: 'i1' }), { status: 202 }),
+    )
+    server.on(
+      'POST /api/system/tools/fetch',
+      () => new Response(JSON.stringify({ task_id: 'f2' }), { status: 202 }),
+    )
+    server.on('GET /api/system/tools/builds', { builds: [], installed: null })
+    const installing = store.installToolsFile('/media/ffmpeg.tar.xz')
+    await settle()
+    expect(server.requests.at(-1)?.body).toEqual({ path: '/media/ffmpeg.tar.xz' })
+    tasks.onTaskDone({ type: 'task.done', task: { id: 'i1', kind: 'tools_fetch', state: 'done' } })
+    expect((await installing).state).toBe('done')
+
+    const fetching = store.fetchTools()
+    await settle()
+    expect(server.requests.at(-1)?.body ?? null).toBeNull()
+    const offline: TaskInfo = {
+      id: 'f2',
+      kind: 'tools_fetch',
+      state: 'failed',
+      error: 'no network',
+      error_code: 'tools.fetch_offline',
+    }
+    tasks.onTaskDone({ type: 'task.done', task: offline })
+    expect((await fetching).error_code).toBe('tools.fetch_offline')
+    expect(useToastStore().items).toEqual([])
   })
 
   it('reads the definitions, the naming variables and the languages', async () => {

@@ -27,6 +27,10 @@ export type { ConnectionState } from '@/api/events'
 export type AppPhase = 'booting' | 'login' | 'ready' | 'offline'
 export type AppWarning = EventOf<'app.warning'>
 export type NamingVariable = Schemas['NamingVariable']
+export type ToolBuilds = Schemas['ToolBuilds']
+
+/** The `error_code` of a download that cannot reach the download server. */
+export const FETCH_OFFLINE = 'tools.fetch_offline'
 
 /** The server's state: auth, tools, encoders, definitions, languages, the event connection. */
 export const useSystemStore = defineStore('system', () => {
@@ -45,8 +49,10 @@ export const useSystemStore = defineStore('system', () => {
   const languages = shallowRef<Language[]>([])
   /** `GET /api/system` problems and `app.warning` events, oldest first. */
   const warnings = ref<AppWarning[]>([])
-  /** The task of a running *Use bundled FFmpeg* download (its progress is in the tasks store). */
+  /** The task of a running FFmpeg download or file install (its progress is in the tasks store). */
   const toolsFetch = ref<string | null>(null)
+  /** The offered FFmpeg builds and the installed one (`GET /api/system/tools/builds`). */
+  const builds = shallowRef<ToolBuilds | null>(null)
 
   const eventWarnings: AppWarning[] = []
 
@@ -147,9 +153,10 @@ export const useSystemStore = defineStore('system', () => {
     languages.value = unwrap(list).languages
   }
 
+  /** A failed task is a toast, except the offline download: the screen that started it says so. */
   async function ended(taskId: string): Promise<TaskInfo> {
     const task = await tasksStore.wait(taskId)
-    if (task.state === 'failed') {
+    if (task.state === 'failed' && task.error_code !== FETCH_OFFLINE) {
       useToastStore().push({
         severity: 'error',
         summary: text('api.taskFailed', { kind: task.kind }),
@@ -177,16 +184,37 @@ export const useSystemStore = defineStore('system', () => {
     )
   }
 
-  /** Downloads the pinned FFmpeg build (*Use bundled FFmpeg*; a task). */
-  async function fetchTools(): Promise<void> {
-    const { task_id } = unwrap(await api.POST('/api/system/tools/fetch', { body: null }))
-    toolsFetch.value = task_id
+  async function loadBuilds(): Promise<void> {
+    builds.value = unwrap(await api.GET('/api/system/tools/builds'))
+  }
+
+  async function toolsTask(start: () => Promise<string>): Promise<TaskInfo> {
+    const taskId = await start()
+    toolsFetch.value = taskId
+    let task: TaskInfo
     try {
-      await ended(task_id)
+      task = await ended(taskId)
     } finally {
-      if (toolsFetch.value === task_id) toolsFetch.value = null
+      if (toolsFetch.value === taskId) toolsFetch.value = null
     }
-    await infoMirror.read()
+    await Promise.all([infoMirror.read(), loadBuilds()])
+    return task
+  }
+
+  /** Downloads an offered FFmpeg build (the server's default without `build`); the ended task. */
+  async function fetchTools(build?: string): Promise<TaskInfo> {
+    return toolsTask(async () => {
+      const body = build === undefined ? null : { build }
+      return unwrap(await api.POST('/api/system/tools/fetch', { body })).task_id
+    })
+  }
+
+  /** Installs an FFmpeg archive file on the server's disk; the ended task. */
+  async function installToolsFile(path: string, build?: string): Promise<TaskInfo> {
+    return toolsTask(async () => {
+      const body = build === undefined ? { path } : { path, build }
+      return unwrap(await api.POST('/api/system/tools/install-file', { body })).task_id
+    })
   }
 
   function onCapabilitiesChanged(event: EventOf<'capabilities.changed'>): void {
@@ -214,6 +242,7 @@ export const useSystemStore = defineStore('system', () => {
     languages,
     warnings,
     toolsFetch,
+    builds,
     ffmpegProblem,
     encoderStatus,
     login,
@@ -223,7 +252,9 @@ export const useSystemStore = defineStore('system', () => {
     loadDefinitions,
     rescanEncoders,
     rescanTools,
+    loadBuilds,
     fetchTools,
+    installToolsFile,
     onCapabilitiesChanged,
     onToolsChanged,
     onAppWarning,

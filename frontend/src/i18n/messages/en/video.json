@@ -23,7 +23,8 @@
     "unavailableBecause": "Unavailable: {reason}",
     "failed": "The check failed",
     "failedBecause": "The check failed: {reason}",
-    "unknown": "Status not known"
+    "unknown": "Status not known",
+    "unavailableMismatch": "Unavailable: {reason}. Update the driver, or use another FFmpeg build (Settings → Tools)."
   },
   "encoder": {
     "label": "Video encoder",
@@ -36,7 +37,8 @@
     "preset": "Preset {preset} uses {encoder}, which is not available: {reason}",
     "job": "This job uses {encoder}, which is not available: {reason}",
     "choose": "Choose encoder",
-    "checkAgain": "Check again"
+    "checkAgain": "Check again",
+    "otherFfmpeg": "Use another FFmpeg…"
   },
   "passthrough": {
     "label": "Video passthrough",

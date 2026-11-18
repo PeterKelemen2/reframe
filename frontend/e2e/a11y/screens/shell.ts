@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 
 import { openApp, openFile } from '../../support/app'
+import { openFirstRun, withBuildMismatch, withoutFfmpeg } from '../../support/ffmpeg'
 import { expect } from '../../support/test'
 import { choosePreset, goTo, openTab } from '../steps'
 import type { Screen } from '../types'
@@ -196,6 +197,28 @@ export const screens: Screen[] = [
       })
       await page.locator('[data-action="copy-diagnostics"]').click()
       await expect(page.locator('[data-section="diagnostics"] textarea')).toBeFocused()
+    },
+  },
+  {
+    // No FFmpeg: the offered builds with their source links open.
+    id: 'first-run',
+    area: 'shell',
+    async setup(page) {
+      await withoutFfmpeg(page)
+      await openFirstRun(page)
+      await page.locator('[data-build="default"] details summary').click()
+    },
+  },
+  {
+    id: 'settings-tools-mismatch',
+    area: 'shell',
+    region: '[data-section="tools"]',
+    async setup(page) {
+      await withBuildMismatch(page)
+      await openApp(page)
+      await goTo(page, 'Settings')
+      await page.locator('[data-section-link="tools"]').click()
+      await expect(page.locator('[data-field="mismatch-notice"]')).toBeInViewport()
     },
   },
   {

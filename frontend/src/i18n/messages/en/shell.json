@@ -55,7 +55,7 @@
     "useBundled": "Use bundled FFmpeg",
     "choosePath": "Choose path",
     "checkAgain": "Check again",
-    "downloading": "Downloading FFmpeg…",
+    "downloading": "Installing FFmpeg…",
     "notFound": "No binary was found",
     "status": {
       "found": "Found",
@@ -72,8 +72,11 @@
     },
     "version": "Version {version}",
     "envNote": "The server's environment sets the path ({variables}), and that wins over Settings and a bundled build: change or unset it there, then restart the server.",
-    "webNote": "In a browser, Reframe cannot choose the programs the server runs: use the bundled FFmpeg, or set {variables} on the server and restart it.",
-    "unchanged": "Checked again at {time}: nothing has changed."
+    "webNote": "In a browser, Reframe cannot choose the programs the server runs: download a build or install one from a file, or set {variables} on the server and restart it.",
+    "unchanged": "Checked again at {time}: nothing has changed.",
+    "builds": "Get FFmpeg",
+    "buildsIntro": "Download a build that Reframe is tested with, or install one from an archive file.",
+    "problems": "Problems at the server's start"
   },
   "keys": {
     "open": "Ctrl+O"

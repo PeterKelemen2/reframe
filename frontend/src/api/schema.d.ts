@@ -262,9 +262,53 @@ export interface paths {
         /**
          * Fetch Tools
          * @description Download, check and install the pinned FFmpeg build, then run discovery again: a task
-         *     whose result is a ``ToolFetchResult``.
+         *     whose result is a ``ToolFetchResult``. A download server that cannot be reached ends the
+         *     task ``failed`` with ``error_code`` ``tools.fetch_offline``.
          */
         post: operations["system_fetch_tools"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/tools/builds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tool Builds
+         * @description The FFmpeg builds the user may download or install from a file, and the build
+         *     installed in the data folder (``outdated`` when this release pins another version).
+         */
+        get: operations["system_tool_builds"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/tools/install-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install Tools File
+         * @description Install an FFmpeg archive file from the server's disk, checked like a download (size
+         *     and SHA-256 against the manifest), then run discovery again: a task whose result is a
+         *     ``ToolFetchResult``. Web mode: the path must be inside a media root.
+         */
+        post: operations["system_install_tools_file"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4502,6 +4546,42 @@ export interface components {
              */
             title: string | null;
         };
+        /** InstallFileRequest */
+        InstallFileRequest: {
+            /**
+             * Path
+             * @description The archive file on the server (web mode: inside a media root).
+             */
+            path: string;
+            /**
+             * Build
+             * @description The build name of the manifest the archive is checked against. ``None``: the offered
+             *     build whose archive has the file's name.
+             */
+            build?: string | null;
+        };
+        /**
+         * InstalledToolBuild
+         * @description The build that a download or a file install put in ``<data dir>/tools/ffmpeg``.
+         */
+        InstalledToolBuild: {
+            /**
+             * Name
+             * @description The manifest's build name it was installed as.
+             */
+            name: string;
+            /**
+             * Version
+             * @description Its FFmpeg version string.
+             */
+            version: string;
+            /**
+             * Outdated
+             * @description ``True`` when this release's manifest pins another version for that build name.
+             * @default false
+             */
+            outdated: boolean;
+        };
         /**
          * JobDraft
          * @description The job drafted from a preset: why its tracks and name are what they are, and its
@@ -6766,7 +6846,8 @@ export interface components {
             /**
              * Problems
              * @description Start-up problems of the settings and preset files (a damaged, newer or unreadable
-             *     file) and later failed saves.
+             *     file), later failed saves, and a failed start-up download of ``REFRAME_FFMPEG_BUILD``
+             *     (``tools.build_unknown``, ``tools.fetch_failed``).
              */
             problems: components["schemas"]["AppWarningEvent"][];
             /**
@@ -6931,6 +7012,61 @@ export interface components {
             start: number;
             /** End */
             end?: number | null;
+        };
+        /**
+         * ToolBuildOffer
+         * @description An FFmpeg build of the manifest that the user may choose to install.
+         */
+        ToolBuildOffer: {
+            /**
+             * Name
+             * @description The manifest's build name (``default``, ``compat``).
+             */
+            name: string;
+            /**
+             * Label
+             * @description A short name for the picker ("Recommended").
+             */
+            label: string;
+            /**
+             * Summary
+             * @description One sentence on who the build is for ("For NVIDIA drivers older than 610").
+             */
+            summary: string;
+            /**
+             * Version
+             * @description What ``ffmpeg -version`` prints after ``ffmpeg version``.
+             */
+            version: string;
+            /**
+             * Release Version
+             * @description The upstream release the build is based on (``9.0.2``).
+             */
+            release_version: string;
+            /**
+             * License
+             * @description SPDX expression of the build (``GPL-3.0-or-later``).
+             */
+            license: string;
+            /**
+             * Source Links
+             * @description Where the corresponding source is: the FFmpeg commit and the build scripts.
+             */
+            source_links?: string[];
+            /**
+             * Size
+             * @description Bytes of this platform's archive; ``None`` when the build has none for this platform.
+             */
+            size?: number | null;
+        };
+        /**
+         * ToolBuilds
+         * @description The builds the user may install, and the one installed in the data folder.
+         */
+        ToolBuilds: {
+            /** Builds */
+            builds?: components["schemas"]["ToolBuildOffer"][];
+            installed?: components["schemas"]["InstalledToolBuild"] | null;
         };
         /**
          * ToolInfo
@@ -8359,6 +8495,68 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": components["schemas"]["FetchRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAccepted"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    system_tool_builds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolBuilds"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    system_install_tools_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallFileRequest"];
             };
         };
         responses: {
