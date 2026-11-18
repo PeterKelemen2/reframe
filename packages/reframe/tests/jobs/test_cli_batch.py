@@ -14,7 +14,7 @@ from types import ModuleType
 import pytest
 
 from reframe import cli
-from reframe.cli import EXIT_FAILED, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE, IN_PROCESS_ENV
+from reframe.cli import EXIT_FAILED, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE
 from reframe.models import MediaSource
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
@@ -302,12 +302,9 @@ def test_plan_shows_why_a_track_was_selected(s01: Path) -> None:
 @pytest.mark.needs_ffmpeg
 @pytest.mark.slow
 def test_a_season_encoded_end_to_end(
-    fixture_media: Media, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    fixture_media: Media, tmp_path: Path, dirs: dict[str, Path]
 ) -> None:
     """Season 2 with the group preset of season 1, on the real queue and FFmpeg."""
-    for name in ("config", "data", "cache"):
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
-    monkeypatch.setenv(IN_PROCESS_ENV, "1")  # the in-process real queue
     folder = tmp_path / "media" / media.anime_folder(2)
     shutil.copytree(fixture_media("anime-s02"), folder)
     import_demo_preset()

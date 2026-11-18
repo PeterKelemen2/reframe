@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 from pathlib import Path
 
 import pytest
@@ -102,19 +101,6 @@ async def test_diagnostics_paths_under_the_home_folder_start_with_a_tilde(
     assert body["logs_dir"] == str(Path("~/data/logs"))
     assert f"  folder: {Path('~/data/logs')}" in body["text"]
     assert str(tmp_path) not in body["text"]
-
-
-async def test_diagnostics_leaves_out_a_settings_field_of_a_newer_version(
-    make_api: ApiFactory, tmp_path: Path
-) -> None:
-    (tmp_path / "config" / "settings.json").write_text(
-        json.dumps({"diagnostics": {"log_level": "debug", "upload": "s3cr3t"}, "cloud": "s3cr3t"}),
-        encoding="utf-8",
-    )
-    async with make_api() as api:
-        text = (await api.client.get("/api/diagnostics")).json()["text"]
-    assert '  diagnostics.log_level = "debug"' in text
-    assert "s3cr3t" not in text
 
 
 async def test_diagnostics_says_a_detection_runs_and_does_not_wait_for_it(

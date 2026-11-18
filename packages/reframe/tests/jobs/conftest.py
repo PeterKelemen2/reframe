@@ -32,7 +32,6 @@ from reframe.models import (
 from reframe.presets import builtin_presets
 from reframe.probe import ProbeError, ProbeErrorKind, parse_ffprobe
 from reframe.service import Reframe
-from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
 
 from .fake_queue import Behaviour, FakeQueue
@@ -163,21 +162,14 @@ class Stubs:
 
 
 @pytest.fixture
-def cli_env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_tools: ft.FakeTools
-) -> ft.FakeTools:
-    """Fake ffmpeg and ffprobe, and private config, data and cache folders (never the user's).
-    ``encode`` and ``batch`` run their jobs in-process (``tests/remote`` covers the server)."""
+def dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Path]:
+    """Private config, data and cache folders for the CLI (in-process and subprocesses), whose
+    jobs run in its own process."""
     monkeypatch.setenv(cli.IN_PROCESS_ENV, "1")
-    for var in ENV_VARS.values():
-        monkeypatch.delenv(var, raising=False)
-    for name in ("config", "data", "cache"):
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
-    monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
-    monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
-    monkeypatch.delenv("NO_COLOR", raising=False)
-    monkeypatch.delenv("FORCE_COLOR", raising=False)
-    return fake_tools
+    found = {name: tmp_path / name for name in ("config", "data", "cache")}
+    for name, path in found.items():
+        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(path))
+    return found
 
 
 def probe_rule(probe: Path, file: Path | None = None) -> ft.Rule:

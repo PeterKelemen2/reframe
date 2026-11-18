@@ -196,8 +196,7 @@ and `<cache>` (`reframe_server.folders.hide_server_folders`), but `task.progress
 JSON value; default: the value unchanged) and applies it to the `message`, `error` and
 `result` of a task event's `TaskInfo` when it sends the event (a progress value held by the
 throttle is hidden when it goes out). Other events are sent unchanged. Test:
-`test_a_task_event_names_the_cache_folder_by_its_label` (a real hub made with
-`hide=functools.partial(hide_server_folders, reframe)`; fails when any of the three fields,
+`test_a_task_event_names_the_cache_folder_by_its_label` (the app's hub; fails when any of the three fields,
 or either event type, is left out).
 
 **Changes needed from the lead**:

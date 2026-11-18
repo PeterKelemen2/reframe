@@ -16,38 +16,13 @@ from reframe.models import (
     ValidationIssue,
 )
 from reframe.service import ProbeError, ProbeErrorKind, Reframe
-from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
 
 pytestmark = pytest.mark.anyio
 
-PROBES = Path(__file__).resolve().parents[3] / "testdata" / "probes"
-MULTITRACK = PROBES / "fixtures" / "multitrack.mkv.json"
 NUL_MESSAGE = (
     "The path has a NUL character, which no file system allows: no file can have this name."
 )
-
-
-@pytest.fixture
-def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """No tool overrides, user folders in ``tmp_path``."""
-    for var in ENV_VARS.values():
-        monkeypatch.delenv(var, raising=False)
-    for name in ("config", "data", "cache"):
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
-    return tmp_path
-
-
-@pytest.fixture
-def fake(env: Path, fake_tools: ft.FakeTools, monkeypatch: pytest.MonkeyPatch) -> ft.FakeTools:
-    """``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE`` point at the fake tools (multitrack probe)."""
-    monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
-    monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
-    rule = ft.Rule(
-        tool="ffprobe", argv_has=["-show_streams"], actions=[{"stdout_file": str(MULTITRACK)}]
-    )
-    fake_tools.set_scenario(ft.Scenario([rule]))
-    return fake_tools
 
 
 @pytest.fixture
