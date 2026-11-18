@@ -492,3 +492,100 @@ def test_unknown_filter_failure() -> None:
     )
     crash = explain_failure("", FILTER, returncode=-11)
     assert crash.reason == "FFmpeg crashed during the libplacebo test (signal 11)"
+
+
+# Real: a GeForce GTX 1050 Ti with driver 582.78 and the pinned n9.0.2 build (Windows 10).
+NVENC_DRIVER_TOO_OLD = (
+    "Driver does not support the required nvenc API version. Required: 13.1 Found: 13.0",
+    "The minimum required Nvidia driver for nvenc is 610.00 or newer",
+)
+MISSING_LIBVA_DRM = (
+    "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: "
+    "libva-drm.so.2: cannot open shared object file: No such file or directory\n"
+)
+
+
+@pytest.mark.parametrize("encoder", ["h264_nvenc", "hevc_nvenc", "av1_nvenc"])
+def test_an_nvidia_driver_too_old_for_the_build_is_a_build_mismatch_real(encoder: str) -> None:
+    failure = explain_failure(tagged(encoder, *NVENC_DRIVER_TOO_OLD), ctx(encoder), returncode=1)
+    assert (failure.state, failure.reason, failure.build_mismatch) == (
+        UNAVAILABLE,
+        "NVIDIA driver too old: NVENC needs driver 610.00 or newer",
+        True,
+    )
+    assert failure.detail == f"[{encoder}] {NVENC_DRIVER_TOO_OLD[0]}"
+
+
+@pytest.mark.parametrize("line", NVENC_DRIVER_TOO_OLD, ids=["api-version", "driver-requirement"])
+def test_either_nvenc_driver_line_alone_is_a_build_mismatch(line: str) -> None:
+    failure = explain_failure(tagged("hevc_nvenc", line), ctx("hevc_nvenc"), returncode=1)
+    assert failure.state is UNAVAILABLE
+    assert failure.reason.startswith("NVIDIA driver too old")
+    assert failure.build_mismatch is True
+
+
+@pytest.mark.parametrize("text", [OLD_LIBVA, MISSING_LIBVA_DRM], ids=["too-old", "missing"])
+@pytest.mark.parametrize("encoder", ["h264_vaapi", "h264_qsv"])
+def test_a_system_library_too_old_or_missing_for_the_build_is_a_build_mismatch(
+    text: str, encoder: str
+) -> None:
+    failure = explain_failure(text, ctx(encoder), returncode=-6)
+    assert (failure.state, failure.build_mismatch) == (UNAVAILABLE, True)
+
+
+@pytest.mark.parametrize(
+    ("capture", "encoder"),
+    [
+        ("detect_hevc_nvenc_no_driver", "hevc_nvenc"),  # no NVIDIA driver
+        ("hw_hevc_qsv_no_device", "hevc_qsv"),  # no Intel GPU
+        ("detect_h264_vaapi_bad_device", "h264_vaapi"),  # no VAAPI device
+        ("detect_h264_vaapi_no_driver", "h264_vaapi"),  # no VA driver
+        ("detect_hevc_amf_no_runtime", "hevc_amf"),
+        ("detect_h264_amf_10bit", "h264_amf"),  # a 10-bit-only limit
+    ],
+)
+def test_a_missing_driver_device_or_10bit_limit_is_no_build_mismatch_real(
+    capture: str, encoder: str
+) -> None:
+    returncode = ft.captures()[capture].exit_code
+    failure = explain_failure(stderr(capture), ctx(encoder), returncode=returncode)
+    assert failure.state is UNAVAILABLE
+    assert failure.build_mismatch is False
+
+
+@pytest.mark.parametrize(
+    ("encoder", "line"),
+    [
+        (
+            "hevc_amf",
+            "10-bit encoder is not supported by AMD GPU drivers versions lower than 23.30.",
+        ),
+        ("hevc_nvenc", "10 bit encode not supported"),
+        ("h264_nvenc", "Cannot load nvcuda.dll"),
+        ("h264_nvenc", "No CUDA capable devices found"),
+        ("av1_nvenc", "No capable devices found"),
+    ],
+)
+def test_the_amd_10bit_driver_text_and_missing_nvidia_parts_are_no_build_mismatch(
+    encoder: str, line: str
+) -> None:
+    failure = explain_failure(tagged(encoder, line), ctx(encoder), returncode=1)
+    assert failure.state is UNAVAILABLE
+    assert failure.build_mismatch is False
+
+
+def test_a_driver_without_its_nvenc_library_is_no_build_mismatch() -> None:
+    """nvenc.c prints the driver requirement after any failed load of the NVENC library."""
+    text = tagged("hevc_nvenc", "Cannot load libnvidia-encode.so.1", NVENC_DRIVER_TOO_OLD[1])
+    failure = explain_failure(text, ctx("hevc_nvenc"), returncode=1)
+    assert (failure.state, failure.reason, failure.build_mismatch) == (
+        UNAVAILABLE,
+        "The NVIDIA driver has no NVENC library (libnvidia-encode.so.1)",
+        False,
+    )
+
+
+def test_a_filter_is_never_a_build_mismatch() -> None:
+    failure = explain_failure(OLD_LIBVA, FILTER, returncode=-6)
+    assert failure.state is UNAVAILABLE
+    assert failure.build_mismatch is False
