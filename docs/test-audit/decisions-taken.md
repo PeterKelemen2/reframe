@@ -223,3 +223,21 @@ TCL-01's verdict says the exit code of the deleted `test_no_nvidia_driver` is al
 `test_first_run_checks_then_lists_every_encoder`. The package carried `assert result.exit_code ==
 EXIT_OK` into the keeper anyway; the review flagged it as a change no finding names. Kept: the
 plan's rule is that a merge keeps every assertion, and the line only makes the keeper stricter.
+
+### D-23 A trim-report line that names a removed test gets a note even when no finding names it
+
+`docs/test-trim-reports/N.md` names `test_property_normalize_variants_of_an_entry` as a keep; TPM-16
+(Q-7.11) replaced it, and its "Docs and history" says "none". The line gets the D-21 kind of note
+(the old name stays, the note names the keeper), so that no document names a test that no longer
+exists without saying where it went.
+
+### D-24 SPD-08: the sources are cached, the CLI polls stay
+
+SPD-08's change has two halves: generate each source once into the fixture cache, and poll the
+owner's HTTP API instead of the CLI where the CLI's output is not what the test checks. The finding
+itself says the poll change "touches what the test exercises", and plan.md's Q-7.13 text names only
+the sources. By the order "less risk; when in doubt keep the test", Q-7.13 caches the sources
+(`reframe_testing.media` recipes in `testdata/media/queue-sources/`, built with `-y -nostdin` into
+a temporary folder) and leaves the CLI polls as they are.
+If the owner wants the polls changed: a later package swaps `Home.state` for an HTTP read where the
+test checks no CLI output (about 0.77 s per poll on Linux, more on Windows).
