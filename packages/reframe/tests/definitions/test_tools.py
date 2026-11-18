@@ -1876,11 +1876,13 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
             args.append(text)
         jobs.append((f"quality {value}", args, 8))
     jobs.append(("bitrate", [a.replace("{kbps}", "2000") for a in b.args], 8))
+    # As in a job, which always has a rate control: QSV look-ahead fails without one.
+    quality, _ = _quality_args(q, q.default)
     for option in enc.options:
         if enc.family == "qsv" and option.key in _QSV_GPU_FEATURES:
             continue
         args, _ = mapping_args(option.mapping, _option_test_value(option))
-        jobs.append((f"option {option.key}", args, 8))
+        jobs.append((f"option {option.key}", [*quality, *args], 8))
 
     def run(job: tuple[str, list[str], int]) -> str | None:
         label, args, depth = job
