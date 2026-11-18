@@ -422,7 +422,11 @@ def test_fetch_file_installs_the_archive_that_discovery_then_uses(
     assert result.stderr == ""
     again = invoke("tools", "fetch", "--file", str(archive), "--build", "default")
     assert again.exit_code == EXIT_OK, again.output
-    assert "every file is intact: nothing was downloaded." in again.stdout
+    assert (
+        f"FFmpeg {FAKE_VERSION} is already installed in {install} and every file is intact: "
+        "nothing was installed." in again.stdout.splitlines()
+    )
+    assert "downloaded" not in again.stdout
 
 
 def test_fetch_file_refuses_a_wrong_archive(

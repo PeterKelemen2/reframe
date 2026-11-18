@@ -3509,7 +3509,7 @@ async def _fetch_task(
         result = app.tasks.value(info.id)
         assert isinstance(result, ToolFetchResult)
         tools = app.tools.current if target == host else None
-    _fetch_report(console, result, tools)
+    _fetch_report(console, result, tools, from_file=archive is not None)
     return EXIT_OK
 
 
@@ -3523,13 +3523,15 @@ def _marker_identity(install_dir: Path) -> tuple[int, int, int] | None:
     return info.st_dev, info.st_ino, info.st_mtime_ns
 
 
-def _fetch_report(console: Console, result: ToolFetchResult, tools: ToolSet | None) -> None:
+def _fetch_report(
+    console: Console, result: ToolFetchResult, tools: ToolSet | None, *, from_file: bool
+) -> None:
     if result.downloaded:
         line = f"Installed FFmpeg {result.version} into {result.install_dir}."
     else:
         line = (
             f"FFmpeg {result.version} is already installed in {result.install_dir} and every "
-            "file is intact: nothing was downloaded."
+            f"file is intact: nothing was {'installed' if from_file else 'downloaded'}."
         )
     _say(console, line, "bold green")
     if tools is None:
