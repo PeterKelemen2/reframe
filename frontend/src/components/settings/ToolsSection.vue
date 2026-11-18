@@ -120,7 +120,7 @@ async function downloadPinned(name: string): Promise<void> {
       <div v-if="installed.outdated" class="tools-section__outdated" data-field="outdated">
         <span>{{ t('settings.tools.outdated', { name: installed.name }) }}</span>
         <Button
-          :label="t('settings.tools.downloadPinned', { name: installed.name })"
+          :label="t('settings.tools.downloadPinned', { label: installedLabel })"
           size="small"
           :loading="fetching"
           :disabled="bundledUseless || locked || fetching"

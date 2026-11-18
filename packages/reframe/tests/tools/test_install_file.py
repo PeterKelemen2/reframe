@@ -201,12 +201,14 @@ async def test_the_right_file_installs_and_discovery_finds_it(
     lines = [r.getMessage() for r in caplog.records if r.name == "reframe.tools.fetch"]
     assert all(r.levelno == logging.INFO for r in caplog.records if r.name == "reframe.tools.fetch")
     assert lines[0] == (
-        f"FFmpeg build 'default' ({FAKE_VERSION}, linux-x64, {len(data) / 1e6:.1f} MB): "
+        f"FFmpeg build 'default' ({FAKE_VERSION}, linux-x64, {len(data) / 2**20:.1f} MiB): "
         f"installing from the file {archive} into {install}. Licence GPL-3.0-or-later; "
         "source: https://example.invalid/ffmpeg/commit/0000000"
     )
     percents = [int(m[1]) for line in lines if (m := re.search(r"copied (\d+) %", line))]
     assert percents == list(range(10, 101, 10))
+    # The unit of the UI's size formatter.
+    assert [line for line in lines if " % (" in line and not line.endswith(" MiB)")] == []
     assert lines[-1] == (
         f"Installed FFmpeg build 'default' ({FAKE_VERSION}) into {install}; checked: the size "
         "and SHA-256 of the archive, ffmpeg -version and ffprobe -version"

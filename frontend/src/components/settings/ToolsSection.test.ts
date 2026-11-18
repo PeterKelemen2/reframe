@@ -126,6 +126,13 @@ describe('the Tools section', () => {
     expect(wrapper.find('[data-action="install-file"]').attributes('disabled')).toBeDefined()
   })
 
+  it('names a bundled ffmpeg as the downloaded build', async () => {
+    const { row } = await mountTools(
+      systemInfo({ mode: 'desktop' }, { ffmpeg: { origin: 'bundled', bundled: true } }),
+    )
+    expect(row('ffmpeg').find('[data-field="origin"]').text()).toBe('Downloaded build')
+  })
+
   it('keeps an ffprobe found next to an overridden ffmpeg editable', async () => {
     const { row } = await mountTools(
       systemInfo(
@@ -548,6 +555,7 @@ describe('the installed build and the build mismatch', () => {
       'This release pins another version of the build default.',
     )
     expect(wrapper.find('[data-build="default"] [data-field="installed"]').exists()).toBe(true)
+    expect(wrapper.find('[data-action="download-pinned"]').text()).toBe('Download Recommended')
     fetchEnds(system, 'done')
     await wrapper.find('[data-action="download-pinned"]').trigger('click')
     await flushPromises()

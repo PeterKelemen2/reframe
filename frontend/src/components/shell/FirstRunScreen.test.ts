@@ -104,7 +104,7 @@ describe('the first-run screen', () => {
 
   it.each([
     ['env', 'From an environment variable'],
-    ['bundled', 'Bundled with Reframe'],
+    ['bundled', 'From the downloaded build'],
     [null, 'Not found anywhere'],
   ] as const)('names the origin %s', async (origin, label) => {
     await mountFirstRun(info({ status: 'broken', origin, reason: 'no' }, {}))
@@ -271,7 +271,7 @@ describe('the first-run screen', () => {
       expect(wrapper.find('#first-run-title').text()).toBe('Welcome to Reframe')
       expect(wrapper.find('.first-run__reason').exists()).toBe(false)
       expect(toolRow('ffmpeg')?.querySelector('[data-field="origin"]')?.textContent).toBe(
-        'Bundled with Reframe',
+        'From the downloaded build',
       )
       expect(toolRow('ffmpeg')?.querySelector('[data-field="path"]')?.textContent).toBe(
         '/app/tools/ffmpeg/bin/ffmpeg',

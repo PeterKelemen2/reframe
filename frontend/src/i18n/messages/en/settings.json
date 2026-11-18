@@ -40,14 +40,14 @@
     "origin": {
       "env": "Environment variable {variable}",
       "settings": "Path in the settings",
-      "bundled": "Bundled with Reframe",
+      "bundled": "Downloaded build",
       "path": "System PATH",
       "none": "Not found anywhere"
     },
     "buildsTitle": "FFmpeg builds",
     "installedBuild": "Installed build: {label} ({name}), FFmpeg {version}",
     "outdated": "This release pins another version of the build {name}. The installed one keeps working until you download the new one.",
-    "downloadPinned": "Download {name}",
+    "downloadPinned": "Download {label}",
     "mismatchTitle": "Some encoders need newer system software than this FFmpeg build expects",
     "mismatchHelp": "Update the driver, or use another build: download one below, install one from a file, or set the path of your own FFmpeg."
   },

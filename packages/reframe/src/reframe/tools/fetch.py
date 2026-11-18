@@ -882,7 +882,7 @@ class _Job:
         origin = f"from the file {self.source}" if self.source else f"from {pbuild.url}"
         return (
             f"FFmpeg build {build.name!r} ({build.version}, {pbuild.platform}, "
-            f"{_megabytes(pbuild.size)}): installing {origin} into {self.install_dir}. "
+            f"{_mebibytes(pbuild.size)}): installing {origin} into {self.install_dir}. "
             f"Licence {build.license}{source}"
         )
 
@@ -897,8 +897,8 @@ class _Job:
                 self.build.name,
                 what,
                 step,
-                _megabytes(done),
-                _megabytes(self.pbuild.size),
+                _mebibytes(done),
+                _mebibytes(self.pbuild.size),
             )
 
     def prepare(self, work: Path) -> Path:
@@ -964,8 +964,8 @@ class _Job:
         self.swapped = True
 
 
-def _megabytes(size: int) -> str:
-    return f"{size / 1e6:.1f} MB"
+def _mebibytes(size: int) -> str:
+    return f"{size / 2**20:.1f} MiB"
 
 
 def _newest_write(folder: Path) -> float:
