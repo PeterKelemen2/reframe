@@ -152,8 +152,8 @@ The version is `X.Y.Z` (the same in PEP 440 and SemVer). The tag is `v` and that
    one run waiting: when a third tag's run arrives while the first runs, GitHub cancels the
    waiting second one. Start a cancelled run again with *Re-run all jobs* once the running one
    has finished.
-6. **Watch the workflow** (*Actions → Release*). The sources job takes the longest when it
-   makes a new sources release (more than 1 GB of downloads; it stops after five hours); the
+6. **Watch the workflow** (*Actions → Release*). The sources job takes longer when it makes a
+   new sources release (it downloads every source archive; it stops after five hours); the
    Linux and Windows builds stop after two hours.
 7. **Check the release** (below).
 
@@ -172,7 +172,7 @@ image tag `latest` only when its version is the highest `vX.Y.Z` tag. A patch of
 | Job | What |
 |-----|------|
 | Version, secrets and visibility | `stamp-version.py --check`, then `release-workflow.py preflight`: the tag is `v` and the stamped version, the version is `X.Y.Z` within the MSI's limits, the secrets are set (the certificate with its password and timestamp server), the repository is public; and whether the version is the highest `vX.Y.Z` tag (the latest). `release-notes.py` finds the version's section in `CHANGELOG.md`. `release-workflow.py sums` signs a test file with the release key and checks it with the key in this file. |
-| Sources release | `desktop/packaging/linux/appimage-libs.sh` reads the distro packages that the AppImage will carry (dpkg in the Linux build image); `sources-manifest.py` writes the source manifest and gives its tag `sources-<12 hex>`. `release-workflow.py sources-find` looks for a release with that tag: a published one is used only when it has the manifest, `SHA256SUMS`, `licence-texts.json` and every archive with the expected SHA-256; a draft (an interrupted upload) is deleted. Otherwise `sources-fetch.py` downloads and checks one archive per entry in the image of `desktop/packaging/sources/Dockerfile` (Ubuntu 26.04 with the tools BtbN's download commands need), it also writes `licence-texts.json`, the licence files of each archive (the Ubuntu source packages' come from the Linux build image's `/usr/share/doc` instead), and `release-workflow.py sources-publish` uploads the manifest, the archives, `licence-texts.json` and `SHA256SUMS` to a draft and publishes it when GitHub has every file: never "latest", with no `v` in its tag. The other jobs get its URL, the manifest, `SHA256SUMS`, `licence-texts.json` and the AppImage package list. |
+| Sources release | `desktop/packaging/linux/appimage-libs.sh` reads the distro packages that the AppImage will carry (dpkg in the Linux build image); `sources-manifest.py` writes the source manifest and gives its tag `sources-<12 hex>`: the libva source, the AppImage runtime's tree and the libraries it links, and the Ubuntu source packages of the AppImage's distro packages. No package conveys FFmpeg, so its sources are not in it ([decision 0094](decisions/0094-docker-image-without-ffmpeg.md)). `release-workflow.py sources-find` looks for a release with that tag: a published one is used only when it has the manifest, `SHA256SUMS`, `licence-texts.json` and every archive with the expected SHA-256; a draft (an interrupted upload) is deleted. Otherwise `sources-fetch.py` downloads and checks one archive per entry in the image of `desktop/packaging/sources/Dockerfile` (Ubuntu 26.04), it also writes `licence-texts.json`, the licence files of each archive (the Ubuntu source packages' come from the Linux build image's `/usr/share/doc` instead), and `release-workflow.py sources-publish` uploads the manifest, the archives, `licence-texts.json` and `SHA256SUMS` to a draft and publishes it when GitHub has every file: never "latest", with no `v` in its tag. The other jobs get its URL, the manifest, `SHA256SUMS`, `licence-texts.json` and the AppImage package list. |
 | Linux packages | `desktop/packaging/linux/build.sh` builds the AppImage, `.deb` and `.rpm` in the Ubuntu 22.04 build image, with notices that name the sources release, and checks that the AppImage carries exactly the distro packages the manifest lists. `install-test.sh` installs, runs and removes them in Ubuntu 22.04, Debian 12 and Fedora. |
 | Windows installers | The tools layout, the frozen sidecar, the notices, then `tauri build` (NSIS and MSI), signed with the certificate when it is set. `tauri signer sign --app-version` signs the NSIS installer for the updater. |
 | Docker image | One build per platform, each on a runner of that architecture (`ubuntu-24.04`, `ubuntu-24.04-arm`) and with its own `docker/notices/THIRD_PARTY_NOTICES`. Each is pushed to GHCR by digest only, without a tag. |
@@ -236,9 +236,9 @@ The first release also checks the workflow itself: it has never run on GitHub (0
 - `notices/THIRD_PARTY_NOTICES` in a package and `/opt/reframe/notices/THIRD_PARTY_NOTICES` in
   the image name the same sources release as the notes.
 - The sources release has one archive per manifest entry and `licence-texts.json`, and
-  `sha256sum -c SHA256SUMS` passes in a folder with them. The first time, record its total size (more than 1 GB was measured
-  for part of it: 0079, task S). GitHub's limit is 2 GiB per file; the largest archive
-  measured was about 263 MB.
+  `sha256sum -c SHA256SUMS` passes in a folder with them. The first time, record its total
+  size (more than 1 GB was measured while it held FFmpeg's sources: 0079, task S). GitHub's
+  limit is 2 GiB per file; the largest archive measured then was about 263 MB.
 - `docker pull ghcr.io/peterkelemen2/reframe:1.1.0` on amd64 and on arm64; the server starts and
   answers (`docs/deployment.md`). arm64 has software encoders only.
 - The AppImage on a desktop: `desktop/packaging/linux/appimage-test.sh` (it needs KWin, so it
@@ -246,7 +246,7 @@ The first release also checks the workflow itself: it has never run on GitHub (0
 - The Windows installers' signatures (signed releases): `Get-AuthenticodeSignature` says
   `Valid`; the SmartScreen prompt names the publisher.
 - The first runs only: the free disk space that the sources and Linux jobs print or need (the
-  sources job holds the Linux build image, the fetch image and more than 1 GB of archives;
+  sources job holds the Linux build image, the fetch image and the archives;
   locally the Linux build image and its cache volumes take about 8 GB), and each job's time.
 - The arm64 image job runs on `ubuntu-24.04-arm`. If that runner is not available to the
   repository, change the job to `ubuntu-24.04` with `docker/setup-qemu-action`.

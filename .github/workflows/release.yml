@@ -118,7 +118,7 @@ jobs:
           --sums-out "$RUNNER_TEMP/sources/SHA256SUMS"
           --texts-out "$RUNNER_TEMP/sources/licence-texts.json"
 
-      # BtbN's download commands need the tools of its Ubuntu 26.04 base image.
+      # In the pinned image of desktop/packaging/sources (git for the repository entries).
       - name: Fetch and check one archive per manifest entry
         if: steps.existing.outputs.found == 'false'
         run: |
