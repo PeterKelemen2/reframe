@@ -42,8 +42,8 @@ Built by the lead before the agents start (commit "contracts for the FFmpeg buil
 | Agent | Steps | Effort | Owns |
 |-------|-------|--------|------|
 | K (core) | C-21 | xhigh (installs files) | `reframe/tools/fetch.py`, `reframe/tools/discovery.py`, `reframe/capabilities/{reasons,detect,service}.py`, `ToolsService` in `reframe/service.py`, the task error code in `reframe/tasks.py` / `reframe/mediatask.py`, the `tools` and `encoders` commands in `reframe/cli.py`, `scripts/fetch-tools.py`, `tools/ffmpeg.toml` (+ packaged copy), `testdata/README.md`, tests under `packages/reframe/tests/` |
-| W (server + UI) | S-8 (with `REFRAME_FFMPEG_BUILD`, 0094 item 3), F-20 | high | `packages/reframe-server/**` except `tests/test_deploy.py`, `frontend/src/**` (`schema.d.ts` regenerated with `scripts/gen-api.sh`), `frontend/e2e/**` |
-| P (packaging) | D-10, S-6's 0094 item (no FFmpeg in the image) | high | `docker/**`, `packages/reframe-server/tests/test_deploy.py`, `scripts/bundle-tools.py`, `tools/bundled-tools.toml`, `desktop/packaging/**`, `desktop/src-tauri/tauri.conf.json`, `desktop/sidecar/**`, `desktop/tests/smoke/**`, `scripts/third-party-notices.py`, `.github/workflows/**`, `docs/deployment.md` |
+| W (server + UI) | S-8 (with `REFRAME_FFMPEG_BUILD` and the start-up / download log lines, 0094 items 3-4), F-20 | high | `packages/reframe-server/**` except `tests/test_deploy.py`, `frontend/src/**` (`schema.d.ts` regenerated with `scripts/gen-api.sh`), `frontend/e2e/**` |
+| P (packaging) | D-10, S-6's 0094 item (no FFmpeg in the image) | high | `docker/**`, `packages/reframe-server/tests/test_deploy.py`, `scripts/bundle-tools.py`, `tools/bundled-tools.toml`, `desktop/packaging/**`, `desktop/src-tauri/tauri.conf.json`, `desktop/sidecar/**`, `desktop/tests/smoke/**`, `scripts/third-party-notices.py`, `.github/workflows/**`, `docs/deployment.md`, `docs/user/ffmpeg.md` (new) |
 
 Two agents never own the same file. Each agent updates its step's rows in `docs/status.md` and
 nothing else in `docs/`; the lead reconciles. Merge order: K, W, P (`--no-ff`). Then: the full

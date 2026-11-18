@@ -227,7 +227,10 @@ after v1 and does not block the release
       [decisions 0093](../decisions/0093-ffmpeg-download-and-build-choice.md),
       [0094](../decisions/0094-docker-image-without-ffmpeg.md))
       ([decision 0073](../decisions/0073-gpl-corresponding-source-per-tool-pin.md)).
-- [ ] User docs: quick start, presets, batch mode, keyboard shortcuts.
+- [ ] User docs: quick start, presets, batch mode, keyboard shortcuts; getting FFmpeg
+      (`docs/user/ffmpeg.md`: the first-run choice, install from a file, your own build, the
+      `compat` build for older NVIDIA drivers, Docker's `/data` and `REFRAME_FFMPEG_BUILD`, what
+      the server log says; [decision 0094](../decisions/0094-docker-image-without-ffmpeg.md)).
 
 ## After v1
 

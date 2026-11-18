@@ -30,7 +30,12 @@ BtbN binary (audit D-16a, 2026-11-18), so a downloaded build needs no libva copy
    same task as *Download*). For a server that should work without a first visit to the UI. A
    wrong name or a failed download is logged and shown on the first-run screen; the server
    starts anyway.
-4. Licensing: no artefact of Reframe conveys FFmpeg any more. The image's notices drop it; the
+4. **The server log says it clearly** (the owner, 2026-11-18): console lines with the default
+   log settings at start without FFmpeg (and the ways out), and for every download or file
+   install (start with build, version, size, source and target, progress, the result or the
+   error with what to do instead). Users get a page on it, `docs/user/ffmpeg.md`, the first
+   part of the user docs of the release checklist; `docs/deployment.md` links to it.
+5. Licensing: no artefact of Reframe conveys FFmpeg any more. The image's notices drop it; the
    sources release of [0073](0073-gpl-corresponding-source-per-tool-pin.md) keeps the parts that
    are still conveyed (the AppImage's libraries, the image's Debian packages).
 
