@@ -5,6 +5,10 @@
 #   docker compose -f docker/compose.yml exec -it reframe reframe-server --set-password
 # The web UI is on http://<host>:8765/. See docs/deployment.md.
 #
+# The image contains no FFmpeg. The first start downloads it (the web UI's first-run screen, or
+# REFRAME_FFMPEG_BUILD below) into /data/tools/ffmpeg: keep /data a persistent folder of the
+# host, or every new container downloads it again. See docs/user/ffmpeg.md.
+#
 # `docker compose up` starts the Intel/AMD service. On an NVIDIA host start the other one:
 #   docker compose -f docker/compose.yml up -d reframe-nvidia
 # A host without a GPU: delete the `devices` lines of the `reframe` service.
@@ -33,11 +37,15 @@ x-reframe: &reframe
     # Without this list every IP address works in the browser's address bar, and no host
     # name does. A list replaces that default, so name the addresses you use too:
     # REFRAME_ALLOWED_HOSTS: '["nas.local", "reframe.example.org", "192.168.1.10"]'
-    # Your own FFmpeg build instead of the bundled one (also mount it, under `volumes`):
+    # Download this FFmpeg build at start when none is installed in /data, without a visit
+    # to the web UI first (`default`, or `compat` for NVIDIA drivers older than 610):
+    # REFRAME_FFMPEG_BUILD: default
+    # Your own FFmpeg build instead of a downloaded one (also mount it, under `volumes`):
     # REFRAME_FFMPEG: /opt/custom-ffmpeg/bin/ffmpeg
     # REFRAME_FFPROBE: /opt/custom-ffmpeg/bin/ffprobe
   volumes:
     - /srv/reframe/config:/config
+    # The queue, the logs and the downloaded FFmpeg (/data/tools/ffmpeg).
     - /srv/reframe/data:/data
     - /srv/media:/media:ro
     - /srv/encoded:/output

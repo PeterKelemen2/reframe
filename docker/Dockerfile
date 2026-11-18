@@ -1,5 +1,7 @@
-# Reframe web server, for linux/amd64 and linux/arm64. Write docker/notices/THIRD_PARTY_NOTICES
-# for the platform first (docs/deployment.md), then build from the repository root:
+# Reframe web server, for linux/amd64 and linux/arm64. It contains no FFmpeg: the first start
+# downloads it into /data/tools/ffmpeg (docs/user/ffmpeg.md). Write
+# docker/notices/THIRD_PARTY_NOTICES for the platform first (docs/deployment.md), then build from
+# the repository root:
 #   docker build -f docker/Dockerfile -t reframe:local .
 # It also builds with the classic builder (no BuildKit-only syntax). buildx sets TARGETARCH;
 # without it each stage takes the architecture it runs on.
@@ -46,20 +48,6 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/reframe/python \
     UV_NO_CACHE=1
 RUN uv python install 3.14.8
 
-FROM python AS tools
-ARG TARGETARCH
-COPY tools/ffmpeg.toml /src/tools/ffmpeg.toml
-COPY scripts/fetch-tools.py /src/scripts/fetch-tools.py
-RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
-    && case "$arch" in \
-        amd64) platform=linux-x64 ;; \
-        arm64) platform=linux-arm64 ;; \
-        *) echo "no FFmpeg build is pinned for $arch" >&2; exit 1 ;; \
-    esac \
-    && uv run --no-project --python 3.14.8 python /src/scripts/fetch-tools.py \
-        --manifest /src/tools/ffmpeg.toml --platform "$platform" \
-        --install-dir /opt/reframe/tools/ffmpeg
-
 FROM python AS app
 ENV UV_PROJECT_ENVIRONMENT=/opt/reframe/venv \
     UV_COMPILE_BYTECODE=1 \
@@ -77,8 +65,10 @@ FROM ${DEBIAN_IMAGE}
 ARG TARGETARCH
 COPY --from=notices /notices/THIRD_PARTY_NOTICES /opt/reframe/notices/THIRD_PARTY_NOTICES
 COPY docker/debian-packages.sh /tmp/debian-packages.sh
-# non-free: the Intel media driver with every encoder (the free build has no H.264/HEVC encode
-# before Ice Lake). arm64 gets no GPU drivers: its image claims software encoders only.
+# The GPU drivers that a downloaded FFmpeg loads, with Debian's libva. non-free: the Intel
+# media driver with every encoder (the free build has no H.264/HEVC encode before Ice Lake).
+# arm64 gets no GPU drivers: its image claims software encoders only. ca-certificates: the
+# FFmpeg download checks the server's certificate.
 # Versions are exact; a Debian point release that drops one fails the build.
 RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && case "$arch" in \
@@ -90,6 +80,7 @@ RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         $gpu \
+        ca-certificates=20250419+deb13u1 \
         tini=0.19.0-3+b8 \
     && rm -rf /var/lib/apt/lists/* \
     && sh /tmp/debian-packages.sh /opt/reframe/notices/DEBIAN_PACKAGES \
@@ -98,7 +89,6 @@ RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
 
 COPY --from=python /opt/reframe/python /opt/reframe/python
 COPY --from=app /opt/reframe/venv /opt/reframe/venv
-COPY --from=tools /opt/reframe/tools/ffmpeg /opt/reframe/tools/ffmpeg
 COPY --from=frontend /src/frontend/dist /opt/reframe/frontend
 COPY docker/entrypoint.sh /usr/local/bin/reframe-entrypoint
 RUN chmod 0755 /usr/local/bin/reframe-entrypoint \
