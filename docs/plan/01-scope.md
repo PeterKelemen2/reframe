@@ -108,15 +108,17 @@ Reframe v1 must cover these HandBrake features, unless "Changed" or "Dropped" sa
 - All FFmpeg work runs in subprocesses. No libav bindings.
 - No operation may block the UI. Every external call has a timeout and can be cancelled.
 - Settings and presets are versioned JSON with migrations.
-- Every build (Docker, Linux, Windows) bundles the same pinned FFmpeg. Users can override the
-  path to each tool ([02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg)).
+- FFmpeg comes from pinned builds: the Docker image bundles the `default` build; the desktop
+  app downloads an offered build at the first run (or installs it from a file), and users can
+  choose their own FFmpeg instead ([02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg),
+  [decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)).
 
 ## Open questions (owner to decide)
 
 | # | Question | Default if not answered |
 |---|----------|-------------------------|
 | 1 | Do you need Blu-ray/DVD folder input in v1, or are MKV remuxes enough? | Post-v1 |
-| 2 | Licence for Reframe itself? | GPL-3.0-or-later (every build bundles a GPL FFmpeg with x264/x265; see [09](09-quality-and-release.md#licensing)) |
+| 2 | Licence for Reframe itself? | GPL-3.0-or-later (the Docker image bundles, and the desktop app downloads, a GPL FFmpeg with x264/x265; see [09](09-quality-and-release.md#licensing)) |
 | 3 | UI languages? | English first. The UI is i18n-ready (vue-i18n) |
 | 4 | Desktop framework: are you OK with Tauri 2 (Rust shell + shared Vue UI)? | Yes. See the alternatives in [07](07-desktop-app.md#alternatives-considered) |
 | 5 | How is Windows tested, since nothing is pushed? ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 1, [0053](../decisions/0053-linux-first-windows-testing-phase.md)) | In the Windows testing phase of M10: a Windows machine or VM that you provide runs the CI commands (`Q-1.4`). A push to a private remote only if you allow it |

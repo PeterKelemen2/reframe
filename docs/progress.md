@@ -28,10 +28,10 @@ hardware the owner does not have.
 
 | Area | Done | Not done |
 |---|---|---|
-| Core `C-0` to `C-20` | 21 / 21 | — |
-| Server `S-0` to `S-7` | 8 / 8 | S-6's Intel QSV and NVIDIA NVENC checks in Docker (wait for such a host) |
-| Frontend `F-0` to `F-19` | 20 / 20 | — |
-| Desktop `D-0` to `D-9` | 9.5 / 10 | D-8 partial: no GitHub release made |
+| Core `C-0` to `C-21` | 21 / 22 | C-21 (FFmpeg builds, 0093) |
+| Server `S-0` to `S-8` | 8 / 9 | S-8 (FFmpeg builds API, 0093); S-6's Intel QSV and NVIDIA NVENC checks in Docker (wait for such a host) |
+| Frontend `F-0` to `F-20` | 20 / 21 | F-20 (build picker, 0093) |
+| Desktop `D-0` to `D-10` | 9.5 / 11 | D-8 partial: no GitHub release made; D-10 (packages without FFmpeg, 0093) |
 | Quality `Q-x` (43 sub-steps) | about 40 / 43 | Q-2.4 (optional local samples suite) not started; Q-3 partial; Q-1.1 to Q-1.3 written but never run on GitHub |
 
 By step count about 98 of 102 (96 %). The overall figure is lower because the open items
@@ -74,12 +74,17 @@ with `actionlint`. Expect a round of fixes on the first run.
    crop per file, D-17 power actions in Docker, A-76 *Align A/V start* does nothing, B-39
    track name templates written literally, A-35 / A-27 encoder errors, then the small ones),
    and a plan update for the out-of-date plan text the audit lists.
-2. **User docs**, after those fixes, so they describe what ships.
-3. **The four open licence-text groups**.
-4. **Push decision (the owner's), then the first CI run**. This unblocks CI, the release
+2. **FFmpeg download and build choice** (C-21, S-8, F-20, D-10,
+   [decision 0093](decisions/0093-ffmpeg-download-and-build-choice.md)): the desktop packages
+   stop bundling FFmpeg; the first run offers pinned builds (`default`, and `compat` for
+   NVIDIA drivers older than 610), install from a file, or the user's own path; a warning when
+   an encoder is unavailable because the system does not fit the build.
+3. **User docs**, after those fixes, so they describe what ships.
+4. **The four open licence-text groups**.
+5. **Push decision (the owner's), then the first CI run**. This unblocks CI, the release
    workflow, the real updater test, the Docker image and the GitHub release. A pre-release
    tag (for example `v1.0.0-rc.1`) tests the whole pipeline without committing to v1.
-5. **Merge `m10-hardening` into `main`** when the checklist is done.
+6. **Merge `m10-hardening` into `main`** when the checklist is done.
 
 ## Open owner decisions (none blocks work)
 

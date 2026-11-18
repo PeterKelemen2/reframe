@@ -232,7 +232,7 @@ This is not legal advice. Review it before any public or commercial distribution
 
 | Component | Licence | Effect |
 |-----------|---------|--------|
-| FFmpeg GPL build (with x264, x265) | GPL-2.0+/GPL-3.0 | **Every artefact bundles it**: the Docker image, AppImage, .deb, .rpm and the Windows installer. Each must include the licence and the corresponding source (or a written offer) **for the exact build that ships** |
+| FFmpeg GPL build (with x264, x265) | GPL-2.0+/GPL-3.0 | **The Docker image bundles it** and must include the licence and the corresponding source (or a written offer) **for the exact build that ships**. The desktop packages contain no FFmpeg: the app downloads it from BtbN's release at the user's request and shows its licence and source links first ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)) |
 | `libfdk_aac` | Not redistributable with GPL builds | **Never bundled.** It is used only if the user's own FFmpeg has it |
 | MKVToolNix | GPL-2.0 | **Not bundled and not run** by the product: since C-18 Reframe writes the Matroska headers itself ([decision 0080](../decisions/0080-own-matroska-header-writer.md)); tests use it as an oracle. Its Windows build links OpenSSL (Apache-2.0) into GPL-2.0-only code ([decision 0079](../decisions/0079-q5-release-process.md) item 11) |
 | MediaInfo | BSD-2-Clause | Notice required until C-19; then **not bundled and not used** ([decision 0081](../decisions/0081-probe-without-mediainfo.md)) |

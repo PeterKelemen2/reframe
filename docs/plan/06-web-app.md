@@ -131,7 +131,7 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `GET /api/system` | Tool statuses, versions, platform, mode |
 | | `GET /api/system/encoders` · `POST /api/system/encoders/rescan` → 202 | Capability statuses, re-detection (a task: hardware test encodes take seconds; [0049](../decisions/0049-s2-system-fs-settings-sources-preview.md)) |
 | | `POST /api/system/shutdown` | Graceful shutdown (desktop mode only, else 403) |
-| | `POST /api/system/tools/rescan` · `POST /api/system/tools/fetch` `{build?}` → 202 | Tool discovery again; download the pinned FFmpeg (`tools.fetch`). `GET /api/system` also returns the start-up problems of the settings and preset stores |
+| | `POST /api/system/tools/rescan` · `POST /api/system/tools/fetch` `{build?}` → 202 | Tool discovery again; download an offered FFmpeg build (`tools.fetch`; S-8 adds the build list, the install from a file and `tools.fetch_offline`). `GET /api/system` also returns the start-up problems of the settings and preset stores |
 | Tasks | `GET /api/tasks?kind=` · `GET /api/tasks/{id}` · `POST /api/tasks/{id}/cancel` | Running and finished tasks (optionally of one kind), one task's state and result, cancel (`{cancelled}`). An unknown id is 404 `tasks.unknown`. The server's config, data and cache folders show as `<config>`, `<data>`, `<cache>` ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
 | Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=&extensions=` | Server-side file browser (media files and folders only; with `extensions` (repeatable: `.srt`), the files with those extensions instead of the media files, [0065](../decisions/0065-m6-tracks-and-metadata.md#task-s6--s-2-additions)). Web mode: below the media and the output roots (the output folder picker); desktop: the whole file system |
 | Subtitles | `POST /api/subtitles/inspect` `{path}` | An external subtitle file before it is added: FFmpeg's format, text or bitmap, the character encoding (byte order mark or valid UTF-8, else `null`), the event count, issues; a file a job cannot take is `422 subtitles.unsupported` ([0065](../decisions/0065-m6-tracks-and-metadata.md#task-s6--s-2-additions)) |
@@ -362,6 +362,25 @@ other waiting jobs alone.
 ---
 
 # Part B — Frontend (`frontend/`, shared by web and desktop)
+
+## S-8 FFmpeg builds
+
+Needs C-21 ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)). Milestone
+M10.
+
+- [ ] `GET /api/system/tools/builds`: the offered builds (name, label, summary, version,
+      licence, source links, size for this platform) and the installed downloaded build with
+      `outdated`.
+- [ ] `POST /api/system/tools/install-file` `{path}` → 202: install an archive file from a path
+      on the server (desktop mode; in web mode the path must be inside a media root). A task
+      like `tools/fetch`.
+- [ ] `tools.fetch_offline` and the file-install problems reach the client as the task's error
+      code and message. `EncoderStatus.build_mismatch` is in the encoder status; the OpenAPI
+      types are generated again (S-5).
+
+Done when: the routes are in the OpenAPI document and the generated types; a test installs a
+build from a file through the API and then sees it in `GET /api/system`; a fetch that cannot
+reach the server fails with `tools.fetch_offline`.
 
 ## Stack
 
@@ -650,3 +669,23 @@ F-18, built before F-16. Built on 2026-11-13: 0074 "Built"; in a group the shown
       the Summary Output card, and the batch matrix naming column.
       (The matrix's naming column shows the names of `batch/resolve-run`, which names each file
       with the same naming code, again after each change: [0066](../decisions/0066-m7-batch-season.md), "Task C".)
+
+### F-20 FFmpeg build picker and the build-mismatch warning
+- [ ] First-run screen (desktop app with no FFmpeg, or any repair case): the offered builds with
+      label, summary, size and licence (source links behind a disclosure), `default`
+      preselected; **Download**, **Install from file** (desktop: the native file dialog; web:
+      the server file browser), **Choose path** (desktop). A `tools.fetch_offline` error says
+      that the download server cannot be reached and points to the other two.
+- [ ] Settings → Tools: the installed build (offered build name, version, outdated notice with
+      **Download**), the same picker to switch builds, the path override as today.
+- [ ] Build mismatch: the encoder picker's reason and Settings → Encoders show the hint; the
+      missing-encoder banner and the Summary's `encoder.unavailable` issue add **Use another
+      FFmpeg…** when the encoder's status has `build_mismatch` (opens Settings → Tools);
+      Settings → Tools shows a notice that names each such encoder with its reason. No toast.
+- [ ] i18n keys for every new text; the F-16 gate covers the new screens.
+
+Done when: with a fake status (`hevc_nvenc` unavailable, `build_mismatch` true) the banner shows
+**Use another FFmpeg…** and it opens Settings → Tools with the notice; with an empty data folder
+the first-run screen lists `default` and `compat`; a fetch that fails offline shows the
+offline message with **Install from file** and **Choose path**; a file install from the
+server browser (web) finishes and the screen goes away.

@@ -177,7 +177,7 @@ validation error from the dry run.
 
 ## M10 — Hardening and v1.0 release
 
-| Steps | `Q-1.4` (the Windows testing phase), `C-18` (Reframe's own Matroska header writer, [decision 0080](../decisions/0080-own-matroska-header-writer.md); before the release checklist), `C-19` (the probe without MediaInfo, [decision 0081](../decisions/0081-probe-without-mediainfo.md); before the release checklist), `C-20` (a generated language table, [decision 0082](../decisions/0082-own-language-data-table.md); before the release checklist), `S-6`, `D-7`, `D-8`, `D-9`, `F-19` (the Range selector, [decision 0074](../decisions/0074-range-selector-in-m10.md); before F-16), `F-16`, `F-17` (all five flows in Chromium and WebKit), `Q-3`, `Q-4`, `Q-5`, `Q-6` (simplification of the core and the server, [decision 0083](../decisions/0083-simplification-step-before-v1.md); Tier A steps before the release checklist), `Q-7` (test trimming, [decision 0091](../decisions/0091-test-trimming-step.md); does not block the release) |
+| Steps | `Q-1.4` (the Windows testing phase), `C-18` (Reframe's own Matroska header writer, [decision 0080](../decisions/0080-own-matroska-header-writer.md); before the release checklist), `C-19` (the probe without MediaInfo, [decision 0081](../decisions/0081-probe-without-mediainfo.md); before the release checklist), `C-20` (a generated language table, [decision 0082](../decisions/0082-own-language-data-table.md); before the release checklist), `S-6`, `D-7`, `D-8`, `D-9`, `F-19` (the Range selector, [decision 0074](../decisions/0074-range-selector-in-m10.md); before F-16), `F-16`, `F-17` (all five flows in Chromium and WebKit), `Q-3`, `Q-4`, `Q-5`, `Q-6` (simplification of the core and the server, [decision 0083](../decisions/0083-simplification-step-before-v1.md); Tier A steps before the release checklist), `Q-7` (test trimming, [decision 0091](../decisions/0091-test-trimming-step.md); does not block the release), `C-21`, `S-8`, `F-20`, `D-10` (the desktop app downloads FFmpeg, a build picker and the build-mismatch warning, [decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md); before the release checklist) |
 |-------|---|
 
 `S-6` is built early, on the branch `server-complete`
@@ -223,7 +223,8 @@ after v1 and does not block the release
 - [ ] Performance budgets ([09 §Q-3](09-quality-and-release.md#q-3-performance-budgets)) are met.
 - [ ] Third-party licence notices are bundled ([09 §Licensing](09-quality-and-release.md#licensing)).
 - [ ] The release's notices name its sources release, and that release has the corresponding
-      source of every GPL and LGPL part
+      source of every GPL and LGPL part (FFmpeg's for the Docker image only:
+      [decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md))
       ([decision 0073](../decisions/0073-gpl-corresponding-source-per-tool-pin.md)).
 - [ ] User docs: quick start, presets, batch mode, keyboard shortcuts.
 

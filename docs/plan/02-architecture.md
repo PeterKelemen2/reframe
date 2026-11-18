@@ -97,9 +97,13 @@ tone mapping, and remux-only jobs. FFmpeg covers all of them, and its CLI is sta
 
 ### Bundled FFmpeg
 
-**Every build ships the same pinned FFmpeg**: the Docker image, the Linux packages (AppImage,
-.deb, .rpm) and the Windows installer. Users get a known-good FFmpeg on every target, and every
-build behaves the same.
+**Every target uses a pinned FFmpeg build.** The Docker image bundles the `default` build. The
+desktop packages (AppImage, .deb, .rpm, the Windows installers) contain no FFmpeg: the first run
+offers the builds that the manifest marks as offered, downloads the chosen one (or installs it
+from an archive file), or takes the user's own FFmpeg path
+([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)). Users get a known-good
+FFmpeg on every target, and a system that does not fit the `default` build (an NVIDIA driver
+older than its NVENC needs) can take another offered build.
 
 - **One manifest**, `tools/ffmpeg.toml`, pins the version, the download URL and the SHA-256
   for each platform (`linux-x64`, `windows-x64`). CI uses it for the tests and for every
@@ -111,11 +115,14 @@ build behaves the same.
   choice ([decision 0002](../decisions/0002-bundled-ffmpeg.md)). Its VAAPI needs a libva
   newer than Ubuntu 22.04 / 24.04 or Debian 12 have, so the Linux layout ships libva (built
   from its pinned source on the oldest supported distro) in the FFmpeg folder's `lib/`.
-- **Install location**: `<app>/tools/ffmpeg/` (Windows, AppImage), `/usr/lib/Reframe/tools/ffmpeg/`
-  (.deb/.rpm: the package's resource folder next to the sidecar, so it does not conflict with
-  the distro's `ffmpeg` package),
-  `/opt/reframe/tools/ffmpeg/` (Docker), `<data dir>/tools/ffmpeg/` (`reframe tools fetch`, and
-  CI). No package bundles MediaInfo since C-19
+- **Offered builds**: `default` (the build the tests use) and `compat` (an older release
+  branch for NVIDIA drivers that the `default` build's NVENC refuses), each with a label, a
+  one-line summary and its licence and source links, shown before the download.
+- **Install location**: `<data dir>/tools/ffmpeg/` for a downloaded build (desktop app,
+  `reframe tools fetch`, CI); `/opt/reframe/tools/ffmpeg/` (Docker). A build that a packager
+  puts at `<app>/tools/ffmpeg/` (or `/usr/lib/Reframe/tools/ffmpeg/`) is still found as
+  bundled. On Linux the desktop packages ship the pinned libva, which a download copies into
+  the build's `lib/`. No package bundles MediaInfo since C-19
   ([decision 0081](../decisions/0081-probe-without-mediainfo.md)), and none bundles
   MKVToolNix ([decision 0079](../decisions/0079-q5-release-process.md) item 11), and since C-18
   Reframe does not run it ([decision 0080](../decisions/0080-own-matroska-header-writer.md)). Each folder holds the binaries in `bin/` or directly. `REFRAME_CONFIG_DIR`,
@@ -128,7 +135,7 @@ build behaves the same.
 |---|--------|-------------|
 | 1 | Environment variable: `REFRAME_FFMPEG`, `REFRAME_FFPROBE` | Docker, scripts, CI. Settings shows the value read-only, with a note that the environment sets it |
 | 2 | Path in **Settings → Tools** | Desktop users with their own FFmpeg build |
-| 3 | Bundled build | Default |
+| 3 | Bundled build (Docker), or the downloaded build (`<data dir>/tools/ffmpeg/`) | Default |
 | 4 | `PATH` | Only when no bundled build exists (for example when running from source) |
 
 - If only `ffmpeg` is overridden, Reframe looks for `ffprobe` next to it first, so pointing

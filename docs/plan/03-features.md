@@ -259,6 +259,8 @@ The UI never waits for detection.
 | A preset or queued job uses an encoder that is now unavailable | A non-modal **error banner** on the Video tab and a Summary issue: "Preset *H.265 NVENC 1080p* uses `hevc_nvenc`, which is not available: *no NVIDIA device found*". Buttons: **Use `libx265` (closest match)** · **Choose encoder** · **Check again** |
 | Queue reaches a job whose encoder became unavailable | The job is marked `Failed — encoder unavailable` with the same fix actions. The queue continues with the next job |
 | The bundled FFmpeg is damaged, or an override points to a missing, broken or too old binary | A repair screen shows the reason and where the binary came from (environment, settings, bundled). Buttons: **Use bundled FFmpeg** · **Choose path** · **Check again**. The rest of the UI stays usable for browsing presets and settings |
+| No FFmpeg yet (the desktop app's first run: the packages contain none) | The same screen offers the builds: **Download** (the `default` build preselected), **Install from file** (an archive downloaded elsewhere, checked against the manifest), **Choose path**. Without a network it says that the download server cannot be reached and points to the other two ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)) |
+| An encoder is unavailable because this FFmpeg build needs newer system software (an NVIDIA driver older than the build's NVENC needs; a system library too old for the build) | The reason, plus a hint: update the driver, or use another FFmpeg build. The banner and the Summary issue add **Use another FFmpeg…** (opens Settings → Tools), and Settings → Tools names these encoders with the other offered builds, **Install from file** and the path. A 10-bit-only limit is not such a case: the encoder stays usable in 8-bit ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)) |
 
 "Closest match" mapping lives in the encoder definitions (for example `hevc_nvenc → libx265`,
 `h264_qsv → libx264`, `av1_amf → libsvtav1`). Quality values are converted with a mapping
@@ -816,7 +818,7 @@ The Summary tab shows which job type you will get, and why.
 
 | Section | Contents |
 |---------|----------|
-| Tools | ffmpeg, ffprobe. Each shows its version and where it comes from (bundled, settings, environment). A path override field, **Test** and **Use bundled** buttons. Overrides from environment variables are read-only |
+| Tools | ffmpeg, ffprobe. Each shows its version and where it comes from (bundled or downloaded, settings, environment). The offered builds with their summary and licence, **Download**, **Install from file**, and a notice when the downloaded build is not this release's pin or when an encoder has a build mismatch ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)). A path override field, **Test** and **Use bundled** buttons. Overrides from environment variables are read-only |
 | Encoders | Table of all known encoders: status, reason, last check time. **Re-scan** button. Hardware test encodes on / off. VAAPI device (automatic, or one `/dev/dri/renderD*` node; [decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)) |
 | Output | Default folder, [naming](#output-naming) templates and options, default container, collision behaviour, partial file behaviour |
 | Languages | Favourite languages. Preferred audio and subtitle languages (used by preset rules) |

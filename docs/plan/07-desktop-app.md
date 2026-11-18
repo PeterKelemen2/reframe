@@ -113,22 +113,25 @@ this:
 
 ## Tool bundling
 
-Every desktop package bundles the pinned FFmpeg from `tools/ffmpeg.toml`
-([02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg)).
+The desktop packages contain **no FFmpeg**. The first run offers the pinned builds that
+`tools/ffmpeg.toml` marks as offered, downloads the chosen one into `<data dir>/tools/ffmpeg/`
+(or installs it from an archive file), or takes the user's own FFmpeg path
+([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md), which supersedes the
+bundling part of [0002](../decisions/0002-bundled-ffmpeg.md)).
 
-| Platform | FFmpeg |
-|----------|--------|
-| Windows | Bundled in `resources/tools/ffmpeg/` |
-| Linux AppImage | Bundled inside the AppImage |
-| Linux .deb / .rpm | Bundled in `/usr/lib/Reframe/tools/ffmpeg/`. No dependency on the distro `ffmpeg` package |
+| Platform | What the package ships for FFmpeg |
+|----------|-----------------------------------|
+| Windows | Nothing |
+| Linux AppImage | The pinned libva, copied into a downloaded build's `lib/` |
+| Linux .deb / .rpm | The pinned libva in `/usr/lib/Reframe/tools/libva/`, copied the same way. No dependency on the distro `ffmpeg` package |
 
 No other tool is bundled or recommended: since C-18 and C-19 Reframe runs no MKVToolNix or
 MediaInfo ([decision 0080](../decisions/0080-own-matroska-header-writer.md),
 [decision 0081](../decisions/0081-probe-without-mediainfo.md)). Until then, the Windows
 package bundles the MediaInfo CLI and the .deb / .rpm have `Recommends: mediainfo`.
 
-**Override**: Settings → Tools has a path field for each tool, a **Test** button and a **Use
-bundled** reset. Environment variables (`REFRAME_FFMPEG`, …) take precedence and show as
+**Override**: Settings → Tools has the build picker, a path field for each tool, a **Test**
+button and a **Use bundled** reset (the downloaded build). Environment variables (`REFRAME_FFMPEG`, …) take precedence and show as
 read-only. The first-run screen shows which binary is in use and where it came from.
 
 ## Steps
@@ -268,6 +271,23 @@ marisa-trie ([decision 0081](../decisions/0081-probe-without-mediainfo.md),
       ready, a fixture opens from argv, a job is queued and finishes, and quitting leaves no
       orphan processes. On Windows: *(Windows testing phase)*.
 
+### D-10 Packages without FFmpeg
+- [ ] `scripts/bundle-tools.py` and the package builds put no FFmpeg into `resources/tools/`;
+      on Linux they ship the pinned libva in `resources/tools/libva/` (AppImage, .deb, .rpm)
+      for C-21's copy ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)).
+- [ ] The sidecar tells the core where the packaged libva is; discovery finds a downloaded
+      build in `<data dir>/tools/ffmpeg/` as today.
+- [ ] The notices of the desktop packages drop FFmpeg; the Docker image keeps it and its
+      sources release.
+- [ ] D-9's smoke test starts with no FFmpeg, sees the first-run screen list the offered
+      builds, installs the `default` build with **Install from file** from the CI cache, and
+      then runs the rest of the flow. The package install tests of D-8 check that no FFmpeg is
+      in the packages and that a build installed after the install finds the packaged libva.
+
+Done when: the Linux packages and the Windows installers contain no `ffmpeg`/`ffprobe`
+binaries; the smoke test passes on Linux; an installed .deb in an Ubuntu 22.04 container
+downloads (or installs from a file) the `default` build and detects VAAPI with the copied libva.
+
 ## Risks
 
 | Risk | Mitigation |
@@ -276,5 +296,5 @@ marisa-trie ([decision 0081](../decisions/0081-probe-without-mediainfo.md),
 | Antivirus false positives on the PyInstaller binary (Windows) | Onedir build (not onefile), code signing, submit to vendors if needed |
 | WebKitGTK differences (CSS, performance, codecs) | D-0 spike, Playwright WebKit project in CI, frame compare that does not need webview codecs |
 | The bundled FFmpeg cannot use VAAPI/QSV on some Linux hosts (driver path or libva mismatch) | D-7 tests on several distros. `LIBVA_DRIVERS_PATH` handling in `C-1`. Capability reasons in Settings name the cause. Users can point the override to their distro FFmpeg |
-| The bundled FFmpeg makes installers larger | Shared-library build (one copy of the libraries for `ffmpeg` and `ffprobe`). Installer compression |
+| A fresh install needs the FFmpeg archive (the packages contain none) | Download at the first run, or install from a file; the user's own FFmpeg path. BtbN keeps a month-end build for two years: re-pin (or mirror) before then ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)) |
 | Startup time of the Python sidecar | Onedir build, lazy imports, the UI shows a skeleton while it connects |

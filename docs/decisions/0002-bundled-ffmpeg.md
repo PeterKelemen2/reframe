@@ -1,6 +1,6 @@
 # 0002 — The bundled FFmpeg, MKVToolNix and MediaInfo
 
-- Status: accepted
+- Status: accepted; the bundling of FFmpeg in the desktop packages is superseded by [0093](0093-ffmpeg-download-and-build-choice.md)
 - Date: 2026-11-12
 - Steps: D-7, C-1, C-4
 
