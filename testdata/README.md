@@ -548,11 +548,13 @@ ffmpeg -hide_banner -nostdin -v error -f lavfi -i color=size=640x360 -frames:v 3
 | `hevc_amf`, `av1_amf` | none, software frames (`-pix_fmt yuv420p` / `p010le`) | exit 0 | exit 0 |
 | `h264_amf` | none | exit 0 | exit 183: `10-bit input video is not supported by AMF H264 encoder` |
 | `hevc_nvenc` | none | exit 255: `Cannot load libcuda.so.1` | not run |
-| `hevc_qsv` | `-init_hw_device qsv=hw -filter_hw_device hw`, `-vf hwupload=extra_hw_frames=64,format=qsv` | exit 187: `Device creation failed: -542398533.` | not run |
+| `hevc_qsv` | none, software frames (`-pix_fmt nv12` / `p010le`) | exit 171 (pinned build, 2026-11-18): `Error creating a MFX session: -9.` | not run |
 | `libsvtav1`, `libvpx-vp9` | software, `-pix_fmt yuv420p10le` | exit 0 | exit 0 |
 
 `libsvtav1` prints `Svt[info]: …` lines on stderr even with `-v error` (the SVT library logs on
-its own). The QSV setup is the plan's; it is not verified on an Intel GPU.
+its own). The QSV setup was the plan's (`-init_hw_device qsv=hw`, `hwupload=extra_hw_frames=64`)
+until an Intel GPU refused it; QSV takes software frames since
+[0095](../docs/decisions/0095-qsv-takes-software-frames.md) (§QSV on an Intel GPU).
 
 ### Encoder detection (C-4)
 
@@ -564,11 +566,10 @@ machine above (AMD RX 7600, no NVIDIA driver, no Intel GPU). Decision
 (`reframe.capabilities.hardware_test_argv`):
 
 ```sh
-# VAAPI (10-bit: format=p010le); QSV: -init_hw_device qsv=hw -filter_hw_device hw and
-# -vf format=nv12,hwupload=extra_hw_frames=64,format=qsv
+# VAAPI (10-bit: format=p010le)
 ffmpeg -hide_banner -nostdin -init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va \
   -f lavfi -i color=size=640x360 -frames:v 3 -vf format=nv12,hwupload -c:v h264_vaapi -f null -
-# NVENC and AMF take software frames (10-bit: -pix_fmt p010le)
+# NVENC, AMF and QSV take software frames (10-bit: -pix_fmt p010le)
 ffmpeg -hide_banner -nostdin -f lavfi -i color=size=640x360 -frames:v 3 -pix_fmt nv12 \
   -c:v hevc_amf -f null -
 ```
@@ -581,7 +582,7 @@ command and the captures were not made again):
 |---------|-----------|-----------------|--------------------|
 | `detect_h264_vaapi_ok`, `detect_hevc_vaapi_10bit_ok`, `detect_hevc_amf_ok`, `detect_hevc_amf_10bit_ok` | 0 | — | available |
 | `detect_hevc_nvenc_no_driver` | 255 | `[hevc_nvenc @ 0x…] Cannot load libcuda.so.1` | NVIDIA driver not found |
-| `detect_hevc_qsv_no_device` | 187 | `Failed to set value 'qsv=hw' for option 'init_hw_device': Generic error in an external library` (no device line) | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `detect_hevc_qsv_no_device` | 171 | `[hevc_qsv @ 0x…] Error creating a MFX session: -9.` | No Intel QSV device (needs an Intel GPU with its media driver) |
 | `detect_h264_vaapi_bad_device` (`renderD999`) | 234 | `[VAAPI @ 0x…] No VA display found for device /dev/dri/renderD999.` | No VAAPI device (/dev/dri/renderD999) |
 | `detect_h264_vaapi_no_driver` (`LIBVA_DRIVER_NAME=reframe_nonexistent`) | 251 | `[VAAPI @ 0x…] Failed to initialise VAAPI connection: -1 (unknown libva error).` | VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error) |
 | `detect_hevc_amf_no_runtime` | 171 | `[AMF @ 0x…] DLL libamfrt64.so.1 failed to open`, then `[hevc_amf @ 0x…] Failed to create  hardware device context (AMF) : Unknown error occurred` | AMD AMF runtime not found (libamfrt64.so.1) |
@@ -593,9 +594,11 @@ command and the captures were not made again):
 - **`-h encoder=` pixel formats do not tell 10-bit support for hardware encoders**: `h264_amf`
   lists `p010le` and still refuses 10-bit. Only the test encode decides. (For software
   encoders the list is right: `libx265` lists `yuv420p10le`.)
-- **QSV at `-v verbose`** says why the device fails here (`[VAAPI @ …] Ignoring device 0 with
-  non-matching vendor id (0x8086).` … `Cannot open a VA display from DRM device (null).`); at
-  the default level, which C-4 uses, only the fftools lines above are printed.
+- **QSV at `-v verbose`** adds nothing about the cause here: `Encoder: input is system memory
+  surface`, `Use Intel(R) oneVPL to create MFX session, the required implementation version is
+  1.1`, then the same `Error creating a MFX session: -9.` (With the old `-init_hw_device
+  qsv=hw` setup it named the VAAPI device it skipped: `Ignoring device 0 with non-matching
+  vendor id (0x8086).`)
 - **Presets in `-h encoder=`**: `libx264` / `libx265` have `-preset <string>`, so FFmpeg does
   not list them; `libsvtav1` has `-preset <int> … (from -2 to 13)` without names; NVENC lists
   `slow`, `medium`, `fast`, `p1` … `p7`; QSV `veryfast` … `veryslow`; AMF `quality`,
@@ -652,6 +655,38 @@ usable):
 | `hevc_vaapi`, `av1_vaapi` | available | yes | `/dev/dri/renderD128` | |
 | `aac`, `ac3`, `eac3`, `libopus`, `flac`, `libmp3lame` | available | – | – | |
 | `libfdk_aac` | unavailable | – | – | Not in this FFmpeg build |
+
+### QSV on an Intel GPU
+
+Checked on 2026-11-18 on a laptop: Intel UHD 620 (i5-8250U, Kaby Lake R, PCI `8086:5917`, the
+only GPU), Windows 11 25H2, Intel driver 31.0.101.2140, over SSH (elevated Git Bash). Builds:
+the pinned n9.0.2-17-g2a571b6068-20260930 and the `override-test` n8.1.3-9-g29e619e767-20260930.
+Source `-f lavfi -i testsrc2`, output `-f null -`. Decision
+[0095](../docs/decisions/0095-qsv-takes-software-frames.md) is based on these.
+
+| Command (video part) | n9.0.2 | n8.1.3 |
+|----------------------|--------|--------|
+| `-init_hw_device qsv=hw -filter_hw_device hw`, `-vf format=nv12,hwupload=extra_hw_frames=64,format=qsv` (the old definitions) | exit 171: `[AVHWFramesContext @ …] Could not create the texture (80070057)` | the same |
+| the same with `extra_hw_frames` = 8, 16, 24, 32, 40, 48, 56, 63 | the same texture error | not run |
+| `-init_hw_device d3d11va=d3d -init_hw_device qsv=hw@d3d`, the same upload | the same texture error | not run |
+| `-init_hw_device qsv=hw:hw_any,child_device_type=dxva2` | `[DXVA2 @ …] Failed to create Direct3D device` | not run |
+| `-init_hw_device qsv=hw`, `-vf format=nv12,hwupload,format=qsv` (no `extra_hw_frames`) | exit 0 (`hevc_qsv` 1080p and 10-bit with `-bf 3 -refs 4`, `h264_qsv` 1080p with `-look_ahead 1`: 600 frames each) | `hevc_qsv` 1080p: exit 0 (600 frames); `h264_qsv` 720p: `Error while filtering: Cannot allocate memory` after it starts |
+| software frames: `-pix_fmt nv12 -c:v h264_qsv -global_quality 23 -look_ahead 1`, 1080p, 600 frames | exit 0 | exit 0 |
+| software frames: `-pix_fmt p010le -c:v hevc_qsv -global_quality 25 -bf 3 -refs 4`, 1080p, 600 frames | exit 0 | exit 0 |
+| software frames: `-pix_fmt p010le -c:v h264_qsv` | exit 0: `Incompatible pixel format 'p010le' for codec 'h264_qsv', auto-selecting format 'nv12'` (detection: 8-bit only) | exit 0 |
+| software frames: `-c:v av1_qsv` | exit 171: `[av1_qsv @ …] This version of runtime doesn't support AV1 encoding` | the same |
+
+- **The QSV device starts**; the frame pool does not. At `-v verbose` the old command prints
+  `Defaulting child_device_type to AV_HWDEVICE_TYPE_D3D11VA for oneVPL`, `Using device
+  8086:5917 (Intel(R) UHD Graphics 620)`, `Initialize MFX session: implementation version is
+  1.35`, then the texture error, `Error initializing a child frames context` and `Error
+  creating an internal frame pool` from `hwupload`. 80070057 is E_INVALIDARG.
+- **After the change** (software frames), `reframe encoders` on that laptop: `h264_qsv —
+  available (8-bit only)`, `hevc_qsv — available`, `av1_qsv — unavailable: This Intel GPU
+  cannot encode AV1`. `test_hardware_encode[h264_qsv-multitrack-8]` and
+  `[hevc_qsv-hdr10-10]` pass (10-bit H.265 with HDR10 kept).
+- **Not checked**: QSV on Linux (oneVPL over VAAPI), Arc and newer Intel GPUs, and the QSV
+  advanced options.
 
 ### Encoder definitions (C-6)
 

@@ -220,12 +220,12 @@ and returns statuses, never exceptions.
       found"; `Driver does not support the required nvenc API version` → "NVIDIA driver too
       old"; `No VA display found for device X` → "No VAAPI device (X)";
       `Failed to initialise VAAPI connection` → "VAAPI driver failed to start";
-      `Error creating a MFX session` or a failed `-init_hw_device qsv=hw` → "No Intel QSV
-      device"; `DLL libamfrt64.so.1 failed to open` → "AMD AMF runtime not found". A known
-      text gives `unavailable`. Any other failure gives `error` with the most informative
-      line: the first line that the encoder logs (`[hevc_nvenc @ …]`), else the first line of
-      a hardware device (`[VAAPI @ …]`), else the first line that is not fftools bookkeeping.
-      Never the last line: it is a generic `Conversion failed!`.
+      `Error creating a MFX session` → "No Intel QSV device"; `DLL libamfrt64.so.1 failed
+      to open` → "AMD AMF runtime not found". A known text gives `unavailable`. Any other
+      failure gives `error` with the most informative line: the first line that the encoder
+      logs (`[hevc_nvenc @ …]`), else the first line of a hardware device (`[VAAPI @ …]`),
+      else the first line that is not fftools bookkeeping. Never the last line: it is a
+      generic `Conversion failed!`.
 - [ ] **Cache**: key = ffmpeg path + size + mtime + version, plus a GPU fingerprint (Linux:
       `/sys/class/drm/*/device/{vendor,device}`, `/proc/driver/nvidia/version`. Windows:
       display adapter name + driver version, read once in the background). On start, the cached
@@ -285,8 +285,8 @@ that none exists). Table tests cover the classic cases (DVD NTSC 720×480 anamor
 Declarative data in `definitions/data/*.toml`, validated by Pydantic at import.
 
 - [ ] **Video encoders**: id, codec, family, software/hardware, vendor, hardware init args and
-      filter tail (for example VAAPI: `-vaapi_device …` and `format=nv12,hwupload`; QSV:
-      `-init_hw_device qsv=hw -filter_hw_device hw` and `hwupload=extra_hw_frames=64,format=qsv`),
+      filter tail (for example VAAPI: `-vaapi_device …` and `format=nv12,hwupload`; NVENC, AMF
+      and QSV take software frames, [0095](../decisions/0095-qsv-takes-software-frames.md)),
       rate-control modes with value ranges, presets, tunes, profiles, levels, pixel formats per
       bit depth, fallback chain, quality conversion table.
 - [ ] **Encoder option schema** (StaxRip-style):
