@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 import os
 import re
 import shutil
@@ -10,9 +9,10 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from types import ModuleType
 
 import pytest
+
+from reframe_testing.scripts import load_script
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "release-notes.py"
@@ -20,17 +20,7 @@ CLIFF_TOML = REPO_ROOT / "cliff.toml"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 
 
-def _load_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("release_notes", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-rn = _load_script()
+rn = load_script("release-notes.py")
 
 SAMPLE = """# Changelog
 

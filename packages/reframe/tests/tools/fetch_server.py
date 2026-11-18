@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import sys
 import tarfile
 import threading
 import time
@@ -13,6 +14,8 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+import pytest
 
 from reframe.tools.fetch import host_platform
 from reframe_testing import fake_tools as ft
@@ -25,9 +28,18 @@ ROOTS = {"linux-x64": LINUX_ROOT, "windows-x64": WINDOWS_ROOT}
 FORMATS = {"linux-x64": "tar.xz", "windows-x64": "zip"}
 BLOCK = 64 * 1024
 
+POSIX_ONLY = pytest.mark.skipif(
+    sys.platform == "win32" or host_platform() != "linux-x64",
+    reason="the fake Linux build runs only on a linux-x64 host",
+)
+
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def archive_ext(platform: str) -> str:
+    return "zip" if platform == "windows-x64" else "tar.xz"
 
 
 def foreign_platform() -> str:

@@ -6,7 +6,6 @@ import asyncio
 import time
 from typing import Any
 
-import psutil
 import pytest
 from pydantic import BaseModel
 
@@ -16,16 +15,10 @@ from reframe.models import TaskDoneEvent, TaskProgressEvent, TaskState
 from reframe.tasks import DEFAULT_LIMIT, TaskContext, TaskFailed, TaskManager
 from reframe.tools import run
 from reframe_testing import fake_tools as ft
+from reframe_testing.processes import alive
 from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
-
-
-def _alive(pid: int) -> bool:
-    try:
-        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
-    except psutil.Error:
-        return False
 
 
 def drain(sub: Subscription) -> list[TaskProgressEvent | TaskDoneEvent]:
@@ -123,7 +116,7 @@ async def test_cancel_kills_the_subprocess_within_one_second(fake_tools: ft.Fake
     elapsed = time.monotonic() - started
     assert final.state is TaskState.CANCELLED
     assert elapsed < 1.0
-    assert not _alive(pid)
+    assert not alive(pid)
     assert not tasks.cancel(info.id)  # already finished
 
 
@@ -140,7 +133,7 @@ async def test_cancel_without_token_use_still_kills(fake_tools: ft.FakeTools) ->
     [pid] = fake_tools.pids()
     tasks.cancel(info.id)
     assert (await tasks.wait(info.id)).state is TaskState.CANCELLED
-    assert not _alive(pid)
+    assert not alive(pid)
 
 
 async def test_per_kind_limit_holds() -> None:

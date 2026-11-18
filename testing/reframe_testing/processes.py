@@ -36,6 +36,14 @@ def interpreter(pid: int, *, timeout: float = 10.0) -> psutil.Process:
         time.sleep(0.01)
 
 
+def alive(pid: int) -> bool:
+    """Whether ``pid`` is a running process: a zombie that nobody has reaped yet is not."""
+    try:
+        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
+    except psutil.Error:
+        return False
+
+
 def ready_port(process: subprocess.Popen[bytes], limit: float = 30.0) -> int:
     """The port of the server's ready line, the first line of its stdout."""
     lines: queue.Queue[bytes] = queue.Queue()

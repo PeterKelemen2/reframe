@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import io
-import sys
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -32,18 +30,14 @@ from reframe_testing.cli import invoke
 
 from .fetch_server import (
     FAKE_VERSION,
+    POSIX_ONLY,
     Archive,
     LocalServer,
+    archive_ext,
     fake_archive,
     foreign_platform,
-    local_server,
     sha256,
     write_manifest,
-)
-
-POSIX_ONLY = pytest.mark.skipif(
-    sys.platform == "win32" or host_platform() != "linux-x64",
-    reason="the fake Linux build runs only on a linux-x64 host",
 )
 
 
@@ -53,11 +47,6 @@ def assert_clean_failure(result: Result, code: int) -> list[str]:
     errors = [line for line in result.stderr.splitlines() if line.startswith("error: ")]
     assert errors, result.stderr
     return errors
-
-
-@pytest.fixture
-def server() -> Iterator[LocalServer]:
-    yield from local_server()
 
 
 @pytest.fixture
@@ -77,10 +66,6 @@ def fake(env: Path, fake_tools: ft.FakeTools, monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
     monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
     return fake_tools
-
-
-def _ext(platform: str) -> str:
-    return "zip" if platform == "windows-x64" else "tar.xz"
 
 
 def use_manifest(monkeypatch: pytest.MonkeyPatch, manifest: Path) -> None:
@@ -286,7 +271,7 @@ def test_unknown_build_and_platform_are_usage_errors(
         monkeypatch,
         write_manifest(
             tmp_path / "m.toml",
-            {"default": [Archive(f"https://example.invalid/a.{_ext(other)}", b"x", other)]},
+            {"default": [Archive(f"https://example.invalid/a.{archive_ext(other)}", b"x", other)]},
         ),
     )
     result = invoke("tools", "fetch", "--build", "nightly")
@@ -320,7 +305,7 @@ async def test_ctrl_c_stops_the_download(
 ) -> None:
     """Cancelling the task is what asyncio.run does on Ctrl+C."""
     other = foreign_platform()
-    ext = _ext(other)
+    ext = archive_ext(other)
     data = fake_archive(other, tmp_path / "work") + b"\0" * (2 << 20)
     route = server.add(f"/a.{ext}", data, delay=0.05)
     use_manifest(

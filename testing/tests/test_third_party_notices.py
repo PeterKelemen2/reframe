@@ -3,35 +3,23 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import itertools
 import json
 import re
 import shutil
-import sys
 from collections.abc import Mapping
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
 
+from reframe_testing.scripts import load_script
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = REPO_ROOT / "scripts" / "third-party-notices.py"
 SIDECAR = REPO_ROOT / "desktop" / "src-tauri" / "resources" / "sidecar"
 
 
-def _load_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("third_party_notices", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module  # dataclasses look the module up by name
-    spec.loader.exec_module(module)
-    return module
-
-
-tpn = _load_script()
+tpn = load_script("third-party-notices.py")
 
 needs_sidecar = pytest.mark.skipif(
     not (SIDECAR / "reframe-server").is_file(),

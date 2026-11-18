@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import importlib.util
 import io
 import os
 import stat
-import sys
 import tarfile
 import tomllib
 import urllib.error
@@ -17,29 +15,18 @@ import zipfile
 from collections.abc import Callable
 from email.message import Message
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
 
+from reframe_testing.scripts import load_script
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = REPO_ROOT / "scripts" / "fetch-tools.py"
 MANIFEST = REPO_ROOT / "tools" / "ffmpeg.toml"
 ROOT = "ffmpeg-test-linux64"
 
 
-def _load_script() -> ModuleType:
-    # The script name has a hyphen, so it cannot be imported by name.
-    spec = importlib.util.spec_from_file_location("fetch_tools", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module  # dataclasses look the module up by name
-    spec.loader.exec_module(module)
-    return module
-
-
-ft = _load_script()
+ft = load_script("fetch-tools.py")
 
 
 def _manifest_data() -> dict[str, Any]:

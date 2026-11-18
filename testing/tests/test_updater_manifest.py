@@ -4,18 +4,16 @@ it refuses before they reach a user."""
 from __future__ import annotations
 
 import base64
-import importlib.util
 import json
 import re
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
+from reframe_testing.scripts import load_script
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = REPO_ROOT / "scripts" / "updater-manifest.py"
 BASE_URL = "https://github.com/owner/reframe/releases/download/v1.1.0rc1"
 NSIS = "Reframe_1.1.0-rc.1_x64-setup.exe"
 
@@ -36,17 +34,7 @@ REAL_SIGNATURE = (
 REAL_KEY_ID = bytes.fromhex("D7312F832FCC9670")[::-1]
 
 
-def _load_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("updater_manifest", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module  # dataclasses look the module up by name
-    spec.loader.exec_module(module)
-    return module
-
-
-um = _load_script()
+um = load_script("updater-manifest.py")
 
 
 def _signature(key_id: bytes = REAL_KEY_ID, comment: str = "") -> str:
