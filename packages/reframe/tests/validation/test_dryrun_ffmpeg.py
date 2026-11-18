@@ -52,28 +52,59 @@ def _vp9(**video: object) -> JobSettings:
     )
 
 
+FILE, UNKNOWN = "encoder.custom_param_file", "encoder.custom_param_unknown"
+
+
 @pytest.mark.parametrize(
-    "job",
+    ("job", "code", "rest"),
     [
-        _job(custom_params="aq-mode=3:analysis-save=/home/u/victim.txt"),
-        _job(custom_params="csv=/home/u/log.csv"),
-        _job(encoder="libx264", custom_params="dump-yuv=/home/u/frames.yuv"),
-        _vp9(custom_params="vstats_file=/home/u/v.log"),
-        _vp9(custom_params="bogus=1"),
+        pytest.param(
+            _job(custom_params="aq-mode=3:analysis-save=/home/u/victim.txt"),
+            FILE,
+            "aq-mode=3",
+            id="analysis-save",
+        ),
+        pytest.param(_job(custom_params="csv=/home/u/log.csv"), FILE, "", id="csv"),
+        pytest.param(
+            _job(encoder="libx264", custom_params="dump-yuv=/home/u/frames.yuv"),
+            FILE,
+            "",
+            id="dump-yuv",
+        ),
+        pytest.param(_vp9(custom_params="vstats_file=/home/u/v.log"), FILE, "", id="vstats_file"),
+        pytest.param(_vp9(custom_params="bogus=1"), UNKNOWN, "", id="not-an-option"),
+        pytest.param(
+            _job(encoder="libx264", custom_params="cqm=/home/u/secret.cfg"), FILE, "", id="cqm"
+        ),
+        pytest.param(
+            _job(encoder="libx264", custom_params="nr=100:cqm=/home/u/matrix.cfg"),
+            FILE,
+            "nr=100",
+            id="cqm-after-nr",
+        ),
+        # x264 matches the names case-sensitively: a file named FLAT
+        pytest.param(_job(encoder="libx264", custom_params="cqm=FLAT"), FILE, "", id="cqm-FLAT"),
+        # x264 gets cqm=true: a file named true
+        pytest.param(_job(encoder="libx264", custom_params="nocqm=flat"), FILE, "", id="cqm-nocqm"),
+        pytest.param(
+            _job(encoder="libx264", custom_params="cqm=default"), FILE, "", id="cqm-default"
+        ),
     ],
-    ids=["analysis-save", "csv", "dump-yuv", "vstats_file", "not-an-option"],
 )
 async def test_a_refused_parameter_never_starts_ffmpeg(
-    job: JobSettings, monkeypatch: pytest.MonkeyPatch
+    job: JobSettings, code: str, rest: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     async def no_run(*args: Any, **kwargs: Any) -> RunResult:
         raise AssertionError("FFmpeg must not start")
 
     monkeypatch.setattr(dryrun, "run", no_run)
     issues = await dry_run(job, sc.make_source(), sc.make_caps(), sc.make_tools())
-    assert [(i.severity, i.path) for i in issues] == [(Severity.ERROR, "video.custom_params")]
-    assert issues[0].code in ("encoder.custom_param_file", "encoder.custom_param_unknown")
-    assert len(issues[0].fixes) == 1
+    assert [(i.code, i.severity, i.path) for i in issues] == [
+        (code, Severity.ERROR, "video.custom_params")
+    ]
+    (fix,) = issues[0].fixes
+    fixed = JobSettings.model_validate(apply_patch(job.model_dump(mode="json"), fix.patch))
+    assert fixed.video.custom_params == rest
 
 
 async def test_ffmpeg_runs_in_a_temporary_folder_that_is_removed(

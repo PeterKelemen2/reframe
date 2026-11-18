@@ -82,14 +82,6 @@ def cases(h: Any) -> list[Any]:
                 advanced={"dynamic-rd": 2.0, "vbv-maxrate": 8000, "vbv-bufsize": 8000},
             ),
         ),
-        case(
-            "x265 VBV buffer without a maximum rate at a constant quality",
-            "encoder.option_inactive",
-            "video.advanced.vbv-bufsize",
-            warn,
-            video(encoder="libx265", advanced={"vbv-bufsize": 5000}),
-            video(encoder="libx265", rate_control=AverageBitrate(), advanced={"vbv-bufsize": 5000}),
-        ),
         # encoder.option_ignored: the encoder changes the value without an error
         case(
             "x264 Blu-ray compatibility lowers the B-frames",

@@ -256,7 +256,7 @@ REFUSALS: list[Refusal] = [
             multitrack(setter(output__path=None))),
     Refusal("source without video", "no video stream", "source.no_video",
             source_without_video),
-    Refusal("video passthrough the container cannot hold", "cannot be copied into WebM",
+    Refusal("video passthrough the container cannot hold", "h264 video cannot be copied into WebM",
             "container.codec_unsupported",
             multitrack(both(setter(video__passthrough=True), subtitles()), container="webm",
                        audio="passthru")),
