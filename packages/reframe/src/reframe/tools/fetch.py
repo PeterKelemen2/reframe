@@ -753,15 +753,17 @@ def packaged_libva(roots: Sequence[Path], data_dir: Path) -> Path | None:
 
 def _libva_layout(libva: Path) -> dict[str, str | None]:
     """The libva libraries of the folder ``libva`` by name: the target of a link to another of
-    them, else ``None`` (copied as a file). :raises FetchError: a soname is missing."""
+    them, else ``None`` (copied as a file). :raises FetchError: a soname is missing, or links
+    loop or leave the folder."""
     names = {entry.name: entry for entry in libva.iterdir() if _LIBVA_FILE_RE.match(entry.name)}
     layout: dict[str, str | None] = {}
     for name, entry in sorted(names.items()):
+        _check_libva_links(libva, name)
         target = os.readlink(entry) if entry.is_symlink() else None
-        if target is not None and target in names and target != name:
+        if target is not None and target in names:
             layout[name] = target
         elif entry.is_file():
-            layout[name] = None  # a file, or a link that leaves the folder: its content
+            layout[name] = None  # a file, or a link to another file of the folder: its content
     while dangling := [name for name, target in layout.items() if target and target not in layout]:
         for name in dangling:
             del layout[name]
@@ -769,6 +771,24 @@ def _libva_layout(libva: Path) -> dict[str, str | None]:
         if soname not in layout:
             raise FetchError(f"the packaged libva in {libva} has no {soname}")
     return layout
+
+
+def _check_libva_links(libva: Path, name: str) -> None:
+    """:raises FetchError: the links from ``name`` loop or leave the folder ``libva``."""
+    chain = [name]
+    while (libva / chain[-1]).is_symlink():
+        target = os.readlink(libva / chain[-1])
+        if target in ("", ".", "..") or "/" in target or "\\" in target:
+            raise FetchError(
+                f"the packaged libva in {libva} is broken: the link {chain[-1]} -> {target!r} "
+                "leaves the folder"
+            )
+        if target in chain:
+            raise FetchError(
+                f"the packaged libva in {libva} is broken: its links loop: "
+                + " -> ".join([*chain, target])
+            )
+        chain.append(target)
 
 
 def libva_files(libva: Path, cancel: CancelToken | None = None) -> dict[str, str]:
@@ -783,7 +803,8 @@ def libva_files(libva: Path, cancel: CancelToken | None = None) -> dict[str, str
 
 def add_libva(root: Path, libva: Path) -> None:
     """Copy the libva libraries of the folder ``libva`` into ``root/lib``, each link as a link
-    (the layout of the bundled Linux build). :raises FetchError: a soname is missing."""
+    (the layout of the bundled Linux build). :raises FetchError: a soname is missing, or links
+    loop or leave the folder (nothing is copied)."""
     layout = _libva_layout(libva)
     lib = root / "lib"
     lib.mkdir(exist_ok=True)
@@ -1179,6 +1200,8 @@ async def _fetch_steps(
     native = target == host
     if not (native and target.startswith("linux")):
         libva = None
+    if libva is not None:
+        await asyncio.to_thread(_libva_layout, libva)  # a broken one fails before the download
     job = _Job(
         chosen,
         pbuild,

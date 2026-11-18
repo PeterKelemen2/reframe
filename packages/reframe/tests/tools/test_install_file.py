@@ -337,18 +337,88 @@ def test_add_libva_keeps_the_links_of_the_bundled_layout(tmp_path: Path) -> None
 
 
 @POSIX_ONLY
-def test_add_libva_copies_plain_files_and_links_that_leave_the_folder(tmp_path: Path) -> None:
+def test_add_libva_copies_plain_files(tmp_path: Path) -> None:
     libva = libva_folder(tmp_path / "libva", links=False)
-    (tmp_path / "elsewhere.so").write_bytes(b"libva-drm elsewhere")
-    (libva / "libva-drm.so.2").unlink()
-    (libva / "libva-drm.so.2").symlink_to(tmp_path / "elsewhere.so")
     root = tmp_path / "build"
     root.mkdir()
     add_libva(root, libva)
     lib = root / "lib"
     assert sorted(p.name for p in lib.iterdir()) == ["libva-drm.so.2", "libva.so.2"]
     assert not any(p.is_symlink() for p in lib.iterdir())
-    assert (lib / "libva-drm.so.2").read_bytes() == b"libva-drm elsewhere"
+    assert (lib / "libva-drm.so.2").read_bytes() == b"libva-drm 2.24"
+
+
+def _relink(libva: Path, name: str, target: str | Path) -> None:
+    (libva / name).unlink(missing_ok=True)
+    (libva / name).symlink_to(target)
+
+
+#: A packaged libva that is refused: its links (name, target; ``OUTSIDE``: a file next to the
+#: folder) and the error.
+OUTSIDE = "<outside>"
+BROKEN_LIBVA: dict[str, tuple[list[tuple[str, str]], str]] = {
+    "loop": (
+        [("libva.so.2.2400.0", "libva.so.2")],
+        r"its links loop: libva\.so\.2 -> libva\.so\.2\.2400\.0 -> libva\.so\.2",
+    ),
+    "self": (
+        [("libva-drm.so.2", "libva-drm.so.2")],
+        r"its links loop: libva-drm\.so\.2 -> libva-drm\.so\.2",
+    ),
+    "absolute": (
+        [("libva-drm.so.2", OUTSIDE)],
+        r"the link libva-drm\.so\.2 -> '/.*/elsewhere\.so' leaves the folder",
+    ),
+    "parent": (
+        [("libva-drm.so.2", "../elsewhere.so")],
+        r"the link libva-drm\.so\.2 -> '\.\./elsewhere\.so' leaves the folder",
+    ),
+    "through-another-link": (
+        [("libva.so.2.2400", "../elsewhere.so"), ("libva.so.2", "libva.so.2.2400")],
+        r"the link libva\.so\.2\.2400 -> '\.\./elsewhere\.so' leaves the folder",
+    ),
+}
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("case", sorted(BROKEN_LIBVA))
+def test_a_packaged_libva_whose_links_loop_or_leave_the_folder_is_refused(
+    tmp_path: Path, case: str
+) -> None:
+    libva = libva_folder(tmp_path / "libva")
+    outside = tmp_path / "elsewhere.so"
+    outside.write_bytes(b"libva-drm elsewhere")
+    links, message = BROKEN_LIBVA[case]
+    for name, target in links:
+        _relink(libva, name, outside if target == OUTSIDE else target)
+    root = tmp_path / "build"
+    root.mkdir()
+    with pytest.raises(FetchError, match=rf"^the packaged libva in {re.escape(str(libva))} is "
+                       rf"broken: {message}"):  # fmt: skip
+        add_libva(root, libva)
+    assert list(root.iterdir()) == []
+
+
+@POSIX_ONLY
+@pytest.mark.anyio
+async def test_a_broken_packaged_libva_fails_the_fetch_before_the_download(
+    tmp_path: Path, server: LocalServer, runner: Runner
+) -> None:
+    data = fake_archive("linux-x64", tmp_path / "work")
+    route = server.add(f"/{NAME}", data)
+    manifest = write_manifest(
+        tmp_path / "m.toml", {"default": [Archive(server.url(f"/{NAME}"), data, "linux-x64")]}
+    )
+    libva = libva_folder(tmp_path / "app" / "tools" / "libva")
+    _relink(libva, "libva.so.2.2400.0", "libva.so.2")
+    final, result = await runner.fetch(manifest, libva=libva)
+    assert final.state is TaskState.FAILED
+    assert final.error is not None
+    assert final.error.startswith(f"the packaged libva in {libva} is broken: its links loop")
+    assert result is None
+    assert route.requests == 0
+    assert not (runner.data_dir / "tools" / "ffmpeg").exists()
+    assert leftovers(runner.data_dir) == []
 
 
 @POSIX_ONLY
