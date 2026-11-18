@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowRight, Download, FolderCog, LoaderCircle, RefreshCw, Wrench } from '@lucide/vue'
+import { ArrowRight, FolderCog, LoaderCircle, RefreshCw, Undo2, Wrench } from '@lucide/vue'
 import Button from 'primevue/button'
 import ProgressBar from 'primevue/progressbar'
 import { computed, nextTick, ref, shallowRef } from 'vue'
@@ -11,6 +11,7 @@ import type { Schemas, ValidationIssue } from '@/api/types'
 import KeyValue from '@/components/base/KeyValue.vue'
 import StatusDot from '@/components/base/StatusDot.vue'
 import RefusalList from '@/components/settings/RefusalList.vue'
+import ToolBuildPicker from '@/components/settings/ToolBuildPicker.vue'
 import { resetOps, setByEnvironment, TOOL_NAMES, toolTone } from '@/components/settings/tools'
 import { useBundledTools } from '@/components/settings/useBundledTools'
 import { useSettingsStore } from '@/stores/settings'
@@ -48,11 +49,19 @@ const failing = computed(() => tools.value.filter((tool) => tool.status !== 'fou
 const setByEnv = computed(() => failing.value.filter(setByEnvironment))
 /** The server refuses tool paths from a browser; only the desktop app can choose one. */
 const desktop = computed(() => system.info?.mode === 'desktop')
-/** A bundled FFmpeg is used once no Settings path wins over it, after a download if needed. */
-const canBundle = computed(() => {
-  if (welcome.value || setByEnv.value.length > 0) return false
-  return canDownload.value || resetOps(TOOL_NAMES, settings.settings?.tools).length > 0
-})
+/** The offered builds, for a missing FFmpeg and every repair an override does not block. */
+const showBuilds = computed(() => !welcome.value && setByEnv.value.length === 0)
+/** A bundled build is there and works once the Settings paths that win over it are gone. */
+const canBundle = computed(
+  () =>
+    showBuilds.value &&
+    !canDownload.value &&
+    resetOps(TOOL_NAMES, settings.settings?.tools).length > 0,
+)
+/** A failed start-up download (`REFRAME_FFMPEG_BUILD`). */
+const serverProblems = computed(() =>
+  system.warnings.filter((warning) => warning.code.startsWith('tools.')),
+)
 const canChoosePath = computed(() => desktop.value && setByEnv.value.length === 0)
 const variables = computed(() =>
   formatList(
@@ -158,6 +167,16 @@ async function continueToWorkspace(): Promise<void> {
       </h1>
     </header>
     <p v-if="!welcome" class="first-run__reason" role="alert">{{ system.ffmpegProblem }}</p>
+    <section
+      v-if="!welcome && serverProblems.length > 0"
+      class="first-run__problems"
+      :aria-label="t('shell.firstRun.problems')"
+      data-field="server-problems"
+    >
+      <p v-for="(problem, index) in serverProblems" :key="index" class="first-run__problem">
+        {{ problem.message }}<template v-if="problem.detail">: {{ problem.detail }}</template>
+      </p>
+    </section>
     <p class="first-run__intro">
       {{ welcome ? t('shell.firstRun.welcomeIntro') : t('shell.firstRun.intro') }}
     </p>
@@ -182,6 +201,12 @@ async function continueToWorkspace(): Promise<void> {
       </KeyValue>
     </dl>
 
+    <template v-if="showBuilds">
+      <h2 class="first-run__subtitle">{{ t('shell.firstRun.builds') }}</h2>
+      <p class="first-run__intro">{{ t('shell.firstRun.buildsIntro') }}</p>
+      <ToolBuildPicker />
+    </template>
+
     <p v-if="note" class="first-run__note" data-field="note">{{ note }}</p>
     <RefusalList :issues="bundledIssues" />
     <div class="first-run__actions">
@@ -203,8 +228,7 @@ async function continueToWorkspace(): Promise<void> {
         @click="useBundled"
       >
         <template #icon>
-          <LoaderCircle v-if="fetching" class="first-run__spin" :size="18" aria-hidden="true" />
-          <Download v-else :size="18" aria-hidden="true" />
+          <Undo2 :size="18" aria-hidden="true" />
         </template>
       </FocusSafeButton>
       <Button
@@ -280,6 +304,20 @@ async function continueToWorkspace(): Promise<void> {
 .first-run__subtitle {
   margin: 0;
   font-size: var(--rf-font-size-lg);
+}
+
+.first-run__problems {
+  display: grid;
+  gap: var(--rf-space-1);
+  padding: var(--rf-space-3) var(--rf-space-4);
+  border: 1px solid var(--p-status-warn-border-color);
+  border-radius: var(--rf-radius-md);
+  background: var(--p-status-warn-background);
+}
+
+.first-run__problem {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .first-run__reason {

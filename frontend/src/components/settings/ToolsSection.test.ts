@@ -1,12 +1,13 @@
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { SystemInfo, TaskInfo } from '@/api/types'
+import type { EncoderStatus, SystemInfo, TaskInfo } from '@/api/types'
+import { platform } from '@/platform'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 import { useTasksStore } from '@/stores/tasks'
 
-import { mountSettings, refusal, systemInfo } from './testing'
+import { mountSettings, refusal, systemInfo, toolBuilds } from './testing'
 import ToolsSection from './ToolsSection.vue'
 
 const mounted: VueWrapper[] = []
@@ -14,6 +15,7 @@ const mounted: VueWrapper[] = []
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.replaceChildren()
+  vi.restoreAllMocks()
 })
 
 async function mountTools(info: SystemInfo, overrides: Record<string, string> = {}) {
@@ -39,13 +41,19 @@ async function mountTools(info: SystemInfo, overrides: Record<string, string> = 
   }
 }
 
-function fetchEnds(system: ReturnType<typeof useSystemStore>, state: TaskInfo['state']) {
-  system.fetchTools = vi.fn<() => Promise<void>>(async () => {
-    system.toolsFetch = 'fetch-1'
-    useTasksStore().tasks = {
-      'fetch-1': { id: 'fetch-1', kind: 'tools.fetch', state } as TaskInfo,
-    }
-    system.toolsFetch = null
+function ended(state: TaskInfo['state'], extra: Partial<TaskInfo> = {}): TaskInfo {
+  return { id: 'fetch-1', kind: 'tools_fetch', state, ...extra } as TaskInfo
+}
+
+function fetchEnds(
+  system: ReturnType<typeof useSystemStore>,
+  state: TaskInfo['state'],
+  extra: Partial<TaskInfo> = {},
+) {
+  system.fetchTools = vi.fn<(build?: string) => Promise<TaskInfo>>(async () => {
+    const task = ended(state, extra)
+    useTasksStore().tasks = { 'fetch-1': task }
+    return task
   })
 }
 
@@ -90,7 +98,8 @@ describe('the Tools section', () => {
     expect(row('ffmpeg').find('[data-field="note"]').text()).toContain('REFRAME_FFMPEG')
     expect(row('ffmpeg').find('[data-field="origin"]').text()).toContain('REFRAME_FFMPEG')
     expect(row('ffmpeg').find('[data-action="remove"]').exists()).toBe(false)
-    expect(wrapper.find('[data-action="fetch-bundled"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-action="download"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-action="install-file"]').attributes('disabled')).toBeDefined()
   })
 
   it('keeps an ffprobe found next to an overridden ffmpeg editable', async () => {
@@ -205,15 +214,35 @@ describe('the Tools section', () => {
     expect(row('ffmpeg').find('[data-field="outcome"]').exists()).toBe(false)
   })
 
-  describe('Use bundled FFmpeg', () => {
-    it('downloads FFmpeg, then removes the Settings paths that would still win', async () => {
+  describe('the build picker', () => {
+    it('lists the offered builds with summary, size and licence, the default chosen', async () => {
+      const { wrapper } = await mountTools(systemInfo({ mode: 'desktop' }))
+      const builds = wrapper.findAll('[data-build]').map((found) => found.attributes('data-build'))
+      expect(builds).toEqual(['default', 'compat'])
+      const first = wrapper.find('[data-build="default"]')
+      expect(first.text()).toContain('Recommended')
+      expect(first.text()).toContain('NVIDIA NVENC needs driver 610')
+      expect(first.find('[data-field="facts"]').text()).toBe(
+        'FFmpeg 9.0.2 · 65.5 MiB download · licence GPL-3.0-or-later',
+      )
+      expect(first.find('details a').exists()).toBe(false)
+      const details = first.find('details').element as HTMLDetailsElement
+      details.open = true
+      details.dispatchEvent(new Event('toggle'))
+      await flushPromises()
+      expect(first.find('details a').attributes('href')).toContain('github.com/FFmpeg/FFmpeg')
+      expect((first.find('input[type="radio"]').element as HTMLInputElement).checked).toBe(true)
+    })
+
+    it('downloads the chosen build, then removes the Settings paths that would still win', async () => {
       const { wrapper, server, system } = await mountTools(systemInfo({ mode: 'desktop' }), {
         ffmpeg: '/opt/ff/ffmpeg',
       })
       fetchEnds(system, 'done')
-      await wrapper.find('[data-action="fetch-bundled"]').trigger('click')
+      await wrapper.find('[data-build="compat"] input[type="radio"]').setValue(true)
+      await wrapper.find('[data-action="download"]').trigger('click')
       await flushPromises()
-      expect(system.fetchTools).toHaveBeenCalledTimes(1)
+      expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('compat')
       expect(server.patches).toEqual([[{ op: 'replace', path: '/tools/ffmpeg', value: null }]])
       expect(system.rescanTools).toHaveBeenCalledTimes(1)
     })
@@ -223,9 +252,47 @@ describe('the Tools section', () => {
         ffmpeg: '/opt/ff/ffmpeg',
       })
       fetchEnds(system, 'failed')
-      await wrapper.find('[data-action="fetch-bundled"]').trigger('click')
+      await wrapper.find('[data-action="download"]').trigger('click')
       await flushPromises()
       expect(server.patches).toEqual([])
+      expect(wrapper.find('[data-field="offline"]').exists()).toBe(false)
+    })
+
+    it('says that the download server cannot be reached and points to a file or a path', async () => {
+      const { wrapper, system } = await mountTools(systemInfo({ mode: 'desktop' }))
+      fetchEnds(system, 'failed', { error_code: 'tools.fetch_offline' })
+      await wrapper.find('[data-action="download"]').trigger('click')
+      await flushPromises()
+      const offline = wrapper.find('[data-field="offline"]')
+      expect(offline.attributes('role')).toBe('alert')
+      expect(offline.text()).toContain('The download server cannot be reached')
+      expect(offline.text()).toContain('archive file')
+      expect(offline.text()).toContain('path')
+    })
+
+    it('installs an archive file that the file dialog picks', async () => {
+      const { wrapper, system } = await mountTools(systemInfo({ mode: 'web' }))
+      vi.spyOn(platform, 'pickFiles').mockResolvedValue(['/media/ffmpeg-n9.0.2-linux64.tar.xz'])
+      system.installToolsFile = vi.fn<(path: string) => Promise<TaskInfo>>(async () =>
+        ended('done'),
+      )
+      await wrapper.find('[data-action="install-file"]').trigger('click')
+      await flushPromises()
+      expect(platform.pickFiles).toHaveBeenCalledExactlyOnceWith({
+        multiple: false,
+        filters: ['.xz', '.zip'],
+      })
+      expect(system.installToolsFile).toHaveBeenCalledExactlyOnceWith(
+        '/media/ffmpeg-n9.0.2-linux64.tar.xz',
+      )
+    })
+
+    it('says when the installed build is not the one used', async () => {
+      const { wrapper, system } = await mountTools(systemInfo({ mode: 'web' }))
+      fetchEnds(system, 'done', { result: { ffmpeg: '/data/tools/ffmpeg/bin/ffmpeg' } })
+      await wrapper.find('[data-action="download"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-field="shadowed"]').text()).toContain('/usr/bin/ffmpeg')
     })
 
     it('shows the download progress of its task', async () => {
@@ -270,7 +337,7 @@ describe('the Tools section', () => {
     const bundledFfmpeg = { bundled: true, origin: 'bundled' as const }
 
     it('removes the Settings paths of ffmpeg and ffprobe together, with no download', async () => {
-      const { wrapper, row, server, system } = await mountTools(
+      const { row, server, system } = await mountTools(
         systemInfo(
           { mode: 'desktop' },
           {
@@ -281,7 +348,6 @@ describe('the Tools section', () => {
         { ffmpeg: '/usr/bin/ffmpeg', ffprobe: '/usr/bin/ffprobe' },
       )
       fetchEnds(system, 'done')
-      expect(wrapper.find('[data-action="fetch-bundled"]').exists()).toBe(false)
       expect(row('ffmpeg').find('[data-action="remove"]').exists()).toBe(false)
 
       await row('ffprobe').find('[data-action="use-bundled"]').trigger('click')
@@ -367,7 +433,7 @@ describe('the Tools section', () => {
       it('is downloaded again in web mode, where the data folder holds it', async () => {
         const { wrapper, server, system } = await mountTools(systemInfo({ mode: 'web' }, damaged))
         fetchEnds(system, 'done')
-        await wrapper.find('[data-action="fetch-bundled"]').trigger('click')
+        await wrapper.find('[data-action="download"]').trigger('click')
         await flushPromises()
         expect(system.fetchTools).toHaveBeenCalledTimes(1)
         expect(server.patches).toEqual([])
@@ -382,22 +448,10 @@ describe('the Tools section', () => {
           { ffmpeg: '/opt/x/ffmpeg' },
         )
         fetchEnds(system, 'done')
-        await wrapper.find('[data-action="fetch-bundled"]').trigger('click')
+        await wrapper.find('[data-action="download"]').trigger('click')
         await flushPromises()
         expect(system.fetchTools).toHaveBeenCalledTimes(1)
         expect(server.patches).toEqual([[{ op: 'replace', path: '/tools/ffmpeg', value: null }]])
-      })
-
-      it('is not offered in web mode once the bundled build works', async () => {
-        const { wrapper } = await mountTools(
-          systemInfo({ mode: 'web' }, { ffmpeg: bundledFfmpeg, ffprobe: bundledFfmpeg }),
-        )
-        expect(wrapper.find('[data-action="fetch-bundled"]').exists()).toBe(false)
-      })
-
-      it("is not offered in the desktop app: the app's own folder is searched first", async () => {
-        const { wrapper } = await mountTools(systemInfo({ mode: 'desktop' }, damaged))
-        expect(wrapper.find('[data-action="fetch-bundled"]').exists()).toBe(false)
       })
     })
 
@@ -414,5 +468,57 @@ describe('the Tools section', () => {
       )
       expect(system.rescanTools).not.toHaveBeenCalled()
     })
+  })
+})
+
+function status(id: string, extra: Partial<EncoderStatus>): EncoderStatus {
+  return { id, state: 'unavailable', hardware: true, build_mismatch: false, ...extra }
+}
+
+describe('the installed build and the build mismatch', () => {
+  it('names the installed build and offers the pinned one when it is outdated', async () => {
+    const { wrapper, system, server } = await mountTools(systemInfo({ mode: 'desktop' }))
+    server.builds = toolBuilds({
+      installed: { name: 'default', version: 'n9.0.1-old', outdated: true },
+    })
+    await system.loadBuilds()
+    await flushPromises()
+    expect(wrapper.find('[data-field="installed-build"]').text()).toContain(
+      'Installed build: Recommended (default), FFmpeg n9.0.1-old',
+    )
+    expect(wrapper.find('[data-field="outdated"]').text()).toContain(
+      'This release pins another version of the build default.',
+    )
+    expect(wrapper.find('[data-build="default"] [data-field="installed"]').exists()).toBe(true)
+    fetchEnds(system, 'done')
+    await wrapper.find('[data-action="download-pinned"]').trigger('click')
+    await flushPromises()
+    expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('default')
+  })
+
+  it('names each encoder that another build can make available, with its reason', async () => {
+    const { wrapper, system } = await mountTools(systemInfo({ mode: 'desktop' }))
+    system.capabilities = {
+      detecting: false,
+      encoders: {
+        hevc_nvenc: status('hevc_nvenc', {
+          reason: 'NVIDIA driver too old: NVENC needs driver 610.00 or newer',
+          build_mismatch: true,
+        }),
+        h264_qsv: status('h264_qsv', { reason: 'No Intel GPU' }),
+      },
+    } as never
+    await flushPromises()
+    const notice = wrapper.find('[data-field="mismatch-notice"]')
+    expect(notice.text()).toContain('need newer system software than this FFmpeg build expects')
+    expect(notice.findAll('[data-encoder]').map((item) => item.text())).toEqual([
+      'hevc_nvenc: NVIDIA driver too old: NVENC needs driver 610.00 or newer',
+    ])
+  })
+
+  it('shows no notice without a build mismatch', async () => {
+    const { wrapper } = await mountTools(systemInfo())
+    expect(wrapper.find('[data-field="mismatch-notice"]').exists()).toBe(false)
+    expect(wrapper.find('[data-field="installed-build"]').exists()).toBe(false)
   })
 })

@@ -103,6 +103,7 @@ describe('availabilityOf', () => {
       tone: 'off',
       selectable: true,
       reason: 'Not tested: off',
+      buildMismatch: false,
     })
   })
 
@@ -112,7 +113,18 @@ describe('availabilityOf', () => {
       tone: 'error',
       selectable: false,
       reason: 'No driver',
+      buildMismatch: false,
     })
+  })
+
+  it('marks an encoder that another FFmpeg build can make available', () => {
+    const mismatch = status('unavailable', { reason: 'driver too old', build_mismatch: true })
+    expect(availabilityOf(mismatch, settled)).toMatchObject({
+      kind: 'unavailable',
+      buildMismatch: true,
+    })
+    const rechecking = snapshot({ from_cache: true, detecting: true })
+    expect(availabilityOf(mismatch, rechecking).buildMismatch).toBe(false)
   })
 
   it('refuses an encoder whose check failed', () => {
