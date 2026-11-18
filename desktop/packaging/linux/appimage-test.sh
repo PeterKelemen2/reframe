@@ -46,7 +46,7 @@ docker run --rm \
         # every desktop has them, a bare container does not.
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
             xvfb dbus jq curl procps ca-certificates \
-            libdrm2 libegl1 libexpat1 libfontconfig1 libfreetype6 libfribidi0 libgbm1 libgl1 \
+            libdrm2 libegl1 libexpat1 libfontconfig1 libfreetype6 libfribidi0 libgbm1 libgl1 libgles2 \
             libharfbuzz0b libwayland-client0 libx11-6 libx11-xcb1 libxcb1 > /dev/null 2>&1
         [ ! -e /dev/fuse ] && echo "-- /dev/fuse: none"
         Xvfb :99 -screen 0 1600x1000x24 -nolisten tcp > /dev/null 2>&1 &

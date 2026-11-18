@@ -82,19 +82,22 @@ jq -e ".mode == \"desktop\"" "$work/system.json" > /dev/null \
 ok "the sidecar $server answers on port $port: mode desktop, no FFmpeg in the AppImage, its libva in $libva"
 if [ -n "${FFMPEG_ARCHIVE:-}" ]; then
     api() {
-        curl -fsS -H "Authorization: Bearer $token" -H 'Content-Type: application/json' "$@"
+        curl -sS --fail-with-body -H "Authorization: Bearer $token" \
+            -H 'Content-Type: application/json' "$@"
     }
-    task=$(api -d "$(jq -cn --arg path "$FFMPEG_ARCHIVE" '{path: $path}')" \
-        "http://127.0.0.1:$port/api/system/tools/install-file" | jq -r .task_id) \
-        || { stop; fail "POST /api/system/tools/install-file"; }
+    api -d "$(jq -cn --arg path "$FFMPEG_ARCHIVE" '{path: $path}')" \
+        "http://127.0.0.1:$port/api/system/tools/install-file" > "$work/install.json" \
+        || { stop; fail "POST /api/system/tools/install-file: $(cat "$work/install.json")"; }
+    task=$(jq -r .task_id "$work/install.json")
     i=0
-    until state=$(api "http://127.0.0.1:$port/api/tasks/$task" | jq -r .state) \
+    until api "http://127.0.0.1:$port/api/tasks/$task" > "$work/task.json" 2>> "$work/task.err" \
+        && state=$(jq -r .state "$work/task.json") \
         && [ "$state" != queued ] && [ "$state" != running ]; do
         i=$((i + 1))
-        [ $i -le 600 ] || { stop; fail "the file install did not end in 120 s"; }
+        [ $i -le 600 ] || { stop; fail "the file install did not end in 120 s: $(cat "$work/install.json" "$work/task.json"; tail -n 2 "$work/task.err" 2> /dev/null)"; }
         sleep 0.2
     done
-    [ "$state" = done ] || { stop; fail "the file install ended $state: $(api "http://127.0.0.1:$port/api/tasks/$task" | jq -c '{error, error_code}')"; }
+    [ "$state" = done ] || { stop; fail "the file install ended $state: $(jq -c '{error, error_code}' "$work/task.json")"; }
     installed=$REFRAME_DATA_DIR/tools/ffmpeg
     for library in libva.so.2 libva-drm.so.2; do
         cmp "$libva/$library" "$installed/lib/$library" || { stop; fail "$installed/lib/$library is not the AppImage's"; }
@@ -109,5 +112,8 @@ if [ -n "$screenshot" ]; then
     sleep 3
     spectacle -b -n -f -o "$screenshot" > /dev/null 2>&1 && ok "screenshot $screenshot" || echo "-- no screenshot"
 fi
+# A webview that cannot start ends the app, and the sidecar with it: the stop below would pass.
+kill -0 "$(jq -r .pid "$REFRAME_DATA_DIR/server.json")" 2> /dev/null \
+    || { cat "$work/app.log"; stop; fail "the app ended before it was stopped"; }
 stop
 ok "the app and every process it started ended"
