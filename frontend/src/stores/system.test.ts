@@ -47,6 +47,17 @@ function encoder(id: string, state: EncoderStatus['state'], checked_at = 't1'): 
   return { id, state, hardware: false, build_mismatch: false, checked_at }
 }
 
+/** A download task that could not reach the download server. */
+function offline(id: string): TaskInfo {
+  return {
+    id,
+    kind: 'tools_fetch',
+    state: 'failed',
+    error: 'cannot reach the download server github.com',
+    error_code: 'tools.fetch_offline',
+  }
+}
+
 function capabilities(detecting: boolean, ...encoders: EncoderStatus[]): CapabilitySnapshot {
   return {
     encoders: Object.fromEntries(encoders.map((status) => [status.id, status])),
@@ -266,7 +277,35 @@ describe('the system store', () => {
     expect(store.builds?.installed?.name).toBe('compat')
   })
 
-  it('installs an archive file, and leaves an offline download to the screen without a toast', async () => {
+  it('toasts a download that cannot reach the server unless the caller shows it', async () => {
+    const store = useSystemStore()
+    const tasks = useTasksStore()
+    let next = 0
+    server.on(
+      'POST /api/system/tools/fetch',
+      () => new Response(JSON.stringify({ task_id: `f${++next}` }), { status: 202 }),
+    )
+    server.on('GET /api/system/tools/builds', { builds: [], installed: null })
+
+    const toasted = store.fetchTools('default')
+    await settle()
+    tasks.onTaskDone({ type: 'task.done', task: offline('f1') })
+    await toasted
+    expect(useToastStore().items).toEqual([
+      expect.objectContaining({
+        severity: 'error',
+        detail: 'cannot reach the download server github.com',
+      }),
+    ])
+
+    const shown = store.fetchTools('default', { showsOffline: true })
+    await settle()
+    tasks.onTaskDone({ type: 'task.done', task: offline('f2') })
+    expect((await shown).error_code).toBe('tools.fetch_offline')
+    expect(useToastStore().items).toHaveLength(1)
+  })
+
+  it('installs an archive file as the chosen build; a download without a build sends none', async () => {
     const store = useSystemStore()
     const tasks = useTasksStore()
     server.on(
@@ -278,24 +317,17 @@ describe('the system store', () => {
       () => new Response(JSON.stringify({ task_id: 'f2' }), { status: 202 }),
     )
     server.on('GET /api/system/tools/builds', { builds: [], installed: null })
-    const installing = store.installToolsFile('/media/ffmpeg.tar.xz')
+    const installing = store.installToolsFile('/media/ffmpeg.tar.xz', 'compat')
     await settle()
-    expect(server.requests.at(-1)?.body).toEqual({ path: '/media/ffmpeg.tar.xz' })
+    expect(server.requests.at(-1)?.body).toEqual({ path: '/media/ffmpeg.tar.xz', build: 'compat' })
     tasks.onTaskDone({ type: 'task.done', task: { id: 'i1', kind: 'tools_fetch', state: 'done' } })
     expect((await installing).state).toBe('done')
 
     const fetching = store.fetchTools()
     await settle()
     expect(server.requests.at(-1)?.body ?? null).toBeNull()
-    const offline: TaskInfo = {
-      id: 'f2',
-      kind: 'tools_fetch',
-      state: 'failed',
-      error: 'no network',
-      error_code: 'tools.fetch_offline',
-    }
-    tasks.onTaskDone({ type: 'task.done', task: offline })
-    expect((await fetching).error_code).toBe('tools.fetch_offline')
+    tasks.onTaskDone({ type: 'task.done', task: { id: 'f2', kind: 'tools_fetch', state: 'done' } })
+    expect((await fetching).state).toBe('done')
     expect(useToastStore().items).toEqual([])
   })
 

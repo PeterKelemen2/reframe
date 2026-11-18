@@ -124,7 +124,7 @@ describe('the first-run screen', () => {
     await wrapper.find('[data-action="download"]').trigger('click')
     await flushPromises()
 
-    expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('default')
+    expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('default', { showsOffline: true })
     expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('42')
     expect(wrapper.find('.first-run__check').attributes('disabled')).toBeDefined()
     system.toolsFetch = null
@@ -407,7 +407,7 @@ describe('the offered FFmpeg builds', () => {
     const { shown } = useFirstRun()
     expect(shown.value).toBe(true)
     const archive = '/media/ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-shared-9.0.tar.xz'
-    system.installToolsFile = vi.fn<(path: string) => Promise<TaskInfo>>(async () => {
+    system.installToolsFile = vi.fn<typeof system.installToolsFile>(async () => {
       system.info = info({ origin: 'bundled', bundled: true }, { origin: 'bundled' }, 'web')
       return ended('done')
     })
@@ -417,7 +417,9 @@ describe('the offered FFmpeg builds', () => {
     expect(request?.filters).toEqual(['xz', 'zip'])
     finish(request!, [archive])
     await flushPromises()
-    expect(system.installToolsFile).toHaveBeenCalledExactlyOnceWith(archive)
+    expect(system.installToolsFile).toHaveBeenCalledExactlyOnceWith(archive, undefined, {
+      showsOffline: true,
+    })
     expect(system.ffmpegProblem).toBeNull()
     expect(shown.value).toBe(false)
   })

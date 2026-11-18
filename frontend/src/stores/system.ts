@@ -32,6 +32,11 @@ export type ToolBuilds = Schemas['ToolBuilds']
 /** The `error_code` of a download that cannot reach the download server. */
 export const FETCH_OFFLINE = 'tools.fetch_offline'
 
+export interface ToolsTaskOptions {
+  /** The caller shows a `tools.fetch_offline` failure itself, so it is no toast. */
+  showsOffline?: boolean
+}
+
 /** The server's state: auth, tools, encoders, definitions, languages, the event connection. */
 export const useSystemStore = defineStore('system', () => {
   const tasksStore = useTasksStore()
@@ -153,10 +158,13 @@ export const useSystemStore = defineStore('system', () => {
     languages.value = unwrap(list).languages
   }
 
-  /** A failed task is a toast, except the offline download: the screen that started it says so. */
-  async function ended(taskId: string): Promise<TaskInfo> {
+  /** A failed task is a toast, except an offline download whose caller `showsOffline` itself. */
+  async function ended(
+    taskId: string,
+    { showsOffline = false }: ToolsTaskOptions = {},
+  ): Promise<TaskInfo> {
     const task = await tasksStore.wait(taskId)
-    if (task.state === 'failed' && task.error_code !== FETCH_OFFLINE) {
+    if (task.state === 'failed' && !(showsOffline && task.error_code === FETCH_OFFLINE)) {
       useToastStore().push({
         severity: 'error',
         summary: text('api.taskFailed', { kind: task.kind }),
@@ -188,12 +196,15 @@ export const useSystemStore = defineStore('system', () => {
     builds.value = unwrap(await api.GET('/api/system/tools/builds'))
   }
 
-  async function toolsTask(start: () => Promise<string>): Promise<TaskInfo> {
+  async function toolsTask(
+    start: () => Promise<string>,
+    options: ToolsTaskOptions,
+  ): Promise<TaskInfo> {
     const taskId = await start()
     toolsFetch.value = taskId
     let task: TaskInfo
     try {
-      task = await ended(taskId)
+      task = await ended(taskId, options)
     } finally {
       if (toolsFetch.value === taskId) toolsFetch.value = null
     }
@@ -202,19 +213,23 @@ export const useSystemStore = defineStore('system', () => {
   }
 
   /** Downloads an offered FFmpeg build (the server's default without `build`); the ended task. */
-  async function fetchTools(build?: string): Promise<TaskInfo> {
+  async function fetchTools(build?: string, options: ToolsTaskOptions = {}): Promise<TaskInfo> {
     return toolsTask(async () => {
       const body = build === undefined ? null : { build }
       return unwrap(await api.POST('/api/system/tools/fetch', { body })).task_id
-    })
+    }, options)
   }
 
   /** Installs an FFmpeg archive file on the server's disk; the ended task. */
-  async function installToolsFile(path: string, build?: string): Promise<TaskInfo> {
+  async function installToolsFile(
+    path: string,
+    build?: string,
+    options: ToolsTaskOptions = {},
+  ): Promise<TaskInfo> {
     return toolsTask(async () => {
       const body = build === undefined ? { path } : { path, build }
       return unwrap(await api.POST('/api/system/tools/install-file', { body })).task_id
-    })
+    }, options)
   }
 
   function onCapabilitiesChanged(event: EventOf<'capabilities.changed'>): void {

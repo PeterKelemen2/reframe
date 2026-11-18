@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { ApiError } from '@/api/client'
 import type { TaskInfo, ValidationIssue } from '@/api/types'
 import { useSettingsStore } from '@/stores/settings'
-import { FETCH_OFFLINE, useSystemStore } from '@/stores/system'
+import { FETCH_OFFLINE, type ToolsTaskOptions, useSystemStore } from '@/stores/system'
 import { taskEnded, useTasksStore } from '@/stores/tasks'
 
 import { bundledFfmpegDamaged, resetOps, TOOL_NAMES, type ToolInfo, type ToolName } from './tools'
@@ -86,9 +86,14 @@ export function useBundledTools() {
   }
 
   /** Downloads the offered build `build`, or installs the archive file at `path`. */
-  async function install(source: { build: string } | { path: string }): Promise<InstallOutcome> {
+  async function install(
+    source: { build: string } | { path: string },
+    options: ToolsTaskOptions = {},
+  ): Promise<InstallOutcome> {
     const task = await quietly(() =>
-      'path' in source ? system.installToolsFile(source.path) : system.fetchTools(source.build),
+      'path' in source
+        ? system.installToolsFile(source.path, undefined, options)
+        : system.fetchTools(source.build, options),
     )
     if (task?.state !== 'done') {
       return {

@@ -6,6 +6,7 @@ import { platform } from '@/platform'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 import { useTasksStore } from '@/stores/tasks'
+import { useToastStore } from '@/stores/toasts'
 
 import { mountSettings, refusal, systemInfo, toolBuilds } from './testing'
 import ToolsSection from './ToolsSection.vue'
@@ -265,7 +266,7 @@ describe('the Tools section', () => {
       await wrapper.find('[data-build="compat"] input[type="radio"]').setValue(true)
       await wrapper.find('[data-action="download"]').trigger('click')
       await flushPromises()
-      expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('compat')
+      expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('compat', { showsOffline: true })
       expect(server.patches).toEqual([[{ op: 'replace', path: '/tools/ffmpeg', value: null }]])
       expect(system.rescanTools).toHaveBeenCalledTimes(1)
     })
@@ -296,9 +297,7 @@ describe('the Tools section', () => {
     it('installs an archive file that the file dialog picks', async () => {
       const { wrapper, system } = await mountTools(systemInfo({ mode: 'web' }))
       vi.spyOn(platform, 'pickFiles').mockResolvedValue(['/media/ffmpeg-n9.0.2-linux64.tar.xz'])
-      system.installToolsFile = vi.fn<(path: string) => Promise<TaskInfo>>(async () =>
-        ended('done'),
-      )
+      system.installToolsFile = vi.fn<typeof system.installToolsFile>(async () => ended('done'))
       await wrapper.find('[data-action="install-file"]').trigger('click')
       await flushPromises()
       expect(platform.pickFiles).toHaveBeenCalledExactlyOnceWith({
@@ -307,6 +306,8 @@ describe('the Tools section', () => {
       })
       expect(system.installToolsFile).toHaveBeenCalledExactlyOnceWith(
         '/media/ffmpeg-n9.0.2-linux64.tar.xz',
+        undefined,
+        { showsOffline: true },
       )
     })
 
@@ -532,7 +533,38 @@ describe('the installed build and the build mismatch', () => {
     fetchEnds(system, 'done')
     await wrapper.find('[data-action="download-pinned"]').trigger('click')
     await flushPromises()
-    expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('default')
+    expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('default', {})
+  })
+
+  it('toasts a download of the pinned build that cannot reach the server', async () => {
+    const { wrapper, system, server } = await mountTools(systemInfo({ mode: 'desktop' }))
+    server.builds = toolBuilds({
+      installed: { name: 'default', version: 'n9.0.1-old', outdated: true },
+    })
+    server.on(
+      'POST /api/system/tools/fetch',
+      () => new Response(JSON.stringify({ task_id: 'o1' }), { status: 202 }),
+    )
+    server.on('GET /api/system', () => systemInfo({ mode: 'desktop' }))
+    await system.loadBuilds()
+    await flushPromises()
+    await wrapper.find('[data-action="download-pinned"]').trigger('click')
+    await flushPromises()
+    const error = 'cannot reach the download server github.com (Connection refused)'
+    useTasksStore().onTaskDone({
+      type: 'task.done',
+      task: {
+        id: 'o1',
+        kind: 'tools_fetch',
+        state: 'failed',
+        error,
+        error_code: 'tools.fetch_offline',
+      },
+    })
+    await flushPromises()
+    expect(useToastStore().items).toEqual([
+      expect.objectContaining({ severity: 'error', detail: error }),
+    ])
   })
 
   it('names each encoder that another build can make available, with its reason', async () => {

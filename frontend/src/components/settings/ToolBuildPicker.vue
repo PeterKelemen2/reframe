@@ -83,7 +83,7 @@ async function run(
   issues.value = []
   shadowedBy.value = null
   try {
-    const outcome = await install(source)
+    const outcome = await install(source, { showsOffline: true })
     offline.value = outcome.offline
     issues.value = outcome.issues
     shadowedBy.value = outcome.shadowedBy
