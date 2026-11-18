@@ -25,7 +25,7 @@ LOST packages/reframe/src/reframe/platform/power.py: lines [495] branches []
 TOTAL LOST: 1
 ```
 
-`PowerService.countdown` was covered only by `test_the_deadline_uses_the_wall_clock`, so that test was restored.
+`PowerService.countdown` was covered only by `test_defaults`, so that test was restored (Q-7.6 later merged it into `test_the_deadline_uses_the_wall_clock`).
 
 After that the gate showed losses only in `capabilities/` (detect.py, parse.py, service.py:357).
 The background capability detection that `Reframe.create` starts in the facade and CLI fetch

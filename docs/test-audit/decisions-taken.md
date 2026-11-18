@@ -211,6 +211,15 @@ a time with 4 xdist workers each (as D-2).
 
 The Q-6 area files (`docs/simplify/areas/`) name tests as guards. Where a Q-7 package deletes or
 merges such a test, the line names the keeper, also when the finding does not ask for the edit
-(TVL-05 in `validation.md`, TPM-05 in `probe-metadata.md`). The trim reports of 2026-10-17
-(`docs/test-trim-reports/`) stay as written: they are reports of what that trim did, and V2's
-note on TVL-05's test already says it may be deleted.
+(TVL-05 in `validation.md`, TPM-05 in `probe-metadata.md`). A trim report of 2026-10-17
+(`docs/test-trim-reports/`) changes only where a finding names the line (R.md for TCD-01 and
+TCD-03, T.md for TTP-05), as plan.md's rules say; where the line tells what that trim did, the
+old name stays and a note names the keeper (T.md line 28). V2's line on TVL-05's test stays: the
+finding does not name it, and it already says the test may be deleted.
+
+### D-22 A merge keeps an assertion that another test also makes
+
+TCL-01's verdict says the exit code of the deleted `test_no_nvidia_driver` is also checked by
+`test_first_run_checks_then_lists_every_encoder`. The package carried `assert result.exit_code ==
+EXIT_OK` into the keeper anyway; the review flagged it as a change no finding names. Kept: the
+plan's rule is that a merge keeps every assertion, and the line only makes the keeper stricter.
