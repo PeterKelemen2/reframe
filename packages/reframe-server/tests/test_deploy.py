@@ -120,14 +120,25 @@ async def test_the_health_check_asks_a_route_that_answers_without_a_login(
     assert response.status_code == 200
 
 
-def test_the_image_puts_ffmpeg_where_discovery_finds_the_bundled_build() -> None:
-    ffmpeg = copied_from("tools")
-    environ = {paths.DATA_DIR_ENV: "/data"}
-    roots = paths.bundled_tool_roots(environ=environ, frozen=False, platform="linux")
+def test_the_image_has_no_ffmpeg_and_a_download_lands_in_the_data_mount() -> None:
+    """A build downloaded in the container must survive a new container: in the bind mount."""
+    code = [line for line in DOCKERFILE.read_text("utf-8").splitlines() if not line.startswith("#")]
+    assert not re.search(r"ffmpeg|ffprobe|fetch-tools", "\n".join(code), re.IGNORECASE)
+    assert not any(rest.startswith("--from=tools ") for keyword, rest in instructions())
+    # Without the CA certificates the download's TLS check fails.
+    assert any(
+        keyword == "RUN" and re.search(r"\bca-certificates=", rest)
+        for keyword, rest in instructions()
+    )
 
-    assert ffmpeg.name == paths.BUNDLED_SUBDIRS["ffmpeg"]
-    assert ffmpeg.parent in roots
-    assert roots.index(ffmpeg.parent) < roots.index(paths.data_dir(environ) / "tools")
+    environ = {paths.DATA_DIR_ENV: image_env()["REFRAME_DATA_DIR"]}
+    download = paths.data_dir(environ) / "tools" / paths.BUNDLED_SUBDIRS["ffmpeg"]
+    mounted = re.findall(r"^ +- [^\s:#]+:(/[^\s:]+)", COMPOSE.read_text("utf-8"), re.M)
+
+    assert download.parent in paths.bundled_tool_roots(
+        environ=environ, frozen=False, platform="linux"
+    )
+    assert any(download.is_relative_to(folder) for folder in mounted)
 
 
 FAKE_TOOLS = {

@@ -1,10 +1,13 @@
 /**
- * The desktop smoke test: the release app (frozen sidecar, bundled tools) driven through
- * `tauri-driver`, as a user would use it, from the start to the quit.
+ * The desktop smoke test: the release app (frozen sidecar, no FFmpeg) driven through
+ * `tauri-driver`, as a user would use it, from the first start, where FFmpeg is installed from
+ * an archive file, to the quit.
  *
  * `REFRAME_SMOKE_APP` is the app's executable (default: the release build in
- * `$CARGO_TARGET_DIR`, else `src-tauri/target`). `tauri-driver` and the platform's WebDriver
- * (`WebKitWebDriver`, `msedgedriver`) must be on `PATH`; on Linux it needs a display.
+ * `$CARGO_TARGET_DIR`, else `src-tauri/target`). `REFRAME_SMOKE_FFMPEG_ARCHIVE` is the archive of
+ * the `default` build (`ffmpeg-archive.py`). `tauri-driver` and the platform's WebDriver
+ * (`WebKitWebDriver`, `msedgedriver`) must be on `PATH`, and no FFmpeg; on Linux it needs a
+ * display.
  */
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -26,6 +29,7 @@ import {
 } from 'selenium-webdriver'
 
 import {
+  chooseFile,
   closeWindows,
   descendants,
   isInside,
@@ -49,6 +53,11 @@ const PRESET = { id: 'fast-720p30', name: 'Fast 720p30' }
 const QUIT_TIMEOUT = 20_000
 const SESSION_TIMEOUT = 60_000
 const END_STATES = new Set(['failed', 'cancelled', 'interrupted'])
+// The offered builds that the first-run screen lists; `default` is the one it installs.
+const OFFERED = ['default', 'compat']
+const INSTALL_FROM_FILE = 'Install from file'
+// Unpacking and checking the build: well past what it takes on a CI runner.
+const INSTALL_TIMEOUT = 180_000
 
 function appPath(): string {
   const given = process.env.REFRAME_SMOKE_APP
@@ -58,6 +67,9 @@ function appPath(): string {
 }
 
 const app = appPath()
+const archive = process.env.REFRAME_SMOKE_FFMPEG_ARCHIVE
+  ? resolve(process.env.REFRAME_SMOKE_FFMPEG_ARCHIVE)
+  : ''
 let work = ''
 let fixture = ''
 let dataDir = ''
@@ -143,6 +155,19 @@ async function started(): Promise<Proc[]> {
   return descendants(await listProcesses(), driverProcess.pid)
 }
 
+/** A request to the app's own server, with the token it publishes in `server.json`. */
+async function api<T>(path: string): Promise<T> {
+  const server = JSON.parse(await readFile(join(dataDir, 'server.json'), 'utf8')) as {
+    port: number
+    token: string
+  }
+  const answer = await fetch(`http://127.0.0.1:${server.port}${path}`, {
+    headers: { Authorization: `Bearer ${server.token}` },
+  })
+  assert.ok(answer.ok, `GET ${path}: ${answer.status}`)
+  return (await answer.json()) as T
+}
+
 async function partFiles(): Promise<string[]> {
   return (await readdir(dirname(fixture))).filter((name) => name.includes('.part'))
 }
@@ -155,6 +180,10 @@ describe('the desktop app', { concurrency: 1 }, () => {
     await mkdir(media)
     fixture = join(media, basename(FIXTURE))
     assert.ok(existsSync(FIXTURE), `no ${FIXTURE}: run scripts/make-testdata.py`)
+    assert.ok(
+      archive && existsSync(archive),
+      `no FFmpeg archive ${archive}: set REFRAME_SMOKE_FFMPEG_ARCHIVE (ffmpeg-archive.py)`,
+    )
     await copyFile(FIXTURE, fixture)
     // Each folder the app, its server and its webview write to is this run's own; on Windows
     // msedgedriver gives WebView2 a profile of its own.
@@ -201,9 +230,9 @@ describe('the desktop app', { concurrency: 1 }, () => {
     assert.ok(existsSync(app), `the app ${app} does not exist`)
     const capabilities = new Capabilities()
     capabilities.setBrowserName('wry')
-    // msedgedriver passes each argument as a `--` switch, which the app ignores: on Windows the
-    // file comes from a second launch.
-    capabilities.set('tauri:options', { application: app, args: WINDOWS ? [] : [fixture] })
+    // The file comes from a second launch, once FFmpeg is installed: a file opened before it
+    // gets no probe. msedgedriver would also pass each argument as a switch the app ignores.
+    capabilities.set('tauri:options', { application: app, args: [] })
     const candidate = new Builder()
       .usingServer(`http://127.0.0.1:${DRIVER_PORT}/`)
       .withCapabilities(capabilities)
@@ -252,21 +281,72 @@ describe('the desktop app', { concurrency: 1 }, () => {
     assert.ok(sidecar?.exe, 'the app started no reframe-server of its own')
   })
 
-  step('shows the first-run screen with the bundled FFmpeg, and goes past it', async () => {
-    assert.ok(sidecar?.exe)
-    const resources = dirname(dirname(sidecar.exe))
+  step('shows the first-run screen without FFmpeg, with the offered builds', async () => {
     await visible('[data-screen="first-run"]', 'no first-run screen on a first start', 30_000)
-    const path = await textContent('[data-tool="ffmpeg"] [data-field="path"]')
-    assert.ok(isInside(path, resources), `ffmpeg ${path} is not the one bundled in ${resources}`)
+    const found = await textContent('[data-tool="ffmpeg"] [data-field="path"]')
+    assert.equal(found, '', `an FFmpeg was found (${found}): the test needs a computer without one`)
+    const { builds } = await api<{ builds: { name: string; label: string }[] }>(
+      '/api/system/tools/builds',
+    )
+    assert.deepEqual(
+      builds.map((build) => build.name),
+      OFFERED,
+      'the server offers other builds',
+    )
+    const screen = await textContent('[data-screen="first-run"]')
+    for (const build of builds) {
+      assert.ok(screen.includes(build.label), `the first-run screen does not list ${build.label}`)
+    }
+  })
+
+  step('installs the default build from a file and goes past the first-run screen', async () => {
+    assert.ok(appProc && sidecar?.exe)
+    const button = await page().wait(
+      until.elementLocated(
+        By.xpath(
+          `//*[@data-screen="first-run"]//button[contains(normalize-space(.), "${INSTALL_FROM_FILE}")]`,
+        ),
+      ),
+      10_000,
+      `no ${INSTALL_FROM_FILE} button`,
+    )
+    await page().wait(until.elementIsEnabled(button), 10_000, `${INSTALL_FROM_FILE} is disabled`)
+    await button.click()
+    await chooseFile(appProc.pid, archive)
+
+    const installed = join(dataDir, 'tools', 'ffmpeg')
+    await waitFor(
+      'the first-run screen shows the installed FFmpeg',
+      async () =>
+        isInside(await textContent('[data-tool="ffmpeg"] [data-field="path"]'), installed),
+      INSTALL_TIMEOUT,
+    )
+    if (!WINDOWS) {
+      // The packaged libva goes into the build, which loads it from its own lib/.
+      const packaged = join(dirname(dirname(sidecar.exe)), 'tools', 'libva')
+      const libraries = ['libva.so.2', 'libva-drm.so.2']
+      const pairs = await Promise.all(
+        libraries.map((library) =>
+          Promise.all([
+            readFile(join(installed, 'lib', library)).catch(() => null),
+            readFile(join(packaged, library)),
+          ]),
+        ),
+      )
+      pairs.forEach(([copy, original], i) => {
+        assert.ok(
+          copy?.equals(original),
+          `${libraries[i]} in the build's lib/ is not the packaged one`,
+        )
+      })
+    }
     await (await enabled('.first-run__continue', 'no Continue button', 10_000)).click()
     await visible('.sources-panel', 'the workspace did not open', 10_000)
   })
 
-  step('opens and probes the file given on its command line', async () => {
-    if (WINDOWS) {
-      // It hands the path to the running app and exits 0.
-      await promisify(execFile)(app, [fixture], { env, timeout: 30_000 })
-    }
+  step('opens and probes the file given on the command line of a second launch', async () => {
+    // It hands the path to the running app and exits 0.
+    await promisify(execFile)(app, [fixture], { env, timeout: 30_000 })
     const message = `${fixture} from the command line is not in the sources`
     await page().wait(
       async () => {

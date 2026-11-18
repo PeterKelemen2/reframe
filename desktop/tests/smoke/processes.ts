@@ -1,6 +1,7 @@
 /**
  * The processes of this machine as the smoke test needs them: who started whom, which program
- * each one runs, and a way to close a process's window as a user does.
+ * each one runs, and ways to close a process's window and to answer its file dialog as a user
+ * does.
  */
 import { execFile } from 'node:child_process'
 import { readdir, readFile, readlink } from 'node:fs/promises'
@@ -156,6 +157,47 @@ export async function closeWindows(pid: number): Promise<void> {
     await powershell(`& { ${CLOSE_WINDOWS_WINDOWS} } ${pid}`)
   } else {
     await run('python3', [join(import.meta.dirname, 'close-window.py'), String(pid)])
+  }
+}
+
+// The common file dialog's controls: the file name box (1148) and the Open button (1).
+const CHOOSE_FILE_WINDOWS = `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+$target = [int]$args[0]
+$path = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($args[1]))
+$deadline = (Get-Date).AddSeconds(30)
+$root = [Windows.Automation.AutomationElement]::RootElement
+$dialog = $null
+while (-not $dialog) {
+  if ((Get-Date) -gt $deadline) { Write-Error "no file dialog of process $target" }
+  $owned = New-Object Windows.Automation.PropertyCondition(
+    [Windows.Automation.AutomationElement]::ProcessIdProperty, $target)
+  $class = New-Object Windows.Automation.PropertyCondition(
+    [Windows.Automation.AutomationElement]::ClassNameProperty, '#32770')
+  $both = New-Object Windows.Automation.AndCondition($owned, $class)
+  $dialog = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $both)
+  if (-not $dialog) { Start-Sleep -Milliseconds 250 }
+}
+function Control($id) {
+  $condition = New-Object Windows.Automation.PropertyCondition(
+    [Windows.Automation.AutomationElement]::AutomationIdProperty, $id)
+  $dialog.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
+}
+$name = Control '1148'
+$name.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue($path)
+(Control '1').GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()`
+
+/**
+ * Chooses `path` in the file dialog that `pid` opens, as a user who types the path: GTK's
+ * location entry on X11, the file name box on Windows. Rejects when no dialog opens.
+ */
+export async function chooseFile(pid: number, path: string): Promise<void> {
+  if (WINDOWS) {
+    const encoded = Buffer.from(path, 'utf8').toString('base64')
+    await powershell(`& { ${CHOOSE_FILE_WINDOWS} } ${pid} ${encoded}`)
+  } else {
+    await run('python3', [join(import.meta.dirname, 'choose-file.py'), String(pid), path])
   }
 }
 

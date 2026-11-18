@@ -48,10 +48,12 @@
     ],
     "linux": {
       "deb": {
+        "depends": ["ca-certificates"],
         "postInstallScript": "linux/link-cli.sh",
         "preRemoveScript": "linux/unlink-cli.sh"
       },
       "rpm": {
+        "depends": ["ca-certificates"],
         "postInstallScript": "linux/link-cli.sh",
         "preRemoveScript": "linux/unlink-cli.sh"
       }

@@ -10,27 +10,27 @@ repository. The choices are recorded in
 
 ### What the image holds
 
-`docker/Dockerfile` builds one image for `linux/amd64` or `linux/arm64` in five stages:
+`docker/Dockerfile` builds one image for `linux/amd64` or `linux/arm64` in four stages:
 
 | Stage | What it does |
 |-------|--------------|
 | `notices` | Checks that `docker/notices/THIRD_PARTY_NOTICES` is there and is the one for the image's platform (`docker-linux-x64` or `docker-linux-arm64`) |
 | `frontend` | `npm ci` and `npm run build:web` (Node 24) |
 | `python` | uv and a uv-managed CPython 3.14.8 (`.python-version` names 3.14, the version CI tests) |
-| `tools` | `scripts/fetch-tools.py` downloads the pinned FFmpeg of `tools/ffmpeg.toml` for the platform (`linux-x64` or `linux-arm64`), checks its size and SHA-256 before it extracts anything, and runs `ffmpeg -version` and `ffprobe -version` |
 | `app` | `uv sync --frozen` installs `reframe[cli]` and `reframe-server` from `uv.lock` into `/opt/reframe/venv` |
 
-The runtime image is Debian 13 (trixie) slim with:
+The runtime image is Debian 13 (trixie) slim. It contains **no FFmpeg**: the first start
+downloads it into `/data/tools/ffmpeg/` (see [Getting FFmpeg](user/ffmpeg.md#docker)). It has:
 
-- the bundled FFmpeg in `/opt/reframe/tools/ffmpeg/`, where tool discovery finds it;
-- on `linux/amd64` only, the GPU user-space drivers that FFmpeg loads at run time:
+- on `linux/amd64` only, the GPU user-space drivers that a downloaded FFmpeg loads at run time,
+  with Debian's libva:
   `mesa-va-drivers` (AMD and other Mesa VAAPI drivers), `intel-media-va-driver-non-free`
   (Intel VAAPI) and `libmfx-gen1.2` (the oneVPL GPU runtime for Intel QSV). The NVIDIA driver
   comes from the host, through the NVIDIA Container Toolkit. The `linux/arm64` image has no GPU
   drivers: it has the software encoders only (see [GPU](#gpu));
-- in `/opt/reframe/notices/`: `THIRD_PARTY_NOTICES` (the licence texts, the sources release of
-  the bundled FFmpeg, and at its end the copyright file of each Debian package in the image,
-  added during the build) and `DEBIAN_PACKAGES`, written during the build: each Debian package in
+- in `/opt/reframe/notices/`: `THIRD_PARTY_NOTICES` (the licence texts, and at its end the
+  copyright file of each Debian package in the image, added during the build) and
+  `DEBIAN_PACKAGES`, written during the build: each Debian package in
   the image with its version, its source package and version, and that source on
   [snapshot.debian.org](https://snapshot.debian.org/), which keeps every Debian source version;
 - the web frontend in `/opt/reframe/frontend/` (`REFRAME_STATIC_DIR`);
@@ -44,19 +44,14 @@ the Debian archive on the day of the build.
 ### Build
 
 From the repository root, first write the notices for the platform of the image
-(`docker-linux-x64`, or `docker-linux-arm64` with `--platform linux-arm64` for
-`fetch-tools.py` on an arm64 host), then build. The notices take FFmpeg's licence and pin from
-the FFmpeg folder that `fetch-tools.py` makes (`--tools` names the folder that holds it; without
-it the script stops), the frontend's licences from `frontend/node_modules`, and the CPython
-licence from the interpreter that runs the script, which must be the image's (`--python`):
+(`docker-linux-x64`, or `docker-linux-arm64` on an arm64 host), then build. The notices take
+the frontend's licences from `frontend/node_modules` and the CPython licence from the
+interpreter that runs the script, which must be the image's (`--python`):
 
 ```sh
-uv run --no-project python scripts/fetch-tools.py --platform linux-x64 \
-    --install-dir /tmp/reframe-image-tools/ffmpeg
 (cd frontend && npm ci)
 uv run --python 3.14.8 --with pip-licenses==5.5.5 python scripts/third-party-notices.py \
-    --platform docker-linux-x64 --tools /tmp/reframe-image-tools \
-    --out docker/notices/THIRD_PARTY_NOTICES
+    --platform docker-linux-x64 --out docker/notices/THIRD_PARTY_NOTICES
 docker build -f docker/Dockerfile -t reframe:local .
 ```
 
@@ -76,7 +71,7 @@ time, each with its own notices.
    | In the container | What | Access |
    |------------------|------|--------|
    | `/config` | `settings.json`, `presets.json`, `auth.json` (the password hash) | read and write |
-   | `/data` | the queue database, logs, `server.json`, the cache (`/data/cache`) | read and write |
+   | `/data` | the queue database, logs, `server.json`, the cache (`/data/cache`), the downloaded FFmpeg (`/data/tools/ffmpeg`) | read and write |
    | `/media` | your videos | read only (`:ro`) |
    | `/output` | the encoded files | write |
 
@@ -127,6 +122,11 @@ time, each with its own notices.
 
 4. Open `http://<host>:8765/`. `GET /api/health` needs no login; the image's `HEALTHCHECK`
    calls it every 30 s.
+
+5. Get FFmpeg: the first-run screen offers the download (or **Install from file** with an
+   archive in `/media`). Or set `REFRAME_FFMPEG_BUILD: default` in the compose file, and the
+   server downloads it at start when `/data` has none. The download stays in `/data`, so keep
+   that folder: [Getting FFmpeg](user/ffmpeg.md#docker).
 
 `docker compose stop` stops a running encode and removes its partial file; the job is
 `interrupted` at the next start. The CLI works in the container too, for example
@@ -198,7 +198,7 @@ docker run … -v /opt/my-ffmpeg:/opt/custom-ffmpeg:ro \
 
 The compose example has the same lines, commented out. `reframe tools status` then shows
 the origin `env`. A missing or broken override is shown as a problem; it is never replaced
-by the bundled build without telling you.
+by the downloaded build without telling you.
 
 ### Rootless Docker and Podman
 
@@ -230,14 +230,17 @@ item 11). Once the packages are published, the command is
 The wheels do not contain FFmpeg. Fetch the pinned build:
 
 ```sh
-reframe tools fetch
+reframe tools fetch                       # the default build; --build compat for older NVIDIA drivers
+reframe tools fetch --file ARCHIVE        # an archive downloaded on another computer
 ```
 
-It downloads the build of `tools/ffmpeg.toml`, checks its size and SHA-256, and installs it
-in `<data dir>/tools/ffmpeg` (`~/.local/share/reframe/tools/ffmpeg`), where it counts as the
-bundled build. `reframe tools status` shows what is used. Reframe needs no other tool: it
-writes Matroska headers and estimates bit rates itself. For VAAPI and QSV, install your distribution's VAAPI
-driver and add your user to the `render` group.
+It downloads the build of `tools/ffmpeg.toml` (or takes the file), checks its size and
+SHA-256, and installs it in `<data dir>/tools/ffmpeg` (`~/.local/share/reframe/tools/ffmpeg`),
+where it counts as the bundled build. `reframe tools status` shows what is used. Reframe needs
+no other tool: it writes Matroska headers and estimates bit rates itself. For VAAPI and QSV,
+install your distribution's VAAPI driver and add your user to the `render` group; the build
+then uses your distribution's libva, and `reframe encoders` says when it is too old for the
+build. [Getting FFmpeg](user/ffmpeg.md) has the choices and the warnings for users.
 
 The web UI is not in the wheel. Build it and put it where the server can find it:
 

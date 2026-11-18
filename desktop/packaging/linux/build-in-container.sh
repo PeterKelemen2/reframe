@@ -10,18 +10,18 @@ tools=desktop/src-tauri/resources/tools
 uv sync --frozen
 uv run python scripts/bundle-tools.py --platform linux-x64 --dest "$tools"
 
-# The bundler copies each symbolic link as one more copy of the file it points to: keep every
+# Tauri's bundler copies each symbolic link as one more copy of the file it points to: keep every
 # library once, under the name the programs ask the loader for (its soname).
 find "$tools" -type l -delete
-for library in "$tools"/*/lib/*.so.*; do
+for library in "$tools"/*/*.so.*; do
     soname=$(readelf -d "$library" | sed -n 's/.*(SONAME).*\[\(.*\)\]/\1/p')
     if [ -n "$soname" ] && [ "${library##*/}" != "$soname" ]; then
         mv "$library" "${library%/*}/$soname"
     fi
 done
-# linuxdeploy would copy the bundled tools' libraries a second time into usr/lib of the AppImage,
-# and it fails on those that find each other only through the program's RPATH.
-LINUXDEPLOY_EXCLUDED_LIBRARIES=$(find "$tools" -path '*/lib/*.so*' -type f -printf '%f\n' | paste -sd ';' -)
+# linuxdeploy would copy the packaged libraries a second time into usr/lib of the AppImage,
+# and it fails on those that find each other only through the loading program.
+LINUXDEPLOY_EXCLUDED_LIBRARIES=$(find "$tools" -name '*.so*' -type f -printf '%f\n' | paste -sd ';' -)
 export LINUXDEPLOY_EXCLUDED_LIBRARIES
 
 uv run python desktop/sidecar/build.py
