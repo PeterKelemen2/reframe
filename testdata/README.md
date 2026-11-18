@@ -482,6 +482,29 @@ uv run python testing/reframe_testing/capture_fake_data.py --ffmpeg "$BIN/ffmpeg
 | `Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.\n` | `bin/ffmpeg` | any encoder that cannot open |
 | `Conversion failed!\n` | `bin/ffmpeg` | generic last line |
 | `MFX_ERR_UNSUPPORTED` | **not found** | the plan's pattern; never printed |
+| `libnvidia-encode.so.1` | `lib/libavcodec.so.63.1.102` | the NVENC library that the loader opens (`Cannot load %s`); not provoked |
+
+#### Build mismatch: an NVIDIA driver older than the build (C-21)
+
+Captured on 2026-11-18 on a Windows 10 VM with a GeForce GTX 1050 Ti (Pascal) and NVIDIA driver
+582.78, with the pinned build (n9.0.2) through `reframe encoders` (the same for `h264_nvenc`,
+`hevc_nvenc` and `av1_nvenc`):
+
+```text
+[h264_nvenc @ …] Driver does not support the required nvenc API version. Required: 13.1 Found: 13.0
+[h264_nvenc @ …] The minimum required Nvidia driver for nvenc is 610.00 or newer
+```
+
+With the `compat` build (n8.1.3, release/8.1) the same computer has `h264_nvenc` (8-bit only)
+and `hevc_nvenc`; `av1_nvenc` stays unavailable ("No NVIDIA GPU that can encode AV1"). Both
+lines map to `build_mismatch` (`test_reasons.py`), as do the `implib-gen` lines of a system
+libva too old or missing for the build; a missing driver or device, a 10-bit-only limit and a
+filter never do.
+
+`libavcodec/nvenc.c` at the pinned commit (`nvenc_load_libraries`) prints the driver
+requirement line also after a failed load of the NVENC library (`Cannot load
+libnvidia-encode.so.1`, a driver without it, as in a container without the `video`
+capability). That case is not a build mismatch: its own rule comes first.
 
 ### Language tags (FFmpeg n9.0.2, MKVToolNix v101.0)
 
@@ -2401,6 +2424,25 @@ Checked on 2026-10-15 (Arch Linux, Python 3.14, the pinned BtbN n9.0.2 build of
   subscription's queue (`reframe.events`); a CLI that is busy for a moment shows only the
   latest step. The plain-line output of `tools fetch` therefore never relies on seeing every
   step, and the tests read the events while the task runs.
+
+### Offline downloads and file installs (C-21)
+
+Checked on 2026-11-18 (Arch Linux, Python 3.14) with `reframe.tools.fetch.download` and one
+attempt. What `urllib` raises, and the `FetchError` it gives:
+
+| Case | Error | `code` |
+|------|-------|--------|
+| no network (`unshare -rn`), a host name or an IP address | `URLError(OSError(101, 'Network is unreachable'))` | `tools.fetch_offline` |
+| a name that does not resolve (`*.invalid`) | `URLError(gaierror(-2, 'Name or service not known'))` | `tools.fetch_offline` |
+| a loopback port without a server | `URLError(ConnectionRefusedError(111, …))` | `tools.fetch_offline` |
+| an address without a route (`10.255.255.1`) | `URLError(OSError(101, 'Network is unreachable'))` | `tools.fetch_offline` |
+| GitHub, a release asset that does not exist | `HTTPError 404` | none |
+
+The message is `cannot reach the download server <host> (<reason>; <n> attempt(s))`; the task
+adds what to do instead. TLS errors, a reset connection and HTTP errors keep their text and
+have no code (`test_fetch.py`). A file install copies the archive into the work folder and
+hashes what it copies, so the file that is checked is the file that is extracted; a file of the
+wrong size is refused before it is copied.
 
 ### Batch engine (C-12, M7)
 

@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import sys
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from pathlib import Path
@@ -62,7 +63,12 @@ from reframe.queue import QueueService
 from reframe.settings import MAX_DEPTH, SettingsStore, SettingsUpdate, too_deep, validation_detail
 from reframe.tasks import TaskManager
 from reframe.tools import CancelToken, discover_tools
-from reframe.tools.fetch import offered_builds, start_fetch
+from reframe.tools.fetch import (
+    offered_builds,
+    packaged_libva,
+    start_fetch,
+    start_install_file,
+)
 from reframe.validation.fs import has_nul
 
 __all__ = [
@@ -99,7 +105,8 @@ class ToolsService:
 
     Discovery runs in the background: :meth:`start` returns at once, :meth:`status` waits for
     it, :attr:`current` does not. Every finished discovery publishes ``tools.changed``.
-    :meth:`fetch` downloads the pinned FFmpeg build into ``<data dir>/tools/ffmpeg``.
+    :meth:`fetch` downloads a pinned FFmpeg build into ``<data dir>/tools/ffmpeg``,
+    :meth:`install_file` installs one from its archive file.
     """
 
     def __init__(
@@ -169,7 +176,8 @@ class ToolsService:
         """Download the FFmpeg build ``build`` of the manifest for ``platform`` (``None``: this
         one), check it, install it as the bundled build in ``<data dir>/tools/ffmpeg`` and run
         discovery again. Returns at once; the task result is
-        :class:`~reframe.models.ToolFetchResult`. ``manifest``: another manifest file."""
+        :class:`~reframe.models.ToolFetchResult`. ``manifest``: another manifest file. A
+        server that cannot be reached ends the task with ``error_code`` ``tools.fetch_offline``."""
         if self._closed:
             raise ReframeClosedError
         return start_fetch(
@@ -179,6 +187,7 @@ class ToolsService:
             build=build,
             platform=platform,
             manifest=manifest,
+            libva=self._libva(),
         )
 
     async def builds(self, *, manifest: Path | None = None) -> ToolBuilds:
@@ -193,7 +202,22 @@ class ToolsService:
         download (size and SHA-256 against the manifest entry of ``build`` for this platform;
         ``None``: the offered build whose archive has that file name), then discovery runs
         again. Returns at once; the task result is :class:`~reframe.models.ToolFetchResult`."""
-        raise NotImplementedError("C-21: install an archive file")
+        if self._closed:
+            raise ReframeClosedError
+        return start_install_file(
+            self._tasks,
+            data_dir=self._data_dir,
+            rescan=self.rescan,
+            archive=archive,
+            build=build,
+            manifest=manifest,
+            libva=self._libva(),
+        )
+
+    def _libva(self) -> Path | None:
+        """The libva that the Linux app packages for a downloaded build."""
+        linux = sys.platform.startswith("linux")
+        return packaged_libva(self._bundled_roots, self._data_dir) if linux else None
 
     async def close(self) -> None:
         """Cancel a running discovery (its version-check processes are killed)."""

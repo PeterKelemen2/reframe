@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import json
+import logging
 import os
 import shutil
+import socket
+import ssl
 import sys
 import tarfile
 import time
 import tomllib
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -538,6 +544,7 @@ async def test_not_found_is_not_retried(tmp_path: Path, server: LocalServer, fet
     assert final.error is not None
     assert "the download failed after 1 attempt(s)" in final.error
     assert "404" in final.error
+    assert final.error_code is None  # the server was reached
     assert route.requests == 1
 
 
@@ -559,7 +566,108 @@ async def test_a_connection_error_gives_up_after_the_attempts(
     final, _ = await fetch(manifest, platform=other)
     assert final.state is TaskState.FAILED
     assert final.error is not None
-    assert f"the download failed after {fetch_module.ATTEMPTS} attempt(s)" in final.error
+    assert final.error.startswith(
+        f"cannot reach the download server 127.0.0.1 (Connection refused; "
+        f"{fetch_module.ATTEMPTS} attempt(s))"
+    )
+    assert final.error_code == "tools.fetch_offline"
+
+
+def _transport(error: BaseException, calls: list[str]) -> Callable[..., Any]:
+    """A fake ``urlopen``: every request fails with ``error``, as without a network."""
+
+    def urlopen(request: urllib.request.Request, *args: object, **kwargs: object) -> Any:
+        calls.append(request.full_url)
+        raise error
+
+    return urlopen
+
+
+OFFLINE_ERRORS = {
+    "no-name-resolution": (
+        urllib.error.URLError(socket.gaierror(-3, "Temporary failure in name resolution")),
+        "Temporary failure in name resolution",
+    ),
+    "network-unreachable": (
+        urllib.error.URLError(OSError(errno.ENETUNREACH, "Network is unreachable")),
+        "Network is unreachable",
+    ),
+    "connect-timeout": (urllib.error.URLError(TimeoutError("timed out")), "timed out"),
+    "read-timeout": (TimeoutError("timed out"), "timed out"),
+    "refused": (
+        ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused"),
+        "Connection refused",
+    ),
+}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("case", sorted(OFFLINE_ERRORS))
+async def test_without_a_network_the_fetch_is_offline_and_installs_nothing(
+    tmp_path: Path,
+    fetch: Fetch,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    case: str,
+) -> None:
+    error, why = OFFLINE_ERRORS[case]
+    calls: list[str] = []
+    waits: list[float] = []
+    monkeypatch.setattr(urllib.request, "urlopen", _transport(error, calls))
+    monkeypatch.setattr(fetch_module, "_sleep", lambda seconds, cancel: waits.append(seconds))
+    host = host_platform() or "linux-x64"
+    url = f"https://downloads.example/ffmpeg.{archive_ext(host)}"
+    manifest = write_manifest(tmp_path / "m.toml", {"default": [Archive(url, b"x", host)]})
+    caplog.set_level(logging.INFO, logger="reframe.tools.fetch")
+    final, result = await fetch(manifest, platform=host)
+    assert final.state is TaskState.FAILED
+    assert final.error_code == "tools.fetch_offline"
+    assert final.error is not None
+    assert final.error.startswith(
+        f"cannot reach the download server downloads.example ({why}; "
+        f"{fetch_module.ATTEMPTS} attempt(s)). "
+    )
+    # The message names what to do instead.
+    assert "install the build from its archive file" in final.error
+    assert "REFRAME_FFMPEG" in final.error
+    assert "Settings > Tools" in final.error
+    assert result is None
+    assert len(calls) == fetch_module.ATTEMPTS  # the retries ran
+    assert waits == [2.0, 4.0, 8.0]
+    assert not (fetch.data_dir / "tools" / "ffmpeg").exists()
+    assert leftovers(fetch.data_dir) == []
+    assert fetch.rescans == 0
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert [r.name for r in errors] == ["reframe.tools.fetch"]
+    assert (
+        errors[0].getMessage()
+        == f"FFmpeg download of build 'default' for {host} failed: {final.error}"
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "error",
+    [
+        urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate verify failed")),
+        ConnectionResetError(errno.ECONNRESET, "Connection reset by peer"),
+        urllib.error.URLError("unknown url type: ftp"),
+    ],
+    ids=["tls", "reset", "url"],
+)
+async def test_other_download_errors_have_no_code(
+    tmp_path: Path, fetch: Fetch, monkeypatch: pytest.MonkeyPatch, error: BaseException
+) -> None:
+    monkeypatch.setattr(urllib.request, "urlopen", _transport(error, []))
+    monkeypatch.setattr(fetch_module, "_sleep", lambda seconds, cancel: None)
+    other = foreign_platform()
+    url = f"https://downloads.example/ffmpeg.{archive_ext(other)}"
+    manifest = write_manifest(tmp_path / "m.toml", {"default": [Archive(url, b"x", other)]})
+    final, _ = await fetch(manifest, platform=other)
+    assert final.state is TaskState.FAILED
+    assert final.error is not None
+    assert final.error.startswith("the download failed after ")
+    assert final.error_code is None
 
 
 def _tar_case(kind: str) -> bytes:

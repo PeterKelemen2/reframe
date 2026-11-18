@@ -287,6 +287,26 @@ async def test_an_expected_failure_is_its_message_without_a_traceback(
     assert final.error == "ffprobe cannot be used: not found"
     assert not any(record.exc_info for record in caplog.records)
     assert mediatask.TaskFailed is TaskFailed
+    assert final.error_code is None
+
+
+async def test_an_expected_failure_carries_its_error_code() -> None:
+    tasks = TaskManager()
+
+    async def offline(ctx: TaskContext) -> None:
+        raise TaskFailed("cannot reach the download server", code="tools.fetch_offline")
+
+    async def bug(ctx: TaskContext) -> None:
+        raise RuntimeError("a bug")
+
+    final = await tasks.wait(tasks.start("k", offline).id)
+    assert (final.state, final.error, final.error_code) == (
+        TaskState.FAILED,
+        "cannot reach the download server",
+        "tools.fetch_offline",
+    )
+    other = await tasks.wait(tasks.start("k", bug).id)
+    assert (other.state, other.error_code) == (TaskState.FAILED, None)
 
 
 class Result(BaseModel):

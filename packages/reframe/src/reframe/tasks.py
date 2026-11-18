@@ -61,9 +61,14 @@ TaskFn = Callable[["TaskContext"], Awaitable[Any]]
 
 class TaskFailed(Exception):
     """An expected failure inside a task function, with a message for the user. The task ends
-    ``failed`` with that message as ``TaskInfo.error``, and no traceback is logged. Any other
-    exception is a bug: the task ends ``failed`` too, and the traceback is logged.
+    ``failed`` with that message as ``TaskInfo.error`` and ``code`` as ``TaskInfo.error_code``,
+    and no traceback is logged. Any other exception is a bug: the task ends ``failed`` too, and
+    the traceback is logged.
     """
+
+    def __init__(self, *args: object, code: str | None = None) -> None:
+        super().__init__(*args)
+        self.code = code
 
 
 def _now() -> datetime:
@@ -230,6 +235,7 @@ class TaskManager:
             log.info("task %s (%s) failed: %s", task.info.id, task.info.kind, exc)
             task.info.state = TaskState.FAILED
             task.info.error = str(exc) or type(exc).__name__
+            task.info.error_code = exc.code
         except Exception as exc:
             log.exception("task %s (%s) failed", task.info.id, task.info.kind)
             task.info.state = TaskState.FAILED
