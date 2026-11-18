@@ -738,8 +738,8 @@ def test_the_fake_runs_with_the_base_interpreter_not_a_venv_launcher(
     assert base == ft.PYTHON
     assert fake_tools.argv("ffprobe")[0] == base
     win = ft.make_fake_tools(tmp_path / "win", platform="win32")
-    run_line = next(line for line in win.ffmpeg.read_text().splitlines() if "--fake-tool" in line)
-    assert run_line.startswith(f'"{base}" -I ')
+    run_line = next(line for line in win.ffmpeg.read_text().splitlines() if "-I -c" in line)
+    assert run_line.startswith(f'"{base}" -I -c ')
     fake_tools.set_scenario(ft.Scenario([ft.Rule(actions=[ft.spawn_grandchild(), ft.hang()])]))
     proc = subprocess.Popen([str(fake_tools.ffmpeg), "-i", "x", "y.mkv"])
     try:
@@ -771,13 +771,16 @@ def test_windows_launcher_written_on_any_os(tmp_path: Path) -> None:
         f'if not defined REFRAME_FAKE_FFMPEG_SCENARIO set "REFRAME_FAKE_FFMPEG_SCENARIO={scen}"'
         in lines
     )
-    run_line = next(line for line in lines if "--fake-tool" in line)
+    run_line = next(line for line in lines if "-I -c" in line)
+    code = (
+        f"import sys; sys.path.append({str(ft.SCRIPT.parent)!r}); import fake_ffmpeg; "
+        "sys.exit(fake_ffmpeg.main('ffmpeg', sys.argv[1:]))"
+    )
     assert run_line == (
-        '"C:\\Program Files\\Python313\\python.exe" -I '
-        f'"{str(ft.SCRIPT).replace("%", "%%")}" --fake-tool ffmpeg %*'
+        f'"C:\\Program Files\\Python313\\python.exe" -I -c "{code.replace("%", "%%")}" %*'
     )
     assert lines[-2] == "exit /b %ERRORLEVEL%"
-    assert "--fake-tool ffprobe %*" in tools.ffprobe.read_text()
+    assert "main('ffprobe', sys.argv[1:])" in tools.ffprobe.read_text()
 
 
 def test_windows_launcher_rejects_double_quotes(tmp_path: Path) -> None:
@@ -792,7 +795,7 @@ def test_windows_launcher_rejects_double_quotes(tmp_path: Path) -> None:
 
 
 def test_script_cli_entry_point(fake_tools: FakeTools) -> None:
-    """The form the Windows launcher uses: ``python fake_ffmpeg.py --fake-tool ffmpeg ...``."""
+    """The form of ``FakeTools.argv``: ``python fake_ffmpeg.py --fake-tool ffmpeg ...``."""
     r = subprocess.run(
         [sys.executable, str(ft.SCRIPT), "--fake-tool", "ffmpeg", "-version"],
         capture_output=True,
