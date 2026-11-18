@@ -48,18 +48,11 @@ def test_second_run_prints_the_cache_at_once(cli_env: ft.FakeTools) -> None:
     assert out[-1].endswith("(no changes).")
 
 
-def test_no_nvidia_driver(cli_env: ft.FakeTools) -> None:
-    """The real FFmpeg text of a machine without the NVIDIA driver."""
-    cli_env.set_scenario(ft.Scenario([detect_rule("detect_hevc_nvenc_no_driver")]))
-    result = invoke("encoders")
-    assert result.exit_code == EXIT_OK, result.output
-    assert NVENC_LINE in lines(result.stdout)
-
-
 def test_a_status_that_changes_after_the_cache_is_printed_again(cli_env: ft.FakeTools) -> None:
     assert invoke("encoders").exit_code == EXIT_OK  # every test encode works: cached
     cli_env.set_scenario(ft.Scenario([detect_rule("detect_hevc_nvenc_no_driver")]))
     result = invoke("encoders")
+    assert result.exit_code == EXIT_OK, result.output
     out = lines(result.stdout)
     checking_again = out.index("Checking again…")
     assert "hevc_nvenc — available" in out[:checking_again]

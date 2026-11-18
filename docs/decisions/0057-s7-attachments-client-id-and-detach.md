@@ -123,9 +123,9 @@ second, concurrent connection without one has its job cancelled; `attach` with t
 closed connection is 409 and adds nothing; a connection that ends while its job is added
 (the add held after the check) gets that job cancelled, or kept after a `detach`; uvicorn's
 stop (close code 1012) and the hub's close leave the jobs waiting; the hub's close waits for
-the cancels; a job removed before its client goes away makes nothing fail; the components hold
-`ClientMessage` and `Hello.client_id`. In `tests/test_events.py`: a client killed while the
-hub waits to send to it has its job cancelled. The stub-based attach test of
+the cancels; a job removed before its client goes away makes nothing fail. In `tests/test_openapi.py`: the
+components hold `ClientMessage` and `Hello.client_id`. In `tests/test_events.py`: a client killed
+while the hub waits to send to it has its job cancelled. The stub-based attach test of
 `tests/test_queue.py` (it replaced `client_open` with a fake) is replaced by these.
 
 ## Plan changes
