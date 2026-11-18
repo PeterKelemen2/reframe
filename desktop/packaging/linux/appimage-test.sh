@@ -3,11 +3,17 @@
 # session (with FUSE: the AppImage mounts itself), then in a Debian 12 container without FUSE
 # (--appimage-extract-and-run) under Xvfb.
 # Usage: desktop/packaging/linux/appimage-test.sh FILE.AppImage [SOCKET]
+# REFRAME_FFMPEG_ARCHIVE (the default build's archive) adds a file install to both checks.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 appimage=$(realpath "${1:?usage: appimage-test.sh FILE.AppImage [SOCKET]}")
 socket=${2:-reframe-appimage}
+archive=/dev/null
+if [ -n "${REFRAME_FFMPEG_ARCHIVE:-}" ]; then
+    archive=$(realpath "$REFRAME_FFMPEG_ARCHIVE")
+    export FFMPEG_ARCHIVE="$archive"
+fi
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
@@ -31,6 +37,8 @@ echo "== $(basename "$appimage") in debian:12 without FUSE"
 docker run --rm \
     -v "$appimage:/app/Reframe.AppImage:ro" \
     -v "$here:/tests:ro" \
+    -v "$archive:/archive/${archive##*/}:ro" \
+    -e FFMPEG_ARCHIVE="${FFMPEG_ARCHIVE:+/archive/${archive##*/}}" \
     debian:12 sh -c '
         set -e
         apt-get update -qq

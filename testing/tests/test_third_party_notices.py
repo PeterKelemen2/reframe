@@ -6,7 +6,6 @@ import hashlib
 import itertools
 import json
 import re
-import shutil
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -146,134 +145,85 @@ def test_cargo_about_is_limited_to_the_packages_target(platform: str) -> None:
     assert "ignore-build-dependencies = true" in config
 
 
-def _layout(tools: Path, name: str, licence: str = "LICENSE.txt") -> None:
-    (tools / name / "bin").mkdir(parents=True)
-    (tools / name / licence).write_text(f"{name} licence text")
+def _libva(tools: Path) -> Path:
+    """The Linux tools layout: ``libva/`` with its licence."""
+    (tools / "libva").mkdir(parents=True)
+    (tools / "libva" / "LICENSE-libva.txt").write_text("libva licence text")
+    return tools
 
 
-def test_the_bundled_ffmpeg_gets_its_pin_with_the_source_links(tmp_path: Path) -> None:
-    tools = tmp_path / "resources" / "tools"
-    _layout(tools, "ffmpeg")
-    (tools / "ffmpeg" / "LICENSE-libva.txt").write_text("libva licence text")
+def test_the_packaged_libva_gets_its_pin_with_the_source_links(tmp_path: Path) -> None:
+    tools = _libva(tmp_path / "resources" / "tools")
     manifests = REPO_ROOT / "tools"
 
-    entries = tpn.tool_entries(tools, manifests, "linux-x64")
-    [entry, libva] = entries
+    [libva] = tpn.library_entries(tools, manifests, "linux-x64")
 
-    pin = tpn.tomllib.loads((manifests / "ffmpeg.toml").read_text())["builds"]["default"]
-    archive = pin["platforms"]["linux-x64"]
-    assert entry.name == "ffmpeg"
-    assert entry.version == pin["version"]
-    assert entry.license == pin["license"]
-    for value in (
-        pin["source_repository"],
-        pin["source_commit"],
-        pin["build_scripts_repository"],
-        pin["build_scripts_commit"],
-        archive["url"],
-        archive["sha256"],
-    ):
-        assert value in entry.text
-    assert pin["platforms"]["windows-x64"]["url"] not in entry.text
-    assert entry.text.endswith("ffmpeg licence text")
-
-    libva_pin = tpn.tomllib.loads((manifests / "bundled-tools.toml").read_text())["libraries"][
-        "libva"
-    ]
-    assert [e.name for e in entries] == ["ffmpeg", "libva"]
-    assert (libva.version, libva.license, libva.url) == (
-        libva_pin["version"],
-        libva_pin["license"],
-        libva_pin["release_url"],
+    pin = tpn.tomllib.loads((manifests / "bundled-tools.toml").read_text())["libraries"]["libva"]
+    assert (libva.name, libva.version, libva.license, libva.url) == (
+        "libva",
+        pin["version"],
+        pin["license"],
+        pin["release_url"],
     )
     for value in (
-        libva_pin["source_repository"],
-        libva_pin["source_tag"],
-        libva_pin["platforms"]["linux-x64"]["url"],
-        libva_pin["platforms"]["linux-x64"]["sha256"],
-        "tools/ffmpeg/LICENSE-libva.txt",
+        pin["source_repository"],
+        pin["source_tag"],
+        pin["platforms"]["linux-x64"]["url"],
+        pin["platforms"]["linux-x64"]["sha256"],
+        "tools/libva/LICENSE-libva.txt",
     ):
         assert value in libva.text
     assert libva.text.endswith("libva licence text")
 
 
-def test_a_library_without_its_licence_file_is_an_error(tmp_path: Path) -> None:
-    tools = tmp_path / "tools"
-    _layout(tools, "ffmpeg")
-
+def test_a_pinned_library_without_its_licence_file_is_an_error(tmp_path: Path) -> None:
     with pytest.raises(tpn.NoticesError, match=r"LICENSE-libva\.txt"):
-        tpn.tool_entries(tools, REPO_ROOT / "tools", "linux-x64")
+        tpn.library_entries(tmp_path / "missing", REPO_ROOT / "tools", "linux-x64")
 
-    [entry] = tpn.tool_entries(tools, REPO_ROOT / "tools", "windows-x64")
-
-    assert entry.name == "ffmpeg"
+    assert tpn.library_entries(tmp_path / "missing", REPO_ROOT / "tools", "windows-x64") == []
 
 
-def test_another_tools_pin_is_found_in_its_own_manifest(tmp_path: Path) -> None:
+def test_another_manifests_library_is_found(tmp_path: Path) -> None:
     manifests = tmp_path / "manifests"
     manifests.mkdir()
     (manifests / "example.toml").write_text(
-        "[builds.default]\n"
-        'version = "1.0"\nlicense = "MIT"\nlicense_file = "COPYING"\n'
+        "[libraries.example]\n"
+        'version = "1.0"\nlicense = "MIT"\n'
         'source_url = "https://example.invalid/example-1.0.tar.xz"\n'
-        "[builds.default.platforms.windows-x64]\n"
-        'url = "https://example.invalid/example-1.0-win64.zip"\n'
+        "[libraries.example.platforms.windows-x64]\n"
+        'url = "https://example.invalid/example-1.0.tar.xz"\n'
     )
     tools = tmp_path / "tools"
-    _layout(tools, "example", licence="COPYING")
+    (tools / "example").mkdir(parents=True)
+    (tools / "example" / "LICENSE-example.txt").write_text("example licence text")
 
-    [entry] = tpn.tool_entries(tools, manifests, "windows-x64")
+    [entry] = tpn.library_entries(tools, manifests, "windows-x64")
 
     assert (entry.name, entry.version, entry.license) == ("example", "1.0", "MIT")
     assert "source_url: https://example.invalid/example-1.0.tar.xz" in entry.text
-    assert "windows-x64.url: https://example.invalid/example-1.0-win64.zip" in entry.text
+    assert "windows-x64.url: https://example.invalid/example-1.0.tar.xz" in entry.text
     assert entry.text.endswith("example licence text")
 
 
-@pytest.mark.parametrize(
-    ("folder", "licence"), [("mkvtoolnix", "COPYING.txt"), ("mediainfo", "LICENSE")]
-)
-def test_a_laid_out_mkvtoolnix_or_mediainfo_folder_stops_the_windows_notices(
-    tmp_path: Path, folder: str, licence: str
+@pytest.mark.parametrize("platform", ["linux-x64", "windows-x64"])
+@pytest.mark.parametrize("folder", ["ffmpeg", "mkvtoolnix", "mediainfo"])
+def test_a_tool_folder_in_the_layout_stops_the_desktop_notices(
+    tmp_path: Path, folder: str, platform: str
 ) -> None:
-    """No pin names them any more: a stale folder would ship without its notices."""
-    tools = tmp_path / "tools"
+    """No package ships FFmpeg or another tool: a stale folder would ship without notices."""
+    tools = _libva(tmp_path / "tools") if platform == "linux-x64" else tmp_path / "tools"
     (tools / folder).mkdir(parents=True)
-    (tools / folder / licence).write_text("licence text")
+    (tools / folder / "LICENSE.txt").write_text("licence text")
 
     with pytest.raises(
         tpn.NoticesError, match=rf"{folder} is bundled but no manifest in .* pins it"
     ):
-        tpn.tool_entries(tools, REPO_ROOT / "tools", "windows-x64")
-
-
-def test_a_bundled_tool_without_a_pin_is_an_error(tmp_path: Path) -> None:
-    manifests = tmp_path / "manifests"
-    manifests.mkdir()
-    shutil.copy(REPO_ROOT / "tools" / "ffmpeg.toml", manifests)
-    tools = tmp_path / "tools"
-    _layout(tools, "ffmpeg")
-    _layout(tools, "mediainfo")
-
-    with pytest.raises(tpn.NoticesError, match="mediainfo is bundled but no manifest"):
-        tpn.tool_entries(tools, manifests, "linux-x64")
-
-
-def test_a_bundled_tool_without_a_licence_file_is_an_error(tmp_path: Path) -> None:
-    tools = tmp_path / "tools"
-    (tools / "ffmpeg" / "bin").mkdir(parents=True)
-
-    with pytest.raises(tpn.NoticesError, match="has no licence file"):
-        tpn.tool_entries(tools, REPO_ROOT / "tools", "linux-x64")
-
-
-def test_no_tools_folder_gives_no_tool_entries(tmp_path: Path) -> None:
-    assert tpn.tool_entries(tmp_path / "missing", REPO_ROOT / "tools", "linux-x64") == []
+        tpn.library_entries(tools, REPO_ROOT / "tools", platform)
 
 
 def test_every_entry_and_its_text_are_written() -> None:
     sections = [
-        ("Bundled tools", [tpn.Entry("ffmpeg", "n9.0", "GPL-3.0-or-later", "https://x", "GPL")]),
+        ("Bundled libraries", [tpn.Entry("libva", "2.24", "MIT", "https://x", "MIT text")]),
         ("Rust crates", [tpn.Entry("MIT License", "", "MIT", text="Used by: a 1\n\nMIT")]),
     ]
 
@@ -281,9 +231,9 @@ def test_every_entry_and_its_text_are_written() -> None:
 
     for line in (
         "Third-party notices for Reframe 0.1.0 (linux-x64)",
-        "Bundled tools",
-        "ffmpeg n9.0",
-        "Licence: GPL-3.0-or-later",
+        "Bundled libraries",
+        "libva 2.24",
+        "Licence: MIT",
         "URL: https://x",
         "Rust crates",
         "MIT License",
@@ -300,10 +250,10 @@ def test_the_header_names_the_packages_version(
     for name in ("javascript_entries", "rust_entries"):
         monkeypatch.setattr(tpn, name, lambda *args: [])
     monkeypatch.setattr(tpn, "python_interpreter_entry", lambda: tpn.Entry("Python", "3", "PSF"))
-    monkeypatch.setattr(tpn, "DEFAULT_TOOLS", tmp_path / "no-tools")
+    tools = _libva(tmp_path / "tools")
     out = tmp_path / "THIRD_PARTY_NOTICES"
 
-    assert tpn.main(["--platform", "linux-x64", "--out", str(out)]) == 0
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out), "--tools", str(tools)]) == 0
 
     config = json.loads((REPO_ROOT / "desktop" / "src-tauri" / "tauri.conf.json").read_text())
     lines = out.read_text().splitlines()
@@ -371,7 +321,7 @@ def test_the_notices_ship_in_every_desktop_package() -> None:
 
 ALL_FFMPEG = ["linux-arm64", "linux-x64", "windows-x64"]
 #: A small source manifest: archive name → (kind, platforms), one of each kind of entry that
-#: decides which package bundles it.
+#: decides which package bundles it. The FFmpeg build's sources go to no package.
 MANIFEST = {
     "ffmpeg-2a571b606854.tar.xz": ("git", ALL_FFMPEG),
     "ffmpeg-builds-6c9aec5d1a2b.tar.xz": ("git", ALL_FFMPEG),
@@ -384,23 +334,15 @@ MANIFEST = {
     "ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar": ("ubuntu-source", ["linux-x64"]),
     "type2-runtime-dd6cebedcbdd.tar.xz": ("repository", ["linux-x64"]),
 }
-EVERY_PLATFORM = ["ffmpeg-2a571b606854.tar.xz", "ffmpeg-builds-6c9aec5d1a2b.tar.xz"]
-EVERY_PLATFORM += ["btbn-x264-0123456789ab.tar.xz"]
 BUNDLED = {
     "linux-x64": [
-        *EVERY_PLATFORM,
-        "btbn-davs2-0123456789ab.tar.xz",
         "libva-2.24.1.tar.bz2",
         "ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar",
         "type2-runtime-dd6cebedcbdd.tar.xz",
     ],
-    "windows-x64": [
-        *EVERY_PLATFORM,
-        "btbn-mingw-0123456789ab.tar.xz",
-        "example-1.0.tar.xz",
-    ],
-    "docker-linux-x64": [*EVERY_PLATFORM, "btbn-davs2-0123456789ab.tar.xz"],
-    "docker-linux-arm64": [*EVERY_PLATFORM, "btbn-armonly-0123456789ab.tar.xz"],
+    "windows-x64": ["example-1.0.tar.xz"],
+    "docker-linux-x64": [],
+    "docker-linux-arm64": [],
 }
 SOURCES_URL = "https://github.com/owner/reframe/releases/tag/sources-0123456789ab"
 
@@ -467,7 +409,7 @@ def _sources(
 
 @pytest.fixture
 def no_sections(monkeypatch: pytest.MonkeyPatch) -> None:
-    entry = tpn.Entry("ffmpeg", "n9.0", "GPL-3.0-or-later")
+    entry = tpn.Entry("libva", "2.24", "MIT")
     monkeypatch.setattr(tpn, "docker_sections", lambda *args: [("Bundled tools", [entry])])
     monkeypatch.setattr(tpn, "desktop_sections", lambda *args: [("Bundled tools", [entry])])
 
@@ -477,7 +419,7 @@ def _listed_archives(text: str) -> list[str]:
 
 
 @pytest.mark.usefixtures("no_sections")
-@pytest.mark.parametrize("platform", sorted(BUNDLED))
+@pytest.mark.parametrize("platform", ["linux-x64", "windows-x64"])
 def test_the_notices_list_and_carry_the_texts_of_only_the_archives_the_platform_bundles(
     tmp_path: Path, platform: str
 ) -> None:
@@ -505,9 +447,11 @@ def test_the_notices_list_and_carry_the_texts_of_only_the_archives_the_platform_
         ("example-1.0.tar.xz", {"windows-x64"}),
         ("ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar", {"linux-x64"}),
         ("libva-2.24.1.tar.bz2", {"linux-x64"}),
-        ("btbn-armonly-0123456789ab.tar.xz", {"docker-linux-arm64"}),
-        ("btbn-mingw-0123456789ab.tar.xz", {"windows-x64"}),
-        ("ffmpeg-2a571b606854.tar.xz", set(BUNDLED)),
+        ("btbn-armonly-0123456789ab.tar.xz", set()),
+        ("btbn-mingw-0123456789ab.tar.xz", set()),
+        ("btbn-davs2-0123456789ab.tar.xz", set()),
+        ("ffmpeg-2a571b606854.tar.xz", set()),
+        ("ffmpeg-builds-6c9aec5d1a2b.tar.xz", set()),
         ("type2-runtime-dd6cebedcbdd.tar.xz", {"linux-x64"}),
     ],
 )
@@ -561,21 +505,19 @@ def test_a_bundled_archive_missing_from_the_sums_is_an_error(
 
 
 @pytest.mark.usefixtures("no_sections")
-def test_a_manifest_without_the_platforms_ffmpeg_is_an_error(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+@pytest.mark.parametrize("platform", ["docker-linux-x64", "docker-linux-arm64", "windows-x64"])
+def test_a_package_that_bundles_nothing_from_the_sources_release_does_not_name_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], platform: str
 ) -> None:
-    manifest = {
-        name: (kind, [p for p in platforms if p != "linux-arm64"])
-        for name, (kind, platforms) in MANIFEST.items()
-        if platforms != ["linux-arm64"]
-    }
+    manifest = {name: entry for name, entry in MANIFEST.items() if name != "example-1.0.tar.xz"}
     out = tmp_path / "THIRD_PARTY_NOTICES"
-    options = _sources(tmp_path, manifest)
 
-    code = tpn.main(["--platform", "docker-linux-arm64", "--out", str(out), *options])
+    code = tpn.main(["--platform", platform, "--out", str(out), *_sources(tmp_path, manifest)])
 
     assert code == 1
-    assert "no source of docker-linux-arm64" in capsys.readouterr().err
+    assert f"no source of {platform}: its notices take no --sources-*" in capsys.readouterr().err
+    assert tpn.main(["--platform", platform, "--out", str(out)]) == 0
+    assert SOURCES_URL not in out.read_text()
 
 
 @pytest.mark.parametrize(
@@ -626,12 +568,14 @@ def test_a_sums_file_that_is_not_sha256sums_output_is_an_error(
 def test_the_sources_release_comes_before_the_entries_in_the_written_file(tmp_path: Path) -> None:
     out = tmp_path / "THIRD_PARTY_NOTICES"
 
-    code = tpn.main(["--platform", "docker-linux-arm64", "--out", str(out), *_sources(tmp_path)])
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out), *_sources(tmp_path)]) == 0
+    text = out.read_text()
+    assert text.index(SOURCES_URL) < text.index("libva 2.24")
 
-    assert code == 0
+    assert tpn.main(["--platform", "docker-linux-arm64", "--out", str(out)]) == 0
     text = out.read_text()
     assert text.splitlines()[0].endswith("(docker-linux-arm64)")
-    assert text.index(SOURCES_URL) < text.index("Debian packages") < text.index("ffmpeg n9.0")
+    assert text.index("Debian packages") < text.index("libva 2.24")
 
 
 EXPORT = """\
@@ -668,35 +612,9 @@ def test_the_image_notices_refuse_another_python_than_the_images(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setattr(tpn.host_platform, "python_version", lambda: "3.13.0")
-    (tmp_path / "ffmpeg").mkdir()
 
     with pytest.raises(tpn.NoticesError, match=r"uv run --python 3\.\d+\.\d+"):
-        tpn.docker_sections("docker-linux-x64", tmp_path)
-
-
-@pytest.mark.parametrize(
-    ("platform", "other"),
-    [("docker-linux-x64", "linux-arm64"), ("docker-linux-arm64", "linux-x64")],
-)
-def test_the_images_ffmpeg_gets_the_pin_of_its_platform_without_the_desktop_libva(
-    tmp_path: Path, platform: str, other: str
-) -> None:
-    manifests = tmp_path / "manifests"
-    manifests.mkdir()
-    pin = (REPO_ROOT / "tools" / "ffmpeg.toml").read_text()
-    if "platforms.linux-arm64]" not in pin:
-        arm64 = "https://example.invalid/ffmpeg-n9.0.2-linuxarm64-gpl-shared-9.0.tar.xz"
-        pin += f'\n[builds.default.platforms.linux-arm64]\nurl = "{arm64}"\n'
-    (manifests / "ffmpeg.toml").write_text(pin)
-    shutil.copy(REPO_ROOT / "tools" / "bundled-tools.toml", manifests)
-    tools = tmp_path / "tools"
-    _layout(tools, "ffmpeg")
-    ffmpeg_platform = tpn.DOCKER_PLATFORMS[platform][0]
-
-    [entry] = tpn.tool_entries(tools, manifests, ffmpeg_platform, libraries=False)
-
-    assert f"{ffmpeg_platform}.url: " in entry.text
-    assert f"{other}.url" not in entry.text
+        tpn.docker_sections("docker-linux-x64")
 
 
 @pytest.fixture
@@ -712,40 +630,22 @@ def stub_sections(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.usefixtures("stub_sections")
-def test_the_image_notices_list_its_ffmpeg_and_no_desktop_part(tmp_path: Path) -> None:
-    # fetch-tools.py's folder: FFmpeg with its licence, no libva (the image uses Debian's).
-    _layout(tmp_path, "ffmpeg", licence="LICENSE.txt")
+def test_the_image_notices_list_no_ffmpeg_and_no_desktop_part(tmp_path: Path) -> None:
+    out = tmp_path / "THIRD_PARTY_NOTICES"
 
-    sections = dict(tpn.docker_sections("docker-linux-x64", tmp_path))
+    assert tpn.main(["--platform", "docker-linux-x64", "--out", str(out)]) == 0
 
-    assert [entry.name for entry in sections["Bundled tools"]] == ["ffmpeg"]
+    text = out.read_text()
+    assert "ffmpeg" not in text.lower()
+    sections = dict(tpn.docker_sections("docker-linux-x64"))
+    assert "Bundled libraries" not in sections
     assert "Statically linked libraries" not in sections
     assert [entry.name for entry in sections[tpn.LANGUAGE_DATA]] == DATA_NAMES
 
 
-def test_the_image_notices_need_the_folder_with_the_images_ffmpeg(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    out = tmp_path / "THIRD_PARTY_NOTICES"
-
-    with pytest.raises(SystemExit) as exit_info:
-        tpn.main(["--platform", "docker-linux-x64", "--out", str(out)])
-    assert exit_info.value.code == 2
-    assert "--tools is required" in capsys.readouterr().err
-
-    code = tpn.main(
-        ["--platform", "docker-linux-arm64", "--out", str(out), "--tools", str(tmp_path)]
-    )
-    assert code == 1
-    assert "has no ffmpeg folder: scripts/fetch-tools.py --platform linux-arm64" in (
-        capsys.readouterr().err
-    )
-    assert not out.exists()
-
-
 @pytest.mark.usefixtures("stub_sections")
 def test_the_desktop_notices_list_each_library_a_static_build_links(tmp_path: Path) -> None:
-    sections = dict(tpn.desktop_sections("linux-x64", tmp_path / "no-tools"))
+    sections = dict(tpn.desktop_sections("linux-x64", _libva(tmp_path / "tools")))
 
     [entry] = sections["Statically linked libraries"]
     assert "AppImage type 2 runtime" in entry.name
@@ -761,6 +661,7 @@ def test_the_windows_notices_name_no_static_build(tmp_path: Path) -> None:
     sections = dict(tpn.desktop_sections("windows-x64", tmp_path / "no-tools"))
 
     assert sections["Statically linked libraries"] == []
+    assert sections["Bundled libraries"] == []
 
 
 def _section(text: str, title: str) -> str:
@@ -774,8 +675,8 @@ TEXTS_SECTION = "Licence texts of the parts in the sources release"
 @pytest.mark.usefixtures("no_sections")
 def test_a_licence_text_seen_before_is_named_not_repeated(tmp_path: Path) -> None:
     texts = _texts()
-    texts["btbn-davs2-0123456789ab.tar.xz"] = [{"path": "COPYING", "text": "GPL-2.0 text\n"}]
-    texts["btbn-x264-0123456789ab.tar.xz"] = [{"path": "COPYING", "text": "GPL-2.0 text"}]
+    texts["libva-2.24.1.tar.bz2"] = [{"path": "COPYING", "text": "MIT text\n"}]
+    texts["type2-runtime-dd6cebedcbdd.tar.xz"] = [{"path": "COPYING", "text": "MIT text"}]
     out = tmp_path / "THIRD_PARTY_NOTICES"
 
     code = tpn.main(
@@ -784,8 +685,8 @@ def test_a_licence_text_seen_before_is_named_not_repeated(tmp_path: Path) -> Non
 
     assert code == 0
     section = _section(out.read_text(), TEXTS_SECTION)
-    assert section.count("GPL-2.0 text") == 1
-    assert "COPYING: the same text as COPYING in btbn-davs2-0123456789ab.tar.xz." in section
+    assert section.count("MIT text") == 1
+    assert "COPYING: the same text as COPYING in libva-2.24.1.tar.bz2." in section
     assert section.count("GTK+ is LGPL-2.1+") == 1
     assert "/libgtk-3-common/copyright: the same text as " in section
 
@@ -871,27 +772,28 @@ def test_each_committed_licence_text_says_where_it_was_read() -> None:
 
 
 @pytest.mark.usefixtures("no_sections")
-def test_a_source_without_a_licence_file_gets_its_committed_text(tmp_path: Path) -> None:
-    """nv-codec-headers has its licence only in each header: the fetch finds no file."""
-    manifest = dict(MANIFEST) | {
-        "btbn-50-ffnvcodec-ef2a38b483ab.tar.xz": ("btbn-stage", ALL_FFMPEG)
-    }
-    texts = _texts(manifest) | {"btbn-50-ffnvcodec-ef2a38b483ab.tar.xz": []}
+def test_a_source_without_a_licence_file_gets_its_committed_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A source whose licence is only in each header: the fetch finds no file."""
+    committed = {"sources": [("example-*.tar.xz", "Copyright (c) the example authors")]}
+    monkeypatch.setattr(tpn, "read_licence_texts", lambda: committed)
+    texts = _texts() | {"example-1.0.tar.xz": []}
     out = tmp_path / "THIRD_PARTY_NOTICES"
-    options = _sources(tmp_path, manifest, texts=texts)
+    options = _sources(tmp_path, texts=texts)
 
     assert tpn.main(["--platform", "windows-x64", "--out", str(out), *options]) == 0
 
     section = _section(out.read_text(), TEXTS_SECTION)
-    entry = section.split("Source archive: btbn-50-ffnvcodec-ef2a38b483ab.tar.xz", 1)[1]
-    assert "Copyright (c) 2010-2026 NVIDIA Corporation" in entry.split(LINE, 1)[0]
+    entry = section.split("Source archive: example-1.0.tar.xz", 1)[1]
+    assert "Copyright (c) the example authors" in entry.split(LINE, 1)[0]
 
 
 @pytest.mark.usefixtures("no_sections")
 def test_a_source_with_neither_a_licence_file_nor_a_committed_text_is_an_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    texts = _texts() | {"btbn-x264-0123456789ab.tar.xz": []}
+    texts = _texts() | {"type2-runtime-dd6cebedcbdd.tar.xz": []}
     out = tmp_path / "THIRD_PARTY_NOTICES"
 
     code = tpn.main(
@@ -899,7 +801,7 @@ def test_a_source_with_neither_a_licence_file_nor_a_committed_text_is_an_error(
     )
 
     assert code == 1
-    assert "have none for btbn-x264-0123456789ab.tar.xz" in capsys.readouterr().err
+    assert "have none for type2-runtime-dd6cebedcbdd.tar.xz" in capsys.readouterr().err
 
 
 def test_the_frontend_packages_without_a_licence_file_get_the_committed_text(

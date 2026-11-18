@@ -827,15 +827,16 @@ def test_no_signature_that_users_could_not_check_is_made(
         assert not (tmp_path / "out" / "SHA256SUMS.asc").exists()
 
 
-def test_every_package_job_hands_the_licence_texts_to_its_notices() -> None:
-    """Without them a package's notices would lack the texts; only a real run would show it."""
+def test_only_the_linux_packages_name_the_sources_release_in_their_notices() -> None:
+    """The Linux notices would lack the texts without them; the Windows installers and the image
+    bundle nothing from the release, and their notices refuse the options then."""
     workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
     texts = '"$RUNNER_TEMP/sources/licence-texts.json"'
 
     calls = re.findall(r"third-party-notices\.py(.*?)(?:\n\n|\n      - )", workflow, re.DOTALL)
     assert len(calls) == 2  # the Windows job and the Docker job
     for call in calls:
-        assert f"--sources-texts {texts}" in call
+        assert "--sources-" not in call
     assert "REFRAME_SOURCES_TEXTS: ${{ runner.temp }}/sources/licence-texts.json" in workflow
     assert f"--texts-out {texts}" in workflow
     assert "${{ runner.temp }}/sources/licence-texts.json\n" in workflow

@@ -7,9 +7,9 @@
 schema_version = 1
 
 # The BtbN Linux build loads the system's libva at run time and calls functions that the libva
-# of Ubuntu 22.04 / 24.04 and Debian 12 lacks (vaMapBuffer2), so the Linux layout ships its own,
-# built from source by scripts/bundle-tools.py (DRM only) into the FFmpeg folder's lib/, where
-# the build finds it first. A VA driver built against a newer VA-API than this libva's is not
+# of Ubuntu 22.04 / 24.04 and Debian 12 lacks (vaMapBuffer2), so the Linux packages ship their
+# own, built from source by scripts/bundle-tools.py (DRM only) into the tools folder's libva/;
+# the app copies it into a downloaded FFmpeg's lib/, where the build finds it first. A VA driver built against a newer VA-API than this libva's is not
 # loaded, so keep this pin at the newest libva release. Build it on the oldest supported distro
 # (its glibc is the one the library needs).
 [libraries.libva]

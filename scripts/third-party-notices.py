@@ -1,9 +1,10 @@
 """Write THIRD_PARTY_NOTICES for a desktop package or the Docker image: the licences of the
 Python packages that the frozen sidecar (or the image) ships, of the frontend's production
 packages and of the desktop app's Rust crates, of the data in Reframe's language tables, the
-bundled tool builds with their licences and corresponding-source links, and the sources release
-with the SHA-256 and the licence texts of each of its archives that the package's platform
-bundles. Every part must come with a licence text: a part without one stops the run.
+libraries that the tools layout builds (libva on Linux) with their licences and source links,
+and the sources release with the SHA-256 and the licence texts of each of its archives that the
+package's platform bundles. No package conveys FFmpeg: Reframe downloads it. Every part must
+come with a licence text: a part without one stops the run.
 
 Run it after the sidecar build and the tools layout, in the project environment with
 pip-licenses next to it; ``npx`` and ``cargo about`` must be on ``PATH``. The Linux packages'
@@ -13,9 +14,9 @@ notices read the Ubuntu packages' ``/usr/share/doc/*/copyright``, so they run in
         --sources-url URL --sources-sums SHA256SUMS --sources-manifest manifest.json \\
         --sources-texts licence-texts.json
 
-For the Docker image, ``--tools`` is required and holds only the FFmpeg folder that
-``fetch-tools.py`` makes, and the interpreter must be the one the image installs
-(``uv run --python``).
+The Windows installers and the Docker image bundle nothing from the sources release, so their
+notices take no ``--sources-*`` options. For the image the interpreter must be the one the image
+installs (``uv run --python``).
 """
 
 from __future__ import annotations
@@ -56,11 +57,8 @@ DOC_ROOT = Path("/usr/share/doc")
 
 LICENSE_CHECKER = "license-checker@25.0.1"
 RUST_TARGETS = {"linux-x64": "x86_64-unknown-linux-gnu", "windows-x64": "x86_64-pc-windows-msvc"}
-#: The Docker image's platforms: the pinned FFmpeg platform and the machine of each.
-DOCKER_PLATFORMS = {
-    "docker-linux-x64": ("linux-x64", "x86_64"),
-    "docker-linux-arm64": ("linux-arm64", "aarch64"),
-}
+#: The Docker image's platforms and the machine of each.
+DOCKER_PLATFORMS = {"docker-linux-x64": "x86_64", "docker-linux-arm64": "aarch64"}
 DOCKERFILE = REPO_ROOT / "docker" / "Dockerfile"
 #: The packages the image's ``uv sync`` installs, as ``uv export`` options.
 DOCKER_EXPORT = ("--frozen", "--no-dev", "--all-packages", "--extra", "cli")
@@ -309,18 +307,14 @@ def read_sources_manifest(path: Path) -> list[Mapping[str, Any]]:
 
 
 def bundles(entry: Mapping[str, Any], platform: str) -> bool:
-    """Whether a package of ``platform`` bundles the source of a manifest entry.
-
-    The ``platforms`` of an entry are FFmpeg platforms for the FFmpeg build's sources and
-    desktop package platforms for the others, so the image, which bundles only FFmpeg (its
-    other packages are Debian's), matches only the former.
+    """Whether a package of ``platform`` bundles the source of a manifest entry. The FFmpeg
+    build's sources (``git``, ``btbn-stage``) go to none: no package conveys FFmpeg.
 
     :raises NoticesError: the entry is of a kind this script does not know.
     """
     kind = entry.get("kind")
     if kind in ("git", "btbn-stage"):
-        ffmpeg = DOCKER_PLATFORMS[platform][0] if platform in DOCKER_PLATFORMS else platform
-        return ffmpeg in entry["platforms"]
+        return False
     if kind in ("url", "repository", "ubuntu-source"):
         return platform in entry["platforms"]
     raise NoticesError(f"{entry['archive']}: unknown source kind {kind!r}")
@@ -332,7 +326,7 @@ def platform_sources(
     """``(sha256, archive)`` of each archive in ``sums`` that ``platform`` bundles.
 
     :raises NoticesError: ``sums`` has an archive of no entry, a bundled entry has no sum, or
-        ``platform`` bundles nothing (the manifest was made without its FFmpeg pin).
+        ``platform`` bundles nothing (its notices need no sources release).
     """
     archives = {str(entry["archive"]) for entry in entries} | {TEXTS}
     unknown = sorted(name for _, name in sums if name not in archives)
@@ -341,7 +335,9 @@ def platform_sources(
     checksums = {name: sha256 for sha256, name in sums if name != TEXTS}
     wanted = sorted(str(entry["archive"]) for entry in entries if bundles(entry, platform))
     if not wanted:
-        raise NoticesError(f"the source manifest has no source of {platform}")
+        raise NoticesError(
+            f"the source manifest has no source of {platform}: its notices take no --sources-*"
+        )
     missing = [name for name in wanted if name not in checksums]
     if missing:
         raise NoticesError(f"the sums have no line for {', '.join(missing)}")
@@ -439,9 +435,8 @@ def source_text_entries(
 
 def sources_text(url: str, sums: Sequence[tuple[str, str]]) -> str:
     lines = [
-        "The source code of the third-party parts under the GPL or LGPL (FFmpeg and the",
-        "libraries its build links, with the build scripts, and the other bundled parts",
-        "below) is in this sources release:",
+        "The source code of the third-party parts under the GPL or LGPL that this package",
+        "bundles is in this sources release:",
         "",
         f"  {url}",
         "",
@@ -607,15 +602,6 @@ def parse_cargo_about(report: Mapping[str, Any]) -> list[Entry]:
     return entries
 
 
-def _pin_tables(tool: str, manifests: Path) -> tuple[Mapping[str, Any], Path] | None:
-    """The table that pins ``tool``: ``[builds.default]`` of ``tools/<tool>.toml``."""
-    path = manifests / f"{tool}.toml"
-    if not path.is_file():
-        return None
-    table = tomllib.loads(path.read_text(encoding="utf-8")).get("builds", {}).get("default")
-    return (table, path) if isinstance(table, dict) else None
-
-
 def _strings(table: Mapping[str, Any], skip: Iterable[str] = ()) -> list[tuple[str, str]]:
     return [
         (key, str(value))
@@ -655,57 +641,35 @@ def _pin_entry(
     )
 
 
-def _library_entries(
-    tools: Path, folders: Sequence[Path], manifests: Path, platform: str
-) -> list[Entry]:
-    """The libraries pinned for ``platform`` that the tools layout builds into a tool folder,
-    with its licence there as ``LICENSE-<name>.txt``."""
+def library_entries(tools: Path, manifests: Path, platform: str) -> list[Entry]:
+    """One entry per library pinned for ``platform`` that the tools layout builds into
+    ``tools/<name>/``, with every field of its pin and its ``LICENSE-<name>.txt``.
+
+    :raises NoticesError: a pinned library has no licence file there, or ``tools`` holds a
+        folder that no pin names (an FFmpeg of an older layout would ship without notices).
+    """
     entries = []
+    pinned: set[str] = set()
     for manifest in sorted(manifests.glob("*.toml")):
         data = tomllib.loads(manifest.read_text(encoding="utf-8"))
         for name, pin in data.get("libraries", {}).items():
             archive = pin.get("platforms", {}).get(platform)
             if not isinstance(archive, dict):
                 continue
-            licence = f"LICENSE-{name}.txt"
-            found = [folder / licence for folder in folders if (folder / licence).is_file()]
-            if not found:
+            pinned.add(name)
+            licence = tools / name / f"LICENSE-{name}.txt"
+            if not licence.is_file():
                 raise NoticesError(
-                    f"{manifest}: {name} is pinned for {platform}, but no folder in {tools} "
-                    f"has its {licence}"
+                    f"{manifest}: {name} is pinned for {platform}, but there is no {licence}: "
+                    f"run scripts/bundle-tools.py --platform {platform}"
                 )
-            entries.append(_pin_entry(name, pin, archive, manifest, found[0], tools, platform))
-    return entries
-
-
-def tool_entries(
-    tools: Path, manifests: Path, platform: str, *, libraries: bool = True
-) -> list[Entry]:
-    """One entry per bundled tool folder in ``tools`` and, with ``libraries``, per library built
-    into one, with every field of its pin: the download, its checksum and the
-    corresponding-source links. A folder without a pin is an error: its source could not be
-    named."""
-    entries = []
-    folders = sorted(p for p in tools.iterdir() if p.is_dir()) if tools.is_dir() else []
+            entries.append(_pin_entry(name, pin, archive, manifest, licence, tools, platform))
+    folders = sorted(p.name for p in tools.iterdir() if p.is_dir()) if tools.is_dir() else []
     for folder in folders:
-        pinned = _pin_tables(folder.name, manifests)
-        if pinned is None:
-            raise NoticesError(f"{folder} is bundled but no manifest in {manifests} pins it")
-        build, manifest = pinned
-        archive = build.get("platforms", {}).get(platform)
-        if not isinstance(archive, dict):
-            raise NoticesError(f"{manifest}: the default build has no {platform} archive")
-        license_file = folder / str(build.get("license_file", ""))
-        if not license_file.is_file():
-            found = sorted(p for p in folder.iterdir() if _LICENSE_FILE_RE.match(p.name))
-            if not found:
-                raise NoticesError(f"{folder} has no licence file")
-            license_file = found[0]
-        entries.append(
-            _pin_entry(folder.name, build, archive, manifest, license_file, tools, platform)
-        )
-    if folders and libraries:
-        entries += _library_entries(tools, folders, manifests, platform)
+        if folder not in pinned:
+            raise NoticesError(
+                f"{tools / folder} is bundled but no manifest in {manifests} pins it for {platform}"
+            )
     return entries
 
 
@@ -774,7 +738,7 @@ def desktop_sections(platform: str, tools: Path) -> list[tuple[str, list[Entry]]
     names = shipped_top_level_names(DEFAULT_SIDECAR)
     distributions = shipped_distributions(names, importlib.metadata.packages_distributions())
     return [
-        ("Bundled tools", tool_entries(tools, TOOL_MANIFESTS, platform)),
+        ("Bundled libraries", library_entries(tools, TOOL_MANIFESTS, platform)),
         ("Statically linked libraries", static_entries(TOOL_MANIFESTS, platform)),
         ("Python (the sidecar's interpreter)", [python_interpreter_entry()]),
         ("Python packages (the sidecar)", python_entries(distributions)),
@@ -784,22 +748,16 @@ def desktop_sections(platform: str, tools: Path) -> list[tuple[str, list[Entry]]
     ]
 
 
-def docker_sections(platform: str, tools: Path) -> list[tuple[str, list[Entry]]]:
-    """The image's FFmpeg, Python and its packages, and the frontend's packages. The Python
-    entry describes this interpreter, so it must be the image's version."""
-    ffmpeg_platform, machine = DOCKER_PLATFORMS[platform]
-    if not (tools / "ffmpeg").is_dir():
-        raise NoticesError(
-            f"{tools} has no ffmpeg folder: scripts/fetch-tools.py --platform {ffmpeg_platform} "
-            f"--install-dir {tools / 'ffmpeg'} makes it"
-        )
+def docker_sections(platform: str) -> list[tuple[str, list[Entry]]]:
+    """The image's Python and its packages, and the frontend's packages. The Python entry
+    describes this interpreter, so it must be the image's version."""
+    machine = DOCKER_PLATFORMS[platform]
     wanted = docker_python_version()
     if host_platform.python_version() != wanted:
         raise NoticesError(
             f"the image ships Python {wanted}: run this with it (uv run --python {wanted})"
         )
     return [
-        ("Bundled tools", tool_entries(tools, TOOL_MANIFESTS, ffmpeg_platform, libraries=False)),
         ("Python (the image's interpreter)", [python_interpreter_entry()]),
         ("Python packages (the server)", python_entries(docker_distributions(machine))),
         (LANGUAGE_DATA, data_entries()),
@@ -814,10 +772,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument(
-        "--tools",
-        type=Path,
-        help="the bundled tools folder (default: the desktop layout); for docker-*, the folder "
-        "that holds fetch-tools.py's ffmpeg folder",
+        "--tools", type=Path, default=DEFAULT_TOOLS, help="the desktop packages' tools layout"
     )
     parser.add_argument("--sources-url", help="the sources release that the notices name")
     parser.add_argument("--sources-sums", type=Path, help="that release's SHA256SUMS")
@@ -830,8 +785,6 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(
             "--sources-url, --sources-sums, --sources-manifest and --sources-texts go together"
         )
-    if args.platform in DOCKER_PLATFORMS and args.tools is None:
-        parser.error(f"--tools is required for {args.platform}: the image's FFmpeg folder")
     # The packages carry the desktop app's version, not the core's.
     config = json.loads((TAURI_DIR / "tauri.conf.json").read_text(encoding="utf-8"))
 
@@ -857,9 +810,9 @@ def main(argv: list[str] | None = None) -> int:
                 "packages, versions and source links, in a file next to this one. Their\n"
                 "copyright files are at the end of this file."
             )
-            sections = docker_sections(args.platform, args.tools)
+            sections = docker_sections(args.platform)
         else:
-            sections = desktop_sections(args.platform, args.tools or DEFAULT_TOOLS)
+            sections = desktop_sections(args.platform, args.tools)
         sections = [*sections, *texts_section]
     except NoticesError as e:
         sys.stderr.write(f"third-party-notices: {e}\n")

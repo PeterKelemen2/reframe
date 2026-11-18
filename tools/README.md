@@ -6,29 +6,28 @@ Pinned third-party tool builds. Plan: [02 §Bundled FFmpeg](../docs/plan/02-arch
 | File | Content |
 |------|---------|
 | `ffmpeg.toml` | The FFmpeg build that ships (`default`) and a second build for the CI job that tests the path override (`override-test`). For each platform: URL, SHA-256, size, archive layout. Also the exact version string, licence and the source commits (GPL source obligations). |
-| `bundled-tools.toml` | The libva source that the Linux layout builds into FFmpeg's `lib/`: URL, SHA-256, size, archive layout, licence and source links. No package bundles or needs MKVToolNix or MediaInfo: Reframe writes Matroska headers and probes files itself (decisions 0080, 0081). |
+| `bundled-tools.toml` | The libva source that the Linux packages ship (built into `libva/` of the tools layout, copied into a downloaded FFmpeg's `lib/`): URL, SHA-256, size, archive layout, licence and source links. No package bundles or needs MKVToolNix or MediaInfo: Reframe writes Matroska headers and probes files itself (decisions 0080, 0081). |
 | `static-builds.toml` | Bundled binaries that are static builds (the AppImage runtime): the tree each was built from and every library it links (URL, SHA-256, licence), for the sources release and the notices; and the runtime file that `desktop/packaging/linux/appimage-runtime.sh` hands to the bundler (decision 0079, "Fix round — FS"). |
 | `licence-texts.toml` | Licence texts that the notices cannot find by themselves: npm and PyPI packages that ship no licence file, and sources whose licence is only in their files' headers (`scripts/sources-fetch.py` finds no licence file in them). Each with the version and the place it was read; the notices and the fetch stop on a part that has neither (decision 0079, "Fix round — FL"). Its `[data]` tables are the notices of the language tables' data (CLDR, the IANA registry, Wiktionary's names, langcodes and language_data; decision 0082): update them with the libraries that `scripts/gen-language-data.py` builds the tables from. |
 
-## Lay out the bundled tools of a package
+## Lay out the tools folder of a package
 
 ```sh
 uv run python scripts/bundle-tools.py --platform linux-x64     # or windows-x64
 ```
 
-The script puts the `default` FFmpeg build into `desktop/src-tauri/resources/tools/`
-(`--dest DIR` for another folder): `ffmpeg/` with its licence file (decision 0005's layout); it
-removes a tool folder that an earlier layout made for a tool that is no longer pinned (such as
-`mediainfo/` or `mkvtoolnix/`). It checks each
+No package contains FFmpeg: the app downloads it, or installs it from an archive, at the first
+run. The script lays out `desktop/src-tauri/resources/tools/` (`--dest DIR` for another
+folder). On Linux it builds libva from its pinned source (DRM only) into `libva/`, with its
+licence as `LICENSE-libva.txt`; the app copies `libva.so.2` and `libva-drm.so.2` into the
+`lib/` of a build it installs, because the distros' older libva lacks functions the FFmpeg build
+calls. The Windows layout holds only the folder's README. The script checks the source
 archive's size and SHA-256 before it extracts anything, keeps a folder whose files still match
-on a rerun, removes another platform's folders, and refuses to touch a destination that holds
-files it did not make. On the platform it lays out, it then runs tool discovery and checks that
-every tool is found as `bundled` with its pinned version. The Windows layout can be made on
-Linux; the Linux layout needs a Linux host (the archive has symbolic links) with meson,
-ninja, pkg-config, gcc and libdrm's headers (`apt install meson ninja-build pkg-config gcc
-libdrm-dev`), because it builds libva from source (DRM only) into `ffmpeg/lib/`: the distros'
-older libva lacks functions the FFmpeg build calls. Build the Linux layout on the oldest
-supported distro (Ubuntu 22.04): the libva library needs that host's glibc.
+on a rerun, removes folders that an earlier layout made (an `ffmpeg/` among them), and refuses
+to touch a destination that holds files it did not make. On Linux it then loads the built
+libraries. The build needs meson, ninja, pkg-config, gcc and libdrm's headers (`apt install
+meson ninja-build pkg-config gcc libdrm-dev`); build it on the oldest supported distro (Ubuntu
+22.04): the library needs that host's glibc.
 
 Keep the libva pin at the newest libva release: libva does not load a VA driver built against
 a newer VA-API than its own.

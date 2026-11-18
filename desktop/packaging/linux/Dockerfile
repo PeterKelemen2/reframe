@@ -14,7 +14,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # apt has no --snapshot). The snapshot is HTTPS only: until ca-certificates is in, apt trusts the
 # archive's signatures alone, as it does with the image's default http:// archive.
 ARG APT_SNAPSHOT=20261114T000000Z
-# libdrm-dev, meson and ninja-build: bundle-tools.py builds libva next to the bundled FFmpeg.
+# libdrm-dev, meson and ninja-build: bundle-tools.py builds the libva that the packages ship.
 RUN printf 'deb https://snapshot.ubuntu.com/ubuntu/%s %s main restricted universe multiverse\n' \
         "$APT_SNAPSHOT" jammy "$APT_SNAPSHOT" jammy-updates "$APT_SNAPSHOT" jammy-security \
         > /etc/apt/sources.list \

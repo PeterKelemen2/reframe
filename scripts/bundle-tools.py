@@ -1,21 +1,19 @@
-"""Lay out the pinned tools that a desktop package ships (the app's ``tools`` resource folder).
+"""Lay out what a desktop package ships next to its sidecar (the app's ``tools`` resource folder).
 
-FFmpeg is the ``default`` build of ``tools/ffmpeg.toml``; the Linux layout also gets a libva
-built from its pinned source (``tools/bundled-tools.toml``) into FFmpeg's ``lib/`` (the libva of
-older distros lacks functions the build calls). Each archive's size and SHA-256 are checked
-before anything is extracted. A rerun keeps a tool folder
-whose files still have the hashes recorded when it was laid out, and the destination holds
-nothing but its ``README.md`` and the platform's tool folders afterwards. On the platform the
-layout is for, tool discovery must then find every bundled tool with its pinned version.
+The packages contain no FFmpeg: the app downloads it, or installs it from an archive, at the
+first run. The Linux layout holds libva, built from its pinned source (``tools/bundled-tools.toml``)
+into ``libva/``, which the core copies into a downloaded build's ``lib/`` (the libva of older
+distros lacks functions the BtbN build calls); the Windows layout holds nothing. Each source
+archive's size and SHA-256 are checked before anything is extracted. A rerun keeps a library
+folder whose files still have the hashes recorded when it was laid out, and the destination
+holds nothing but its ``README.md`` and the platform's library folders afterwards.
 """
 
 from __future__ import annotations
 
 import argparse
-import asyncio
+import ctypes
 import json
-import os
-import posixpath
 import re
 import shutil
 import subprocess
@@ -24,16 +22,14 @@ import tempfile
 import tomllib
 import urllib.parse
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
-from pathlib import Path, PurePosixPath
+from dataclasses import dataclass
+from pathlib import Path
 
-from reframe.models.tools import ToolOrigin, ToolStatus
 from reframe.tools import fetch
-from reframe.tools.discovery import ENV_VARS, LIBVA_DRIVER_DIRS, discover_tools
+from reframe.tools.discovery import LIBVA_DRIVER_DIRS
 from reframe.tools.runner import CancelToken
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-FFMPEG_MANIFEST = REPO_ROOT / "tools" / "ffmpeg.toml"
 TOOLS_MANIFEST = REPO_ROOT / "tools" / "bundled-tools.toml"
 DEFAULT_DEST = REPO_ROOT / "desktop" / "src-tauri" / "resources" / "tools"
 #: The desktop packages are built for x64 only.
@@ -42,11 +38,12 @@ PLATFORMS = ("linux-x64", "windows-x64")
 #: The committed file of the destination folder.
 README = "README.md"
 WORK_PREFIX = ".bundle-"
-#: Every tool folder this script makes, with the tools that discovery finds in it.
-FOLDER_TOOLS: Mapping[str, tuple[str, ...]] = {"ffmpeg": ("ffmpeg", "ffprobe")}
+#: Folders that earlier layouts made for tools no package ships any more: a rerun removes them
+#: when they carry the layout marker or are empty.
+RETIRED_FOLDERS = ("ffmpeg", "mkvtoolnix", "mediainfo")
 #: Archive formats of the pins in ``tools/bundled-tools.toml``.
 FORMATS = ("tar.xz", "tar.bz2", "zip")
-#: The libraries of the libva build that FFmpeg loads.
+#: The libraries of the libva build that FFmpeg loads, in load order.
 LIBVA_SONAMES = ("libva.so.2", "libva-drm.so.2")
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -54,7 +51,7 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 @dataclass(frozen=True, slots=True)
 class Library:
-    """A library built from a pinned source archive into the FFmpeg folder's ``lib/``."""
+    """A library built from a pinned source archive into the folder ``<dest>/<name>``."""
 
     name: str
     version: str
@@ -64,25 +61,7 @@ class Library:
     format: str
     root: str
     license_file: str
-    """Relative to ``root``; copied as ``LICENSE-<name>.txt`` next to FFmpeg's licence."""
-
-
-@dataclass(frozen=True, slots=True)
-class Archive:
-    """One archive to lay out as the tool folder ``folder``."""
-
-    folder: str
-    version: str
-    platform: str
-    url: str
-    sha256: str
-    size: int
-    format: str
-    root: str
-    """The archive's top folder; its contents become the tool folder."""
-    required: tuple[str, ...]
-    """Paths that must be in the laid-out folder: the binaries and the licence file."""
-    libraries: tuple[Library, ...] = ()
+    """Relative to ``root``; copied as ``LICENSE-<name>.txt`` next to the libraries."""
 
 
 def _log(message: str) -> None:
@@ -119,28 +98,6 @@ def _load_toml(path: Path) -> dict[str, object]:
         raise fetch.FetchError(f"{path} is not valid TOML: {e}") from e
 
 
-def ffmpeg_archive(manifest: Path, platform: str) -> Archive:
-    """The ``default`` build of the FFmpeg manifest for ``platform``. :raises FetchError:"""
-    build = fetch.load_manifest(manifest)["default"]
-    pbuild = build.platforms.get(platform)
-    if pbuild is None:
-        raise fetch.FetchError(f"{manifest}: the default build has no archive for {platform}")
-    table = _load_toml(manifest)["builds"]
-    assert isinstance(table, dict)  # load_manifest checked it
-    license_file = _rel_path(table["default"].get("license_file"), "builds.default.license_file")
-    return Archive(
-        folder="ffmpeg",
-        version=build.version,
-        platform=platform,
-        url=pbuild.url,
-        sha256=pbuild.sha256,
-        size=pbuild.size,
-        format=pbuild.format,
-        root=pbuild.root,
-        required=(pbuild.ffmpeg, pbuild.ffprobe, license_file),
-    )
-
-
 def _pin(table: Mapping[str, object], where: str) -> tuple[str, str, int, str, str]:
     """``(url, sha256, size, format, root)`` of one pinned archive."""
     url = _str(table, "url", where)
@@ -164,16 +121,12 @@ def _pin(table: Mapping[str, object], where: str) -> tuple[str, str, int, str, s
     return url, sha256, size, fmt, root
 
 
-def _load_tools_manifest(manifest: Path) -> dict[str, object]:
+def libraries(manifest: Path, platform: str) -> list[Library]:
+    """The libraries laid out for ``platform`` (libva on Linux)."""
     data = _load_toml(manifest)
     if data.get("schema_version") != 1:
         raise fetch.FetchError(f"{manifest}: schema_version: expected 1")
-    return data
-
-
-def libraries(manifest: Path, platform: str) -> list[Library]:
-    """The libraries built into the FFmpeg folder for ``platform`` (libva on Linux)."""
-    tables = _load_tools_manifest(manifest).get("libraries", {})
+    tables = data.get("libraries", {})
     if not isinstance(tables, dict):
         raise fetch.FetchError(f"{manifest}: libraries: expected a table")
     found = []
@@ -194,20 +147,18 @@ def libraries(manifest: Path, platform: str) -> list[Library]:
     return found
 
 
-def _is_laid_out(folder: Path, archive: Archive) -> bool:
+def _is_laid_out(folder: Path, library: Library) -> bool:
     marker = fetch.installed_build(folder)
-    if marker is None or marker.get("sha256") != archive.sha256:
-        return False
-    if marker.get("libraries", {}) != {lib.name: lib.sha256 for lib in archive.libraries}:
+    if marker is None or marker.get("sha256") != library.sha256:
         return False
     files = marker.get("files")
     return isinstance(files, dict) and bool(files) and fetch.tree_digest(folder) == files
 
 
 def _made_here(folder: Path) -> bool:
-    """An empty tool folder, or one with a layout marker: the bundler ships every folder here,
-    so one left by an earlier layout of a tool that is no longer pinned must go too."""
-    if folder.name in FOLDER_TOOLS and not any(folder.iterdir()):
+    """A folder with a layout marker, or an empty one of a retired tool: the bundler ships every
+    folder here, so one an earlier layout left must go too."""
+    if folder.name in RETIRED_FOLDERS and not any(folder.iterdir()):
         return True
     marker = fetch.installed_build(folder)
     return marker is not None and marker.get("layout") == "bundled"
@@ -215,8 +166,8 @@ def _made_here(folder: Path) -> bool:
 
 def _clear_destination(dest: Path, wanted: Sequence[str]) -> None:
     """Remove what an earlier run left that this layout does not want (work folders, another
-    platform's tool folders, a tool that is no longer bundled). :raises FetchError: ``dest``
-    holds anything this script did not make; nothing is removed then."""
+    platform's folders, an FFmpeg). :raises FetchError: ``dest`` holds anything this script did
+    not make; nothing is removed then."""
     unknown: list[str] = []
     remove: list[Path] = []
     for entry in sorted(dest.iterdir()):
@@ -239,18 +190,18 @@ def _clear_destination(dest: Path, wanted: Sequence[str]) -> None:
         shutil.rmtree(entry)
 
 
-def _fetch(url: str, sha256: str, size: int, fmt: str, root: str, into: Path) -> Path:
-    """Download, verify and extract one archive into the new folder ``into``; the folder that
-    holds its contents (``into/root``)."""
+def _fetch(library: Library, into: Path) -> Path:
+    """Download, verify and extract the source archive into the new folder ``into``; the
+    folder that holds its contents."""
     into.mkdir()
-    downloaded = into.with_name(into.name + "." + fmt)
-    _log(f"downloading {url}")
-    fetch.download(url, downloaded, size=size, cancel=CancelToken())
-    fetch.verify_file(downloaded, sha256, size)
-    _log(f"SHA-256 verified: {sha256}")
-    fetch.safe_extract(downloaded, fmt, root, into, CancelToken())
+    downloaded = into.with_name(into.name + "." + library.format)
+    _log(f"downloading {library.url}")
+    fetch.download(library.url, downloaded, size=library.size, cancel=CancelToken())
+    fetch.verify_file(downloaded, library.sha256, library.size)
+    _log(f"SHA-256 verified: {library.sha256}")
+    fetch.safe_extract(downloaded, library.format, library.root, into, CancelToken())
     downloaded.unlink()
-    return into / root
+    return into / library.root
 
 
 def _run(argv: list[str]) -> None:
@@ -284,55 +235,32 @@ def _build_libva(source: Path, build: Path) -> dict[str, Path]:
 LIBRARY_BUILDERS: dict[str, Callable[[Path, Path], dict[str, Path]]] = {"libva": _build_libva}
 
 
-def _add_library(library: Library, work: Path, folder: Path) -> None:
-    """Build ``library`` into ``folder/lib`` (each file under its own name, linked from its
-    soname) and put its licence next to FFmpeg's."""
-    source = _fetch(
-        library.url,
-        library.sha256,
-        library.size,
-        library.format,
-        library.root,
-        work / f"src-{library.name}",
-    )
-    built = LIBRARY_BUILDERS[library.name](source, work / f"build-{library.name}")
-    lib = folder / "lib"
-    lib.mkdir(exist_ok=True)
-    for soname, path in built.items():
-        if not path.is_file():
-            raise fetch.FetchError(f"the {library.name} build made no {soname}")
-        shutil.copyfile(path, lib / path.name)
-        if path.name != soname:
-            (lib / soname).unlink(missing_ok=True)
-            (lib / soname).symlink_to(path.name)
-    shutil.copyfile(source / library.license_file, folder / f"LICENSE-{library.name}.txt")
-    _log(f"built {library.name} {library.version} into {lib}")
-
-
-def _lay_out(archive: Archive, dest: Path) -> None:
-    folder = dest / archive.folder
-    if _is_laid_out(folder, archive):
-        _log(f"{archive.folder} {archive.version} ({archive.platform}) is up to date")
+def _lay_out(library: Library, dest: Path) -> None:
+    """Build ``library`` into ``dest/<name>``: each file under its own name, linked from its
+    soname, with the licence as ``LICENSE-<name>.txt``."""
+    folder = dest / library.name
+    if _is_laid_out(folder, library):
+        _log(f"{library.name} {library.version} is up to date")
         return
     work = Path(tempfile.mkdtemp(prefix=WORK_PREFIX, dir=dest))
     try:
-        file_name = posixpath.basename(urllib.parse.urlsplit(archive.url).path)
-        new = _fetch(
-            archive.url, archive.sha256, archive.size, archive.format, archive.root, work / "x"
-        )
-        for rel in archive.required:
-            if not new.joinpath(*PurePosixPath(rel).parts).is_file():
-                raise fetch.FetchError(f"{file_name} has no {rel}")
-        for library in archive.libraries:
-            _add_library(library, work, new)
+        source = _fetch(library, work / "src")
+        built = LIBRARY_BUILDERS[library.name](source, work / "build")
+        new = work / "out"
+        new.mkdir()
+        for soname, path in built.items():
+            if not path.is_file():
+                raise fetch.FetchError(f"the {library.name} build made no {soname}")
+            shutil.copyfile(path, new / path.name)
+            if path.name != soname:
+                (new / soname).symlink_to(path.name)
+        shutil.copyfile(source / library.license_file, new / f"LICENSE-{library.name}.txt")
         marker = {
-            "build": archive.folder,
-            "version": archive.version,
-            "platform": archive.platform,
-            "url": archive.url,
-            "sha256": archive.sha256,
+            "build": library.name,
+            "version": library.version,
+            "url": library.url,
+            "sha256": library.sha256,
             "layout": "bundled",
-            "libraries": {lib.name: lib.sha256 for lib in archive.libraries},
             "files": fetch.tree_digest(new),
         }
         (new / fetch.MARKER_NAME).write_text(json.dumps(marker, indent=1), encoding="utf-8")
@@ -341,52 +269,35 @@ def _lay_out(archive: Archive, dest: Path) -> None:
         new.rename(folder)
     finally:
         shutil.rmtree(work, ignore_errors=True)
-    _log(f"laid out {folder}")
+    _log(f"built {library.name} {library.version} into {folder}")
 
 
-def check_discovery(dest: Path, archives: Sequence[Archive]) -> None:
-    """Tool discovery, as the installed app runs it on this computer, must find each tool of
-    ``archives`` in ``dest`` with its pinned version. :raises FetchError:"""
-    environ = {k: v for k, v in os.environ.items() if k not in ENV_VARS.values()}
-    found = asyncio.run(discover_tools(environ=environ, bundled_roots=[dest], search_path=""))
-    problems = []
-    for archive in archives:
-        for name in FOLDER_TOOLS[archive.folder]:
-            info = getattr(found, name)
-            if info.status != ToolStatus.FOUND or info.origin != ToolOrigin.BUNDLED:
-                problems.append(f"{name}: {info.status.value} ({info.reason})")
-            elif info.version != archive.version:
-                problems.append(f"{name}: version {info.version!r}, expected {archive.version!r}")
-            else:
-                _log(f"{name} {info.version} found as bundled: {info.path}")
-    if problems:
-        raise fetch.FetchError("tool discovery: " + "; ".join(problems))
+def check_loads(folder: Path, sonames: Sequence[str]) -> None:
+    """Each library of ``folder`` must load on this computer, in order (a later one needs the
+    earlier ones). :raises FetchError:"""
+    for soname in sonames:
+        try:
+            ctypes.CDLL(str(folder / soname))
+        except OSError as e:
+            raise fetch.FetchError(f"{folder / soname} does not load: {e}") from e
+        _log(f"{folder / soname} loads")
 
 
-def bundle(
-    platform: str,
-    dest: Path,
-    *,
-    ffmpeg_manifest: Path = FFMPEG_MANIFEST,
-    tools_manifest: Path = TOOLS_MANIFEST,
-) -> list[Archive]:
-    """Lay out every tool of ``platform`` in ``dest``; the archives laid out.
+def bundle(platform: str, dest: Path, *, tools_manifest: Path = TOOLS_MANIFEST) -> list[Library]:
+    """Lay out every library of ``platform`` in ``dest``; the libraries laid out.
 
-    :raises FetchError: a bad manifest, a download or checksum failure, an archive without a
-        pinned file, a failed library build, a destination with foreign files, or a tool that
-        discovery does not find.
+    :raises FetchError: a bad manifest, a download or checksum failure, a failed library build,
+        a destination with foreign files, or (on the platform the layout is for) a library
+        that does not load.
     """
-    ffmpeg = ffmpeg_archive(ffmpeg_manifest, platform)
-    archives = [replace(ffmpeg, libraries=tuple(libraries(tools_manifest, platform)))]
+    found = libraries(tools_manifest, platform)
     dest.mkdir(parents=True, exist_ok=True)
-    _clear_destination(dest, [a.folder for a in archives])
-    for archive in archives:
-        _lay_out(archive, dest)
-    if fetch.host_platform() == platform:
-        check_discovery(dest, archives)
-    else:
-        _log(f"not running the {platform} tools on this computer: discovery check skipped")
-    return archives
+    _clear_destination(dest, [lib.name for lib in found])
+    for library in found:
+        _lay_out(library, dest)
+    if fetch.host_platform() == platform and "libva" in {lib.name for lib in found}:
+        check_loads(dest / "libva", LIBVA_SONAMES)
+    return found
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -394,19 +305,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--platform", required=True, choices=PLATFORMS)
     parser.add_argument("--dest", type=Path, default=DEFAULT_DEST, help="default: %(default)s")
     parser.add_argument(
-        "--ffmpeg-manifest", type=Path, default=FFMPEG_MANIFEST, help=argparse.SUPPRESS
-    )
-    parser.add_argument(
         "--tools-manifest", type=Path, default=TOOLS_MANIFEST, help=argparse.SUPPRESS
     )
     args = parser.parse_args(argv)
     try:
-        bundle(
-            args.platform,
-            Path(args.dest).absolute(),
-            ffmpeg_manifest=args.ffmpeg_manifest,
-            tools_manifest=args.tools_manifest,
-        )
+        bundle(args.platform, Path(args.dest).absolute(), tools_manifest=args.tools_manifest)
     except (fetch.FetchError, OSError) as e:
         _log(f"error: {e}")
         return 1

@@ -1,5 +1,6 @@
-# The release of a v* tag: the sources release that the packages name, the Linux packages, the
-# Windows installers, the Docker image (amd64, arm64), latest.json and the GitHub release.
+# The release of a v* tag: the sources release that the Linux packages name, the Linux packages,
+# the Windows installers, the Docker image (amd64, arm64), latest.json and the GitHub release.
+# No package contains FFmpeg: the app downloads it.
 # The procedure and the secrets: docs/release.md.
 name: Release
 
@@ -182,10 +183,14 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Generate the test file for the install tests
+      # The install tests install it from this file into the installed app.
+      - name: The FFmpeg archive, and the test file made with its FFmpeg
         run: |
-          bin_dir="$(uv run --no-project python scripts/fetch-tools.py --build default)"
-          PATH="$bin_dir:$PATH" uv run python scripts/make-testdata.py --only multitrack
+          cache="$RUNNER_TEMP/ffmpeg-archive"
+          archive=$(uv run python desktop/tests/smoke/ffmpeg-archive.py "$cache")
+          echo "REFRAME_FFMPEG_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          bin=$(uv run python desktop/tests/smoke/ffmpeg-archive.py "$cache" --extract "$RUNNER_TEMP/ffmpeg")
+          PATH="$bin:$PATH" uv run python scripts/make-testdata.py --only multitrack
 
       - name: Install, run and remove the packages (Ubuntu 22.04, Debian 12, Fedora)
         run: desktop/packaging/linux/install-test.sh dist/linux
@@ -201,7 +206,7 @@ jobs:
 
   windows:
     name: Windows installers
-    needs: [version, sources]
+    needs: [version]
     runs-on: windows-latest
     timeout-minutes: 120
     outputs:
@@ -223,14 +228,10 @@ jobs:
             frontend/package-lock.json
             desktop/package-lock.json
 
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: sources
-          path: ${{ runner.temp }}/sources
-
       - run: uv sync --frozen
 
-      - name: Lay out the bundled tools (FFmpeg)
+      # The Windows layout holds no tool: this removes what an older layout left.
+      - name: Lay out the packaged tools folder
         run: uv run python scripts/bundle-tools.py --platform windows-x64
 
       - name: Build the frozen sidecar
@@ -245,17 +246,14 @@ jobs:
       - name: Install cargo-about
         run: cargo install --locked cargo-about@0.9.3 --features cli
 
-      # PYTHONUTF8: cargo about's output is UTF-8, not the runner's ANSI code page.
+      # PYTHONUTF8: cargo about's output is UTF-8, not the runner's ANSI code page. The
+      # installers bundle nothing from the sources release.
       - name: Write THIRD_PARTY_NOTICES
         env:
           PYTHONUTF8: "1"
-          SOURCES_URL: ${{ needs.sources.outputs.url }}
         run: >-
           uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py
-          --platform windows-x64 --sources-url "$SOURCES_URL"
-          --sources-sums "$RUNNER_TEMP/sources/SHA256SUMS"
-          --sources-manifest "$RUNNER_TEMP/sources/manifest.json"
-          --sources-texts "$RUNNER_TEMP/sources/licence-texts.json"
+          --platform windows-x64
 
       # The bundler signs the installers, Reframe.exe and every unsigned .exe and .dll in the
       # resources with this certificate.
@@ -336,17 +334,15 @@ jobs:
     # One build per platform, each with its own notices, pushed by digest only: the tags are
     # set once every package has been built. arm64 builds natively, without emulation.
     name: Docker image (linux/${{ matrix.arch }})
-    needs: [version, sources]
+    needs: [version]
     strategy:
       matrix:
         include:
           - arch: amd64
             runner: ubuntu-24.04
-            ffmpeg: linux-x64
             notices: docker-linux-x64
           - arch: arm64
             runner: ubuntu-24.04-arm
-            ffmpeg: linux-arm64
             notices: docker-linux-arm64
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
@@ -368,30 +364,17 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: sources
-          path: ${{ runner.temp }}/sources
-
       - run: npm ci
         working-directory: frontend
 
-      # The notices take FFmpeg's licence from the platform's pinned build; they refuse any
-      # Python but the image's. The image adds its Debian packages' copyright files to them.
+      # The notices refuse any Python but the image's. The image adds its Debian packages'
+      # copyright files to them; it holds nothing from the sources release.
       - name: Write docker/notices/THIRD_PARTY_NOTICES
         env:
-          FFMPEG_PLATFORM: ${{ matrix.ffmpeg }}
           PLATFORM: ${{ matrix.notices }}
-          SOURCES_URL: ${{ needs.sources.outputs.url }}
-        run: |
-          uv run --no-project python scripts/fetch-tools.py --platform "$FFMPEG_PLATFORM" \
-            --install-dir "$RUNNER_TEMP/tools/ffmpeg"
-          uv run --python 3.14.8 --with pip-licenses==5.5.5 python scripts/third-party-notices.py \
-            --platform "$PLATFORM" --tools "$RUNNER_TEMP/tools" \
-            --sources-url "$SOURCES_URL" --sources-sums "$RUNNER_TEMP/sources/SHA256SUMS" \
-            --sources-manifest "$RUNNER_TEMP/sources/manifest.json" \
-            --sources-texts "$RUNNER_TEMP/sources/licence-texts.json" \
-            --out docker/notices/THIRD_PARTY_NOTICES
+        run: >-
+          uv run --python 3.14.8 --with pip-licenses==5.5.5 python scripts/third-party-notices.py
+          --platform "$PLATFORM" --out docker/notices/THIRD_PARTY_NOTICES
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 

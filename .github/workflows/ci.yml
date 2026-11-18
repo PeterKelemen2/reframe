@@ -174,9 +174,10 @@ jobs:
         working-directory: desktop/src-tauri
 
   desktop-smoke:
-    # The release app with its frozen sidecar and bundled tools, driven through tauri-driver
-    # (desktop/tests/smoke): it starts, reaches its backend, opens a file from argv, finishes a
-    # job and quits without leaving processes behind. Ubuntu 22.04 is the oldest supported distro.
+    # The release app with its frozen sidecar and no FFmpeg, driven through tauri-driver
+    # (desktop/tests/smoke): it starts, reaches its backend, installs the default FFmpeg build
+    # from the cached archive (Install from file), opens a file from argv, finishes a job and
+    # quits without leaving processes behind. Ubuntu 22.04 is the oldest supported distro.
     name: Desktop smoke test (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -212,7 +213,7 @@ jobs:
 
       - run: uv sync --frozen
 
-      - name: Lay out the bundled tools (tools/ffmpeg.toml, tools/bundled-tools.toml)
+      - name: Lay out the packaged libraries (tools/bundled-tools.toml; none on Windows)
         run: uv run python scripts/bundle-tools.py --platform ${{ runner.os == 'Windows' && 'windows-x64' || 'linux-x64' }}
 
       - name: Build the frozen sidecar
@@ -239,9 +240,20 @@ jobs:
           $dir = & desktop/tests/smoke/msedgedriver.ps1 -Dest "$env:RUNNER_TEMP\msedgedriver"
           Add-Content -Path $env:GITHUB_PATH -Value $dir
 
-      - name: Generate the test file with the bundled FFmpeg
+      # The archive that the test installs with Install from file, so that the app's first run
+      # does not depend on GitHub's download servers.
+      - name: Cache the pinned FFmpeg archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ffmpeg-archive
+          key: ffmpeg-archive-${{ runner.os }}-default-${{ hashFiles('tools/ffmpeg.toml') }}
+
+      - name: The FFmpeg archive, and the test file made with its FFmpeg
         run: |
-          bin="$PWD/desktop/src-tauri/resources/tools/ffmpeg/bin"
+          cache="$RUNNER_TEMP/ffmpeg-archive"
+          archive=$(uv run python desktop/tests/smoke/ffmpeg-archive.py "$cache")
+          echo "REFRAME_SMOKE_FFMPEG_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          bin=$(uv run python desktop/tests/smoke/ffmpeg-archive.py "$cache" --extract "$RUNNER_TEMP/ffmpeg")
           exe=""
           if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
           REFRAME_FFMPEG="$bin/ffmpeg$exe" REFRAME_FFPROBE="$bin/ffprobe$exe" \

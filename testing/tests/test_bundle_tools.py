@@ -1,16 +1,13 @@
-"""scripts/bundle-tools.py: the layout of the bundled tools. No network: the manifests point at
-local archives through ``file:`` URLs."""
+"""scripts/bundle-tools.py: the layout of what the desktop packages ship next to the sidecar. No
+network: the manifest points at local archives through ``file:`` URLs."""
 
 from __future__ import annotations
 
 import hashlib
 import io
 import os
-import stat
-import sys
 import tarfile
-import zipfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -18,43 +15,23 @@ import pytest
 from reframe.tools.fetch import FetchError
 from reframe_testing.scripts import load_script
 
-FF_ROOT = "ffmpeg-test-win64"
-LINUX_ROOT = "ffmpeg-test-linux64"
-
-
 bt = load_script("bundle-tools.py")
 
 
-def _zip(members: dict[str, bytes]) -> bytes:
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w") as zf:
-        for name, data in members.items():
-            info = zipfile.ZipInfo(name)
-            info.external_attr = (stat.S_IFREG | 0o755) << 16
-            zf.writestr(info, data)
-    return buf.getvalue()
-
-
-def _tar_xz(members: dict[str, bytes], mode: str = "w:xz") -> bytes:
+def _tar(members: dict[str, bytes], mode: str = "w:bz2") -> bytes:
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode=mode) as tf:  # type: ignore[call-overload]
         for name, data in members.items():
             info = tarfile.TarInfo(name)
-            info.mode = 0o755
+            info.mode = 0o644
             info.size = len(data)
             tf.addfile(info, io.BytesIO(data))
     return buf.getvalue()
 
 
-def _fake_ffmpeg(tool: str, version: str) -> bytes:
-    return (
-        f"#!/bin/sh\necho '{tool} version {version} Copyright (c) the FFmpeg developers'\n".encode()
-    )
-
-
 class Setup:
-    """Archives in ``tmp/archives``, manifests that pin them, the destination ``tmp/dest``
-    with its README."""
+    """A libva source archive in ``tmp/archives``, a manifest that pins it for Linux, the
+    destination ``tmp/dest`` with its README."""
 
     def __init__(self, tmp: Path) -> None:
         self.archives = tmp / "archives"
@@ -62,102 +39,38 @@ class Setup:
         self.dest = tmp / "dest"
         self.dest.mkdir()
         (self.dest / "README.md").write_text("committed\n")
-        self.ffmpeg_manifest = tmp / "ffmpeg.toml"
-        self.tools_manifest = tmp / "bundled-tools.toml"
-        self.ffmpeg_version = "n9.0.2-test"
-        self.files: dict[str, bytes] = {
-            f"{FF_ROOT}.zip": _zip(
-                {
-                    f"{FF_ROOT}/bin/ffmpeg.exe": b"MZ ffmpeg",
-                    f"{FF_ROOT}/bin/ffprobe.exe": b"MZ ffprobe",
-                    f"{FF_ROOT}/bin/avcodec-63.dll": b"MZ dll",
-                    f"{FF_ROOT}/LICENSE.txt": b"GPL-3",
-                }
-            ),
-            f"{LINUX_ROOT}.tar.xz": _tar_xz(
-                {
-                    f"{LINUX_ROOT}/bin/ffmpeg": _fake_ffmpeg("ffmpeg", self.ffmpeg_version),
-                    f"{LINUX_ROOT}/bin/ffprobe": _fake_ffmpeg("ffprobe", self.ffmpeg_version),
-                    f"{LINUX_ROOT}/lib/libavcodec.so.63": b"ELF",
-                    f"{LINUX_ROOT}/LICENSE.txt": b"GPL-3",
-                }
-            ),
-        }
-        self.libraries = ""
-        self.write()
+        self.manifest = tmp / "bundled-tools.toml"
+        self.name = "libva-9.9.tar.bz2"
+        self.set_source(b"MIT")
 
-    def add_libva(self, copying: bytes = b"MIT") -> None:
-        """Pin a libva source for Linux (the build itself is the ``fake_libva_build``'s)."""
-        name = "libva-9.9.tar.bz2"
-        self.files[name] = _tar_xz(
-            {"libva-9.9/COPYING": copying, "libva-9.9/meson.build": b"project('libva')"},
-            mode="w:bz2",
-        )
-        self.libraries = f"""[libraries.libva]
+    def set_source(self, copying: bytes) -> None:
+        self.data = _tar({"libva-9.9/COPYING": copying, "libva-9.9/meson.build": b"project()"})
+        (self.archives / self.name).write_bytes(self.data)
+        self.manifest.write_text(
+            f"""schema_version = 1
+[libraries.libva]
 version = "9.9"
 license = "MIT"
 license_file = "COPYING"
 source_repository = "https://example.invalid/libva"
 [libraries.libva.platforms.linux-x64]
-url = "{self.url(name)}"
-{self.pin(name)}format = "tar.bz2"
+url = "{(self.archives / self.name).as_uri()}"
+sha256 = "{hashlib.sha256(self.data).hexdigest()}"
+size = {len(self.data)}
+format = "tar.bz2"
 root = "libva-9.9"
-"""
-        self.write()
-
-    def url(self, name: str) -> str:
-        return (self.archives / name).as_uri()
-
-    def pin(self, name: str) -> str:
-        data = self.files[name]
-        return f'sha256 = "{hashlib.sha256(data).hexdigest()}"\nsize = {len(data)}\n'
-
-    def write(self) -> None:
-        for name, data in self.files.items():
-            (self.archives / name).write_bytes(data)
-        lin, win = f"{LINUX_ROOT}.tar.xz", f"{FF_ROOT}.zip"
-        self.ffmpeg_manifest.write_text(
-            f"""schema_version = 1
-[builds.default]
-version = "{self.ffmpeg_version}"
-release_version = "9.0.2"
-release_tag = "test"
-license = "GPL-3.0-or-later"
-license_file = "LICENSE.txt"
-source_repository = "https://example.invalid/ffmpeg"
-source_commit = "{"0" * 40}"
-[builds.default.platforms.linux-x64]
-url = "{self.url(lin)}"
-{self.pin(lin)}format = "tar.xz"
-root = "{LINUX_ROOT}"
-bin_dir = "bin"
-ffmpeg = "bin/ffmpeg"
-ffprobe = "bin/ffprobe"
-[builds.default.platforms.windows-x64]
-url = "{self.url(win)}"
-{self.pin(win)}format = "zip"
-root = "{FF_ROOT}"
-bin_dir = "bin"
-ffmpeg = "bin/ffmpeg.exe"
-ffprobe = "bin/ffprobe.exe"
 """,
             encoding="utf-8",
         )
-        self.tools_manifest.write_text(f"schema_version = 1\n{self.libraries}", encoding="utf-8")
 
-    def bundle(self, platform: str = "windows-x64") -> Any:
-        return bt.bundle(
-            platform,
-            self.dest,
-            ffmpeg_manifest=self.ffmpeg_manifest,
-            tools_manifest=self.tools_manifest,
-        )
+    def bundle(self, platform: str = "linux-x64") -> Any:
+        return bt.bundle(platform, self.dest, tools_manifest=self.manifest)
 
     def tree(self) -> list[str]:
         return sorted(
             p.relative_to(self.dest).as_posix()
             for p in self.dest.rglob("*")
-            if p.is_file() and p.name != ".fetch-tools.json"
+            if p.name != bt.fetch.MARKER_NAME and not p.is_dir()
         )
 
 
@@ -166,187 +79,10 @@ def setup(tmp_path: Path) -> Setup:
     return Setup(tmp_path)
 
 
-@pytest.fixture
-def no_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The fake Windows binaries cannot run: lay the layout out as on another platform."""
+@pytest.fixture(autouse=True)
+def not_on_its_platform(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fake libraries cannot load: lay the layout out as on another platform."""
     monkeypatch.setattr(bt.fetch, "host_platform", lambda: None)
-
-
-@pytest.mark.usefixtures("no_discovery")
-def test_windows_layout_has_ffmpeg_its_licence_and_nothing_else(setup: Setup) -> None:
-    setup.bundle()
-    assert setup.tree() == [
-        "README.md",
-        "ffmpeg/LICENSE.txt",
-        "ffmpeg/bin/avcodec-63.dll",
-        "ffmpeg/bin/ffmpeg.exe",
-        "ffmpeg/bin/ffprobe.exe",
-    ]
-    assert (setup.dest / "ffmpeg" / "bin" / "ffprobe.exe").read_bytes() == b"MZ ffprobe"
-
-
-@pytest.mark.usefixtures("no_discovery")
-def test_a_tool_folder_of_an_earlier_layout_does_not_stay_to_be_shipped(setup: Setup) -> None:
-    """The bundler ships every folder of the layout: an mkvpropedit.exe or MediaInfo.exe laid
-    out by an earlier layout would end up in the installers."""
-    for folder, exe in (("mkvtoolnix", "mkvpropedit.exe"), ("mediainfo", "MediaInfo.exe")):
-        old = setup.dest / folder
-        old.mkdir()
-        (old / exe).write_bytes(b"MZ")
-        (old / bt.fetch.MARKER_NAME).write_text(f'{{"build": "{folder}", "layout": "bundled"}}')
-    setup.bundle()
-    assert sorted(p.name for p in setup.dest.iterdir()) == ["README.md", "ffmpeg"]
-
-
-@pytest.mark.usefixtures("no_discovery")
-@pytest.mark.parametrize("field", ["sha256", "size"])
-def test_a_download_that_does_not_match_its_pin_is_never_extracted(
-    setup: Setup, field: str
-) -> None:
-    name = f"{FF_ROOT}.zip"
-    pinned = setup.files[name]
-    setup.write()
-    # The server now serves other bytes of the same size, or one byte more.
-    other = bytes(len(pinned)) if field == "sha256" else pinned + b"x"
-    (setup.archives / name).write_bytes(other)
-    with pytest.raises(FetchError, match=r"SHA-256|size"):
-        setup.bundle()
-    assert not (setup.dest / "ffmpeg").exists()
-    assert not [p for p in setup.dest.iterdir() if p.name.startswith(".bundle-")]
-
-
-@pytest.mark.usefixtures("no_discovery")
-def test_a_rerun_keeps_an_intact_layout_and_repairs_a_changed_one(
-    setup: Setup, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(bt.fetch, "_sleep", lambda seconds, cancel: None)
-    setup.bundle()
-    archive = setup.archives / f"{FF_ROOT}.zip"
-    archive.unlink()
-    setup.bundle()  # nothing to download: every folder still matches its marker
-    exe = setup.dest / "ffmpeg" / "bin" / "ffmpeg.exe"
-    exe.write_bytes(b"changed")
-    with pytest.raises(FetchError, match="download failed"):
-        setup.bundle()
-    archive.write_bytes(setup.files[f"{FF_ROOT}.zip"])
-    setup.bundle()
-    assert exe.read_bytes() == b"MZ ffmpeg"
-
-
-@pytest.mark.usefixtures("no_discovery")
-def test_a_linux_layout_after_a_windows_one_drops_the_windows_tools(setup: Setup) -> None:
-    setup.bundle()
-    (setup.dest / ".bundle-killed").mkdir()  # the work folder of a killed run
-    setup.bundle("linux-x64")
-    assert setup.tree() == [
-        "README.md",
-        "ffmpeg/LICENSE.txt",
-        "ffmpeg/bin/ffmpeg",
-        "ffmpeg/bin/ffprobe",
-        "ffmpeg/lib/libavcodec.so.63",
-    ]
-    assert sorted(p.name for p in setup.dest.iterdir()) == ["README.md", "ffmpeg"]
-
-
-@pytest.mark.usefixtures("no_discovery")
-@pytest.mark.parametrize(
-    "foreign", ["notes.txt", "ffmpeg/ffmpeg.exe", "mkvtoolnix/mkvpropedit.exe"]
-)
-def test_files_the_script_did_not_make_are_refused_and_kept(setup: Setup, foreign: str) -> None:
-    path = setup.dest / foreign
-    path.parent.mkdir(exist_ok=True)
-    path.write_text("mine")
-    (setup.archives / f"{FF_ROOT}.zip").unlink()  # it must fail before any download
-    with pytest.raises(FetchError, match="did not make"):
-        setup.bundle()
-    assert path.read_text() == "mine"
-
-
-@pytest.mark.usefixtures("no_discovery")
-def test_an_archive_without_a_pinned_file_lays_out_nothing(setup: Setup) -> None:
-    setup.files[f"{FF_ROOT}.zip"] = _zip(
-        {f"{FF_ROOT}/bin/ffmpeg.exe": b"MZ ffmpeg", f"{FF_ROOT}/bin/ffprobe.exe": b"MZ ffprobe"}
-    )
-    setup.write()
-    with pytest.raises(FetchError, match=r"has no LICENSE\.txt"):
-        setup.bundle()
-    assert not (setup.dest / "ffmpeg").exists()
-
-
-def test_the_bundled_libva_searches_the_cores_driver_folders(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from reframe.tools import discovery
-
-    calls: list[list[str]] = []
-    monkeypatch.setattr(bt.shutil, "which", lambda tool: f"/usr/bin/{tool}")
-    monkeypatch.setattr(bt, "_run", calls.append)
-
-    bt.LIBRARY_BUILDERS["libva"](tmp_path, tmp_path / "build")
-
-    folders = ":".join(d.as_posix() for d in discovery.LIBVA_DRIVER_DIRS)
-    assert folders == (
-        "/usr/lib/x86_64-linux-gnu/dri:/usr/lib64/dri-nonfree:/usr/lib64/dri-freeworld"
-        ":/usr/lib64/dri:/usr/lib/dri"
-    )
-    assert f"-Ddriverdir={folders}" in calls[0]
-
-
-def test_the_real_ffmpeg_pins_keep_both_binaries_and_the_licence() -> None:
-    for platform in ("linux-x64", "windows-x64"):
-        ffmpeg = bt.ffmpeg_archive(bt.FFMPEG_MANIFEST, platform)
-        assert [PurePosixPath(p).stem for p in ffmpeg.required] == ["ffmpeg", "ffprobe", "LICENSE"]
-        assert ffmpeg.url.startswith("https://")
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="the fake binaries are shell scripts")
-def test_on_its_own_platform_discovery_must_find_the_pinned_version(
-    setup: Setup, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(bt.fetch, "host_platform", lambda: "linux-x64")
-    monkeypatch.setenv("REFRAME_FFMPEG", "/nonexistent/ffmpeg")  # an override is ignored
-    setup.bundle("linux-x64")
-    setup.ffmpeg_version = "n9.0.3-test"
-    setup.files[f"{LINUX_ROOT}.tar.xz"] = _tar_xz(
-        {
-            f"{LINUX_ROOT}/bin/ffmpeg": _fake_ffmpeg("ffmpeg", "n9.0.2-test"),
-            f"{LINUX_ROOT}/bin/ffprobe": _fake_ffmpeg("ffprobe", "n9.0.2-test"),
-            f"{LINUX_ROOT}/LICENSE.txt": b"GPL-3",
-        }
-    )
-    setup.write()
-    with pytest.raises(FetchError, match=r"expected 'n9\.0\.3-test'"):
-        setup.bundle("linux-x64")
-
-
-def test_main_reports_an_error_with_exit_code_1(
-    setup: Setup, capsys: pytest.CaptureFixture[str]
-) -> None:
-    (setup.dest / "notes.txt").write_text("mine")
-    code = bt.main(
-        [
-            "--platform",
-            "windows-x64",
-            "--dest",
-            str(setup.dest),
-            "--ffmpeg-manifest",
-            str(setup.ffmpeg_manifest),
-            "--tools-manifest",
-            str(setup.tools_manifest),
-        ]
-    )
-    assert code == 1
-    assert "notes.txt" in capsys.readouterr().err
-
-
-def test_main_refuses_the_arm64_ffmpeg_pin_that_no_desktop_package_ships(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    # It has no libva pin: a layout would lack the VAAPI library the x64 layouts have.
-    with pytest.raises(SystemExit) as exit_info:
-        bt.main(["--platform", "linux-arm64"])
-    assert exit_info.value.code == 2
-    assert "invalid choice: 'linux-arm64'" in capsys.readouterr().err
 
 
 @pytest.fixture
@@ -371,35 +107,145 @@ def fake_libva_build(monkeypatch: pytest.MonkeyPatch) -> list[Path]:
     return calls
 
 
-@pytest.mark.usefixtures("no_discovery")
-def test_the_linux_layout_ships_the_built_libva_next_to_ffmpeg(
-    setup: Setup, fake_libva_build: list[Path]
-) -> None:
-    setup.add_libva(copying=b"MIT licence of libva")
-    setup.bundle("linux-x64")
-    lib = setup.dest / "ffmpeg" / "lib"
-    assert os.readlink(lib / "libva.so.2") == "libva.so.2.2401.0"
-    assert os.readlink(lib / "libva-drm.so.2") == "libva-drm.so.2.2401.0"
-    assert (lib / "libva.so.2").read_bytes() == b"ELF libva"
-    assert (setup.dest / "ffmpeg" / "LICENSE-libva.txt").read_bytes() == b"MIT licence of libva"
-    assert len(fake_libva_build) == 1
-    setup.bundle("windows-x64")  # the library is Linux only
-    assert not (setup.dest / "ffmpeg" / "LICENSE-libva.txt").exists()
-    assert len(fake_libva_build) == 1
+@pytest.mark.usefixtures("fake_libva_build")
+def test_the_linux_layout_is_libva_with_its_licence_and_no_ffmpeg(setup: Setup) -> None:
+    setup.bundle()
+
+    assert setup.tree() == [
+        "README.md",
+        "libva/LICENSE-libva.txt",
+        "libva/libva-drm.so.2",
+        "libva/libva-drm.so.2.2401.0",
+        "libva/libva.so.2",
+        "libva/libva.so.2.2401.0",
+    ]
+    libva = setup.dest / "libva"
+    assert os.readlink(libva / "libva.so.2") == "libva.so.2.2401.0"
+    assert os.readlink(libva / "libva-drm.so.2") == "libva-drm.so.2.2401.0"
+    assert (libva / "LICENSE-libva.txt").read_bytes() == b"MIT"
 
 
-@pytest.mark.usefixtures("no_discovery")
-def test_a_new_library_pin_builds_the_ffmpeg_folder_again(
+@pytest.mark.usefixtures("fake_libva_build")
+def test_the_windows_layout_holds_only_the_readme(setup: Setup) -> None:
+    setup.bundle()
+    setup.bundle("windows-x64")
+
+    assert setup.tree() == ["README.md"]
+
+
+@pytest.mark.parametrize("folder", ["ffmpeg", "mkvtoolnix", "mediainfo"])
+def test_a_tool_folder_of_an_earlier_layout_does_not_stay_to_be_shipped(
+    setup: Setup, folder: str
+) -> None:
+    """The bundler ships every folder of the layout: an FFmpeg laid out by an earlier layout
+    would end up in the installers."""
+    old = setup.dest / folder / "bin"
+    old.mkdir(parents=True)
+    (old / "tool.exe").write_bytes(b"MZ")
+    (setup.dest / folder / bt.fetch.MARKER_NAME).write_text(
+        f'{{"build": "{folder}", "layout": "bundled"}}'
+    )
+    (setup.dest / ".bundle-killed").mkdir()  # the work folder of a killed run
+
+    setup.bundle("windows-x64")
+
+    assert sorted(p.name for p in setup.dest.iterdir()) == ["README.md"]
+
+
+@pytest.mark.parametrize("field", ["sha256", "size"])
+def test_a_download_that_does_not_match_its_pin_is_never_extracted(
+    setup: Setup, fake_libva_build: list[Path], field: str
+) -> None:
+    # The server now serves other bytes of the same size, or one byte more.
+    other = bytes(len(setup.data)) if field == "sha256" else setup.data + b"x"
+    (setup.archives / setup.name).write_bytes(other)
+
+    with pytest.raises(FetchError, match=r"SHA-256|size"):
+        setup.bundle()
+
+    assert fake_libva_build == []
+    assert setup.tree() == ["README.md"]
+    assert not [p for p in setup.dest.iterdir() if p.name.startswith(".bundle-")]
+
+
+def test_a_rerun_keeps_an_intact_layout_and_repairs_a_changed_one(
     setup: Setup, fake_libva_build: list[Path]
 ) -> None:
-    setup.add_libva(copying=b"old")
-    setup.bundle("linux-x64")
-    setup.bundle("linux-x64")
-    assert len(fake_libva_build) == 1  # a rerun keeps it
-    setup.add_libva(copying=b"new")
-    setup.bundle("linux-x64")
+    setup.bundle()
+    setup.bundle()
+    assert len(fake_libva_build) == 1  # every file still matches its marker
+
+    library = setup.dest / "libva" / "libva.so.2.2401.0"
+    library.write_bytes(b"changed")
+    setup.bundle()
+
     assert len(fake_libva_build) == 2
-    assert (setup.dest / "ffmpeg" / "LICENSE-libva.txt").read_bytes() == b"new"
+    assert library.read_bytes() == b"ELF libva"
+
+
+def test_a_new_library_pin_builds_the_folder_again(
+    setup: Setup, fake_libva_build: list[Path]
+) -> None:
+    setup.bundle()
+    setup.set_source(b"new")
+    setup.bundle()
+
+    assert len(fake_libva_build) == 2
+    assert (setup.dest / "libva" / "LICENSE-libva.txt").read_bytes() == b"new"
+
+
+@pytest.mark.parametrize("foreign", ["notes.txt", "ffmpeg/ffmpeg", "libva/libva.so.2"])
+def test_files_the_script_did_not_make_are_refused_and_kept(setup: Setup, foreign: str) -> None:
+    path = setup.dest / foreign
+    path.parent.mkdir(exist_ok=True)
+    path.write_text("mine")
+    (setup.archives / setup.name).unlink()  # it must fail before any download
+
+    with pytest.raises(FetchError, match="did not make"):
+        setup.bundle()
+
+    assert path.read_text() == "mine"
+
+
+def test_a_build_that_makes_no_library_lays_out_nothing(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setitem(
+        bt.LIBRARY_BUILDERS, "libva", lambda source, build: {"libva.so.2": tmp_path / "none"}
+    )
+
+    with pytest.raises(FetchError, match=r"made no libva\.so\.2"):
+        setup.bundle()
+
+    assert setup.tree() == ["README.md"]
+
+
+def test_on_its_own_platform_the_libraries_must_load(
+    setup: Setup, monkeypatch: pytest.MonkeyPatch, fake_libva_build: list[Path]
+) -> None:
+    monkeypatch.setattr(bt.fetch, "host_platform", lambda: "linux-x64")
+
+    with pytest.raises(FetchError, match=r"libva\.so\.2 does not load"):
+        setup.bundle()
+
+
+def test_the_bundled_libva_searches_the_cores_driver_folders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from reframe.tools import discovery
+
+    calls: list[list[str]] = []
+    monkeypatch.setattr(bt.shutil, "which", lambda tool: f"/usr/bin/{tool}")
+    monkeypatch.setattr(bt, "_run", calls.append)
+
+    bt.LIBRARY_BUILDERS["libva"](tmp_path, tmp_path / "build")
+
+    folders = ":".join(d.as_posix() for d in discovery.LIBVA_DRIVER_DIRS)
+    assert folders == (
+        "/usr/lib/x86_64-linux-gnu/dri:/usr/lib64/dri-nonfree:/usr/lib64/dri-freeworld"
+        ":/usr/lib64/dri:/usr/lib/dri"
+    )
+    assert f"-Ddriverdir={folders}" in calls[0]
 
 
 def test_building_libva_without_its_tools_names_them(
@@ -408,6 +254,33 @@ def test_building_libva_without_its_tools_names_them(
     monkeypatch.setenv("PATH", str(tmp_path))
     with pytest.raises(FetchError, match="needs meson, ninja, pkg-config, cc"):
         bt.LIBRARY_BUILDERS["libva"](tmp_path, tmp_path / "build")
+
+
+def test_main_reports_an_error_with_exit_code_1(
+    setup: Setup, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (setup.dest / "notes.txt").write_text("mine")
+    code = bt.main(
+        [
+            "--platform",
+            "windows-x64",
+            "--dest",
+            str(setup.dest),
+            "--tools-manifest",
+            str(setup.manifest),
+        ]
+    )
+    assert code == 1
+    assert "notes.txt" in capsys.readouterr().err
+
+
+def test_main_refuses_a_platform_that_no_desktop_package_ships(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        bt.main(["--platform", "linux-arm64"])
+    assert exit_info.value.code == 2
+    assert "invalid choice: 'linux-arm64'" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -419,15 +292,15 @@ def test_building_libva_without_its_tools_names_them(
         (("file://", "http://"), "https"),
         (('version = "9.9"\n', ""), "version"),
         (('license_file = "COPYING"', 'license_file = "/COPYING"'), "relative"),
+        (("schema_version = 1", "schema_version = 2"), "schema_version"),
     ],
 )
 def test_bad_library_pins_are_refused(setup: Setup, change: tuple[str, str], error: str) -> None:
-    setup.add_libva()
-    text = setup.tools_manifest.read_text(encoding="utf-8")
+    text = setup.manifest.read_text(encoding="utf-8")
     assert change[0] in text
-    setup.tools_manifest.write_text(text.replace(change[0], change[1], 1), encoding="utf-8")
+    setup.manifest.write_text(text.replace(change[0], change[1], 1), encoding="utf-8")
     with pytest.raises(FetchError, match=error):
-        bt.libraries(setup.tools_manifest, "linux-x64")
+        bt.libraries(setup.manifest, "linux-x64")
 
 
 def test_the_real_libva_pin_is_for_linux_only() -> None:
