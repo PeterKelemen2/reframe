@@ -54,6 +54,18 @@ def test_stall_needs_no_progress_no_output_and_no_cpu() -> None:
         assert quiet.tick(float(t), None, paused=False) is None
 
 
+def test_a_busy_step_that_does_not_exit_after_its_last_block_is_stopped() -> None:
+    watch = StepWatch(stall_after=100.0, time_limit=None, max_tick=2.0, exit_grace=3.0)
+    watch.tick(0.0, 0.0, paused=False)
+    assert watch.tick(1.0, 1.0, paused=False) is None
+    watch.ended()
+    verdicts = []
+    for t in range(2, 6):  # one core busy and a line each tick
+        watch.activity()
+        verdicts.append(watch.tick(float(t), float(t), paused=False))
+    assert verdicts == [None, None, "no_exit", "no_exit"]
+
+
 def test_watchdog_is_sleep_aware_and_ignores_pauses() -> None:
     watch = StepWatch(stall_after=10.0, time_limit=None, max_tick=2.0)
     watch.tick(0.0, 0.0, paused=False)

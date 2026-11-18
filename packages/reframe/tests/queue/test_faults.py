@@ -175,6 +175,31 @@ async def test_hang_is_stopped_by_the_stall_watchdog(harness: Harness) -> None:
     assert "Step 1/2 ended: stopped" in h.log_text(ended.id)
 
 
+async def test_ffmpeg_that_does_not_exit_after_its_last_block_is_stopped(
+    harness: Harness,
+) -> None:
+    h = harness
+    h.queue._runner._exit_grace = 0.4
+    job = h.job()
+    part = h.plan(job).output_tmp
+    # What FFmpeg printed before it hung (Intel QSV, H.264 low power with ICQ).
+    qsv_error = (
+        "[h264_qsv @ 0x1] Invalid FrameType:0.\n"
+        "[vost#0:0/h264_qsv @ 0x2] [enc:h264_qsv @ 0x3] Error submitting video frame to the "
+        "encoder\n"
+    )
+    h.scenario(
+        encode_rule(ft.stderr(qsv_error), ft.progress(blocks=2), ft.write_output(100), ft.hang())
+    )
+    ended = await h.run_one(job)
+    assert ended.error == (
+        "FFmpeg finished writing but did not exit within 0.4 seconds and was stopped: "
+        "Invalid FrameType:0.; Error submitting video frame to the encoder"
+    )
+    assert_failed_run(h, ended.id, error_part="did not exit")
+    assert not part.exists()
+
+
 async def test_a_slow_step_that_prints_is_not_stalled(harness: Harness) -> None:
     h = harness
     h.queue._runner._stall_after = 0.3

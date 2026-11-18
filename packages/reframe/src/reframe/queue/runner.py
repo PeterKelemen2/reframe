@@ -49,7 +49,7 @@ from reframe.queue.logs import JobLog
 from reframe.queue.process import suspend_tree
 from reframe.queue.progress import ProgressBlock, ProgressParser, ProgressTracker
 from reframe.queue.verify import check_output
-from reframe.queue.watchdog import StepWatch, Verdict, tree_cpu_seconds
+from reframe.queue.watchdog import EXIT_GRACE, StepWatch, Verdict, tree_cpu_seconds
 from reframe.tools import CancelToken, RunResult, crashed, run_streaming
 from reframe.validation import FileSystemView, next_free_path, validate
 from reframe.validation.output import output_path_issues
@@ -64,7 +64,7 @@ __all__ = [
 log = logging.getLogger(__name__)
 
 #: Why a running job was stopped from outside its steps.
-StopReason = Literal["cancel", "close", "stalled", "timeout"]
+StopReason = Literal["cancel", "close", "stalled", "timeout", "no_exit"]
 
 _WHAT = {
     "analyse": "Measuring the loudness",
@@ -191,6 +191,7 @@ class JobRunner:
         self._persist = persist
         self._stall_after = stall_after
         self._step_time_limit = step_time_limit
+        self._exit_grace = EXIT_GRACE
         self._tick = tick
         self.log_interval = log_interval
         self._shell: Shell = default_shell()
@@ -387,6 +388,8 @@ class JobRunner:
             result, stderr = await self._run_step(
                 job, active, joblog, step, f"Step {index + 1}/{count}", info, argv
             )
+            if active.stop_reason == "no_exit":
+                return Outcome(JobState.FAILED, error=self._no_exit(stderr), plan=plan)
             if active.stop_reason is not None:
                 raise _Stopped
             if not result.ok:
@@ -433,6 +436,7 @@ class JobRunner:
             stall_after=self._stall_after if ffmpeg else None,
             time_limit=None if ffmpeg else self._step_time_limit,
             max_tick=2 * self._tick,
+            exit_grace=self._exit_grace if ffmpeg else None,
         )
         last: list[tuple[float | None, int | None, int | None] | None] = [None]
 
@@ -442,6 +446,8 @@ class JobRunner:
                 if line.strip() and not parser.is_progress_line(line):
                     joblog.write(line)
                 return
+            if block.end:
+                watch.ended()
             key = _block_key(block)
             if key != last[0]:
                 last[0] = key
@@ -778,6 +784,14 @@ class JobRunner:
             )
         joblog.note(f"Edited {source.name} in place")
         return Outcome(JobState.DONE, plan=plan, output_path=source, progress=tracker.finish())
+
+    def _no_exit(self, stderr: Sequence[str]) -> str:
+        head = (
+            f"FFmpeg finished writing but did not exit within {_duration(self._exit_grace)} and "
+            "was stopped"
+        )
+        reason = stderr_reason(stderr, last_line=False)
+        return f"{head}: {reason}" if reason else f"{head}."
 
     def _stopped(self, active: ActiveJob, plan: EncodePlan | None) -> Outcome:
         reason = active.stop_reason or "cancel"
