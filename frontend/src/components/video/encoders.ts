@@ -51,6 +51,8 @@ export interface EncoderAvailability {
   selectable: boolean
   /** The server's reason (for `rechecking`: the last result's). */
   reason: string | null
+  /** Unavailable because this FFmpeg build needs newer system software: another build helps. */
+  buildMismatch: boolean
 }
 
 /** What the picker shows for an encoder, with the same rules as the server's encoder issues. */
@@ -59,31 +61,34 @@ export function availabilityOf(
   snapshot: CapabilitySnapshot | null,
 ): EncoderAvailability {
   const reason = status?.reason ?? null
+  const buildMismatch = false
   if (status === undefined) {
     const kind = snapshot === null || snapshot.detecting ? 'checking' : 'unknown'
-    return { kind, tone: kind === 'checking' ? 'busy' : 'off', selectable: true, reason: null }
+    const tone = kind === 'checking' ? 'busy' : 'off'
+    return { kind, tone, selectable: true, reason: null, buildMismatch }
   }
   switch (status.state) {
     case 'available':
-      return { kind: 'available', tone: 'ok', selectable: true, reason: null }
+      return { kind: 'available', tone: 'ok', selectable: true, reason: null, buildMismatch }
     case 'checking':
-      return { kind: 'checking', tone: 'busy', selectable: true, reason: null }
+      return { kind: 'checking', tone: 'busy', selectable: true, reason: null, buildMismatch }
     case 'unknown':
       // `in_build` is null until `ffmpeg -encoders` was read: that is still a detection.
       if (status.in_build === null || status.in_build === undefined) {
-        return { kind: 'checking', tone: 'busy', selectable: true, reason: null }
+        return { kind: 'checking', tone: 'busy', selectable: true, reason: null, buildMismatch }
       }
-      return { kind: 'untested', tone: 'off', selectable: true, reason }
+      return { kind: 'untested', tone: 'off', selectable: true, reason, buildMismatch }
     case 'unavailable':
     case 'error':
       if (snapshot?.from_cache === true && snapshot.detecting) {
-        return { kind: 'rechecking', tone: 'busy', selectable: true, reason }
+        return { kind: 'rechecking', tone: 'busy', selectable: true, reason, buildMismatch }
       }
       return {
         kind: status.state === 'error' ? 'failed' : 'unavailable',
         tone: 'error',
         selectable: false,
         reason,
+        buildMismatch: status.state === 'unavailable' && status.build_mismatch === true,
       }
   }
 }

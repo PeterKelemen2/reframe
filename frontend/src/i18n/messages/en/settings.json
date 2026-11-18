@@ -6,12 +6,11 @@
   "tools": {
     "title": "Tools",
     "intro": "The programs Reframe runs. Where each one comes from: an environment variable on the server, a path in the settings, the bundled build, or the system PATH.",
-    "useBundled": "Use bundled FFmpeg",
     "useBundledTool": "Use bundled",
     "useBundledToolOf": "Use bundled {tool}",
     "useBundledAlso": "Use bundled also removes the path of {tools}.",
     "checkAgain": "Check again",
-    "downloading": "Downloading FFmpeg…",
+    "downloading": "Installing FFmpeg…",
     "bundledUseless": "Environment variables on the server set ffmpeg and ffprobe, so a bundled FFmpeg would not be used.",
     "version": "Version",
     "from": "From",
@@ -44,7 +43,13 @@
       "bundled": "Bundled with Reframe",
       "path": "System PATH",
       "none": "Not found anywhere"
-    }
+    },
+    "buildsTitle": "FFmpeg builds",
+    "installedBuild": "Installed build: {label} ({name}), FFmpeg {version}",
+    "outdated": "This release pins another version of the build {name}. The installed one keeps working until you download the new one.",
+    "downloadPinned": "Download {name}",
+    "mismatchTitle": "Some encoders need newer system software than this FFmpeg build expects",
+    "mismatchHelp": "Update the driver, or use another build: download one below, install one from a file, or set the path of your own FFmpeg."
   },
   "encoders": {
     "title": "Encoders",
@@ -181,5 +186,19 @@
     "copyFailed": "The clipboard refused the diagnostics. Select the report below and copy it.",
     "readFailed": "The diagnostics could not be read: {reason}",
     "report": "Diagnostics report"
+  },
+  "builds": {
+    "legend": "FFmpeg build to install",
+    "loading": "Reading the offered builds…",
+    "none": "This release offers no FFmpeg build for this computer.",
+    "installed": "Installed",
+    "facts": "FFmpeg {version} · {size} download · licence {license}",
+    "factsNoArchive": "FFmpeg {version} · no download for this computer · licence {license}",
+    "sources": "Source code",
+    "download": "Download",
+    "installFile": "Install from file",
+    "offlineDesktop": "The download server cannot be reached. Install the build from an archive file that you downloaded on another computer, or choose the path of an FFmpeg that you already have.",
+    "offlineWeb": "The download server cannot be reached. Install the build from an archive file in a media folder of the server, or set the path of an FFmpeg in the server's environment or settings file.",
+    "shadowed": "The build is installed, but another FFmpeg comes first and is used: {path}"
   }
 }

@@ -85,6 +85,22 @@ describe('the Encoders section', () => {
     expect(wrapper.find('[data-field="last-check"]').text()).toMatch(/^Last full check: .*\d/)
   })
 
+  it('adds the hint to the reason of an encoder that another FFmpeg build can make available', async () => {
+    const { wrapper, system } = await mountEncoders()
+    const snapshot = capabilities()
+    snapshot.encoders!.hevc_nvenc = status('hevc_nvenc', {
+      state: 'unavailable',
+      reason: 'NVIDIA driver too old: NVENC needs driver 610.00 or newer',
+      build_mismatch: true,
+    })
+    system.capabilities = snapshot
+    await flushPromises()
+    expect(wrapper.find('[data-encoder="hevc_nvenc"] [data-field="status"]').text()).toBe(
+      'Unavailable: NVIDIA driver too old: NVENC needs driver 610.00 or newer. Update the ' +
+        'driver, or use another FFmpeg build (Settings → Tools).',
+    )
+  })
+
   it('re-scans and stays busy until the detection task has ended', async () => {
     const { wrapper, system } = await mountEncoders()
     const done = deferred()

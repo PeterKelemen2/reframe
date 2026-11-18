@@ -3,7 +3,9 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Fix, ValidationIssue } from '@/api/types'
+import { mountShell } from '@/components/shell/testing'
 import { useEditorStore } from '@/stores/editor'
+import { useSystemStore } from '@/stores/system'
 import { useUiStore } from '@/stores/ui'
 
 import IssueList from './IssueList.vue'
@@ -87,5 +89,50 @@ describe('IssueList', () => {
     const { wrapper } = setup([])
     expect(wrapper.find('ul').exists()).toBe(false)
     expect(wrapper.text()).toBe('No issues')
+  })
+})
+
+describe('IssueList with a build mismatch', () => {
+  const missing: ValidationIssue = {
+    severity: 'error',
+    code: 'encoder.unavailable',
+    path: 'video.encoder',
+    message: 'hevc_nvenc is not available: NVIDIA driver too old',
+  }
+
+  async function mountList(buildMismatch: boolean) {
+    return mountShell(IssueList, {
+      props: { issues: [missing] },
+      setup: () => {
+        useEditorStore().target = { job: { video: { encoder: 'hevc_nvenc' } } } as never
+        useSystemStore().capabilities = {
+          detecting: false,
+          encoders: {
+            hevc_nvenc: {
+              id: 'hevc_nvenc',
+              state: 'unavailable',
+              hardware: true,
+              build_mismatch: buildMismatch,
+            },
+          },
+        } as never
+      },
+    })
+  }
+
+  it('offers another FFmpeg for the encoder issue, which opens Settings → Tools', async () => {
+    const { wrapper, router } = await mountList(true)
+    const other = wrapper.find('.rf-issue__other-ffmpeg')
+    expect(other.text()).toBe('Use another FFmpeg…')
+    await other.trigger('click')
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('settings'))
+    expect(router.currentRoute.value.hash).toBe('#tools')
+    wrapper.unmount()
+  })
+
+  it('offers nothing more without a build mismatch', async () => {
+    const { wrapper } = await mountList(false)
+    expect(wrapper.find('.rf-issue__other-ffmpeg').exists()).toBe(false)
+    wrapper.unmount()
   })
 })

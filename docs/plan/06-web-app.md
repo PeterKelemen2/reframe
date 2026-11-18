@@ -373,16 +373,16 @@ other waiting jobs alone.
 Needs C-21 ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)). Milestone
 M10.
 
-- [ ] `GET /api/system/tools/builds`: the offered builds (name, label, summary, version,
+- [x] `GET /api/system/tools/builds`: the offered builds (name, label, summary, version,
       licence, source links, size for this platform) and the installed downloaded build with
       `outdated`.
-- [ ] `POST /api/system/tools/install-file` `{path}` → 202: install an archive file from a path
+- [x] `POST /api/system/tools/install-file` `{path}` → 202: install an archive file from a path
       on the server (desktop mode; in web mode the path must be inside a media root). A task
       like `tools/fetch`.
-- [ ] `REFRAME_FFMPEG_BUILD` ([decision 0094](../decisions/0094-docker-image-without-ffmpeg.md) item 3): when set to an offered build and discovery
+- [x] `REFRAME_FFMPEG_BUILD` ([decision 0094](../decisions/0094-docker-image-without-ffmpeg.md) item 3): when set to an offered build and discovery
       finds no FFmpeg at server start, the server starts that build's download (a `tools_fetch`
       task); a wrong name or a failure is logged and shown on the first-run screen.
-- [ ] **The server log says it clearly** (the owner's request, 2026-11-18): lines that reach the
+- [x] **The server log says it clearly** (the owner's request, 2026-11-18): lines that reach the
       console (`docker logs`, the systemd journal) with the default log settings, not only the
       log file. At start without a usable FFmpeg: a warning that Reframe cannot encode yet and
       the three ways out (the web UI's first-run screen, `REFRAME_FFMPEG_BUILD`, a mounted build
@@ -391,7 +391,7 @@ M10.
       at most every 10 %, and a final line (installed and checked, with the folder) or an error
       line with the reason and, for `tools.fetch_offline`, the alternatives. An outdated
       downloaded build is a warning at start.
-- [ ] `tools.fetch_offline` and the file-install problems reach the client as the task's error
+- [x] `tools.fetch_offline` and the file-install problems reach the client as the task's error
       code and message. `EncoderStatus.build_mismatch` is in the encoder status; the OpenAPI
       types are generated again (S-5).
 
@@ -688,18 +688,18 @@ F-18, built before F-16. Built on 2026-11-13: 0074 "Built"; in a group the shown
       with the same naming code, again after each change: [0066](../decisions/0066-m7-batch-season.md), "Task C".)
 
 ### F-20 FFmpeg build picker and the build-mismatch warning
-- [ ] First-run screen (desktop app with no FFmpeg, or any repair case): the offered builds with
+- [x] First-run screen (desktop app with no FFmpeg, or any repair case): the offered builds with
       label, summary, size and licence (source links behind a disclosure), `default`
       preselected; **Download**, **Install from file** (desktop: the native file dialog; web:
       the server file browser), **Choose path** (desktop). A `tools.fetch_offline` error says
       that the download server cannot be reached and points to the other two.
-- [ ] Settings → Tools: the installed build (offered build name, version, outdated notice with
+- [x] Settings → Tools: the installed build (offered build name, version, outdated notice with
       **Download**), the same picker to switch builds, the path override as today.
-- [ ] Build mismatch: the encoder picker's reason and Settings → Encoders show the hint; the
+- [x] Build mismatch: the encoder picker's reason and Settings → Encoders show the hint; the
       missing-encoder banner and the Summary's `encoder.unavailable` issue add **Use another
       FFmpeg…** when the encoder's status has `build_mismatch` (opens Settings → Tools);
       Settings → Tools shows a notice that names each such encoder with its reason. No toast.
-- [ ] i18n keys for every new text; the F-16 gate covers the new screens.
+- [x] i18n keys for every new text; the F-16 gate covers the new screens.
 
 Done when: with a fake status (`hevc_nvenc` unavailable, `build_mismatch` true) the banner shows
 **Use another FFmpeg…** and it opens Settings → Tools with the notice; with an empty data folder
