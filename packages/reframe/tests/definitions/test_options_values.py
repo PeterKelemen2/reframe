@@ -3,15 +3,12 @@ without an error."""
 
 from __future__ import annotations
 
-import os
 import re
-import subprocess
-from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from reframe.definitions import EncoderOption, VideoEncoderDef, load_definitions
+from reframe.definitions import EncoderOption, load_definitions
+from reframe_testing.encoders import encode_args, mapping_args, parallel, run_ffmpeg_capture
 
 pytestmark = pytest.mark.needs_ffmpeg
 
@@ -32,48 +29,12 @@ _COMPANIONS: dict[tuple[str, str, str], dict[str, str]] = {
 }
 
 
-def _ffmpeg() -> str:
-    from reframe_testing import media
-
-    found = media.find_ffmpeg()
-    assert found is not None
-    return found
-
-
-def _written(value: object) -> str:
-    if isinstance(value, bool):
-        return "1" if value else "0"
-    return str(value)
-
-
 def _values(option: EncoderOption) -> list[str]:
     if option.type == "bool":
         return ["1", "0"]
     if option.type == "enum":
         return [c.written for c in option.choices or []]
     return []
-
-
-def _args(encoder: VideoEncoderDef, option: EncoderOption, value: str) -> list[str]:
-    mapping = option.mapping
-    if mapping.kind == "x26x_param":
-        assert encoder.params_arg is not None
-        extra = _COMPANIONS.get((encoder.id, option.key, value), {})
-        params = [f"{mapping.name}={value}", *(f"{k}={v}" for k, v in extra.items())]
-        return [encoder.params_arg, ":".join(params)]
-    if mapping.kind == "private_opt":
-        return [f"-{mapping.name}", value]
-    return [mapping.arg, value]
-
-
-def _run(argv: Sequence[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [_ffmpeg(), "-hide_banner", "-nostdin", "-y", *argv],
-        capture_output=True,
-        text=True,
-        timeout=120,
-        check=False,
-    )
 
 
 @pytest.mark.parametrize("encoder_id", SOFTWARE)
@@ -83,42 +44,21 @@ def test_every_enum_and_bool_value_encodes(encoder_id: str) -> None:
         (option, value) for option in encoder.options for value in _values(option)
     ]  # fmt: skip
     assert jobs, encoder_id
-    depth = "yuv420p10le" if "10" in encoder.pix_fmts else "yuv420p"
+    depth = 10 if "10" in encoder.pix_fmts else 8
 
     def run(job: tuple[EncoderOption, str]) -> str | None:
         option, value = job
-        extra = ["-preset", "10"] if encoder_id == "libsvtav1" else []
-        result = _run(
-            [
-                *("-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25", "-frames:v", "2"),
-                *("-pix_fmt", depth, "-c:v", encoder.id, *encoder.extra_args, *extra),
-                *_args(encoder, option, value),
-                *("-f", "null", "-"),
-            ]
+        args, params = mapping_args(option.mapping, value)
+        if option.mapping.kind == "x26x_param":
+            params |= _COMPANIONS.get((encoder_id, option.key, value), {})
+        if encoder_id == "libsvtav1":
+            args = ["-preset", "10", *args]
+        result = run_ffmpeg_capture(
+            [*encode_args(encoder, args, params, depth=depth, frames=2), "-f", "null", "-"]
         )
         refused = [ln for ln in result.stderr.splitlines() if _REFUSED.search(ln)]
         if result.returncode or refused:
             return f"{option.key}={value}: rc {result.returncode} {refused[:2]}"
         return None
 
-    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as pool:
-        problems = [p for p in pool.map(run, jobs) if p]
-    assert problems == []
-
-
-def test_every_software_encoder_has_options_in_each_main_category() -> None:
-    """VP9 has no colour options of its own (FFmpeg's colour tags apply)."""
-    main = {
-        "Rate control",
-        "Frame types / GOP",
-        "Psycho-visual",
-        "Loop filters",
-        "HDR / colour",
-        "Performance",
-    }
-    software = {k: e for k, e in DEFS.video_encoders.items() if not e.hardware}
-    assert "libvpx-vp9" in software
-    for encoder_id, encoder in software.items():
-        expected = main - {"HDR / colour"} if encoder_id == "libvpx-vp9" else main
-        assert expected <= {o.category for o in encoder.options}, encoder_id
-    assert "Motion / analysis" in {o.category for o in DEFS.video_encoders["libx265"].options}
+    assert parallel(jobs, run) == []

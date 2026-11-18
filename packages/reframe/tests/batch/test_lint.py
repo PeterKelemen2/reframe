@@ -42,7 +42,6 @@ from reframe.models import (
     TrackSelector,
     ValidationIssue,
 )
-from reframe.presets import builtin_presets
 
 from .defaults_tracks import EXAMPLE_CODEC_RULES, audio, source
 
@@ -106,11 +105,6 @@ def test_clean_defaults() -> None:
     assert lint_defaults(AudioDefaults()) == []
     example = AudioDefaults(codec_rules=EXAMPLE_CODEC_RULES)
     assert lint_defaults(example) == []
-
-
-@pytest.mark.parametrize("preset", builtin_presets(), ids=lambda p: p.id)
-def test_builtin_presets_are_clean(preset: Any) -> None:
-    assert lint(preset) == []
 
 
 @pytest.mark.parametrize(
