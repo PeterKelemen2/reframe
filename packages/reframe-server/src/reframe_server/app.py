@@ -17,6 +17,7 @@ from reframe.models.settings import LogLevel
 from reframe.service import Reframe
 from reframe_server import __version__, openapi, owner, security, static
 from reframe_server.api import JsonTextResponse, operation_id
+from reframe_server.autofetch import AutoFetch
 from reframe_server.config import ServerConfig
 from reframe_server.errors import install_error_handlers
 from reframe_server.events import EventHub
@@ -85,6 +86,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     try:
         hub = EventHub(reframe.events, config, hide=functools.partial(hide_server_folders, reframe))
         app.state.reframe, app.state.hub = reframe, hub
+        autofetch = AutoFetch(reframe, config.ffmpeg_build)
+        app.state.autofetch = autofetch
         try:
             owner.start(app)
             # One writer per data folder: rotation renames the file, which fails on Windows
@@ -94,8 +97,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     applog.logs_dir(reframe.data_dir), reframe.settings.get().diagnostics.log_level
                 )
                 app.state.app_log = app_log
+            autofetch.start(download=reframe.queue.owns_store)
             yield
         finally:
+            await autofetch.close()
             owner.withdraw(app)
             await hub.close()
             await reframe.close()
@@ -116,8 +121,8 @@ def create_app(config: ServerConfig) -> FastAPI:
     ``app.state``: ``config``, ``instance`` (random id of this run), ``started``
     (``time.monotonic()``), ``sources`` (:class:`SourceRegistry`), ``request_shutdown`` (the
     entry point replaces it), ``exit_code`` (the entry point's code when the app does not
-    start), and during the lifespan ``reframe``, ``hub`` and ``app_log`` (``None`` when this
-    server does not own the queue or ``reframe.log`` cannot be written).
+    start), and during the lifespan ``reframe``, ``hub``, ``autofetch`` and ``app_log`` (``None``
+    when this server does not own the queue or ``reframe.log`` cannot be written).
     """
     app = FastAPI(
         title="Reframe",

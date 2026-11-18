@@ -72,6 +72,9 @@ class ServerConfig(BaseSettings):
     """``Host`` names accepted besides the loopback names. ``None``: the defaults."""
     parent_pid: int | None = Field(default=None, gt=0)
     """Stop when this process ends (the desktop shell's pid). ``None``: no watch."""
+    ffmpeg_build: str | None = None
+    """An offered FFmpeg build (``default``) that the server downloads at start when tool
+    discovery finds no FFmpeg. ``None``: no download without the UI."""
 
     @field_validator("endpoint_file", mode="before")
     @classmethod

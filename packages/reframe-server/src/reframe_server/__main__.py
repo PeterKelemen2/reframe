@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import copy
 import json
+import logging
 import os
 import sys
 from collections.abc import Sequence
@@ -20,6 +21,7 @@ from pydantic import ValidationError
 
 from reframe_server import __version__, idle, owner, parent, security
 from reframe_server.app import create_app
+from reframe_server.autofetch import CONSOLE_LOGGERS
 from reframe_server.config import ServerConfig
 
 __all__ = ["main", "ready_line", "serve"]
@@ -54,10 +56,31 @@ def ready_line(port: int) -> str:
     return json.dumps({"event": "ready", "port": port}, separators=(",", ":"))
 
 
+class ConsoleFilter(logging.Filter):
+    """The console shows warnings and errors of every logger, and the INFO records of
+    :data:`~reframe_server.autofetch.CONSOLE_LOGGERS` (the FFmpeg download)."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno >= logging.WARNING:
+            return True
+        return any(
+            record.name == name or record.name.startswith(f"{name}.") for name in CONSOLE_LOGGERS
+        )
+
+
 def _log_config() -> dict[str, Any]:
     config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
+    config["filters"] = {"console": {"()": ConsoleFilter}}
+    config["handlers"]["console"] = {
+        "formatter": "default",
+        "class": "logging.StreamHandler",
+        "filters": ["console"],
+    }
     for handler in config["handlers"].values():
         handler["stream"] = "ext://sys.stderr"
+    config["root"] = {"handlers": ["console"], "level": "WARNING"}
+    for name in CONSOLE_LOGGERS:
+        config["loggers"][name] = {"level": "INFO"}
     return config
 
 
