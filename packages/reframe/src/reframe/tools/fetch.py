@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import errno
+import functools
 import hashlib
 import http.client
 import json
@@ -81,6 +82,7 @@ __all__ = [
     "offered_builds",
     "packaged_libva",
     "parse_manifest",
+    "restore_previous_build",
     "start_fetch",
     "start_install_file",
 ]
@@ -865,7 +867,8 @@ def _retry_on_permission(
 
 def _swap_into_place(new: Path, install_dir: Path, aside: Path) -> None:
     """Move ``new`` to ``install_dir``; an old build is moved to ``aside`` first (removed with
-    the work folder) and moved back if the new one cannot be moved."""
+    the work folder) and moved back if the new one cannot be moved, or by
+    :func:`restore_previous_build` after a kill."""
     old = install_dir.exists() or install_dir.is_symlink()
     try:
         if old:
@@ -882,6 +885,45 @@ def _swap_into_place(new: Path, install_dir: Path, aside: Path) -> None:
             f"cannot replace {install_dir}: {e.strerror or e}. Close the programs that use "
             "it and fetch again"
         ) from e
+
+
+def restore_previous_build(install_dir: Path, platform: str) -> Path | None:
+    """Put back the build that a fetch killed between the two renames of its swap left in
+    ``.fetch-*/previous``: only when ``install_dir`` is missing and that build's marker
+    (for ``platform``) and files are intact. Never fails; returns the folder it came from."""
+    if install_dir.exists() or install_dir.is_symlink():
+        return None
+    found: list[tuple[float, Path]] = []
+    try:
+        candidates = [work / "previous" for work in install_dir.parent.glob(".fetch-*")]
+    except OSError:
+        return None
+    for previous in candidates:
+        try:
+            if previous.is_symlink() or not previous.is_dir():
+                continue
+            marker = installed_build(previous)
+            files = marker.get("files") if marker is not None else None
+            if marker is None or marker.get("platform") != platform or not files:
+                continue
+            if tree_digest(previous) == files:
+                found.append(((previous / MARKER_NAME).stat().st_mtime, previous))
+        except OSError:
+            continue
+    if not found:
+        return None
+    previous = max(found)[1]
+    try:
+        _retry_on_permission(functools.partial(previous.rename, install_dir))
+    except OSError as e:
+        log.warning("Cannot put back the FFmpeg build in %s: %s", previous, e.strerror or e)
+        return None
+    log.warning(
+        "Put back the FFmpeg build that an interrupted install left in %s: %s",
+        previous,
+        install_dir,
+    )
+    return previous
 
 
 @dataclass(slots=True)
@@ -1229,6 +1271,7 @@ async def _fetch_steps(
         )
 
     ctx.progress(None, f"Checking the build in {install_dir}")
+    await asyncio.to_thread(restore_previous_build, install_dir, target)
     if await _in_thread(cancel, lambda: is_installed(install_dir, pbuild, cancel, libva=libva)):
         if source is not None:
             ctx.progress(None, f"Checking the SHA-256 of {source.name}")

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -572,3 +573,119 @@ def test_an_installed_build_whose_pin_changed_is_outdated(tmp_path: Path) -> Non
         FAKE_VERSION,
         True,
     )
+
+
+def _kill_during_the_swap(install: Path) -> Path:
+    """The state that a fetch killed between the two renames of its swap leaves: the installed
+    build in ``<work>/previous``, the new one in ``<work>/extract``, no install folder."""
+    work = install.parent / ".fetch-killed"
+    (work / "extract" / "new-build" / "bin").mkdir(parents=True)
+    (work / "extract" / "new-build" / "bin" / "ffmpeg").write_bytes(b"the new build")
+    install.rename(work / "previous")
+    return work / "previous"
+
+
+def _service(tmp_path: Path, data_dir: Path) -> ToolsService:
+    return ToolsService(
+        EventBus(),
+        AppSettings,
+        bundled_roots=[tmp_path / "app" / "tools", data_dir / "tools"],
+        tasks=TaskManager(),
+        data_dir=data_dir,
+    )
+
+
+@pytest.fixture
+def no_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for var in ENV_VARS.values():
+        monkeypatch.delenv(var, raising=False)
+    empty = tmp_path / "empty-path"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+
+
+@POSIX_ONLY
+@pytest.mark.anyio
+@pytest.mark.usefixtures("no_tools")
+async def test_the_build_that_a_killed_swap_left_aside_is_put_back_at_start(
+    tmp_path: Path, runner: Runner, caplog: pytest.LogCaptureFixture
+) -> None:
+    data = fake_archive("linux-x64", tmp_path / "work")
+    final, result = await runner.file(
+        archive_file(tmp_path, data), manifest_for(tmp_path, data, "linux-x64")
+    )
+    assert final.state is TaskState.DONE, final.error
+    install = result.install_dir
+    marker = installed_build(install)
+    previous = _kill_during_the_swap(install)
+    caplog.set_level(logging.WARNING, logger="reframe.tools.fetch")
+
+    service = _service(tmp_path, runner.data_dir)
+    service.start()
+    tools = await service.status()
+    await service.close()
+    assert installed_build(install) == marker
+    assert not previous.exists()
+    assert tools.ffmpeg.status is ToolStatus.FOUND, tools.ffmpeg.reason
+    assert tools.ffmpeg.path == install / "bin" / "ffmpeg"
+    assert [r.getMessage() for r in caplog.records] == [
+        f"Put back the FFmpeg build that an interrupted install left in {previous}: {install}"
+    ]
+
+
+@POSIX_ONLY
+@pytest.mark.anyio
+@pytest.mark.usefixtures("no_tools")
+@pytest.mark.parametrize("damage", ["changed-file", "no-marker", "other-platform", "installed"])
+async def test_a_build_left_aside_stays_there_unless_it_is_intact_and_missing(
+    tmp_path: Path, runner: Runner, damage: str
+) -> None:
+    data = fake_archive("linux-x64", tmp_path / "work")
+    final, result = await runner.file(
+        archive_file(tmp_path, data), manifest_for(tmp_path, data, "linux-x64")
+    )
+    assert final.state is TaskState.DONE, final.error
+    install = result.install_dir
+    previous = _kill_during_the_swap(install)
+    if damage == "changed-file":
+        (previous / "LICENSE.txt").write_bytes(b"changed")
+    elif damage == "no-marker":
+        (previous / MARKER_NAME).unlink()
+    elif damage == "other-platform":
+        marker = json.loads((previous / MARKER_NAME).read_text())
+        (previous / MARKER_NAME).write_text(json.dumps(marker | {"platform": "linux-arm64"}))
+    else:
+        install.mkdir()  # an empty folder at the install path: left as it is
+    service = _service(tmp_path, runner.data_dir)
+    tools = await service.status()
+    await service.close()
+    assert previous.is_dir()
+    assert install.is_dir() is (damage == "installed")
+    assert tools.ffmpeg.status is ToolStatus.MISSING
+
+
+@pytest.mark.anyio
+async def test_a_fetch_puts_the_build_left_aside_back_before_it_removes_old_work_folders(
+    tmp_path: Path, server: LocalServer, runner: Runner
+) -> None:
+    """Even when the killed fetch's work folder is old enough to be removed."""
+    other = foreign_platform()
+    data = fake_archive(other, tmp_path / "work")
+    route = server.add(f"/a.{archive_ext(other)}", data)
+    url = server.url(f"/a.{archive_ext(other)}")
+    manifest = write_manifest(tmp_path / "m.toml", {"default": [Archive(url, data, other)]})
+    final, result = await runner.fetch(manifest, platform=other)
+    assert final.state is TaskState.DONE, final.error
+    install = result.install_dir
+    marker = installed_build(install)
+    previous = _kill_during_the_swap(install)
+    old = time.time() - 7 * 3600
+    for path in [previous.parent, *previous.parent.rglob("*")]:
+        os.utime(path, (old, old), follow_symlinks=False)
+
+    final, again = await runner.fetch(manifest, platform=other)
+    assert final.state is TaskState.DONE, final.error
+    assert again.downloaded is False
+    assert route.requests == 1
+    assert installed_build(install) == marker
+    assert not previous.exists()
