@@ -241,3 +241,10 @@ the sources. By the order "less risk; when in doubt keep the test", Q-7.13 cache
 a temporary folder) and leaves the CLI polls as they are.
 If the owner wants the polls changed: a later package swaps `Home.state` for an HTTP read where the
 test checks no CLI output (about 0.77 s per poll on Linux, more on Windows).
+
+### D-25 TDM-03's moved test goes into the file the finding names
+
+TDM-03 moves `test_every_software_encoder_has_options_in_each_main_category` out of `needs_ffmpeg`
+into `definitions/test_options_search_hdr.py`, "next to the category test". Q-7.4 had since moved
+that category test into `definitions/test_lint.py`. The moved test is unchanged and needs no FFmpeg
+in either file, so nothing depends on the choice; it stays in the file the finding names.
