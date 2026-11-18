@@ -31,6 +31,7 @@ import posixpath
 import re
 import shutil
 import socket
+import ssl
 import stat
 import sys
 import tarfile
@@ -98,8 +99,10 @@ USER_AGENT = f"reframe/{__version__} (tools fetch)"
 #: Hosts that may serve a manifest URL over plain ``http`` (tests with a local server).
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
-#: Download attempts (network errors and HTTP 429 / 5xx are retried with back-off).
+#: Download attempts for an error in the middle of the transfer, and for HTTP 429 / 5xx.
 ATTEMPTS = 4
+#: Attempts for a refused or timed-out connection: the server is most likely not there.
+CONNECT_ATTEMPTS = 2
 #: Socket timeout of the download (seconds without data).
 SOCKET_TIMEOUT = 20.0
 #: Seconds the ``-version`` check of each binary may take.
@@ -406,42 +409,51 @@ def download(
     attempts: int = ATTEMPTS,
     timeout: float = SOCKET_TIMEOUT,
 ) -> None:
-    """Download ``url`` to ``dest`` (worker thread). Network errors and HTTP 429 / 5xx are
-    retried with back-off; a response longer than ``size`` stops at once (a wrong or hostile
-    server cannot fill the disk) and is not retried. A server that cannot be reached at all is
-    a :class:`FetchError` with the code :data:`FETCH_OFFLINE`."""
+    """Download ``url`` to ``dest`` (worker thread). Errors in the middle of the transfer and
+    HTTP 429 / 5xx are retried with back-off, a refused or timed-out connection once, and no
+    name resolution, an unreachable network and a TLS failure never. A response longer than
+    ``size`` stops at once (a wrong or hostile server cannot fill the disk) and is not retried.
+    A server that cannot be reached at all is a :class:`FetchError` with the code
+    :data:`FETCH_OFFLINE`."""
     for attempt in range(1, attempts + 1):
         error: Exception
+        connected = False
         try:
             request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(request, timeout=timeout) as response, dest.open("wb") as f:
-                written = 0
-                # read1 returns what has arrived, so a slow server does not keep a cancel
-                # waiting for a whole block.
-                while chunk := response.read1(CHUNK):
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                connected = True
+                with dest.open("wb") as f:
+                    written = 0
+                    # read1 returns what has arrived, so a slow server does not keep a cancel
+                    # waiting for a whole block.
+                    while chunk := response.read1(CHUNK):
+                        _check_cancel(cancel)
+                        written += len(chunk)
+                        if written > size:
+                            raise FetchError(
+                                f"{url}: the download is larger than the pinned size of "
+                                f"{size} bytes"
+                            )
+                        f.write(chunk)
+                        if progress is not None:
+                            progress(written)
                     _check_cancel(cancel)
-                    written += len(chunk)
-                    if written > size:
-                        raise FetchError(
-                            f"{url}: the download is larger than the pinned size of {size} bytes"
-                        )
-                    f.write(chunk)
-                    if progress is not None:
-                        progress(written)
-                _check_cancel(cancel)
             return
         except (FetchError, _Stopped):
             dest.unlink(missing_ok=True)
             raise
         except urllib.error.HTTPError as e:
-            retryable = e.code == 429 or e.code >= 500
+            limit = attempts if e.code == 429 or e.code >= 500 else 1
             error = e
             e.close()  # an HTTPError holds the response body open
-        except (OSError, http.client.HTTPException, ValueError) as e:  # URLError is an OSError
-            retryable = not isinstance(e, ValueError)
+        except ValueError as e:  # a URL that urllib cannot open
+            limit = 1
+            error = e
+        except (OSError, http.client.HTTPException) as e:  # URLError is an OSError
+            limit = attempts if connected else _connect_attempts(e, attempts)
             error = e
         dest.unlink(missing_ok=True)
-        if not retryable or attempt == attempts:
+        if attempt >= limit:
             why = _offline_reason(error)
             if why is not None:
                 host = urllib.parse.urlsplit(url).hostname or url
@@ -451,6 +463,19 @@ def download(
                 )
             raise FetchError(f"the download failed after {attempt} attempt(s): {url}: {error}")
         _sleep(2.0**attempt, cancel)
+
+
+def _connect_attempts(error: BaseException, attempts: int) -> int:
+    """The attempts of a download whose connection failed with ``error``: another try cannot
+    help without name resolution, without a route or with a failed TLS handshake."""
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    if isinstance(reason, (ssl.SSLError, socket.gaierror)) or (
+        isinstance(reason, OSError) and reason.errno in _OFFLINE_ERRNOS
+    ):
+        return 1
+    if isinstance(reason, (ConnectionRefusedError, TimeoutError)):
+        return min(attempts, CONNECT_ATTEMPTS)
+    return attempts
 
 
 def _offline_reason(error: BaseException) -> str | None:

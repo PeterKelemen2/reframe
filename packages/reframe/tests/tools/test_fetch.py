@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import http.client
 import json
 import logging
 import os
@@ -12,6 +13,7 @@ import socket
 import ssl
 import sys
 import tarfile
+import threading
 import time
 import tomllib
 import urllib.error
@@ -549,7 +551,7 @@ async def test_not_found_is_not_retried(tmp_path: Path, server: LocalServer, fet
 
 
 @pytest.mark.anyio
-async def test_a_connection_error_gives_up_after_the_attempts(
+async def test_a_refused_connection_is_tried_twice(
     tmp_path: Path, fetch: Fetch, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(fetch_module, "_sleep", lambda seconds, cancel: None)
@@ -567,8 +569,7 @@ async def test_a_connection_error_gives_up_after_the_attempts(
     assert final.state is TaskState.FAILED
     assert final.error is not None
     assert final.error.startswith(
-        f"cannot reach the download server 127.0.0.1 (Connection refused; "
-        f"{fetch_module.ATTEMPTS} attempt(s))"
+        "cannot reach the download server 127.0.0.1 (Connection refused; 2 attempt(s))"
     )
     assert final.error_code == "tools.fetch_offline"
 
@@ -583,20 +584,34 @@ def _transport(error: BaseException, calls: list[str]) -> Callable[..., Any]:
     return urlopen
 
 
+#: An error before the response: (error, its reason text, the attempts it gets).
 OFFLINE_ERRORS = {
     "no-name-resolution": (
         urllib.error.URLError(socket.gaierror(-3, "Temporary failure in name resolution")),
         "Temporary failure in name resolution",
+        1,
     ),
     "network-unreachable": (
         urllib.error.URLError(OSError(errno.ENETUNREACH, "Network is unreachable")),
         "Network is unreachable",
+        1,
     ),
-    "connect-timeout": (urllib.error.URLError(TimeoutError("timed out")), "timed out"),
-    "read-timeout": (TimeoutError("timed out"), "timed out"),
+    "host-unreachable": (
+        urllib.error.URLError(OSError(errno.EHOSTUNREACH, "No route to host")),
+        "No route to host",
+        1,
+    ),
+    "network-down": (
+        urllib.error.URLError(OSError(errno.ENETDOWN, "Network is down")),
+        "Network is down",
+        1,
+    ),
+    "connect-timeout": (urllib.error.URLError(TimeoutError("timed out")), "timed out", 2),
+    "response-timeout": (TimeoutError("timed out"), "timed out", 2),
     "refused": (
         ConnectionRefusedError(errno.ECONNREFUSED, "Connection refused"),
         "Connection refused",
+        2,
     ),
 }
 
@@ -610,7 +625,7 @@ async def test_without_a_network_the_fetch_is_offline_and_installs_nothing(
     caplog: pytest.LogCaptureFixture,
     case: str,
 ) -> None:
-    error, why = OFFLINE_ERRORS[case]
+    error, why, attempts = OFFLINE_ERRORS[case]
     calls: list[str] = []
     waits: list[float] = []
     monkeypatch.setattr(urllib.request, "urlopen", _transport(error, calls))
@@ -624,16 +639,15 @@ async def test_without_a_network_the_fetch_is_offline_and_installs_nothing(
     assert final.error_code == "tools.fetch_offline"
     assert final.error is not None
     assert final.error.startswith(
-        f"cannot reach the download server downloads.example ({why}; "
-        f"{fetch_module.ATTEMPTS} attempt(s)). "
+        f"cannot reach the download server downloads.example ({why}; {attempts} attempt(s)). "
     )
     # The message names what to do instead.
     assert "install the build from its archive file" in final.error
     assert "REFRAME_FFMPEG" in final.error
     assert "Settings > Tools" in final.error
     assert result is None
-    assert len(calls) == fetch_module.ATTEMPTS  # the retries ran
-    assert waits == [2.0, 4.0, 8.0]
+    assert len(calls) == attempts
+    assert waits == [2.0, 4.0, 8.0][: attempts - 1]
     assert not (fetch.data_dir / "tools" / "ffmpeg").exists()
     assert leftovers(fetch.data_dir) == []
     assert fetch.rescans == 0
@@ -647,18 +661,25 @@ async def test_without_a_network_the_fetch_is_offline_and_installs_nothing(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "error",
+    ("error", "attempts"),
     [
-        urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate verify failed")),
-        ConnectionResetError(errno.ECONNRESET, "Connection reset by peer"),
-        urllib.error.URLError("unknown url type: ftp"),
+        (urllib.error.URLError(ssl.SSLCertVerificationError(1, "certificate verify failed")), 1),
+        (urllib.error.URLError(ssl.SSLError(1, "[SSL: WRONG_VERSION_NUMBER]")), 1),
+        (ssl.SSLError(1, "[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE]"), 1),
+        (ConnectionResetError(errno.ECONNRESET, "Connection reset by peer"), fetch_module.ATTEMPTS),
+        (urllib.error.URLError("unknown url type: ftp"), fetch_module.ATTEMPTS),
     ],
-    ids=["tls", "reset", "url"],
+    ids=["certificate", "tls", "tls-unwrapped", "reset", "url"],
 )
 async def test_other_download_errors_have_no_code(
-    tmp_path: Path, fetch: Fetch, monkeypatch: pytest.MonkeyPatch, error: BaseException
+    tmp_path: Path,
+    fetch: Fetch,
+    monkeypatch: pytest.MonkeyPatch,
+    error: BaseException,
+    attempts: int,
 ) -> None:
-    monkeypatch.setattr(urllib.request, "urlopen", _transport(error, []))
+    calls: list[str] = []
+    monkeypatch.setattr(urllib.request, "urlopen", _transport(error, calls))
     monkeypatch.setattr(fetch_module, "_sleep", lambda seconds, cancel: None)
     other = foreign_platform()
     url = f"https://downloads.example/ffmpeg.{archive_ext(other)}"
@@ -666,8 +687,95 @@ async def test_other_download_errors_have_no_code(
     final, _ = await fetch(manifest, platform=other)
     assert final.state is TaskState.FAILED
     assert final.error is not None
-    assert final.error.startswith("the download failed after ")
+    assert final.error.startswith(f"the download failed after {attempts} attempt(s): ")
     assert final.error_code is None
+    assert len(calls) == attempts
+
+
+class _BrokenResponse:
+    """A response whose body breaks with ``error`` after its first bytes."""
+
+    def __init__(self, error: BaseException) -> None:
+        self._error = error
+        self._sent = False
+
+    def read1(self, size: int) -> bytes:
+        if not self._sent:
+            self._sent = True
+            return b"abc"
+        raise self._error
+
+    def __enter__(self) -> _BrokenResponse:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        pass
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        TimeoutError("timed out"),
+        ConnectionResetError(errno.ECONNRESET, "Connection reset by peer"),
+        http.client.IncompleteRead(b"abc", 97),
+        ssl.SSLEOFError(8, "EOF occurred in violation of protocol"),
+    ],
+    ids=["read-timeout", "reset", "incomplete", "tls-eof"],
+)
+def test_an_error_in_the_middle_of_the_transfer_is_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: BaseException
+) -> None:
+    calls: list[str] = []
+
+    def urlopen(request: urllib.request.Request, *args: object, **kwargs: object) -> Any:
+        calls.append(request.full_url)
+        return _BrokenResponse(error)
+
+    waits: list[float] = []
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(fetch_module, "_sleep", lambda seconds, cancel: waits.append(seconds))
+    with pytest.raises(FetchError, match=r"\b4 attempt\(s\)"):
+        fetch_module.download(
+            "https://downloads.example/a.tar.xz", tmp_path / "a", size=100, cancel=CancelToken()
+        )
+    assert len(calls) == fetch_module.ATTEMPTS
+    assert waits == [2.0, 4.0, 8.0]
+    assert not (tmp_path / "a").exists()
+
+
+def test_a_tls_failure_with_a_real_server_is_not_retried(tmp_path: Path) -> None:
+    """A server that answers the TLS handshake with plain text: ssl's own error."""
+    connections: list[int] = []
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+
+        def serve() -> None:
+            while True:
+                try:
+                    conn, _ = listener.accept()
+                except OSError:
+                    return
+                connections.append(1)
+                with conn:
+                    conn.recv(4096)
+                    conn.sendall(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n")
+
+        thread = threading.Thread(target=serve, daemon=True)
+        thread.start()
+        port = listener.getsockname()[1]
+        started = time.monotonic()
+        with pytest.raises(FetchError) as caught:
+            fetch_module.download(
+                f"https://127.0.0.1:{port}/a.tar.xz", tmp_path / "a", size=100,
+                cancel=CancelToken(), timeout=5.0,
+            )  # fmt: skip
+        took = time.monotonic() - started
+    assert caught.value.code is None
+    assert str(caught.value).startswith("the download failed after 1 attempt(s): ")
+    assert "SSL" in str(caught.value)
+    assert connections == [1]
+    assert took < 2.0
 
 
 def _tar_case(kind: str) -> bytes:

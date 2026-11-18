@@ -2475,7 +2475,20 @@ attempt. What `urllib` raises, and the `FetchError` it gives:
 
 The message is `cannot reach the download server <host> (<reason>; <n> attempt(s))`; the task
 adds what to do instead. TLS errors, a reset connection and HTTP errors keep their text and
-have no code (`test_fetch.py`). A file install copies the archive into the work folder and
+have no code (`test_fetch.py`).
+
+`urllib` wraps an error of the connection or the TLS handshake in `URLError`; a timeout while
+it waits for the response headers, and every error while the body is read, come bare. A
+self-signed certificate is `URLError(SSLCertVerificationError(1, '[SSL:
+CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate …'))`. Real runs
+of `download` with its back-off (2026-11-18), before and after the attempts per error:
+
+| Case | Four attempts each | Now |
+|------|--------------------|-----|
+| `*.invalid` | 14.0 s | 0.0 s, 1 attempt |
+| a refused loopback port | 14.0 s | 2.0 s, 2 attempts |
+| a self-signed certificate (local TLS server) | 14.0 s | 0.0 s, 1 attempt |
+| `10.255.255.1` | 54.1 s | 42.0 s, 2 attempts (two connect timeouts of 20 s); another run 4.2 s, 1 attempt (`Network is unreachable` at once) | A file install copies the archive into the work folder and
 hashes what it copies, so the file that is checked is the file that is extracted; a file of the
 wrong size is refused before it is copied.
 

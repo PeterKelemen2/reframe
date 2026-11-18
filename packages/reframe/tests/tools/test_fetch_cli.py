@@ -511,7 +511,7 @@ def test_an_offline_fetch_names_the_file_install(
     errors = assert_clean_failure(result, EXIT_FAILED)
     assert errors[0].startswith(
         "error: the fetch failed: cannot reach the download server downloads.example (Name or "
-        "service not known; 4 attempt(s)). Without a connection, install the build from its "
+        "service not known; 1 attempt(s)). Without a connection, install the build from its "
         "archive file"
     )
     assert result.stderr.splitlines()[-1] == (
