@@ -12,6 +12,7 @@ import dataclasses
 import difflib
 import io
 import json
+import logging
 import os
 import signal
 import sys
@@ -101,12 +102,15 @@ from reframe.queue.lock import LOCK_FILE
 from reframe.queue.logs import log_file
 from reframe.service import ProbeError, ProbeErrorKind, Reframe
 from reframe.textfile import NotARegularFileError, open_regular
+from reframe.tools import fetch as fetch_module
 from reframe.tools.__main__ import status_lines
 from reframe.tools.fetch import (
     FETCH_OFFLINE,
     MARKER_NAME,
     PLATFORMS,
+    Build,
     FetchError,
+    PlatformBuild,
     choose_build,
     host_platform,
     install_dir_for,
@@ -3432,6 +3436,25 @@ async def run_tools_fetch(
     console = make_console()
     source = archive if archive is not None else pinned.url
     _say(console, f"FFmpeg {chosen.version} ({chosen.name}, {target}): {source}")
+    # The command prints the task's progress and result itself; without a handler, Python
+    # would print the task's error log record on stderr as well.
+    quiet = logging.NullHandler()
+    fetch_logger = logging.getLogger(fetch_module.__name__)
+    fetch_logger.addHandler(quiet)
+    try:
+        return await _fetch_task(console, chosen, pinned, target, host, archive)
+    finally:
+        fetch_logger.removeHandler(quiet)
+
+
+async def _fetch_task(
+    console: Console,
+    chosen: Build,
+    pinned: PlatformBuild,
+    target: str,
+    host: str | None,
+    archive: Path | None,
+) -> int:
     async with open_reframe() as app:
         install_dir = install_dir_for(app.data_dir, target, host)
         before = _marker_identity(install_dir)

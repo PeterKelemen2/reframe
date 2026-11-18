@@ -30,7 +30,7 @@ from reframe.tools import fetch as fetch_module
 from reframe.tools.__main__ import status_lines
 from reframe.tools.fetch import host_platform, install_dir_for, installed_build
 from reframe_testing import fake_tools as ft
-from reframe_testing.cli import invoke
+from reframe_testing.cli import invoke, run_cli
 
 from .fetch_server import (
     FAKE_VERSION,
@@ -437,11 +437,30 @@ def test_fetch_file_refuses_a_wrong_archive(
     if host != "linux-x64":  # the test manifest has only a linux-x64 archive
         assert result.exit_code == EXIT_USAGE
         return
-    assert assert_clean_failure(result, EXIT_FAILED) == [
+    error = (
         f"error: the install failed: {NAME}: the SHA-256 is {sha256(wrong.read_bytes())}, "
         f"expected {sha256(data)}"
-    ]
+    )
+    assert assert_clean_failure(result, EXIT_FAILED) == [error]
+    assert result.stderr.splitlines() == [error]
     assert not (env / "tools" / "ffmpeg").exists()
+
+
+def test_a_failed_install_is_one_line_in_a_real_process(
+    fake_tools: ft.FakeTools, tmp_path: Path
+) -> None:
+    """The task's log record does not repeat the error: the command sets up no logging, and
+    Python would print it on stderr."""
+    wrong = tmp_path / "ffmpeg.tar.xz"
+    wrong.write_bytes(b"not the pinned archive")
+    result = run_cli(
+        fake_tools, tmp_path, "tools", "fetch", "--file", str(wrong), "--build", "default",
+        encoding="utf-8",
+    )  # fmt: skip
+    assert result.returncode == EXIT_FAILED
+    stderr = result.stderr.decode("utf-8").splitlines()
+    assert len(stderr) == 1, stderr
+    assert stderr[0].startswith("error: the install failed: ffmpeg.tar.xz: the size is 22 bytes")
 
 
 def test_fetch_file_usage_errors(

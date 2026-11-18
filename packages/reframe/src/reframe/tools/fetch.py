@@ -878,7 +878,7 @@ class _Job:
         step = percent - percent % LOG_PROGRESS_STEP
         if step > self.logged:
             self.logged = step
-            what = "downloaded" if self.source is None else "copied and checked"
+            what = "downloaded" if self.source is None else "copied"
             log.info(
                 "FFmpeg build %r: %s %d %% (%s of %s)",
                 self.build.name,

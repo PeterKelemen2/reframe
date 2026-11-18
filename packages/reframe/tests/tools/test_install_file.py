@@ -200,9 +200,7 @@ async def test_the_right_file_installs_and_discovery_finds_it(
         f"installing from the file {archive} into {install}. Licence GPL-3.0-or-later; "
         "source: https://example.invalid/ffmpeg/commit/0000000"
     )
-    percents = [
-        int(m[1]) for line in lines if (m := re.search(r"copied and checked (\d+) %", line))
-    ]
+    percents = [int(m[1]) for line in lines if (m := re.search(r"copied (\d+) %", line))]
     assert percents == list(range(10, 101, 10))
     assert lines[-1] == (
         f"Installed FFmpeg build 'default' ({FAKE_VERSION}) into {install}; checked: the size "
