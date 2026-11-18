@@ -685,8 +685,69 @@ Source `-f lavfi -i testsrc2`, output `-f null -`. Decision
   available (8-bit only)`, `hevc_qsv — available`, `av1_qsv — unavailable: This Intel GPU
   cannot encode AV1`. `test_hardware_encode[h264_qsv-multitrack-8]` and
   `[hevc_qsv-hdr10-10]` pass (10-bit H.265 with HDR10 kept).
-- **Not checked**: QSV on Linux (oneVPL over VAAPI), Arc and newer Intel GPUs, and the QSV
-  advanced options.
+- **Not checked**: QSV on Linux (oneVPL over VAAPI), Arc and newer Intel GPUs.
+
+**Every choice and option** (decision
+[0096](../docs/decisions/0096-qsv-options-on-intel-hardware-and-ffmpeg-that-does-not-exit.md)):
+one encode of 12 frames of 1280×720 per value, at ICQ 25 unless noted, compared with the
+baseline's `-v verbose` parameter dump (the lines `[h264_qsv @ …] GopPicSize: …`,
+`TargetUsage: …`, `NumRefFrame: …` that qsvenc prints after it opens). The n8.1.3 build gave
+the same exit codes and the same dumps for every value.
+
+| What | `h264_qsv` | `hevc_qsv` |
+|------|------------|------------|
+| Baseline (ICQ 25) | `RateControlMethod: ICQ`, `TargetUsage: 4`, `GopRefDist: 3`, `NumRefFrame: 2`, `MBBRC: ON` | the same with `GopRefDist: 4`, `NumRefFrame: 3`; 10-bit: `profile: hevc main10` |
+| `-preset` veryfast … veryslow | `TargetUsage` 7, 6, 5, 4, 3, 2, 1 | 7, 7, 4, 4, 4, 1, 1 (three levels) |
+| `-profile` | baseline (CAVLC, no B-frames), main, high | main, main10 |
+| `-global_quality` 1, 10, 25, 40, 51 | `ICQQuality` = the value | the same |
+| `-b:v` 500k, 4000k, 20000k | `VBR`, `MaxKbps` = 1.5 × the target | `VBR`, `MaxKbps` = the target |
+| `-bf` 0, 2, 16 | `GopRefDist` 1, 3, 17 | 1, 3, 17 |
+| `-refs` 2, 16 | `NumRefFrame` 2, 16 | 2, 15 |
+| `-g` 1, 500, 1000 | 1: fails (`Error flushing encoder: Internal bug, should not have happened`); with `-bf 0` it works; 500, 1000: `GopPicSize` | 1 works (`GopRefDist: 1`); `GopPicSize` |
+| `adaptive_i`, `adaptive_b` | always `OFF`, also with look-ahead or a bitrate | always `unknown` |
+| `b_strategy` | 1: `BRefType: pyramid` | 0: `BRefType: off` |
+| `low_power` 1 | fails at ICQ (`Invalid FrameType:0`, once `Error during encoding: GPU Hang (-21)`; FFmpeg sometimes does not exit); works at a bitrate and at the default CQP | fails at ICQ and at a bitrate (`Error while opening encoder`) |
+| `async_depth` | no dump line; encodes | the same |
+| `look_ahead` 1 | `LA_ICQ`, `LookAheadDepth: 10` | — |
+| `look_ahead_depth` | with `look_ahead`: 0 keeps 10, 50 and 100 = the value | 40 with `-extbrc 1` at a bitrate = the value; at ICQ: nothing |
+| `look_ahead_downsampling` | `off` works; `4x` stays `2x` | — |
+| `extbrc` 1 | — | at a bitrate: `ExtBRC: ON`; at ICQ: `OFF` |
+| `mbbrc` | 1 / 0 at a bitrate; at ICQ always `ON` | `MBBRC` ON / OFF |
+| `p_strategy` 1, 2 | `PRefType: simple`; 2 with B-frames: `Please set max_b_frames(-bf) to 0 to enable P-pyramid` | 2: `PRefType: pyramid` and the same message |
+| `idr_interval` 500, 1000 | `IdrInterval` = the value | the value + 1 |
+| `rdo` 1 | `RateDistortionOpt: ON` | `unknown` (ignored) |
+| `dblk_idc` 1, 2 | `DisableDeblockingIdc` = the value | the same |
+| `cavlc` 1 | `Entropy coding: CAVLC` | — |
+| `gpb` 0 | — | `GPB: OFF` |
+| `transform_skip` 1 | — | `TransformSkip: OFF` (ignored), also 10-bit |
+| `tile_cols` / `tile_rows` 2, 64 | — | fail (`Error querying encoder params: unsupported (-3)`) |
+
+**Through Reframe** (jobs from custom presets, `reframe plan` and `reframe encode` with the
+queue):
+
+- The built-in `h265-qsv-1080p` encodes; `av1-qsv-2160p-4k` gives `encoder.unavailable` ("This
+  Intel GPU cannot encode AV1") with the fix "Use libsvtav1". 2-pass and H.264 10-bit are
+  refused by validation.
+- 10-bit H.265 with B-frames 3, refs 4, GOP 250, MBBRC, simple P references, IDR interval and
+  deblocking on: `hdr10-4k.mkv` gives 3840×2160 Main 10, PQ / BT.2020 with the mastering
+  display and light level side data (10 s); `anamorphic.mkv` 854×480, `interlaced.mkv` and
+  `vfr.mkv` encode.
+- Bitrate with `extbrc` and look-ahead depth 40, H.264 look-ahead at a bitrate with
+  downsampling off, CAVLC and RDO, and the custom parameter `scenario=archive` encode.
+- Tiles and H.264 `g=1` fail with FFmpeg's error in the job. The custom parameter
+  `low_power=1` is caught by the dry run ("some encoding parameters are not supported by the
+  QSV runtime"); `no_such_option=1` by `encoder.custom_param_unknown`.
+- H.264 low power at ICQ in the queue, three runs: failed at once (8 s), FFmpeg did not exit
+  and the exit limit stopped it (68 s), driver `GPU Hang (-21)` (2 s). The GPU encoded
+  normally afterwards. Before the limit, one such job ran more than 10 minutes at about one
+  core.
+- A cancel of a running QSV job ends FFmpeg and removes the `.part` file. A preview clip (1 s
+  from 1 s) of a 10-bit H.265 job encodes.
+- Output sizes are exact for 1920×1080, 1280×720, 720×480, 640×360, 854×480, 1918×1078 and
+  4096×2160 (both encoders); 8192×4320 fails (`Current profile is unsupported` on H.264,
+  `some encoding parameters are not supported` on H.265).
+- Several encodes at once (1080p, 500 frames, `hevc_qsv`): one alone 7 s, two together 13 s,
+  four together 25 s, all exit 0. The GPU is shared, so parallel QSV jobs are not faster.
 
 ### Encoder definitions (C-6)
 

@@ -502,7 +502,10 @@ cancelling a scan stops its FFmpeg process within 1 s.
 - [ ] Cancel: kill the tree and remove the `.part` file.
 - [ ] Time limits: none for an encode; a sleep-aware stall watchdog for FFmpeg steps (no
       progress, no output and no CPU use for 10 minutes) and a 5-minute limit for other short tool steps
-      (0016). The in-process `header_edit` step (C-18) has no time limit and is let finish
+      (0016). An FFmpeg step still running 1 minute after its last progress block
+      (`progress=end`) is stopped, busy or not
+      ([0096](../decisions/0096-qsv-options-on-intel-hardware-and-ffmpeg-that-does-not-exit.md)).
+      The in-process `header_edit` step (C-18) has no time limit and is let finish
       once it starts; a cancel or close before it starts writes nothing.
 - [ ] Success: re-probe the `.part` output and check its layout (number and type of streams,
       languages) **before** the rename, so a bad output never takes the final name; then rename
