@@ -261,9 +261,10 @@ export interface paths {
         put?: never;
         /**
          * Fetch Tools
-         * @description Download, check and install the pinned FFmpeg build, then run discovery again: a task
-         *     whose result is a ``ToolFetchResult``. A download server that cannot be reached ends the
-         *     task ``failed`` with ``error_code`` ``tools.fetch_offline``.
+         * @description Download, check and install an offered FFmpeg build, then run discovery again: a task
+         *     whose result is a ``ToolFetchResult``. A build that is not offered is refused (422,
+         *     ``tools.build_not_offered``). A download server that cannot be reached ends the task
+         *     ``failed`` with ``error_code`` ``tools.fetch_offline``.
          */
         post: operations["system_fetch_tools"];
         delete?: never;
@@ -306,7 +307,8 @@ export interface paths {
          * Install Tools File
          * @description Install an FFmpeg archive file from the server's disk, checked like a download (size
          *     and SHA-256 against the manifest), then run discovery again: a task whose result is a
-         *     ``ToolFetchResult``. Web mode: the path must be inside a media root.
+         *     ``ToolFetchResult``. Web mode: the path must be inside a media root. A build that is not
+         *     offered is refused (422, ``tools.build_not_offered``).
          */
         post: operations["system_install_tools_file"];
         delete?: never;
@@ -3852,7 +3854,7 @@ export interface components {
         FetchRequest: {
             /**
              * Build
-             * @description A build name of the pinned FFmpeg manifest.
+             * @description An offered build of the pinned FFmpeg manifest.
              * @default default
              */
             build: string;
@@ -4555,8 +4557,8 @@ export interface components {
             path: string;
             /**
              * Build
-             * @description The build name of the manifest the archive is checked against. ``None``: the offered
-             *     build whose archive has the file's name.
+             * @description The offered build the archive is checked against. ``None``: the offered build whose
+             *     archive has the file's name.
              */
             build?: string | null;
         };

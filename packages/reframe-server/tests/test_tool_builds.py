@@ -229,6 +229,35 @@ async def test_install_file_in_desktop_mode_takes_any_path_and_the_build(
     assert asked == [(archive.resolve(), "compat")]
 
 
+@pytest.mark.parametrize(
+    ("route", "body"),
+    [
+        ("/api/system/tools/fetch", {"build": "override-test"}),
+        ("/api/system/tools/install-file", {"path": "ARCHIVE", "build": "override-test"}),
+        ("/api/system/tools/fetch", {"build": "nightly"}),
+    ],
+)
+async def test_the_api_refuses_a_build_that_is_not_offered(
+    make_api: ApiFactory, monkeypatch: pytest.MonkeyPatch, route: str, body: dict[str, str]
+) -> None:
+    started = _fake_fetch(monkeypatch)
+    monkeypatch.setattr(
+        ToolsService, "install_file", lambda self, _path, **kw: ToolsService.fetch(self, **kw)
+    )
+    async with make_api(mode="desktop") as api:
+        archive = api.outside / ARCHIVE_NAME
+        archive.write_bytes(b"x")
+        if "path" in body:
+            body = {**body, "path": str(archive)}
+        response = await api.client.post(route, json=body)
+    assert response.status_code == 422, response.text
+    problem = response.json()
+    assert problem["code"] == "tools.build_not_offered"
+    assert problem["title"] == f"{body['build']!r} is not an FFmpeg build that Reframe offers"
+    assert problem["detail"] == "The offered builds are default, compat."
+    assert started == []
+
+
 def _refused_url() -> str:
     """A loopback URL where nothing listens: the connection is refused."""
     with socket.socket() as probe:
