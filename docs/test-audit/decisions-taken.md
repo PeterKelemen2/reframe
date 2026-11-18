@@ -248,3 +248,30 @@ TDM-03 moves `test_every_software_encoder_has_options_in_each_main_category` out
 into `definitions/test_options_search_hdr.py`, "next to the category test". Q-7.4 had since moved
 that category test into `definitions/test_lint.py`. The moved test is unchanged and needs no FFmpeg
 in either file, so nothing depends on the choice; it stays in the file the finding names.
+
+### Result of the implementation
+
+- All 13 packages are done; no finding was skipped. Each package was reviewed (one review per
+  package diff) and its review findings were fixed before the merge; each package's whole-run
+  coverage was compared with its wave's base (two base runs from wave 2 on, because the base runs
+  themselves vary): every lost line was a timing or test-order line, a test whose setup hit the
+  known unclosed-transport `ResourceWarning` in that run, or a line only a fresh checkout's
+  fixture generation reaches.
+- Tests: 464 removed, 14 added (Q-7.7's 10 split ids, one launcher test, three child-process
+  tests of 0092): 8,616 → 8,166 collected.
+- Test code lines (no blanks, comments or docstrings; this run's counter gives 80,696 at the
+  start where the audit's gave 80,773): 80,696 → 79,780, the packages −965 and 0092's fix +49.
+- Full run on the owner's machine, idle, 6 workers, twice each: 356.3 / 355.4 s at `1819150` →
+  287.8 / 287.6 s at the end (−19 %). Q-7.7 alone measured 353.9 → 280.9 / 278.4 s; the per-test
+  timeout, the `subtests` of Q-7.9 and the later packages' moves cost back a few seconds.
+- Windows VM (6 processors): the full suite at the end, 7,827 passed and 2 failed under host load
+  (`test_detect.py::test_no_encoder_list[...]`, `test_cli_client.py::test_after_a_lost_connection_...`
+  `[the saved queue]`; neither touched by Q-7; both files pass twice in parallel and alone) in
+  13 min 28 s. Q-7.13's VM run found one real Windows failure in Q-7.10's merged test (a path
+  literal with `/`), fixed in `976dd53`.
+- Outside the plan: two whole-suite coverage runs hung on a forked child before `exec`; fixed in
+  C-1 ([0092](../decisions/0092-no-reframe-python-code-in-a-forked-child.md)).
+- Known flaky, not fixed (not part of Q-7): an unclosed `_UnixReadPipeTransport` from an earlier
+  test fails whichever test is running when it is collected (`ResourceWarning` under
+  `filterwarnings = error`); it showed up in about half of this run's whole-suite runs, most often
+  in `reframe-server/tests/test_subtitles.py`.
