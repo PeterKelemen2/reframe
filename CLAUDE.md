@@ -46,6 +46,7 @@ uv run pytest                             # all tests, in parallel (pytest-xdist
 uv run pytest -m "not needs_gpu"          # what CI runs (~6 min on 12 cores)
 uv run pytest -n 0 path/to/test.py --pdb  # one process: debugging, --pdb (decision 0084)
 uv run pytest -m benchmark -n 0           # time budgets; they skip under xdist
+uv run pytest --timeout 60                # per-test limit, default 600 s: a hung test's worker ends (0084)
 uv run pytest --cov=reframe --cov-report=term-missing  # coverage
 uv run python scripts/make-testdata.py    # generate test media into testdata/media/ (git-ignored)
 uv run --no-project python scripts/fetch-tools.py   # pinned FFmpeg (tools/ffmpeg.toml) into .tools/, prints its bin dir

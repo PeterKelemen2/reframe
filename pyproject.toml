@@ -21,6 +21,7 @@ dev = [
     "pyinstaller>=6.22.3",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
+    "pytest-timeout>=2.4.0",
     "ruff>=0.17.0",
     "syrupy>=6.1.1",
     "types-psutil>=7.2.2.20260906",
@@ -113,7 +114,17 @@ markers = [
     "needs_mkvtoolnix: uses mkvmerge, mkvinfo and mkvpropedit as a test oracle (skipped without them)",
     "benchmark: performance budget check; runs in the non-blocking CI benchmark job",
 ]
-filterwarnings = ["error"]
+# A hung test ends its worker after 600 s and xdist starts a new one. "thread" is the only method
+# that works on Windows and does not need the main thread to get back to Python. Under xdist only
+# faulthandler's dump (a little earlier) reaches the terminal.
+timeout = 600
+timeout_method = "thread"
+faulthandler_timeout = 590
+filterwarnings = [
+    "error",
+    # syrupy warns at session end after a worker crash; as an error it would hide the summary.
+    "ignore:syrupy:UserWarning",
+]
 
 # --------------------------------------------------------------------------- coverage
 

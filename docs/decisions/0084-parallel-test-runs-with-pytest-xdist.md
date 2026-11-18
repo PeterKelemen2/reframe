@@ -10,6 +10,12 @@
   the run alone on one worker. `worksteal` ignores `@pytest.mark.xdist_group`, so the advice in
   "Consequences" to use it with `--dist loadgroup` no longer applies. `-n 0` and `--pdb` are
   unchanged: xdist then runs no scheduler.
+- Amended 2026-11-18 (Q-7.13): `pytest-timeout` ends a test that runs longer than 600 s
+  (`timeout_method = "thread"`, the only method on Windows). Under xdist the worker ends, xdist
+  starts a new one and the run goes on; `faulthandler_timeout = 590` prints the stack of the
+  hang, because xdist does not show pytest-timeout's own dump. syrupy's `UserWarning` after a
+  worker crash is ignored, as `filterwarnings = ["error"]` would turn it into an exception that
+  hides the summary. `-n 0 --pdb` is unchanged: the timeout does not fire under a debugger.
 
 ## Context
 
