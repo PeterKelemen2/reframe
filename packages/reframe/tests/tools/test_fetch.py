@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import os
 import shutil
@@ -13,7 +12,6 @@ import time
 import tomllib
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
@@ -37,6 +35,7 @@ from reframe.tools.fetch import (
     parse_manifest,
     start_fetch,
 )
+from reframe_testing.scripts import load_script
 
 from .fetch_server import (
     FAKE_VERSION,
@@ -58,7 +57,6 @@ from .fetch_server import (
 
 REPO = Path(__file__).resolve().parents[4]
 REPO_MANIFEST = REPO / "tools" / "ffmpeg.toml"
-SCRIPT = REPO / "scripts" / "fetch-tools.py"
 POSIX_ONLY = pytest.mark.skipif(
     sys.platform == "win32" or host_platform() != "linux-x64",
     reason="the fake Linux build runs only on a linux-x64 host",
@@ -153,18 +151,8 @@ def test_packaged_manifest_is_a_copy_of_tools_ffmpeg_toml() -> None:
     assert packaged == repo, "copy tools/ffmpeg.toml to packages/reframe/src/reframe/tools/"
 
 
-def _load_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("fetch_tools_script", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module  # dataclasses look the module up by name
-    spec.loader.exec_module(module)
-    return module
-
-
 def test_the_core_and_the_script_read_the_manifest_alike() -> None:
-    script = _load_script()
+    script = load_script("fetch-tools.py", "fetch_tools_script")
     ours = load_manifest()
     theirs = script.load_manifest(REPO_MANIFEST)
     assert sorted(ours) == sorted(theirs) == ["default", "override-test"]
@@ -990,7 +978,7 @@ async def test_the_script_and_the_core_recognise_each_others_install(
     tmp_path: Path, server: LocalServer, fetch: Fetch
 ) -> None:
     """The script and ``reframe tools fetch`` recognise each other's install by its marker."""
-    script = _load_script()
+    script = load_script("fetch-tools.py", "fetch_tools_script")
     other = foreign_platform()
     data = fake_archive(other, tmp_path / "work")
     https = f"https://example.invalid/build.{_ext(other)}"

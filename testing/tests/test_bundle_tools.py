@@ -4,7 +4,6 @@ local archives through ``file:`` URLs."""
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import io
 import os
 import stat
@@ -12,31 +11,19 @@ import sys
 import tarfile
 import zipfile
 from pathlib import Path, PurePosixPath
-from types import ModuleType
 from typing import Any
 
 import pytest
 
 from reframe.tools.fetch import FetchError
+from reframe_testing.scripts import load_script
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = REPO_ROOT / "scripts" / "bundle-tools.py"
 FF_ROOT = "ffmpeg-test-win64"
 LINUX_ROOT = "ffmpeg-test-linux64"
 
 
-def _load_script() -> ModuleType:
-    # The script name has a hyphen, so it cannot be imported by name.
-    spec = importlib.util.spec_from_file_location("bundle_tools", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module  # dataclasses look the module up by name
-    spec.loader.exec_module(module)
-    return module
-
-
-bt = _load_script()
+bt = load_script("bundle-tools.py")
 
 
 def _zip(members: dict[str, bytes]) -> bytes:

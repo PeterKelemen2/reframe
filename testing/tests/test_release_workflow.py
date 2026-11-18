@@ -4,7 +4,6 @@ keeps releases, drafts, assets and tags as the API reports them."""
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import itertools
 import json
 import os
@@ -15,13 +14,13 @@ import sys
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
 
+from reframe_testing.scripts import load_script
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = REPO_ROOT / "scripts" / "release-workflow.py"
 REPO = "owner/reframe"
 TEXTS = "licence-texts.json"
 TAG = "sources-0123456789ab"
@@ -29,17 +28,7 @@ ARCHIVES = ("ffmpeg.tar.xz", "gtk_3.0.tar", "lame.tar.xz")
 REQUIRED = {"TAURI_SIGNING_PRIVATE_KEY", "RELEASE_GPG_PRIVATE_KEY"}
 
 
-def _load_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("release_workflow", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module  # dataclasses look the module up by name
-    spec.loader.exec_module(module)
-    return module
-
-
-rw = _load_script()
+rw = load_script("release-workflow.py")
 
 
 def _sha256(data: bytes) -> str:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
-import importlib.util
 import io
 import json
 import os
@@ -13,28 +12,18 @@ import sys
 import tarfile
 from collections.abc import Mapping
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
 
+from reframe_testing.scripts import load_script
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = REPO_ROOT / "scripts" / "sources-fetch.py"
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="the sources fetch runs on Linux")
 
 
-def _load_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("sources_fetch", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sf = _load_script()
+sf = load_script("sources-fetch.py")
 
 # BtbN's helpers (images/base at the pinned commit), as the build image installs them.
 GIT_MINI_CLONE = """#!/bin/bash

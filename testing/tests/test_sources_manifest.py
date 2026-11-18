@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
-import sys
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
 
+from reframe_testing.scripts import load_script
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = REPO_ROOT / "scripts" / "sources-manifest.py"
 
 FFMPEG_COMMIT = "2a571b606854520cf89804d8030c8b328e621689"
 SCRIPTS_COMMIT = "6c9aec5fc9a72ec3abedd1fa84db141fa18cf52b"
@@ -21,17 +19,7 @@ X264_COMMIT = "0480cb05fa188d37ae87e8f4fd8f1aea3711f7ee"
 MINGW_COMMIT = "57b595039040eaa15bece85b7cc71d952281b269"
 
 
-def _load_script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("sources_manifest", SCRIPT)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sm = _load_script()
+sm = load_script("sources-manifest.py")
 
 # A build-scripts tree in BtbN's shape: generate.sh writes a RUN line with the download archive
 # of every enabled stage, named by the SHA-256 of its download commands, as BtbN's does.
