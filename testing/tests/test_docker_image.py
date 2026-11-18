@@ -1,4 +1,4 @@
-"""The Docker image's FFmpeg platform per architecture and its Debian package list."""
+"""The Docker image's architectures, notices and Debian package list."""
 
 from __future__ import annotations
 
@@ -23,14 +23,14 @@ def _stage(name: str) -> str:
     return match.group(1)
 
 
-def test_each_image_architecture_fetches_an_ffmpeg_platform_that_is_pinned() -> None:
-    # The arm64 image cannot be built on an amd64 host without emulation: a wrong name here
-    # would only show in a release build.
-    mapping = dict(re.findall(r"(\w+)\) platform=([\w-]+) ;;", _stage("tools")))
+def test_each_image_architecture_can_download_the_default_build() -> None:
+    # The image contains no FFmpeg: a container downloads the default build for its platform
+    # at the first start, so every architecture the image is built for needs a pinned archive.
+    architectures = dict(re.findall(r"(\w+)\) want=docker-([\w-]+) ;;", _stage("notices")))
     manifest = tomllib.loads((REPO_ROOT / "tools" / "ffmpeg.toml").read_text(encoding="utf-8"))
 
-    assert mapping == {"amd64": "linux-x64", "arm64": "linux-arm64"}
-    assert set(mapping.values()) <= set(manifest["builds"]["default"]["platforms"])
+    assert architectures == {"amd64": "linux-x64", "arm64": "linux-arm64"}
+    assert set(architectures.values()) <= set(manifest["builds"]["default"]["platforms"])
 
 
 def test_each_image_architecture_wants_the_notices_of_its_own_platform() -> None:

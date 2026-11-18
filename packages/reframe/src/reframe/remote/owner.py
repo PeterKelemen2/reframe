@@ -74,6 +74,7 @@ SERVER_OPTIONS = frozenset(
         "ALLOWED_HOSTS",
         "AUTH",
         "CORS_ORIGINS",
+        "FFMPEG_BUILD",
         "HOST",
         "IDLE_EXIT",
         "MEDIA_ROOTS",
