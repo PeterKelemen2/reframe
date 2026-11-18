@@ -3719,6 +3719,14 @@ export interface components {
              */
             build_mismatch: boolean;
             /**
+             * Build Mismatch Cause
+             * @description What the build needs when ``build_mismatch`` is ``True``: ``driver``, a newer GPU driver
+             *     (another build can help), or ``system_library``, a system library that is missing or too
+             *     old, such as libva (install or update it, or use an FFmpeg that does not need it). ``None``
+             *     otherwise.
+             */
+            build_mismatch_cause?: ("driver" | "system_library") | null;
+            /**
              * Device
              * @description The device the encoder works on, for encoders that need one: the VAAPI render node
              *     (``/dev/dri/renderD128``), the first node where the test encode worked, or the node that

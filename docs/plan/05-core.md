@@ -895,9 +895,12 @@ says when a system does not fit a build
 - [x] `EncoderStatus.build_mismatch` (default `false`): set by the reason mapping for the NVENC
       API / driver version and for a system library too old or missing for the build; never
       for a 10-bit-only limit and never for a filter. The capability cache format changes.
-- [x] CLI: `reframe encoders` and `reframe tools status` print one `hint:` line when an encoder
-      has a build mismatch (update the driver, or another build: `reframe tools fetch --build
-      …`, `REFRAME_FFMPEG`, `tools.ffmpeg`); `reframe tools status` names the installed build
+      `EncoderStatus.build_mismatch_cause` says which (`driver`, `system_library`;
+      [decision 0098](../decisions/0098-ffmpeg-download-review-r1-fixes.md)).
+- [x] CLI: `reframe encoders` and `reframe tools status` print one `hint:` line per mismatch
+      cause (driver: update the driver, or another build: `reframe tools fetch --build …`,
+      `REFRAME_FFMPEG`, `tools.ffmpeg`; system library: install or update it, or your own
+      FFmpeg, no `--build`; 0098); `reframe tools status` names the installed build
       and says when it is outdated; `reframe tools fetch` lists the offered builds in `--help`.
 
 Done when:

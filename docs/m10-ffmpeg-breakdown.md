@@ -31,6 +31,8 @@ Built by the lead before the agents start (commit "contracts for the FFmpeg buil
   and `reframe tools status`: `hint: <ids> need newer system software than this FFmpeg build
   expects: update the driver, or use another build (reframe tools fetch --build <other>, or
   REFRAME_FFMPEG / tools.ffmpeg).`
+  Since [0098](decisions/0098-ffmpeg-download-review-r1-fixes.md): one hint per
+  `build_mismatch_cause`; the `system_library` hint suggests no `--build`.
 - API (S-8): `GET /api/system/tools/builds` → `ToolBuilds`; `POST /api/system/tools/install-file`
   `{path: str, build?: str}` → 202 `TaskAccepted`. Desktop mode: any path; web mode: the path
   must be inside a media root (the existing jail).
