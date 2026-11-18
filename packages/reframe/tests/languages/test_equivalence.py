@@ -2,7 +2,8 @@
 
 The oracle (``oracle.py``) is the module as it was on ``langcodes`` and ``language_data``. A
 difference means a user sees another name, code or search result than before. The full sweeps
-are ``slow``; the other tests run a fixed subset of the same corpus.
+are ``slow``; the other tests run a fixed subset of the same corpus, and the sample test adds
+what the sweeps do not have: ``validate``, ``entry`` and two values outside the registry.
 """
 
 from __future__ import annotations
@@ -185,8 +186,10 @@ def test_registry_aliases_extlangs_grandfathered_and_odd_tags() -> None:
 
 def test_listed_languages_with_sample_regions_and_scripts() -> None:
     tags = _combined(_listed_bases(), REGION_SAMPLE, SCRIPT_SAMPLE)
-    functions = ("normalize", "validate", "english_name", "native_name", "entry")
-    assert _differences(tags, functions)[:20] == []
+    assert _differences(tags, ("validate", "entry"))[:20] == []
+    # The sweeps do not have the region 172 and the script Kawi: the registry lacks them.
+    tags = _combined(_listed_bases(), ("172",), ("Kawi",))
+    assert _differences(tags, ("normalize", "english_name", "native_name"))[:20] == []
 
 
 @pytest.mark.slow
@@ -227,10 +230,6 @@ def test_names_of_listed_languages_in_every_locale() -> None:
     assert _differences(_locale_names(), ("normalize",))[:20] == []
 
 
-def test_prefix_matches_of_names() -> None:
-    assert _differences(_with_suffixes(_locale_names()[::5]), ("normalize",))[:20] == []
-
-
 @pytest.mark.slow
 def test_every_key_of_the_name_tables() -> None:
     keys = [
@@ -268,10 +267,6 @@ def test_search_picker_queries() -> None:
     assert _search_differences(_picker_queries())[:20] == []
     favourites = ("hun", "en", "pt_BR", "yue", "not a language", "sr-Latn-RS")
     assert _search_differences(["", "e", "portug", "yue", "ser"], favourites) == []
-
-
-def test_search_names_in_other_locales() -> None:
-    assert _search_differences(_locale_names()[::40])[:20] == []
 
 
 @pytest.mark.slow

@@ -33,7 +33,7 @@ from reframe.models import (
 from reframe.probe import ProbeError
 from reframe.service import Reframe
 
-from .defaults_tracks import audio, role, source, subtitle
+from .defaults_tracks import EXAMPLE_CODEC_RULES, audio, role, source, subtitle
 
 type DefaultTrack = Literal["first_output", "first_in_first_language", "forced", "none"]
 
@@ -46,25 +46,7 @@ def defaults_flags(tracks: list[AudioOutputTrack] | list[SubtitleOutputTrack]) -
     return [t.metadata.default for t in tracks]
 
 
-#: The four rules of the example.
-EXAMPLE_RULES = [
-    AudioCodecRule(
-        languages=["hu"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1",
-        max_bitrate=320, if_fits="passthru",
-    ),
-    AudioCodecRule(
-        languages=["en"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1",
-        max_bitrate=384, if_fits="passthru",
-    ),
-    AudioCodecRule(
-        languages=None, source_channels="stereo_or_less", codec="aac", mixdown="stereo",
-        max_bitrate=160, if_fits="passthru",
-    ),
-    AudioCodecRule(
-        languages=None, source_channels="any", codec="libopus", mixdown="up_to_5.1",
-        max_bitrate=256, if_fits="reencode",
-    ),
-]  # fmt: skip
+EXAMPLE_RULES = EXAMPLE_CODEC_RULES
 
 #: Hungarian, English; every matching track, so that all four rows of the example are selected.
 EXAMPLE_DEFAULTS = AudioDefaults(
@@ -326,17 +308,6 @@ def test_no_listed_language_take_none_is_an_error_with_fixes() -> None:
         draft = resolve_tracks(kept, media).draft
         assert [t.source_stream for t in draft.audio] == expected
         assert not [i for i in draft.issues if i.code == "defaults.no_listed_language"]
-
-
-def test_the_draft_has_the_lint_for_this_source() -> None:
-    """``defaults.rule_unused`` for a rule that no selected track uses."""
-    template = JobTemplate(audio_defaults=EXAMPLE_DEFAULTS)
-    media = source([audio(1, "hun", "ac3", 6, 224)])
-    draft = resolve_tracks(template, media).draft
-    assert [(i.code, i.path) for i in draft.issues] == [
-        ("defaults.rule_unused", "audio_defaults.codec_rules[1]"),
-        ("defaults.rule_unused", "audio_defaults.codec_rules[2]"),
-    ]
 
 
 def test_keep_everything_keeps_the_source_flags_with_one_default() -> None:

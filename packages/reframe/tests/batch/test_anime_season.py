@@ -111,19 +111,7 @@ def test_the_season_groups_and_resolves_as_the_example_matrix(snapshot: Snapshot
     names = [r.job.output.path.name for r in resolution.rows if r.job and r.job.output.path]
     assert names[0] == "Anime Show - S01E01 - Pilot.mkv"
     assert names[10] == "Anime Show - S01E11 - Static.mkv"
-    group = resolution.group
-    assert group is not None
-    members = [
-        f"E{m.episode:02d} {m.match} {'; '.join(m.differences)}".rstrip() for m in group.members
-    ]
-    head = f"{group.name} · {len(group.members)} files · {group.level} match"
-    text = "\n".join([head, *members, "", *matrix_lines(resolution)])
-    assert text == snapshot
-
-
-def test_the_example_steps() -> None:
-    """E05's commentary track is not selected, because no rule asks for the ``commentary`` role."""
-    resolution = matrix(A.example_template(), A.season(1))
+    # The commentary track is not selected, because no rule asks for the ``commentary`` role.
     e05 = resolution.rows[4]
     assert [(d.source_stream, d.selected) for d in e05.decisions] == [
         (1, True),
@@ -133,6 +121,14 @@ def test_the_example_steps() -> None:
     assert e05.decisions[2].selection == "No track rule takes this track"
     assert e05.job is not None
     assert [t.source_stream for t in e05.job.audio] == [1, 2]
+    group = resolution.group
+    assert group is not None
+    members = [
+        f"E{m.episode:02d} {m.match} {'; '.join(m.differences)}".rstrip() for m in group.members
+    ]
+    head = f"{group.name} · {len(group.members)} files · {group.level} match"
+    text = "\n".join([head, *members, "", *matrix_lines(resolution)])
+    assert text == snapshot
 
 
 def test_e01s_audio_setup_gives_identical_audio_settings() -> None:

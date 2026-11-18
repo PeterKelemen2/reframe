@@ -239,10 +239,14 @@ def test_matched_tracks_get_the_files_value_or_none() -> None:
 def test_tracks_that_do_not_match_change_nothing() -> None:
     source = parse_probe("fixtures/multitrack.mkv")
     source.audio[0].language_ietf = "ja"
-    data = _file(None, None, None, None, None, None, None)
+    data = _file(None, "pt-BR", None, "en-GB", None, None, None)
     data.tracks.pop()  # 2 subtitle tracks, ffprobe shows 3
     assert not apply_matroska(source, data)
-    assert source.audio[0].language_ietf == "ja"
+    assert [a.language_ietf for a in source.audio] == ["ja", None, None]
+    assert source.warnings[-1] == (
+        "The file has 2 subtitle tracks, ffprobe shows 3: the BCP 47 languages (LanguageIETF) "
+        "were not read."
+    )
 
 
 def test_a_value_that_is_not_a_language_tag_is_not_used() -> None:
@@ -315,10 +319,14 @@ def _with_mp4_language(source: Path, out: Path, language: str) -> Path:
     return out
 
 
+def _raise(path: object) -> matroska.MatroskaFile:
+    raise MatroskaError("damaged")
+
+
 @pytest.mark.needs_ffmpeg
 @pytest.mark.anyio
 async def test_bcp47_comes_from_the_track_in_matroska_and_from_the_iso_code_elsewhere(
-    fixture_media: Callable[[str], Path], tmp_path: Path
+    fixture_media: Callable[[str], Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A Matroska track without ``LanguageIETF`` gets no tag derived from its legacy language;
     an MP4 stream's ISO 639-2 code becomes its BCP 47 tag."""
@@ -337,6 +345,12 @@ async def test_bcp47_comes_from_the_track_in_matroska_and_from_the_iso_code_else
     undetermined = await Prober(ffprobe).probe(fixture_media("vfr"), use_cache=False)
     assert isinstance(undetermined, MediaSource), undetermined
     assert (undetermined.video[0].language, undetermined.video[0].language_ietf) == ("und", None)
+    # A file the reader cannot read keeps ffprobe's view (no warning: only BCP 47 is unknown).
+    monkeypatch.setattr(matroska, "read_matroska", _raise)
+    again = await Prober(ffprobe).probe(copy, use_cache=False)
+    assert isinstance(again, MediaSource), again
+    assert [a.language_ietf for a in again.audio] == [None, None, None]
+    assert not any("Matroska" in w for w in again.warnings)
 
 
 @pytest.mark.needs_ffmpeg

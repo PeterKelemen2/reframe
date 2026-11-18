@@ -170,7 +170,9 @@ the `test-trim` versions of the files), so the trim lost nothing here:
 ## Uncertain, kept
 
 - `test_property_normalize_variants_of_an_entry`: mostly covered by the exhaustive
-  every-entry tests, but it is the only test of upper-case and `_` forms of every tag.
+  every-entry tests, but it is the only test of upper-case and `_` forms of every tag. (Q-7.11
+  replaced it with a loop over every entry and form in
+  `test_languages.py::test_container_codes_round_trip_for_every_entry`.)
 - `test_any_field_overrides_round_trip`: a generic pydantic round trip, but of a persisted
   job document.
 - `test_hb_encoder` (7 cases): HandBrake key data per encoder family. It is the only test of

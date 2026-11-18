@@ -135,7 +135,8 @@ production change before the commit).
 
 - `capabilities/test_issues.py::test_audio_encoder_unavailable_with_a_fix` and
   `test_job_with_a_libfdk_aac_track` overlap (decision 0020, both apply to `libfdk_aac`); the
-  first is the only one that checks the audio message with the audio encoder's label.
+  first is the only one that checks the audio message with the audio encoder's label. (Q-7.11
+  merged `test_job_with_a_libfdk_aac_track` into it; the message assertion stays.)
 - `capabilities/test_service.py::test_definitions_property` and `test_close_without_start`:
   small, but they are the only checks of the snapshot before `start()` and of a second
   `close()`.

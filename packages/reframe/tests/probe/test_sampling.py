@@ -482,30 +482,6 @@ async def test_the_prober_samples_only_matroska_with_a_missing_rate(
 
 
 @pytest.mark.anyio
-async def test_a_sample_over_the_time_limit_leaves_the_rates_unknown(
-    fake_tools: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    stops: list[Callable[[], bool]] = []
-    release = threading.Event()
-
-    def slow(path: Path, info: MatroskaFile, *, stop: Callable[[], bool]) -> None:
-        stops.append(stop)
-        release.wait(5)
-
-    monkeypatch.setattr(sampling, "sample_clusters", slow)
-    monkeypatch.setattr(prober_mod, "SAMPLE_TIMEOUT", 0.05)
-    path, probe = _two_audio_file(tmp_path)
-    try:
-        source = await _fake_prober(fake_tools, probe).probe(path, use_cache=False)
-        assert isinstance(source, MediaSource), source
-        assert [a.bitrate for a in source.audio] == [BitrateInfo(), BitrateInfo()]
-        assert source.warnings == []
-        assert stops[0]()  # the worker is told to stop at its next read
-    finally:
-        release.set()
-
-
-@pytest.mark.anyio
 async def test_cancel_during_the_sample_cancels_the_probe(
     fake_tools: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -618,10 +594,14 @@ async def test_a_sample_that_could_not_run_is_not_cached(
     without a usable cluster stays cached."""
     real = sampling.sample_clusters
     calls: list[str] = []
+    stops: list[Callable[[], bool]] = []
 
     def sample(path: Path, info: MatroskaFile, **kw: Any) -> ClusterSample | None:
         calls.append(path.name)
-        return first(path, info, **kw) if len(calls) == 1 else real(path, info, **kw)
+        if len(calls) == 1:
+            stops.append(kw["stop"])
+            return first(path, info, **kw)
+        return real(path, info, **kw)
 
     monkeypatch.setattr(sampling, "sample_clusters", sample)
     monkeypatch.setattr(prober_mod, "SAMPLE_TIMEOUT", 0.2)
@@ -631,6 +611,10 @@ async def test_a_sample_that_could_not_run_is_not_cached(
     once = await prober.probe(path)
     assert isinstance(once, MediaSource), once
     assert once.audio[0].bitrate == BitrateInfo()
+    if first is _first_sample_times_out:
+        assert [a.bitrate for a in once.audio] == [BitrateInfo(), BitrateInfo()]
+        assert once.warnings == []
+        assert stops[0]()  # the worker is told to stop at its next read
     again = await prober.probe(path)
     assert isinstance(again, MediaSource), again
     assert len(calls) == (2 if sampled_again else 1)

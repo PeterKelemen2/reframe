@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from reframe.models import (
+    AudioCodecRule,
     AudioStream,
     BitrateInfo,
     BitrateSource,
@@ -109,3 +110,25 @@ def source(
         audio=audio_tracks or [],
         subtitles=subtitles or [],
     )
+
+
+#: The four codec rules of the audio-defaults example: Hungarian and English 5.1 AC-3, stereo
+#: AAC, and an Opus catch-all that re-encodes.
+EXAMPLE_CODEC_RULES = [
+    AudioCodecRule(
+        languages=["hu"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1",
+        max_bitrate=320, if_fits="passthru",
+    ),
+    AudioCodecRule(
+        languages=["en"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1",
+        max_bitrate=384, if_fits="passthru",
+    ),
+    AudioCodecRule(
+        languages=None, source_channels="stereo_or_less", codec="aac", mixdown="stereo",
+        max_bitrate=160, if_fits="passthru",
+    ),
+    AudioCodecRule(
+        languages=None, source_channels="any", codec="libopus", mixdown="up_to_5.1",
+        max_bitrate=256, if_fits="reencode",
+    ),
+]  # fmt: skip
