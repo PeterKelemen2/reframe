@@ -7,7 +7,6 @@ import hashlib
 import io
 import json
 import logging
-import shutil
 import socket
 import tarfile
 from collections.abc import Callable
@@ -17,7 +16,7 @@ from typing import Any
 import pytest
 
 from reframe.mediatask import TaskFailed
-from reframe.models import TaskInfo, TaskState, ToolFetchResult
+from reframe.models import TaskInfo, TaskState
 from reframe.service import ToolsService
 from reframe.tasks import TaskContext
 from reframe.tools import ENV_VARS
@@ -110,31 +109,6 @@ ffprobe = "bin/ffprobe"
     return path
 
 
-def _fake_install(api: Api, archive: Path, build: str) -> TaskInfo:
-    """What the install does, without its checks: the archive's tools and the marker in the
-    data folder, then discovery again."""
-    data_dir = api.reframe.data_dir
-
-    async def work(_ctx: TaskContext) -> ToolFetchResult:
-        install_dir = install_dir_for(data_dir, "linux-x64", host_platform())
-        with tarfile.open(archive) as tar:
-            tar.extractall(install_dir.parent / ".work", filter="data")
-        shutil.move(install_dir.parent / ".work" / ROOT, install_dir)
-        marker = {"build": build, "version": FAKE_VERSION, "layout": "bundled"}
-        (install_dir / MARKER_NAME).write_text(json.dumps(marker), encoding="utf-8")
-        await api.reframe.tools.rescan()
-        return ToolFetchResult(
-            build=build,
-            platform="linux-x64",
-            version=FAKE_VERSION,
-            install_dir=install_dir,
-            ffmpeg=install_dir / "bin" / "ffmpeg",
-            ffprobe=install_dir / "bin" / "ffprobe",
-        )
-
-    return api.reframe.tasks.start("tools_fetch", work)
-
-
 async def test_builds_lists_the_offered_builds_with_this_platforms_size(api: Api) -> None:
     response = await api.client.get("/api/system/tools/builds")
     assert response.status_code == 200
@@ -162,16 +136,11 @@ async def test_a_build_installed_from_a_file_through_the_api_is_found_by_get_sys
         manifest = _write_manifest(tmp_path / "ffmpeg.toml", archive)
         asked: list[tuple[Path, str | None]] = []
 
-        def install_file(
-            path: Path, *, build: str | None = None, manifest_path: Path | None = None
-        ) -> TaskInfo:
+        def install_file(path: Path, *, build: str | None = None) -> TaskInfo:
             asked.append((path, build))
-            try:
-                return ToolsService.install_file(
-                    api.reframe.tools, path, build=build, manifest=manifest
-                )
-            except NotImplementedError:  # until the core installs archive files
-                return _fake_install(api, path, build or "default")
+            return ToolsService.install_file(
+                api.reframe.tools, path, build=build, manifest=manifest
+            )
 
         monkeypatch.setattr(api.reframe.tools, "install_file", install_file)
         before = (await api.client.get("/api/system")).json()
@@ -238,7 +207,6 @@ def _refused_url() -> str:
     return f"http://127.0.0.1:{port}/{ARCHIVE_NAME}"
 
 
-@pytest.mark.xfail(strict=True, reason="the core sets tools.fetch_offline (C-21)")
 async def test_a_fetch_that_cannot_reach_the_download_server_fails_with_fetch_offline(
     api: Api, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
