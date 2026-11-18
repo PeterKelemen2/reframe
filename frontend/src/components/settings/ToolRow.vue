@@ -13,7 +13,14 @@ import { formatList } from '@/components/shell/format'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 
-import { resetOps, setByEnvironment, TOOL_NAMES, type ToolInfo, toolTone } from './tools'
+import {
+  originText,
+  resetOps,
+  setByEnvironment,
+  TOOL_NAMES,
+  type ToolInfo,
+  toolTone,
+} from './tools'
 import { useBundledTools } from './useBundledTools'
 import { readPointer, useSetting } from './useSetting'
 
@@ -92,21 +99,7 @@ function statusText(status: ToolInfo['status']): string {
 }
 const statusLabel = computed(() => statusText(props.tool.status))
 
-function originText(tool: ToolInfo): string {
-  switch (tool.origin) {
-    case 'env':
-      return t('settings.tools.origin.env', { variable: tool.env_var ?? '' })
-    case 'settings':
-      return t('settings.tools.origin.settings')
-    case 'bundled':
-      return t('settings.tools.origin.bundled')
-    case 'path':
-      return t('settings.tools.origin.path')
-    default:
-      return t('settings.tools.origin.none')
-  }
-}
-const originLabel = computed(() => originText(props.tool))
+const originLabel = computed(() => originText(props.tool, t))
 const reason = computed(() => props.tool.reason ?? null)
 
 const note = computed(() => {

@@ -40,14 +40,14 @@
     "origin": {
       "env": "Environment variable {variable}",
       "settings": "Path in the settings",
-      "bundled": "Bundled with Reframe",
+      "bundled": "Downloaded build",
       "path": "System PATH",
       "none": "Not found anywhere"
     },
     "buildsTitle": "FFmpeg builds",
     "installedBuild": "Installed build: {label} ({name}), FFmpeg {version}",
     "outdated": "This release pins another version of the build {name}. The installed one keeps working until you download the new one.",
-    "downloadPinned": "Download {name}",
+    "downloadPinned": "Download {label}",
     "mismatchTitle": "Some encoders need newer system software than this FFmpeg build expects",
     "mismatchHelp": "Update the driver, or use another build: download one below, install one from a file, or set the path of your own FFmpeg."
   },
@@ -194,11 +194,15 @@
     "installed": "Installed",
     "facts": "FFmpeg {version} · {size} download · licence {license}",
     "factsNoArchive": "FFmpeg {version} · no download for this computer · licence {license}",
-    "sources": "Source code",
+    "sources": "Source code and archive",
+    "archive": "Archive for this computer",
+    "sha256": "SHA-256",
     "download": "Download",
     "installFile": "Install from file",
     "offlineDesktop": "The download server cannot be reached. Install the build from an archive file that you downloaded on another computer, or choose the path of an FFmpeg that you already have.",
     "offlineWeb": "The download server cannot be reached. Install the build from an archive file in a media folder of the server, or set the path of an FFmpeg in the server's environment or settings file.",
-    "shadowed": "The build is installed, but another FFmpeg comes first and is used: {path}"
+    "offlineArchive": "The archive of {build}: {url} · SHA-256 {sha256}",
+    "buildName": "{label} ({name})",
+    "shadowed": "The build is installed, but another FFmpeg comes first and is used: {path} ({origin})"
   }
 }

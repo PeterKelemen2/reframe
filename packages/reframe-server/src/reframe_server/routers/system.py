@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 from reframe.applog import logs_dir
 from reframe.diagnostics import home_relative
 from reframe.models import AppWarningEvent, CapabilitySnapshot, ToolBuilds, ToolSet
+from reframe.service import Reframe
 from reframe.tasks import TaskContext
 from reframe_server import security
 from reframe_server.api import JsonTextResponse, TaskAccepted, accepted, api_router
@@ -36,8 +37,9 @@ class SystemInfo(BaseModel):
     """Each tool's status, path and version, after discovery."""
     problems: list[AppWarningEvent]
     """Start-up problems of the settings and preset files (a damaged, newer or unreadable
-    file), later failed saves, and a failed start-up download of ``REFRAME_FFMPEG_BUILD``
-    (``tools.build_unknown``, ``tools.fetch_failed``)."""
+    file), later failed saves, and a wrong, skipped or failed start-up download of
+    ``REFRAME_FFMPEG_BUILD`` (``tools.build_unknown``, ``tools.fetch_skipped``,
+    ``tools.fetch_failed``)."""
     settings_read_only: bool
     """The settings file is newer than this server or unreadable: changes are not saved."""
 
@@ -60,7 +62,7 @@ class FetchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
     build: str = "default"
-    """A build name of the pinned FFmpeg manifest."""
+    """An offered build of the pinned FFmpeg manifest."""
 
 
 class InstallFileRequest(BaseModel):
@@ -69,8 +71,20 @@ class InstallFileRequest(BaseModel):
     path: str
     """The archive file on the server (web mode: inside a media root)."""
     build: str | None = None
-    """The build name of the manifest the archive is checked against. ``None``: the offered
-    build whose archive has the file's name."""
+    """The offered build the archive is checked against. ``None``: the offered build whose
+    archive has the file's name."""
+
+
+async def _offered(reframe: Reframe, build: str) -> None:
+    """:raises ProblemError: 422 unless ``build`` is offered; the CLI takes any manifest build."""
+    names = [offer.name for offer in (await reframe.tools.builds()).builds]
+    if build not in names:
+        raise ProblemError(
+            422,
+            "tools.build_not_offered",
+            f"{build!r} is not an FFmpeg build that Reframe offers",
+            f"The offered builds are {', '.join(names) or 'none'}.",
+        )
 
 
 @router.get("/system")
@@ -129,10 +143,13 @@ async def rescan_tools(reframe: ReframeDep) -> ToolSet:
 
 @router.post("/system/tools/fetch", status_code=202, response_model=TaskAccepted)
 async def fetch_tools(reframe: ReframeDep, body: FetchRequest | None = None) -> JsonTextResponse:
-    """Download, check and install the pinned FFmpeg build, then run discovery again: a task
-    whose result is a ``ToolFetchResult``. A download server that cannot be reached ends the
-    task ``failed`` with ``error_code`` ``tools.fetch_offline``."""
-    return accepted(reframe.tools.fetch(build=(body or FetchRequest()).build))
+    """Download, check and install an offered FFmpeg build, then run discovery again: a task
+    whose result is a ``ToolFetchResult``. A build that is not offered is refused (422,
+    ``tools.build_not_offered``). A download server that cannot be reached ends the task
+    ``failed`` with ``error_code`` ``tools.fetch_offline``."""
+    build = (body or FetchRequest()).build
+    await _offered(reframe, build)
+    return accepted(reframe.tools.fetch(build=build))
 
 
 @router.get("/system/tools/builds")
@@ -148,8 +165,11 @@ async def install_tools_file(
 ) -> JsonTextResponse:
     """Install an FFmpeg archive file from the server's disk, checked like a download (size
     and SHA-256 against the manifest), then run discovery again: a task whose result is a
-    ``ToolFetchResult``. Web mode: the path must be inside a media root."""
+    ``ToolFetchResult``. Web mode: the path must be inside a media root. A build that is not
+    offered is refused (422, ``tools.build_not_offered``)."""
     path: Path = security.jail_read(config, body.path)
+    if body.build is not None:
+        await _offered(reframe, body.build)
     return accepted(reframe.tools.install_file(path, build=body.build))
 
 

@@ -104,7 +104,7 @@ describe('the first-run screen', () => {
 
   it.each([
     ['env', 'From an environment variable'],
-    ['bundled', 'Bundled with Reframe'],
+    ['bundled', 'From the downloaded build'],
     [null, 'Not found anywhere'],
   ] as const)('names the origin %s', async (origin, label) => {
     await mountFirstRun(info({ status: 'broken', origin, reason: 'no' }, {}))
@@ -124,7 +124,7 @@ describe('the first-run screen', () => {
     await wrapper.find('[data-action="download"]').trigger('click')
     await flushPromises()
 
-    expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('default')
+    expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('default', { showsOffline: true })
     expect(wrapper.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('42')
     expect(wrapper.find('.first-run__check').attributes('disabled')).toBeDefined()
     system.toolsFetch = null
@@ -271,7 +271,7 @@ describe('the first-run screen', () => {
       expect(wrapper.find('#first-run-title').text()).toBe('Welcome to Reframe')
       expect(wrapper.find('.first-run__reason').exists()).toBe(false)
       expect(toolRow('ffmpeg')?.querySelector('[data-field="origin"]')?.textContent).toBe(
-        'Bundled with Reframe',
+        'From the downloaded build',
       )
       expect(toolRow('ffmpeg')?.querySelector('[data-field="path"]')?.textContent).toBe(
         '/app/tools/ffmpeg/bin/ffmpeg',
@@ -372,7 +372,7 @@ describe('the offered FFmpeg builds', () => {
     const first = wrapper.find('[data-build="default"]')
     expect(first.text()).toContain('Recommended')
     expect(first.find('[data-field="facts"]').text()).toContain('licence GPL-3.0-or-later')
-    expect(first.find('details summary').text()).toBe('Source code')
+    expect(first.find('details summary').text()).toBe('Source code and archive')
     expect(first.find('details a').exists()).toBe(false)
     const details = first.find('details').element as HTMLDetailsElement
     details.open = true
@@ -392,9 +392,12 @@ describe('the offered FFmpeg builds', () => {
     await wrapper.find('[data-action="download"]').trigger('click')
     await flushPromises()
     const offline = wrapper.find('[data-field="offline"]')
-    expect(offline.text()).toBe(
+    expect(offline.find('p').text()).toBe(
       'The download server cannot be reached. Install the build from an archive file that you ' +
         'downloaded on another computer, or choose the path of an FFmpeg that you already have.',
+    )
+    expect(offline.find('[data-field="offline-archive"]').text()).toContain(
+      'The archive of Recommended (default): https://github.com/BtbN/FFmpeg-Builds/',
     )
     expect(wrapper.find('[data-action="install-file"]').text()).toBe('Install from file')
     expect(wrapper.find('.first-run__choose').text()).toBe('Choose path')
@@ -407,7 +410,7 @@ describe('the offered FFmpeg builds', () => {
     const { shown } = useFirstRun()
     expect(shown.value).toBe(true)
     const archive = '/media/ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-shared-9.0.tar.xz'
-    system.installToolsFile = vi.fn<(path: string) => Promise<TaskInfo>>(async () => {
+    system.installToolsFile = vi.fn<typeof system.installToolsFile>(async () => {
       system.info = info({ origin: 'bundled', bundled: true }, { origin: 'bundled' }, 'web')
       return ended('done')
     })
@@ -417,7 +420,9 @@ describe('the offered FFmpeg builds', () => {
     expect(request?.filters).toEqual(['xz', 'zip'])
     finish(request!, [archive])
     await flushPromises()
-    expect(system.installToolsFile).toHaveBeenCalledExactlyOnceWith(archive)
+    expect(system.installToolsFile).toHaveBeenCalledExactlyOnceWith(archive, 'default', {
+      showsOffline: true,
+    })
     expect(system.ffmpegProblem).toBeNull()
     expect(shown.value).toBe(false)
   })

@@ -17,14 +17,16 @@ You can also use your own FFmpeg build instead.
 ## The desktop app: the first start
 
 When the app finds no FFmpeg, it shows the first-run screen. It lists the builds you can
-install, each with a short note on who it is for, its licence and where its source code is.
-You have three choices:
+install, each with a short note on who it is for and its licence. Under **Source code and
+archive** you find where its source code is, and the address (URL) and SHA-256 checksum of
+its archive for your computer. You have three choices:
 
 - **Download**: Reframe downloads the build you choose, checks it and installs it. This needs
   an internet connection.
-- **Install from file**: choose an FFmpeg archive that you downloaded before, for example on
-  another computer (see [Without internet](#without-internet)). Reframe checks it in the same
-  way as a download.
+- **Install from file**: choose the build in the list, then an FFmpeg archive of that build
+  that you downloaded before, for example on another computer (see
+  [Without internet](#without-internet)). Reframe checks the file against the build you chose
+  in the same way as a download.
 - **Choose path**: use your own FFmpeg. Settings → Tools opens, where you set the path to your
   `ffmpeg` program. Reframe finds `ffprobe` in the same folder.
 
@@ -43,12 +45,16 @@ The Docker image does not contain FFmpeg. Reframe downloads it into the data fol
   FFmpeg again.
 - **Download from the web UI.** Open Reframe in your browser. The first-run screen offers the
   download.
-- **Download at start.** Set `REFRAME_FFMPEG_BUILD=default` (or `compat`). When no FFmpeg is
-  installed in `/data`, the server downloads that build at start, without a visit to the web UI.
-  The download continues in the background; watch it with `docker logs`.
+- **Download at start.** Set `REFRAME_FFMPEG_BUILD=default` (or `compat`). When the server
+  finds no FFmpeg that works at start (none in `/data`, or only one on the `PATH` that is too
+  old or does not run), it downloads that build, without a visit to the web UI. The download
+  continues in the background; watch it with `docker logs`. The server does not download when
+  `REFRAME_FFMPEG` / `REFRAME_FFPROBE` or a path in Settings → Tools is set (a download never
+  replaces your own path, even one that does not work), or when another Reframe process uses
+  the same data folder. The log then says why, and the first-run screen shows it.
 - **Install from a file.** Put the archive into a folder that the container can read as a media
-  folder (for example `/media`), then use **Install from file** on the first-run screen or in
-  Settings → Tools.
+  folder (for example `/media`), then choose its build and use **Install from file** on the
+  first-run screen or in Settings → Tools.
 - **Your own build.** Mount it into the container and set `REFRAME_FFMPEG` (and
   `REFRAME_FFPROBE` if it is not next to `ffmpeg`):
 
@@ -75,31 +81,40 @@ For VAAPI on Linux, your distribution's libva must be new enough for the build. 
 
 ## Without internet
 
-1. Find the download address (URL) of the build. When `reframe tools fetch` cannot reach the
-   internet, it prints it:
+1. Find the download address (URL) of the build. The first-run screen and Settings → Tools
+   show it with its SHA-256 checksum: open **Source code and archive** under the build. When
+   a download cannot reach the internet, the message names the archive too. When
+   `reframe tools fetch` cannot reach the internet, it prints it:
 
    ```text
    hint: download https://github.com/…/ffmpeg-….tar.xz on another computer, then run "reframe tools fetch --file ARCHIVE" here.
    ```
 
-   The addresses and SHA-256 checksums of all builds are in `tools/ffmpeg.toml` in Reframe's
-   source code.
-2. On a computer with internet, download the archive. Keep its file name: Reframe finds the
-   build by the name of the file.
+   The addresses and SHA-256 checksums of all builds are also in `tools/ffmpeg.toml` in
+   Reframe's source code.
+2. On a computer with internet, download the archive.
 3. Copy the archive to the computer with Reframe.
-4. Install it: **Install from file** on the first-run screen or in Settings → Tools, or
+4. Install it: choose its build in the list, then **Install from file** on the first-run
+   screen or in Settings → Tools, or
 
    ```sh
    reframe tools fetch --file ffmpeg-….tar.xz
    ```
 
-   With another file name, name the build: `reframe tools fetch --file ARCHIVE --build compat`.
+   The command finds the build by the name of the file. With another file name, name the
+   build: `reframe tools fetch --file ARCHIVE --build compat`.
 
 Reframe checks the size and the SHA-256 checksum of the file before it unpacks anything. A
-file that is not one of Reframe's builds is refused.
+file that is not the archive of the chosen build is refused, and the message says so, for
+example:
+
+```text
+ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-shared-9.0.tar.xz is not the archive of the FFmpeg build 'compat' for linux-x64 (ffmpeg-n8.1.3-9-g29e619e767-linux64-gpl-shared-8.1.tar.xz), or it is damaged: the size is 68653636 bytes, expected 71911604
+```
 
 When a download cannot reach the internet, Reframe tells you so and offers these choices:
-**Install from file** and your own FFmpeg.
+**Install from file** and your own FFmpeg. It also names the archive of the build, with its
+address and SHA-256 checksum.
 
 ## Which build to choose
 
@@ -136,56 +151,81 @@ An encoder that works only in 8-bit is not this warning: you can still use it fo
 ## After an app update
 
 A new version of Reframe can expect a newer FFmpeg build. Settings → Tools then says: "This
-release pins another version of the build …". **Download** installs the new one. Your old build
-keeps working until you do. `reframe tools status` says the same, and the server log has a
-warning at start (below).
+release pins another version of the build …". The button next to it, for example **Download
+Recommended**, installs the new one. Your old build keeps working until you do.
+`reframe tools status` says the same, and the server log has a warning at start (below).
 
 ## What the server log says
 
 The server writes these lines to its console (`docker logs`, or the systemd journal), not only
-to its log file. The examples are from a server in Docker; the versions and paths may differ.
+to its log file. The examples are copied from a real server; its data folder is written as
+`/data`, as in Docker. The versions and paths may differ.
 
 - **At start without FFmpeg**, a warning that Reframe cannot encode yet, with the reason and
   the ways out:
 
   ```text
-  WARNING:  Reframe cannot encode yet: no usable FFmpeg (ffmpeg: ffmpeg was not found: …; ffprobe: …). Ways out: open the web UI and download a build on its first-run screen; or set REFRAME_FFMPEG_BUILD=default to download one at start; or mount your own build and set REFRAME_FFMPEG (and REFRAME_FFPROBE).
+  WARNING:  Reframe cannot encode yet: no usable FFmpeg (ffmpeg: ffmpeg was not found: no bundled build, nothing on PATH. Set its path in Settings or REFRAME_FFMPEG, or run `reframe tools fetch`; ffprobe: ffprobe was not found: no bundled build, nothing on PATH. Set its path in Settings or REFRAME_FFPROBE, or run `reframe tools fetch`). Ways out: open the web UI and download a build on its first-run screen; or set REFRAME_FFMPEG_BUILD=default to download one at start; or mount your own build and set REFRAME_FFMPEG (and REFRAME_FFPROBE).
   ```
 
-- **With `REFRAME_FFMPEG_BUILD`**, the server says that it starts the download:
+  When `REFRAME_FFMPEG_BUILD` is set, the warning does not suggest it again.
+- **With `REFRAME_FFMPEG_BUILD`**, one line says what the server does with it:
 
   ```text
-  INFO:     REFRAME_FFMPEG_BUILD: no FFmpeg found, so the download of the FFmpeg build 'default' starts (task t-…)
+  INFO:     REFRAME_FFMPEG_BUILD=default: no usable FFmpeg found, so the download of the FFmpeg build 'default' starts (task t-4763b6-1)
+  INFO:     REFRAME_FFMPEG_BUILD=default: FFmpeg is found, so nothing is downloaded
   ```
+
+  When it downloads nothing for another reason, a warning says why. The first-run screen shows
+  the same problem:
+
+  ```text
+  WARNING:  REFRAME_FFMPEG_BUILD=Default names no offered FFmpeg build (the offered builds: default, compat), so nothing is downloaded
+  WARNING:  REFRAME_FFMPEG_BUILD=default: nothing is downloaded, because the FFmpeg path comes from REFRAME_FFMPEG. A download never replaces a path set in the environment or in Settings → Tools. Correct or remove that path.
+  WARNING:  REFRAME_FFMPEG_BUILD=default: nothing is downloaded, because another Reframe process uses this data folder. Let the process that owns the data folder download it, or download a build on the web UI's first-run screen.
+  ```
+
 - **When a download or file install starts**, one line with the build, its version, platform
   and size, where it comes from, the folder, the licence and the source code:
 
   ```text
-  INFO:     FFmpeg build 'default' (n9.0.2-…, linux-x64, 68.7 MB): installing from https://github.com/… into /data/tools/ffmpeg. Licence GPL-3.0-or-later; source: https://github.com/FFmpeg/FFmpeg/commit/…
+  INFO:     FFmpeg build 'default' (n9.0.2-17-g2a571b6068-20260930, linux-x64, 65.5 MiB): installing from https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-shared-9.0.tar.xz into /data/tools/ffmpeg. Licence GPL-3.0-or-later; source: https://github.com/FFmpeg/FFmpeg/commit/2a571b606854520cf89804d8030c8b328e621689
   ```
 
 - **During the transfer**, at most every 10 %:
 
   ```text
-  INFO:     FFmpeg build 'default': downloaded 40 % (27.5 MB of 68.7 MB)
+  INFO:     FFmpeg build 'default': downloaded 40 % (26.2 MiB of 65.5 MiB)
   ```
 
   (`copied` instead of `downloaded` for a file install.)
 - **At the end**, the result:
 
   ```text
-  INFO:     Installed FFmpeg build 'default' (n9.0.2-…) into /data/tools/ffmpeg; checked: the size and SHA-256 of the archive, ffmpeg -version and ffprobe -version
+  INFO:     Installed FFmpeg build 'default' (n9.0.2-17-g2a571b6068-20260930) into /data/tools/ffmpeg; checked: the size and SHA-256 of the archive, ffmpeg -version and ffprobe -version
   ```
 
-  or an error line with the reason, for example
-  `FFmpeg download of build 'default' failed: …`. When the server could not reach the internet,
-  the line ends with the other choices: *Without a connection, install the build from its
-  archive file (downloaded on another computer), or use an FFmpeg that is already on this
-  computer (its path in Settings > Tools, or REFRAME_FFMPEG and REFRAME_FFPROBE).*
+  or an error line with the reason. When the server could not reach the internet, the line
+  ends with the other choices:
+
+  ```text
+  ERROR:    FFmpeg download of build 'default' failed: cannot reach the download server github.com (Connection refused; 4 attempt(s)). Without a connection, install the build from its archive file (downloaded on another computer), or use an FFmpeg that is already on this computer (its path in Settings > Tools, or REFRAME_FFMPEG and REFRAME_FFPROBE).
+  ```
+
+  When the download was the one of `REFRAME_FFMPEG_BUILD`, one more line follows:
+
+  ```text
+  WARNING:  REFRAME_FFMPEG_BUILD=default: the download failed, so Reframe cannot encode yet (the download's error line says why)
+  ```
+
 - **When the build is already installed and intact**:
-  `FFmpeg build 'default' (…) is already installed in /data/tools/ffmpeg and every file is intact: nothing to do`.
+
+  ```text
+  INFO:     FFmpeg build 'default' (n9.0.2-17-g2a571b6068-20260930) is already installed in /data/tools/ffmpeg and every file is intact: nothing to do
+  ```
+
 - **At start with an outdated build**:
 
   ```text
-  WARNING:  The downloaded FFmpeg build 'default' (version n9.0.1-…) is not the one this release pins: download it again (the web UI's Settings → Tools, or reframe tools fetch --build default). It keeps working until then.
+  WARNING:  The downloaded FFmpeg build 'default' (version n9.0.1-1-gdeadbeef-20260801) is not the one this release pins: download it again (the web UI's Settings → Tools, or reframe tools fetch --build default). It keeps working until then.
   ```

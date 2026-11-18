@@ -114,6 +114,11 @@ def host() -> str:
     return found
 
 
+def pinned_name() -> str:
+    """The archive's file name for this platform in :func:`manifest_for`."""
+    return NAME if host() == "linux-x64" else "w.zip"
+
+
 def archive_file(tmp_path: Path, data: bytes, name: str = NAME) -> Path:
     folder = tmp_path / "downloads"
     folder.mkdir(exist_ok=True)
@@ -196,12 +201,14 @@ async def test_the_right_file_installs_and_discovery_finds_it(
     lines = [r.getMessage() for r in caplog.records if r.name == "reframe.tools.fetch"]
     assert all(r.levelno == logging.INFO for r in caplog.records if r.name == "reframe.tools.fetch")
     assert lines[0] == (
-        f"FFmpeg build 'default' ({FAKE_VERSION}, linux-x64, {len(data) / 1e6:.1f} MB): "
+        f"FFmpeg build 'default' ({FAKE_VERSION}, linux-x64, {len(data) / 2**20:.1f} MiB): "
         f"installing from the file {archive} into {install}. Licence GPL-3.0-or-later; "
         "source: https://example.invalid/ffmpeg/commit/0000000"
     )
     percents = [int(m[1]) for line in lines if (m := re.search(r"copied (\d+) %", line))]
     assert percents == list(range(10, 101, 10))
+    # The unit of the UI's size formatter.
+    assert [line for line in lines if " % (" in line and not line.endswith(" MiB)")] == []
     assert lines[-1] == (
         f"Installed FFmpeg build 'default' ({FAKE_VERSION}) into {install}; checked: the size "
         "and SHA-256 of the archive, ffmpeg -version and ffprobe -version"
@@ -226,7 +233,11 @@ async def test_a_wrong_sha256_is_refused_before_extraction(
     caplog.set_level(logging.INFO, logger="reframe.tools.fetch")
     final, result = await runner.file(archive, manifest, build="default")
     assert final.state is TaskState.FAILED
-    assert final.error == f"{NAME}: the SHA-256 is {sha256(wrong)}, expected {sha256(data)}"
+    assert final.error == (
+        f"{NAME} is not the archive of the FFmpeg build 'default' for {host()} "
+        f"({pinned_name()}), or it is damaged: the SHA-256 is {sha256(wrong)}, "
+        f"expected {sha256(data)}"
+    )
     assert final.error_code is None
     assert result is None
     assert extracted == []
@@ -248,7 +259,11 @@ async def test_a_wrong_size_is_refused_before_anything_is_copied(
     archive = archive_file(tmp_path, data + b"!")
     final, _ = await runner.file(archive, manifest, build="default")
     assert final.state is TaskState.FAILED
-    assert final.error == f"{NAME}: the size is {len(data) + 1} bytes, expected {len(data)}"
+    assert final.error == (
+        f"{NAME} is not the archive of the FFmpeg build 'default' for {host()} "
+        f"({pinned_name()}), or it is damaged: the size is {len(data) + 1} bytes, "
+        f"expected {len(data)}"
+    )
     assert copies == []
     assert not (runner.data_dir / "tools").exists()
 
@@ -262,7 +277,7 @@ async def test_a_file_that_is_not_an_offered_builds_archive_needs_the_build(
     archive = archive_file(tmp_path, data, name="ffmpeg (1).tar.xz")
     final, _ = await runner.file(archive, manifest)
     assert final.state is TaskState.FAILED
-    pinned = NAME if host() == "linux-x64" else "w.zip"
+    pinned = pinned_name()
     assert final.error == (
         f"ffmpeg (1).tar.xz is not the file name of an offered build's archive for {host()} "
         f"({pinned}): name the build it is"
@@ -302,7 +317,10 @@ async def test_a_renamed_file_installs_with_its_build_and_an_installed_one_is_ch
     final, _ = await runner.file(broken, manifest, build="default")
     assert final.state is TaskState.FAILED
     assert final.error is not None
-    assert "broken.tar.xz: the SHA-256 is" in final.error
+    assert final.error.startswith(
+        f"broken.tar.xz is not the archive of the FFmpeg build 'default' for linux-x64 ({NAME}), "
+        "or it is damaged: the SHA-256 is"
+    )
     assert installed_build(result.install_dir) == marker
 
 
@@ -476,6 +494,9 @@ def test_the_offered_builds_and_the_installed_one(tmp_path: Path) -> None:
     )
     assert (default.license, default.size, compat.size) == ("GPL-3.0-or-later", 1000, None)
     assert default.source_links == ["https://example.invalid/ffmpeg/commit/0000000"]
+    # What to download on another computer when this one has no connection.
+    assert (default.archive_url, default.sha256) == (url, sha256(data))
+    assert (compat.archive_url, compat.sha256) == (None, None)
     assert builds.installed is None
 
 

@@ -380,8 +380,12 @@ M10.
       on the server (desktop mode; in web mode the path must be inside a media root). A task
       like `tools/fetch`.
 - [x] `REFRAME_FFMPEG_BUILD` ([decision 0094](../decisions/0094-docker-image-without-ffmpeg.md) item 3): when set to an offered build and discovery
-      finds no FFmpeg at server start, the server starts that build's download (a `tools_fetch`
-      task); a wrong name or a failure is logged and shown on the first-run screen.
+      finds no usable FFmpeg at server start (none, or one on `PATH` that is too old or does
+      not run: a downloaded build ranks above `PATH`), the server starts that build's download
+      (a `tools_fetch` task). It never replaces an environment or Settings path, usable or
+      not, and a server that does not own the data folder downloads nothing. A wrong name, a
+      skipped or a failed download is one log line with the reason and a `tools.*` problem
+      that the first-run screen shows.
 - [x] **The server log says it clearly** (the owner's request, 2026-11-18): lines that reach the
       console (`docker logs`, the systemd journal) with the default log settings, not only the
       log file. At start without a usable FFmpeg: a warning that Reframe cannot encode yet and

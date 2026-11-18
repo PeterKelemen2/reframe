@@ -65,6 +65,9 @@ export function toolBuilds(extra: Partial<Schemas['ToolBuilds']> = {}): Schemas[
         license: 'GPL-3.0-or-later',
         source_links: ['https://github.com/FFmpeg/FFmpeg/commit/2a571b6'],
         size: 68_653_636,
+        archive_url:
+          'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-shared-9.0.tar.xz',
+        sha256: '01a9764d0b5364b66cfeb4617557c64321b0e232e172ec73f0a701c5f7694326',
       },
       {
         name: 'compat',
@@ -75,6 +78,9 @@ export function toolBuilds(extra: Partial<Schemas['ToolBuilds']> = {}): Schemas[
         license: 'GPL-3.0-or-later',
         source_links: ['https://github.com/FFmpeg/FFmpeg/commit/29e619e'],
         size: 66_000_000,
+        archive_url:
+          'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n8.1.3-9-g29e619e767-linux64-gpl-shared-8.1.tar.xz',
+        sha256: '5d0c5c5b2c1d8a2b3e8f0f4b3b2d7c0e9a1f6b8c4d2e0a9f8b7c6d5e4f3a2b1c',
       },
     ],
     installed: null,

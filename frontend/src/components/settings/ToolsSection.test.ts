@@ -6,6 +6,7 @@ import { platform } from '@/platform'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 import { useTasksStore } from '@/stores/tasks'
+import { useToastStore } from '@/stores/toasts'
 
 import { mountSettings, refusal, systemInfo, toolBuilds } from './testing'
 import ToolsSection from './ToolsSection.vue'
@@ -57,6 +58,29 @@ function fetchEnds(
   })
 }
 
+/** The download ends `done` with the server's masked result; then discovery finds `ffmpeg`. */
+function installedThenFinds(
+  system: ReturnType<typeof useSystemStore>,
+  ffmpeg: Partial<SystemInfo['tools']['ffmpeg']>,
+) {
+  system.fetchTools = vi.fn<(build?: string) => Promise<TaskInfo>>(async () => {
+    const info = system.info as SystemInfo
+    system.info = {
+      ...info,
+      tools: { ...info.tools, ffmpeg: { ...info.tools.ffmpeg, ...ffmpeg } },
+    }
+    return ended('done', {
+      result: {
+        build: 'default',
+        version: 'n9.0.2-17-g2a571b6068-20260930',
+        install_dir: '<data>/tools/ffmpeg',
+        ffmpeg: '<data>/tools/ffmpeg/bin/ffmpeg',
+        ffprobe: '<data>/tools/ffmpeg/bin/ffprobe',
+      },
+    })
+  })
+}
+
 describe('the Tools section', () => {
   it('shows FFmpeg and FFprobe with their status, version and where each comes from', async () => {
     const { row, wrapper } = await mountTools(
@@ -100,6 +124,13 @@ describe('the Tools section', () => {
     expect(row('ffmpeg').find('[data-action="remove"]').exists()).toBe(false)
     expect(wrapper.find('[data-action="download"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-action="install-file"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('names a bundled ffmpeg as the downloaded build', async () => {
+    const { row } = await mountTools(
+      systemInfo({ mode: 'desktop' }, { ffmpeg: { origin: 'bundled', bundled: true } }),
+    )
+    expect(row('ffmpeg').find('[data-field="origin"]').text()).toBe('Downloaded build')
   })
 
   it('keeps an ffprobe found next to an overridden ffmpeg editable', async () => {
@@ -231,6 +262,13 @@ describe('the Tools section', () => {
       details.dispatchEvent(new Event('toggle'))
       await flushPromises()
       expect(first.find('details a').attributes('href')).toContain('github.com/FFmpeg/FFmpeg')
+      expect(first.find('details summary').text()).toBe('Source code and archive')
+      expect(first.find('[data-field="archive-url"]').attributes('href')).toBe(
+        toolBuilds().builds?.[0]?.archive_url,
+      )
+      expect(first.find('[data-field="archive-sha256"]').text()).toBe(
+        '01a9764d0b5364b66cfeb4617557c64321b0e232e172ec73f0a701c5f7694326',
+      )
       expect((first.find('input[type="radio"]').element as HTMLInputElement).checked).toBe(true)
     })
 
@@ -242,7 +280,7 @@ describe('the Tools section', () => {
       await wrapper.find('[data-build="compat"] input[type="radio"]').setValue(true)
       await wrapper.find('[data-action="download"]').trigger('click')
       await flushPromises()
-      expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('compat')
+      expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('compat', { showsOffline: true })
       expect(server.patches).toEqual([[{ op: 'replace', path: '/tools/ffmpeg', value: null }]])
       expect(system.rescanTools).toHaveBeenCalledTimes(1)
     })
@@ -261,6 +299,7 @@ describe('the Tools section', () => {
     it('says that the download server cannot be reached and points to a file or a path', async () => {
       const { wrapper, system } = await mountTools(systemInfo({ mode: 'desktop' }))
       fetchEnds(system, 'failed', { error_code: 'tools.fetch_offline' })
+      await wrapper.find('[data-build="compat"] input[type="radio"]').setValue(true)
       await wrapper.find('[data-action="download"]').trigger('click')
       await flushPromises()
       const offline = wrapper.find('[data-field="offline"]')
@@ -268,14 +307,22 @@ describe('the Tools section', () => {
       expect(offline.text()).toContain('The download server cannot be reached')
       expect(offline.text()).toContain('archive file')
       expect(offline.text()).toContain('path')
+      // The chosen build's archive, to download on a computer with a connection.
+      const compat = toolBuilds().builds?.[1]
+      expect(offline.find('[data-field="offline-archive"]').text()).toBe(
+        'The archive of Older NVIDIA drivers (compat): ' +
+          `${compat?.archive_url} · SHA-256 ${compat?.sha256}`,
+      )
+      expect(offline.find('[data-field="offline-archive"] a').attributes('href')).toBe(
+        compat?.archive_url,
+      )
     })
 
-    it('installs an archive file that the file dialog picks', async () => {
+    it('installs an archive file that the file dialog picks as the chosen build', async () => {
       const { wrapper, system } = await mountTools(systemInfo({ mode: 'web' }))
       vi.spyOn(platform, 'pickFiles').mockResolvedValue(['/media/ffmpeg-n9.0.2-linux64.tar.xz'])
-      system.installToolsFile = vi.fn<(path: string) => Promise<TaskInfo>>(async () =>
-        ended('done'),
-      )
+      system.installToolsFile = vi.fn<typeof system.installToolsFile>(async () => ended('done'))
+      await wrapper.find('[data-build="compat"] input[type="radio"]').setValue(true)
       await wrapper.find('[data-action="install-file"]').trigger('click')
       await flushPromises()
       expect(platform.pickFiles).toHaveBeenCalledExactlyOnceWith({
@@ -284,15 +331,33 @@ describe('the Tools section', () => {
       })
       expect(system.installToolsFile).toHaveBeenCalledExactlyOnceWith(
         '/media/ffmpeg-n9.0.2-linux64.tar.xz',
+        'compat',
+        { showsOffline: true },
       )
     })
 
-    it('says when the installed build is not the one used', async () => {
+    it('takes the installed build as the one used when discovery finds a bundled ffmpeg of its version', async () => {
       const { wrapper, system } = await mountTools(systemInfo({ mode: 'web' }))
-      fetchEnds(system, 'done', { result: { ffmpeg: '/data/tools/ffmpeg/bin/ffmpeg' } })
+      installedThenFinds(system, {
+        origin: 'bundled',
+        bundled: true,
+        path: '/srv/reframe/data/tools/ffmpeg/bin/ffmpeg',
+        version: 'n9.0.2-17-g2a571b6068-20260930',
+      })
       await wrapper.find('[data-action="download"]').trigger('click')
       await flushPromises()
-      expect(wrapper.find('[data-field="shadowed"]').text()).toContain('/usr/bin/ffmpeg')
+      expect(wrapper.find('[data-field="shadowed"]').exists()).toBe(false)
+    })
+
+    it('says which ffmpeg is used, and where it comes from, when it is not the installed build', async () => {
+      const { wrapper, system } = await mountTools(systemInfo({ mode: 'web' }))
+      installedThenFinds(system, { origin: 'env', path: '/opt/ff/ffmpeg', version: '7.1' })
+      await wrapper.find('[data-action="download"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-field="shadowed"]').text()).toBe(
+        'The build is installed, but another FFmpeg comes first and is used: /opt/ff/ffmpeg ' +
+          '(Environment variable REFRAME_FFMPEG)',
+      )
     })
 
     it('shows the download progress of its task', async () => {
@@ -490,10 +555,42 @@ describe('the installed build and the build mismatch', () => {
       'This release pins another version of the build default.',
     )
     expect(wrapper.find('[data-build="default"] [data-field="installed"]').exists()).toBe(true)
+    expect(wrapper.find('[data-action="download-pinned"]').text()).toBe('Download Recommended')
     fetchEnds(system, 'done')
     await wrapper.find('[data-action="download-pinned"]').trigger('click')
     await flushPromises()
-    expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('default')
+    expect(system.fetchTools).toHaveBeenCalledExactlyOnceWith('default', {})
+  })
+
+  it('toasts a download of the pinned build that cannot reach the server', async () => {
+    const { wrapper, system, server } = await mountTools(systemInfo({ mode: 'desktop' }))
+    server.builds = toolBuilds({
+      installed: { name: 'default', version: 'n9.0.1-old', outdated: true },
+    })
+    server.on(
+      'POST /api/system/tools/fetch',
+      () => new Response(JSON.stringify({ task_id: 'o1' }), { status: 202 }),
+    )
+    server.on('GET /api/system', () => systemInfo({ mode: 'desktop' }))
+    await system.loadBuilds()
+    await flushPromises()
+    await wrapper.find('[data-action="download-pinned"]').trigger('click')
+    await flushPromises()
+    const error = 'cannot reach the download server github.com (Connection refused)'
+    useTasksStore().onTaskDone({
+      type: 'task.done',
+      task: {
+        id: 'o1',
+        kind: 'tools_fetch',
+        state: 'failed',
+        error,
+        error_code: 'tools.fetch_offline',
+      },
+    })
+    await flushPromises()
+    expect(useToastStore().items).toEqual([
+      expect.objectContaining({ severity: 'error', detail: error }),
+    ])
   })
 
   it('names each encoder that another build can make available, with its reason', async () => {

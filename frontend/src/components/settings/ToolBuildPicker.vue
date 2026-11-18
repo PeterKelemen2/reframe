@@ -12,7 +12,8 @@ import { platform } from '@/platform'
 import { useSystemStore } from '@/stores/system'
 
 import RefusalList from './RefusalList.vue'
-import { useBundledTools } from './useBundledTools'
+import { originText, type ToolInfo } from './tools'
+import { type InstallSource, useBundledTools } from './useBundledTools'
 
 type ToolBuildOffer = Schemas['ToolBuildOffer']
 
@@ -38,8 +39,10 @@ const desktop = computed(() => system.info?.mode === 'desktop')
 const chosen = ref<string | null>(null)
 const running = ref<'download' | 'file' | null>(null)
 const offline = ref(false)
+/** The build whose download could not reach the server: its archive, to get elsewhere. */
+const offlineOffer = shallowRef<ToolBuildOffer | null>(null)
 const issues = shallowRef<ValidationIssue[]>([])
-const shadowedBy = ref<string | null>(null)
+const shadowedBy = shallowRef<ToolInfo | null>(null)
 
 const busy = computed(() => props.disabled || fetching.value || running.value !== null)
 const chosenOffer = computed(() => offers.value.find((offer) => offer.name === chosen.value))
@@ -73,17 +76,18 @@ function sizeOf(offer: ToolBuildOffer): string | null {
   return typeof offer.size === 'number' ? formatBytes(offer.size, t, n) : null
 }
 
-async function run(
-  kind: 'download' | 'file',
-  source: { build: string } | { path: string },
-): Promise<void> {
+async function run(kind: 'download' | 'file', source: InstallSource): Promise<void> {
   running.value = kind
   offline.value = false
+  offlineOffer.value = null
   issues.value = []
   shadowedBy.value = null
   try {
-    const outcome = await install(source)
+    const outcome = await install(source, { showsOffline: true })
     offline.value = outcome.offline
+    if (outcome.offline && 'build' in source) {
+      offlineOffer.value = offers.value.find((offer) => offer.name === source.build) ?? null
+    }
     issues.value = outcome.issues
     shadowedBy.value = outcome.shadowedBy
   } finally {
@@ -100,7 +104,7 @@ async function installFile(): Promise<void> {
   if (busy.value) return
   const [path] = await platform.pickFiles({ multiple: false, filters: ARCHIVE_FILTERS })
   if (path === undefined) return
-  await run('file', { path })
+  await run('file', { path, build: chosen.value ?? undefined })
 }
 
 const opened = ref(new Set<string>())
@@ -164,34 +168,82 @@ async function openLink(link: string): Promise<void> {
             }}
           </p>
           <details
-            v-if="offer.source_links?.length"
+            v-if="offer.source_links?.length || offer.archive_url"
             class="build-picker__sources"
             @toggle="toggled(offer.name, $event)"
           >
             <summary>{{ t('settings.builds.sources') }}</summary>
             <!-- Links in a closed details element are unreachable Tab stops to the a11y gate. -->
-            <ul v-if="opened.has(offer.name)" class="build-picker__links">
-              <li v-for="link in offer.source_links" :key="link">
-                <a
-                  :href="link"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  @click.prevent="openLink(link)"
-                  >{{ link }}</a
-                >
-              </li>
-            </ul>
+            <template v-if="opened.has(offer.name)">
+              <ul v-if="offer.source_links?.length" class="build-picker__links">
+                <li v-for="link in offer.source_links" :key="link">
+                  <a
+                    :href="link"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    @click.prevent="openLink(link)"
+                    >{{ link }}</a
+                  >
+                </li>
+              </ul>
+              <dl v-if="offer.archive_url" class="build-picker__archive">
+                <dt>{{ t('settings.builds.archive') }}</dt>
+                <dd>
+                  <a
+                    :href="offer.archive_url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-field="archive-url"
+                    @click.prevent="openLink(offer.archive_url)"
+                    >{{ offer.archive_url }}</a
+                  >
+                </dd>
+                <dt>{{ t('settings.builds.sha256') }}</dt>
+                <dd>
+                  <code data-field="archive-sha256">{{ offer.sha256 }}</code>
+                </dd>
+              </dl>
+            </template>
           </details>
         </div>
       </div>
     </fieldset>
 
-    <p v-if="offline" class="build-picker__offline" role="alert" data-field="offline">
-      {{ desktop ? t('settings.builds.offlineDesktop') : t('settings.builds.offlineWeb') }}
-    </p>
+    <div v-if="offline" class="build-picker__offline" role="alert" data-field="offline">
+      <p>
+        {{ desktop ? t('settings.builds.offlineDesktop') : t('settings.builds.offlineWeb') }}
+      </p>
+      <i18n-t
+        v-if="offlineOffer?.archive_url"
+        keypath="settings.builds.offlineArchive"
+        tag="p"
+        data-field="offline-archive"
+      >
+        <template #build>{{
+          t('settings.builds.buildName', { label: offlineOffer.label, name: offlineOffer.name })
+        }}</template>
+        <template #url>
+          <a
+            :href="offlineOffer.archive_url"
+            target="_blank"
+            rel="noopener noreferrer"
+            @click.prevent="openLink(offlineOffer.archive_url)"
+            >{{ offlineOffer.archive_url }}</a
+          >
+        </template>
+        <template #sha256>
+          <code>{{ offlineOffer.sha256 }}</code>
+        </template>
+      </i18n-t>
+    </div>
     <RefusalList :issues="issues" />
     <p v-if="shadowedBy" class="build-picker__muted" role="status" data-field="shadowed">
-      {{ t('settings.builds.shadowed', { path: shadowedBy }) }}
+      {{
+        t('settings.builds.shadowed', {
+          path: shadowedBy.path,
+          origin: originText(shadowedBy, t),
+        })
+      }}
     </p>
 
     <div class="build-picker__actions">
@@ -311,18 +363,45 @@ async function openLink(link: string): Promise<void> {
   overflow-wrap: anywhere;
 }
 
-.build-picker__links a {
+.build-picker__links a,
+.build-picker__archive a,
+.build-picker__offline a {
   display: inline-block;
   min-height: 24px;
   line-height: 24px;
 }
 
+.build-picker__archive {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--rf-space-1) var(--rf-space-2);
+  margin: var(--rf-space-1) 0 0;
+  padding-inline-start: var(--rf-space-4);
+  overflow-wrap: anywhere;
+}
+
+.build-picker__archive dd {
+  margin: 0;
+}
+
+.build-picker__archive code,
+.build-picker__offline code {
+  font-family: var(--rf-font-mono);
+}
+
 .build-picker__offline {
+  display: grid;
+  gap: var(--rf-space-2);
   padding: var(--rf-space-2) var(--rf-space-3);
   border: 1px solid var(--p-status-error-border-color);
   border-radius: var(--rf-radius-md);
   background: var(--p-status-error-background);
   color: var(--rf-color-text);
+  overflow-wrap: anywhere;
+}
+
+.build-picker__offline p {
+  margin: 0;
 }
 
 .build-picker__actions {

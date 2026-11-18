@@ -9776,6 +9776,22 @@
     'additionalProperties': False,
     'description': 'An FFmpeg build of the manifest that the user may choose to install.',
     'properties': dict({
+      'archive_url': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Where this platform's archive is downloaded from, to install it from a file on a
+          computer without a connection; ``None`` when the build has none for this platform.
+        ''',
+        'title': 'Archive Url',
+      }),
       'label': dict({
         'description': 'A short name for the picker ("Recommended").',
         'title': 'Label',
@@ -9795,6 +9811,22 @@
         'description': 'The upstream release the build is based on (``9.0.2``).',
         'title': 'Release Version',
         'type': 'string',
+      }),
+      'sha256': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          The SHA-256 of this platform's archive (64 lowercase hex digits), which an install
+          checks; ``None`` when the build has none for this platform.
+        ''',
+        'title': 'Sha256',
       }),
       'size': dict({
         'anyOf': list([

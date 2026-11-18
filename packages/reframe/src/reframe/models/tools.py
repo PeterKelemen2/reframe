@@ -152,6 +152,12 @@ class ToolBuildOffer(ReframeModel):
     """Where the corresponding source is: the FFmpeg commit and the build scripts."""
     size: int | None = None
     """Bytes of this platform's archive; ``None`` when the build has none for this platform."""
+    archive_url: str | None = None
+    """Where this platform's archive is downloaded from, to install it from a file on a
+    computer without a connection; ``None`` when the build has none for this platform."""
+    sha256: str | None = None
+    """The SHA-256 of this platform's archive (64 lowercase hex digits), which an install
+    checks; ``None`` when the build has none for this platform."""
 
 
 class InstalledToolBuild(ReframeModel):

@@ -141,7 +141,7 @@ async def test_tools_rescan_runs_discovery_again(api: Api) -> None:
     assert any("-version" in call for call in api.fake.calls("ffmpeg"))
 
 
-@pytest.mark.parametrize(("body", "build"), [(None, "default"), ({"build": "nightly"}, "nightly")])
+@pytest.mark.parametrize(("body", "build"), [(None, "default"), ({"build": "compat"}, "compat")])
 async def test_tools_fetch_starts_the_fetch_of_the_build(
     api: Api, monkeypatch: pytest.MonkeyPatch, body: dict[str, str] | None, build: str
 ) -> None:
