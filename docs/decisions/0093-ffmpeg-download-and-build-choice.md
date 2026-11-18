@@ -1,6 +1,6 @@
 # 0093 — The desktop app downloads FFmpeg; a build picker and a build-mismatch warning
 
-- Status: accepted
+- Status: accepted; item 1's Docker part (the image keeps FFmpeg) is superseded by [0094](0094-docker-image-without-ffmpeg.md)
 - Date: 2026-11-18
 - Steps: C-21, S-8, F-20, D-10 (new); supersedes the "every artefact bundles FFmpeg" part of
   [0002](0002-bundled-ffmpeg.md) and [02 §Bundled FFmpeg](../plan/02-architecture.md#bundled-ffmpeg)

@@ -286,16 +286,21 @@ start-up (exit 2)
 
 - [x] **Docker image** (multi-stage):
   1. `node` stage builds `frontend/dist`.
-  2. `tools` stage downloads the pinned FFmpeg from `tools/ffmpeg.toml` and checks its
-     SHA-256 ([02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg)).
-  3. Runtime stage: Debian slim + uv-installed `reframe-server`, the bundled FFmpeg in
-     `/opt/reframe/tools/ffmpeg/` (no `mkvtoolnix` since C-18,
+  2. ~~`tools` stage~~: since [decision 0094](../decisions/0094-docker-image-without-ffmpeg.md) the image contains no FFmpeg. The first start
+     downloads an offered build into `/data/tools/ffmpeg/` (the first-run screen, or
+     `REFRAME_FFMPEG_BUILD`), installs it from a file, or uses a mounted override.
+  3. Runtime stage: Debian slim + uv-installed `reframe-server` (no `mkvtoolnix` since C-18,
      [decision 0080](../decisions/0080-own-matroska-header-writer.md); no `mediainfo` since C-19,
      [decision 0081](../decisions/0081-probe-without-mediainfo.md)), and the GPU user-space drivers
      that FFmpeg loads at runtime (Intel media driver, Mesa VA drivers, oneVPL GPU runtime; the
      Dockerfile pins the exact packages). Runs as a non-root user (`PUID`/`PGID` env).
   4. Volumes: `/config`, `/data` (queue DB, logs, cache), `/media` (read), `/output` (write).
   5. `HEALTHCHECK` on `/api/health`.
+- [ ] **No FFmpeg in the image** ([decision 0094](../decisions/0094-docker-image-without-ffmpeg.md)): the `tools` stage and
+      `/opt/reframe/tools/ffmpeg/` go; the image's notices drop FFmpeg; the compose example
+      says that the download lives in `/data` and shows `REFRAME_FFMPEG_BUILD`; the deploy
+      tests check that the image has no `ffmpeg`/`ffprobe` and that a download in a running
+      container (or a file install) is found by discovery and VAAPI works with it.
 - [x] **Override in Docker**: mount your own build and set `REFRAME_FFMPEG` /
       `REFRAME_FFPROBE`, for example `-v /opt/my-ffmpeg:/opt/custom-ffmpeg:ro -e
       REFRAME_FFMPEG=/opt/custom-ffmpeg/bin/ffmpeg`.
@@ -374,6 +379,9 @@ M10.
 - [ ] `POST /api/system/tools/install-file` `{path}` → 202: install an archive file from a path
       on the server (desktop mode; in web mode the path must be inside a media root). A task
       like `tools/fetch`.
+- [ ] `REFRAME_FFMPEG_BUILD` ([decision 0094](../decisions/0094-docker-image-without-ffmpeg.md) item 3): when set to an offered build and discovery
+      finds no FFmpeg at server start, the server starts that build's download (a `tools_fetch`
+      task); a wrong name or a failure is logged and shown on the first-run screen.
 - [ ] `tools.fetch_offline` and the file-install problems reach the client as the task's error
       code and message. `EncoderStatus.build_mismatch` is in the encoder status; the OpenAPI
       types are generated again (S-5).

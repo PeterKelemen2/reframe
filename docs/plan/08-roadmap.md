@@ -223,8 +223,9 @@ after v1 and does not block the release
 - [ ] Performance budgets ([09 §Q-3](09-quality-and-release.md#q-3-performance-budgets)) are met.
 - [ ] Third-party licence notices are bundled ([09 §Licensing](09-quality-and-release.md#licensing)).
 - [ ] The release's notices name its sources release, and that release has the corresponding
-      source of every GPL and LGPL part (FFmpeg's for the Docker image only:
-      [decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md))
+      source of every GPL and LGPL part (no artefact contains FFmpeg:
+      [decisions 0093](../decisions/0093-ffmpeg-download-and-build-choice.md),
+      [0094](../decisions/0094-docker-image-without-ffmpeg.md))
       ([decision 0073](../decisions/0073-gpl-corresponding-source-per-tool-pin.md)).
 - [ ] User docs: quick start, presets, batch mode, keyboard shortcuts.
 

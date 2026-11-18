@@ -97,8 +97,9 @@ tone mapping, and remux-only jobs. FFmpeg covers all of them, and its CLI is sta
 
 ### Bundled FFmpeg
 
-**Every target uses a pinned FFmpeg build.** The Docker image bundles the `default` build. The
-desktop packages (AppImage, .deb, .rpm, the Windows installers) contain no FFmpeg: the first run
+**Every target uses a pinned FFmpeg build, and no artefact contains one.** The desktop
+packages (AppImage, .deb, .rpm, the Windows installers) and the Docker image
+([decision 0094](../decisions/0094-docker-image-without-ffmpeg.md)) contain no FFmpeg: the first run
 offers the builds that the manifest marks as offered, downloads the chosen one (or installs it
 from an archive file), or takes the user's own FFmpeg path
 ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)). Users get a known-good
@@ -119,9 +120,9 @@ older than its NVENC needs) can take another offered build.
   branch for NVIDIA drivers that the `default` build's NVENC refuses), each with a label, a
   one-line summary and its licence and source links, shown before the download.
 - **Install location**: `<data dir>/tools/ffmpeg/` for a downloaded build (desktop app,
-  `reframe tools fetch`, CI); `/opt/reframe/tools/ffmpeg/` (Docker). A build that a packager
-  puts at `<app>/tools/ffmpeg/` (or `/usr/lib/Reframe/tools/ffmpeg/`) is still found as
-  bundled. On Linux the desktop packages ship the pinned libva, which a download copies into
+  `reframe tools fetch`, CI; Docker: `/data/tools/ffmpeg/`, on the bind-mounted `/data`). A
+  build that someone puts at `<app>/tools/ffmpeg/`, `/usr/lib/Reframe/tools/ffmpeg/` or
+  `/opt/reframe/tools/ffmpeg/` is still found as bundled. On Linux the desktop packages ship the pinned libva, which a download copies into
   the build's `lib/`. No package bundles MediaInfo since C-19
   ([decision 0081](../decisions/0081-probe-without-mediainfo.md)), and none bundles
   MKVToolNix ([decision 0079](../decisions/0079-q5-release-process.md) item 11), and since C-18
@@ -135,7 +136,7 @@ older than its NVENC needs) can take another offered build.
 |---|--------|-------------|
 | 1 | Environment variable: `REFRAME_FFMPEG`, `REFRAME_FFPROBE` | Docker, scripts, CI. Settings shows the value read-only, with a note that the environment sets it |
 | 2 | Path in **Settings → Tools** | Desktop users with their own FFmpeg build |
-| 3 | Bundled build (Docker), or the downloaded build (`<data dir>/tools/ffmpeg/`) | Default |
+| 3 | The downloaded build (`<data dir>/tools/ffmpeg/`), or a build at a bundled location | Default |
 | 4 | `PATH` | Only when no bundled build exists (for example when running from source) |
 
 - If only `ffmpeg` is overridden, Reframe looks for `ffprobe` next to it first, so pointing
