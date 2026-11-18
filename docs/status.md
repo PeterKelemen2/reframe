@@ -292,9 +292,17 @@ hands its jobs to the server or desktop app that owns the queue, or starts one
   libplacebo and GPU integration tests; the Ubuntu job installs MKVToolNix for the
   `needs_mkvtoolnix` oracle tests (C-18), which skip on Windows.
 - **GPU encoders**: detection and real encodes are checked on one Linux machine (AMD RX 7600:
-  VAAPI and AMF work); NVENC and QSV only as detection failures and plan snapshots (no NVIDIA
-  driver, no Intel GPU; the av1_nvenc initial-QP scale is read from `ffmpeg -h` only);
-  Windows not at all.
+  VAAPI and AMF work). **NVENC on Windows** (2026-11-18/19, a Windows 10 VM with a GeForce GTX
+  1050 Ti, driver 582.78; [0093](decisions/0093-ffmpeg-download-and-build-choice.md)): with the
+  `default` build every NVENC encoder is unavailable with `build_mismatch` (driver too old), the
+  CLI hint, the banner's *Use another FFmpeg…* and the Settings → Tools notice show it; after
+  installing `compat` (CLI download, and the web UI's picker on the VM) H.264 (8-bit only) and
+  H.265 NVENC encode through the queue, AV1 is unavailable (Pascal). Real encodes on that card
+  with `compat`: the NVENC presets, 10-bit H.265, 4K HDR10 with its metadata, 2-pass, tone
+  mapping to SDR. Pascal refuses some advanced options at run time that validation lets through
+  (B-frames, `b_ref_mode`, `refs`, temporal AQ, tune `uhq`). **NVENC on Linux is not checked
+  yet** (later, the owner's plan). QSV: see [0095](decisions/0095-qsv-takes-software-frames.md)
+  and [0096](decisions/0096-qsv-options-on-intel-hardware-and-ffmpeg-that-does-not-exit.md).
 - **Sleep inhibit**: checked on KDE Plasma 6 (no real suspend was done) and on the Windows VM
   (`powercfg /requests` lists the sidecar under SYSTEM while a job runs, and nothing about 1 s
   after a cancel); GNOME and other desktops not tested.
