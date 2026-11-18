@@ -873,26 +873,26 @@ The desktop packages contain no FFmpeg; the core offers the pinned builds, insta
 says when a system does not fit a build
 ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)). Milestone M10.
 
-- [ ] Manifest: `tools/ffmpeg.toml` marks offered builds (`offered = true`) with `label` and
+- [x] Manifest: `tools/ffmpeg.toml` marks offered builds (`offered = true`) with `label` and
       `summary`; `default` and `compat` (release/8.1, the pin `override-test` uses) are
       offered. `reframe.tools` lists them with their version, licence and source links, and
       `ToolsService` exposes the list (`tools.builds()`).
-- [ ] The installed downloaded build: which offered build it is, and `outdated` when its
+- [x] The installed downloaded build: which offered build it is, and `outdated` when its
       version is not that build's pinned version in this release's manifest.
-- [ ] Install from a file: an archive given by path is checked like a download (size and
+- [x] Install from a file: an archive given by path is checked like a download (size and
       SHA-256 against the manifest entry of the build and platform it claims, then
       `ffmpeg -version`) and installed the same way (`tools.install_file()`, `reframe tools
       fetch --file ARCHIVE [--build NAME]`).
-- [ ] A download that cannot reach the server (no network or name resolution, a refused or
+- [x] A download that cannot reach the server (no network or name resolution, a refused or
       timed-out connection) fails with `tools.fetch_offline`, whose message names the
       alternatives (install from a file, choose an FFmpeg path). Other failures keep their
       reasons.
-- [ ] On Linux, when the app ships a packaged libva (its resource folder), a download or a file
+- [x] On Linux, when the app ships a packaged libva (its resource folder), a download or a file
       install copies the libva libraries into the installed build's `lib/`.
-- [ ] `EncoderStatus.build_mismatch` (default `false`): set by the reason mapping for the NVENC
+- [x] `EncoderStatus.build_mismatch` (default `false`): set by the reason mapping for the NVENC
       API / driver version and for a system library too old or missing for the build; never
       for a 10-bit-only limit and never for a filter. The capability cache format changes.
-- [ ] CLI: `reframe encoders` and `reframe tools status` print one `hint:` line when an encoder
+- [x] CLI: `reframe encoders` and `reframe tools status` print one `hint:` line when an encoder
       has a build mismatch (update the driver, or another build: `reframe tools fetch --build
       …`, `REFRAME_FFMPEG`, `tools.ffmpeg`); `reframe tools status` names the installed build
       and says when it is outdated; `reframe tools fetch` lists the offered builds in `--help`.

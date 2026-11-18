@@ -10,7 +10,7 @@ import tarfile
 import threading
 import time
 import zipfile
-from collections.abc import Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -139,21 +139,33 @@ class Archive:
 
 
 def write_manifest(
-    path: Path, archives: Mapping[str, list[Archive]], *, version: str = FAKE_VERSION
+    path: Path,
+    archives: Mapping[str, list[Archive]],
+    *,
+    version: str = FAKE_VERSION,
+    versions: Mapping[str, str] | None = None,
+    offered: Collection[str] = (),
 ) -> Path:
-    """A manifest with one build per key of ``archives`` (``default`` must be one)."""
+    """A manifest with one build per key of ``archives`` (``default`` must be one); ``versions``
+    by build name override ``version``; the builds in ``offered`` are offered."""
     lines = ["schema_version = 1", ""]
     for name, entries in archives.items():
         lines += [
             f"[builds.{name}]",
-            f'version = "{version}"',
+            f'version = "{(versions or {}).get(name, version)}"',
             'release_version = "9.0.2"',
             'release_tag = "test"',
             'license = "GPL-3.0-or-later"',
             'source_repository = "https://example.invalid/ffmpeg"',
             'source_commit = "0000000"',
-            "",
         ]
+        if name in offered:
+            lines += [
+                "offered = true",
+                f'label = "Label of {name}"',
+                f'summary = "Summary of {name}."',
+            ]
+        lines.append("")
         for entry in entries:
             exe = ".exe" if entry.platform == "windows-x64" else ""
             lines += [

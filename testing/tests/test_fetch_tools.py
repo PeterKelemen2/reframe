@@ -119,10 +119,13 @@ def _copier(archive: bytes, calls: list[str]) -> Callable[[str, Path], None]:
 
 def test_real_manifest_is_valid() -> None:
     builds = ft.load_manifest(MANIFEST)
-    assert set(builds) == {"default", "override-test"}
+    assert set(builds) == {"default", "compat", "override-test"}
     # Only the Docker image ships arm64; the override job runs on x64.
     assert set(builds["default"].platforms) == {"linux-x64", "linux-arm64", "windows-x64"}
     assert set(builds["override-test"].platforms) == {"linux-x64", "windows-x64"}
+    # The offered compatibility build is the override job's pin.
+    assert builds["compat"].platforms == builds["override-test"].platforms
+    assert builds["compat"].version == builds["override-test"].version
     for build in builds.values():
         assert build.license == "GPL-3.0-or-later"
         assert len(build.source_commit) == 40
