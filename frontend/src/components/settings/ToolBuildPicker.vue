@@ -12,6 +12,7 @@ import { platform } from '@/platform'
 import { useSystemStore } from '@/stores/system'
 
 import RefusalList from './RefusalList.vue'
+import { originText, type ToolInfo } from './tools'
 import { useBundledTools } from './useBundledTools'
 
 type ToolBuildOffer = Schemas['ToolBuildOffer']
@@ -39,7 +40,7 @@ const chosen = ref<string | null>(null)
 const running = ref<'download' | 'file' | null>(null)
 const offline = ref(false)
 const issues = shallowRef<ValidationIssue[]>([])
-const shadowedBy = ref<string | null>(null)
+const shadowedBy = shallowRef<ToolInfo | null>(null)
 
 const busy = computed(() => props.disabled || fetching.value || running.value !== null)
 const chosenOffer = computed(() => offers.value.find((offer) => offer.name === chosen.value))
@@ -191,7 +192,12 @@ async function openLink(link: string): Promise<void> {
     </p>
     <RefusalList :issues="issues" />
     <p v-if="shadowedBy" class="build-picker__muted" role="status" data-field="shadowed">
-      {{ t('settings.builds.shadowed', { path: shadowedBy }) }}
+      {{
+        t('settings.builds.shadowed', {
+          path: shadowedBy.path,
+          origin: originText(shadowedBy, t),
+        })
+      }}
     </p>
 
     <div class="build-picker__actions">

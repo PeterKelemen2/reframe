@@ -57,6 +57,29 @@ function fetchEnds(
   })
 }
 
+/** The download ends `done` with the server's masked result; then discovery finds `ffmpeg`. */
+function installedThenFinds(
+  system: ReturnType<typeof useSystemStore>,
+  ffmpeg: Partial<SystemInfo['tools']['ffmpeg']>,
+) {
+  system.fetchTools = vi.fn<(build?: string) => Promise<TaskInfo>>(async () => {
+    const info = system.info as SystemInfo
+    system.info = {
+      ...info,
+      tools: { ...info.tools, ffmpeg: { ...info.tools.ffmpeg, ...ffmpeg } },
+    }
+    return ended('done', {
+      result: {
+        build: 'default',
+        version: 'n9.0.2-17-g2a571b6068-20260930',
+        install_dir: '<data>/tools/ffmpeg',
+        ffmpeg: '<data>/tools/ffmpeg/bin/ffmpeg',
+        ffprobe: '<data>/tools/ffmpeg/bin/ffprobe',
+      },
+    })
+  })
+}
+
 describe('the Tools section', () => {
   it('shows FFmpeg and FFprobe with their status, version and where each comes from', async () => {
     const { row, wrapper } = await mountTools(
@@ -287,12 +310,28 @@ describe('the Tools section', () => {
       )
     })
 
-    it('says when the installed build is not the one used', async () => {
+    it('takes the installed build as the one used when discovery finds a bundled ffmpeg of its version', async () => {
       const { wrapper, system } = await mountTools(systemInfo({ mode: 'web' }))
-      fetchEnds(system, 'done', { result: { ffmpeg: '/data/tools/ffmpeg/bin/ffmpeg' } })
+      installedThenFinds(system, {
+        origin: 'bundled',
+        bundled: true,
+        path: '/srv/reframe/data/tools/ffmpeg/bin/ffmpeg',
+        version: 'n9.0.2-17-g2a571b6068-20260930',
+      })
       await wrapper.find('[data-action="download"]').trigger('click')
       await flushPromises()
-      expect(wrapper.find('[data-field="shadowed"]').text()).toContain('/usr/bin/ffmpeg')
+      expect(wrapper.find('[data-field="shadowed"]').exists()).toBe(false)
+    })
+
+    it('says which ffmpeg is used, and where it comes from, when it is not the installed build', async () => {
+      const { wrapper, system } = await mountTools(systemInfo({ mode: 'web' }))
+      installedThenFinds(system, { origin: 'env', path: '/opt/ff/ffmpeg', version: '7.1' })
+      await wrapper.find('[data-action="download"]').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-field="shadowed"]').text()).toBe(
+        'The build is installed, but another FFmpeg comes first and is used: /opt/ff/ffmpeg ' +
+          '(Environment variable REFRAME_FFMPEG)',
+      )
     })
 
     it('shows the download progress of its task', async () => {

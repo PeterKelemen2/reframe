@@ -160,6 +160,11 @@ async def test_a_build_installed_from_a_file_through_the_api_is_found_by_get_sys
             assert tools[name]["status"] == "found"
             assert tools[name]["origin"] == "bundled"
             assert Path(tools[name]["path"]).is_relative_to(install_dir)
+        # The client sees the result's paths under "<data>": it matches the build in use by
+        # the origin and the version.
+        result = (await api.client.get(f"/api/tasks/{task.id}")).json()["result"]
+        assert result["ffmpeg"] == "<data>/tools/ffmpeg/bin/ffmpeg"
+        assert result["version"] == tools["ffmpeg"]["version"] == FAKE_VERSION
         builds = (await api.client.get("/api/system/tools/builds")).json()
         assert builds["installed"]["name"] == "default"
 

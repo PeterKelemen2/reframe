@@ -7,7 +7,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { FETCH_OFFLINE, useSystemStore } from '@/stores/system'
 import { taskEnded, useTasksStore } from '@/stores/tasks'
 
-import { bundledFfmpegDamaged, resetOps, TOOL_NAMES, type ToolName } from './tools'
+import { bundledFfmpegDamaged, resetOps, TOOL_NAMES, type ToolInfo, type ToolName } from './tools'
 import { refusalIssues } from './useSetting'
 
 /** The API client has shown the problem as a toast. */
@@ -28,8 +28,8 @@ export interface InstallOutcome {
   offline: boolean
   /** What the server refused when the Settings paths were removed. */
   issues: ValidationIssue[]
-  /** Installed, but another ffmpeg is used: its path. */
-  shadowedBy: string | null
+  /** Installed, but another ffmpeg is used. */
+  shadowedBy: ToolInfo | null
 }
 
 /**
@@ -100,10 +100,11 @@ export function useBundledTools() {
     }
     const issues = await removePaths()
     // The task's result is a `ToolFetchResult`, which the OpenAPI document does not describe.
-    const installed = (task.result as { ffmpeg?: string } | null | undefined)?.ffmpeg
-    const used = system.info?.tools.ffmpeg.path ?? null
-    const shadowedBy =
-      issues.length === 0 && installed && used !== null && used !== installed ? used : null
+    // Its paths name the data folder as `<data>`: only its version can be compared.
+    const version = (task.result as { version?: string } | null | undefined)?.version
+    const used = system.info?.tools.ffmpeg ?? null
+    const inUse = used?.origin === 'bundled' && used.version === version
+    const shadowedBy = issues.length === 0 && used?.path && !inUse ? used : null
     return { done: true, offline: false, issues, shadowedBy }
   }
 

@@ -199,6 +199,6 @@
     "installFile": "Install from file",
     "offlineDesktop": "The download server cannot be reached. Install the build from an archive file that you downloaded on another computer, or choose the path of an FFmpeg that you already have.",
     "offlineWeb": "The download server cannot be reached. Install the build from an archive file in a media folder of the server, or set the path of an FFmpeg in the server's environment or settings file.",
-    "shadowed": "The build is installed, but another FFmpeg comes first and is used: {path}"
+    "shadowed": "The build is installed, but another FFmpeg comes first and is used: {path} ({origin})"
   }
 }
