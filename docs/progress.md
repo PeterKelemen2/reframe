@@ -4,8 +4,8 @@ A short summary of [status.md](status.md) and the M10 release checklist in
 [plan/08-roadmap.md](plan/08-roadmap.md#release-checklist). Read this file for "where are
 we" and "what is next"; read `status.md` for the details of a step.
 
-Snapshot: 2026-11-18, branch `m10-hardening` at `ced0f881` (383 commits ahead of `main`,
-not merged, nothing pushed). Update this file when a checklist item or a step below changes.
+Snapshot: 2026-11-18, branch `m10-hardening` at `a9311aa2` (387 commits ahead of `main` with
+the audit's last commit, not merged, nothing pushed). Update this file when a checklist item or a step below changes.
 
 ## Overall: about 93–95 % done
 
@@ -37,12 +37,14 @@ hardware the owner does not have.
 By step count about 98 of 102 (96 %). The overall figure is lower because the open items
 are release work, where problems usually show up.
 
-## M10 release checklist (1 of 9 done)
+## M10 release checklist (2 of 9 done)
 
 - [x] Q-6 Tier A simplification.
-- [ ] **Must-have audit**: check each "Must-have for v1" item of `plan/01-scope.md` against
-      its demo. The features table in `status.md` says all are done on Linux; nobody has
-      gone through the list formally.
+- [x] **Must-have audit** ([audit/must-have-audit.md](audit/must-have-audit.md), 2026-11-18):
+      205 items, every one run against its demo and verified by a second pass. 186 pass,
+      **0 fail**, 16 partial, 3 not checkable (NVENC/QSV, Windows). The partials are gaps
+      against the plan's wording; the largest is C-18 (a batch group does not detect the crop
+      per file, so letterboxed episodes are encoded uncropped). The owner decides which to fix.
 - [ ] **Docker image published**: the image is built (S-6). Publishing it and the NVENC/QSV
       check are open.
 - [ ] **Installers on a GitHub release**: AppImage, deb, rpm, NSIS and MSI build and pass
@@ -68,10 +70,11 @@ with `actionlint`. Expect a round of fixes on the first run.
 
 ## Recommended order of work
 
-1. **Must-have audit**: run every must-have demo on the current `m10-hardening` build and
-   make a pass/fail table before changing anything. Q-6 and Q-7 added about 380 commits
-   since M8, so a full pass is worth it.
-2. **User docs**, after the audit, so they describe what ships.
+1. **The audit's partials the owner chooses to fix** (the audit's suggested order: C-18 batch
+   crop per file, D-17 power actions in Docker, A-76 *Align A/V start* does nothing, B-39
+   track name templates written literally, A-35 / A-27 encoder errors, then the small ones),
+   and a plan update for the out-of-date plan text the audit lists.
+2. **User docs**, after those fixes, so they describe what ships.
 3. **The four open licence-text groups**.
 4. **Push decision (the owner's), then the first CI run**. This unblocks CI, the release
    workflow, the real updater test, the Docker image and the GitHub release. A pre-release
