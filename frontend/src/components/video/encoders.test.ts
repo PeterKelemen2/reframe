@@ -33,7 +33,15 @@ function video(changes: Partial<VideoSettings> = {}): VideoSettings {
 }
 
 function status(state: EncoderStatus['state'], extra: Partial<EncoderStatus> = {}): EncoderStatus {
-  return { id: 'x', state, hardware: true, in_build: true, reason: 'why', ...extra }
+  return {
+    id: 'x',
+    state,
+    hardware: true,
+    in_build: true,
+    reason: 'why',
+    build_mismatch: false,
+    ...extra,
+  }
 }
 
 function paths(ops: JsonPatchOp[]): Record<string, unknown> {

@@ -39,7 +39,7 @@ from reframe.models.preset import FieldChange, Preset, PresetFile
 from reframe.models.settings import AppSettings, LogLevel
 from reframe.models.tasks import TaskInfo
 from reframe.models.template import JobTemplate
-from reframe.models.tools import ToolInfo, ToolSet
+from reframe.models.tools import ToolBuilds, ToolInfo, ToolSet
 from reframe.platform.power import PowerService, create_power_service
 from reframe.presets import (
     ConflictPolicy,
@@ -62,7 +62,7 @@ from reframe.queue import QueueService
 from reframe.settings import MAX_DEPTH, SettingsStore, SettingsUpdate, too_deep, validation_detail
 from reframe.tasks import TaskManager
 from reframe.tools import CancelToken, discover_tools
-from reframe.tools.fetch import start_fetch
+from reframe.tools.fetch import offered_builds, start_fetch
 from reframe.validation.fs import has_nul
 
 __all__ = [
@@ -180,6 +180,20 @@ class ToolsService:
             platform=platform,
             manifest=manifest,
         )
+
+    async def builds(self, *, manifest: Path | None = None) -> ToolBuilds:
+        """The offered FFmpeg builds of the manifest and the build installed in the data
+        folder (``outdated`` when this release pins another version under its name)."""
+        return await asyncio.to_thread(offered_builds, self._data_dir, manifest=manifest)
+
+    def install_file(
+        self, archive: Path, *, build: str | None = None, manifest: Path | None = None
+    ) -> TaskInfo:
+        """Install the FFmpeg archive file ``archive`` as the downloaded build: checked like a
+        download (size and SHA-256 against the manifest entry of ``build`` for this platform;
+        ``None``: the offered build whose archive has that file name), then discovery runs
+        again. Returns at once; the task result is :class:`~reframe.models.ToolFetchResult`."""
+        raise NotImplementedError("C-21: install an archive file")
 
     async def close(self) -> None:
         """Cancel a running discovery (its version-check processes are killed)."""

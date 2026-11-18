@@ -147,7 +147,7 @@ def test_the_core_and_the_script_read_the_manifest_alike() -> None:
     script = load_script("fetch-tools.py", "fetch_tools_script")
     ours = load_manifest()
     theirs = script.load_manifest(REPO_MANIFEST)
-    assert sorted(ours) == sorted(theirs) == ["default", "override-test"]
+    assert sorted(ours) == sorted(theirs) == ["compat", "default", "override-test"]
     for name, build in ours.items():
         other = theirs[name]
         assert (build.version, build.release_version, build.license, build.source_commit) == (

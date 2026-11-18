@@ -44,7 +44,7 @@ function info(extra: Partial<SystemInfo> = {}): SystemInfo {
 }
 
 function encoder(id: string, state: EncoderStatus['state'], checked_at = 't1'): EncoderStatus {
-  return { id, state, hardware: false, checked_at }
+  return { id, state, hardware: false, build_mismatch: false, checked_at }
 }
 
 function capabilities(detecting: boolean, ...encoders: EncoderStatus[]): CapabilitySnapshot {

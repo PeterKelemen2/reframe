@@ -45,7 +45,13 @@ from typing import Any, Literal
 from reframe import __version__
 from reframe.mediatask import TaskFailed
 from reframe.models.tasks import TaskInfo
-from reframe.models.tools import ToolFetchResult, ToolSet
+from reframe.models.tools import (
+    InstalledToolBuild,
+    ToolBuildOffer,
+    ToolBuilds,
+    ToolFetchResult,
+    ToolSet,
+)
 from reframe.tasks import TaskContext, TaskManager
 from reframe.tools.runner import CancelToken, run
 from reframe.tools.versions import MIN_FFMPEG
@@ -62,6 +68,7 @@ __all__ = [
     "installed_build",
     "load_manifest",
     "member_path",
+    "offered_builds",
     "parse_manifest",
     "start_fetch",
 ]
@@ -139,6 +146,13 @@ class Build:
     license: str
     source_commit: str
     platforms: Mapping[str, PlatformBuild]
+    source_repository: str = ""
+    build_scripts_repository: str = ""
+    build_scripts_commit: str = ""
+    offered: bool = False
+    """The user may choose it (the first-run screen, Settings → Tools)."""
+    label: str = ""
+    summary: str = ""
 
 
 def _get_str(table: Mapping[str, object], key: str, where: str) -> str:
@@ -235,6 +249,11 @@ def _parse_build(name: str, table: Mapping[str, object]) -> Build:
         platforms[platform_name] = _parse_platform(
             platform_name, platform_table, f"{where}.platforms.{platform_name}"
         )
+    offered = table.get("offered", False)
+    if not isinstance(offered, bool):
+        raise FetchError(f"{where}.offered: expected true or false")
+    label = _get_str(table, "label", where) if offered else str(table.get("label", ""))
+    summary = _get_str(table, "summary", where) if offered else str(table.get("summary", ""))
     return Build(
         name=name,
         version=version,
@@ -242,6 +261,12 @@ def _parse_build(name: str, table: Mapping[str, object]) -> Build:
         license=_get_str(table, "license", where),
         source_commit=_get_str(table, "source_commit", where),
         platforms=platforms,
+        source_repository=_get_str(table, "source_repository", where),
+        build_scripts_repository=str(table.get("build_scripts_repository", "")),
+        build_scripts_commit=str(table.get("build_scripts_commit", "")),
+        offered=offered,
+        label=label,
+        summary=summary,
     )
 
 
@@ -913,3 +938,48 @@ def start_fetch(
 
     label = f"FFmpeg build {build!r}" + (f" for {platform}" if platform else "")
     return tasks.start("tools_fetch", fn, message=f"Fetching the {label}")
+
+
+def offered_builds(
+    data_dir: Path, *, manifest: Path | None = None, platform: str | None = None
+) -> ToolBuilds:
+    """The offered builds of ``manifest`` and the build installed in ``data_dir``. Reads two
+    small files: call it from a worker thread in async code. :raises FetchError: a bad
+    manifest."""
+    builds = load_manifest(manifest)
+    host = host_platform() if platform is None else platform
+    offers = [
+        ToolBuildOffer(
+            name=build.name,
+            label=build.label,
+            summary=build.summary,
+            version=build.version,
+            release_version=build.release_version,
+            license=build.license,
+            source_links=_source_links(build),
+            size=build.platforms[host].size
+            if host is not None and host in build.platforms
+            else None,
+        )
+        for build in builds.values()
+        if build.offered
+    ]
+    installed: InstalledToolBuild | None = None
+    if host is not None:
+        marker = installed_build(install_dir_for(Path(data_dir), host, host))
+        if marker is not None and isinstance(marker.get("build"), str):
+            name, version = marker["build"], str(marker.get("version", ""))
+            pinned = builds.get(name)
+            outdated = pinned is not None and pinned.version != version
+            installed = InstalledToolBuild(name=name, version=version, outdated=outdated)
+    return ToolBuilds(builds=offers, installed=installed)
+
+
+def _source_links(build: Build) -> list[str]:
+    links = []
+    if build.source_repository:
+        links.append(f"{build.source_repository.rstrip('/')}/commit/{build.source_commit}")
+    if build.build_scripts_repository and build.build_scripts_commit:
+        scripts = build.build_scripts_repository.rstrip("/")
+        links.append(f"{scripts}/tree/{build.build_scripts_commit}")
+    return links

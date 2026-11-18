@@ -16,7 +16,17 @@ from reframe.models.base import ReframeModel
 from reframe.models.issues import Fix
 from reframe.models.text import DisplayText
 
-__all__ = ["ToolFetchResult", "ToolInfo", "ToolName", "ToolOrigin", "ToolSet", "ToolStatus"]
+__all__ = [
+    "InstalledToolBuild",
+    "ToolBuildOffer",
+    "ToolBuilds",
+    "ToolFetchResult",
+    "ToolInfo",
+    "ToolName",
+    "ToolOrigin",
+    "ToolSet",
+    "ToolStatus",
+]
 
 #: The external tools Reframe uses.
 ToolName = Literal["ffmpeg", "ffprobe"]
@@ -121,3 +131,42 @@ class ToolFetchResult(ReframeModel):
     ffprobe: Path
     downloaded: bool = True
     """``False``: the build was already installed and every file still had its hash."""
+
+
+class ToolBuildOffer(ReframeModel):
+    """An FFmpeg build of the manifest that the user may choose to install."""
+
+    name: str
+    """The manifest's build name (``default``, ``compat``)."""
+    label: DisplayText
+    """A short name for the picker ("Recommended")."""
+    summary: DisplayText
+    """One sentence on who the build is for ("For NVIDIA drivers older than 610")."""
+    version: str
+    """What ``ffmpeg -version`` prints after ``ffmpeg version``."""
+    release_version: str
+    """The upstream release the build is based on (``9.0.2``)."""
+    license: str
+    """SPDX expression of the build (``GPL-3.0-or-later``)."""
+    source_links: list[str] = Field(default_factory=list)
+    """Where the corresponding source is: the FFmpeg commit and the build scripts."""
+    size: int | None = None
+    """Bytes of this platform's archive; ``None`` when the build has none for this platform."""
+
+
+class InstalledToolBuild(ReframeModel):
+    """The build that a download or a file install put in ``<data dir>/tools/ffmpeg``."""
+
+    name: str
+    """The manifest's build name it was installed as."""
+    version: str
+    """Its FFmpeg version string."""
+    outdated: bool = False
+    """``True`` when this release's manifest pins another version for that build name."""
+
+
+class ToolBuilds(ReframeModel):
+    """The builds the user may install, and the one installed in the data folder."""
+
+    builds: list[ToolBuildOffer] = Field(default_factory=list)
+    installed: InstalledToolBuild | None = None

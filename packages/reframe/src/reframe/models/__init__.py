@@ -256,6 +256,9 @@ from reframe.models.template import (
 )
 from reframe.models.text import json_text
 from reframe.models.tools import (
+    InstalledToolBuild,
+    ToolBuildOffer,
+    ToolBuilds,
     ToolFetchResult,
     ToolInfo,
     ToolName,
@@ -351,6 +354,7 @@ __all__ = [
     "HeaderTrackType",
     "ImportedChapter",
     "InfoHeaderEdit",
+    "InstalledToolBuild",
     "JobDraft",
     "JobLogEvent",
     "JobNaming",
@@ -463,6 +467,8 @@ __all__ = [
     "TemplateSection",
     "TestOp",
     "TimeRange",
+    "ToolBuildOffer",
+    "ToolBuilds",
     "ToolFetchResult",
     "ToolInfo",
     "ToolName",

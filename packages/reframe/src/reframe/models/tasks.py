@@ -41,3 +41,6 @@ class TaskInfo(ReframeModel):
     result: JsonValue = None
     """The task's result when ``done`` (its shape depends on ``kind``)."""
     error: DisplayText | None = None
+    error_code: str | None = None
+    """A stable code for an expected failure that a client handles on its own
+    (``tools.fetch_offline``); ``None`` for the others."""

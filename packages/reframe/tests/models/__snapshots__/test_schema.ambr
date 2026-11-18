@@ -2997,6 +2997,17 @@
     'additionalProperties': False,
     'description': 'The detection result of one encoder.',
     'properties': dict({
+      'build_mismatch': dict({
+        'default': False,
+        'description': '''
+          ``True`` when the encoder is unavailable because this FFmpeg build needs newer system
+          software than the computer has (an NVIDIA driver older than the build's NVENC needs, a
+          system library too old for the build): a driver update or another FFmpeg build can make it
+          available. Never set by a 10-bit-only limit.
+        ''',
+        'title': 'Build Mismatch',
+        'type': 'boolean',
+      }),
       'checked_at': dict({
         'anyOf': list([
           dict({
@@ -4253,6 +4264,38 @@
       'title',
     ]),
     'title': 'InfoHeaderEdit',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[InstalledToolBuild]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'The build that a download or a file install put in ``<data dir>/tools/ffmpeg``.',
+    'properties': dict({
+      'name': dict({
+        'description': "The manifest's build name it was installed as.",
+        'title': 'Name',
+        'type': 'string',
+      }),
+      'outdated': dict({
+        'default': False,
+        'description': "``True`` when this release's manifest pins another version for that build name.",
+        'title': 'Outdated',
+        'type': 'boolean',
+      }),
+      'version': dict({
+        'description': 'Its FFmpeg version string.',
+        'title': 'Version',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'name',
+      'version',
+    ]),
+    'title': 'InstalledToolBuild',
     'type': 'object',
   })
 # ---
@@ -9506,6 +9549,22 @@
         'default': None,
         'title': 'Error',
       }),
+      'error_code': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          A stable code for an expected failure that a client handles on its own
+          (``tools.fetch_offline``); ``None`` for the others.
+        ''',
+        'title': 'Error Code',
+      }),
       'finished_at': dict({
         'anyOf': list([
           dict({
@@ -9707,6 +9766,109 @@
       }),
     }),
     'title': 'TimeRange',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[ToolBuildOffer]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'An FFmpeg build of the manifest that the user may choose to install.',
+    'properties': dict({
+      'label': dict({
+        'description': 'A short name for the picker ("Recommended").',
+        'title': 'Label',
+        'type': 'string',
+      }),
+      'license': dict({
+        'description': 'SPDX expression of the build (``GPL-3.0-or-later``).',
+        'title': 'License',
+        'type': 'string',
+      }),
+      'name': dict({
+        'description': "The manifest's build name (``default``, ``compat``).",
+        'title': 'Name',
+        'type': 'string',
+      }),
+      'release_version': dict({
+        'description': 'The upstream release the build is based on (``9.0.2``).',
+        'title': 'Release Version',
+        'type': 'string',
+      }),
+      'size': dict({
+        'anyOf': list([
+          dict({
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': "Bytes of this platform's archive; ``None`` when the build has none for this platform.",
+        'title': 'Size',
+      }),
+      'source_links': dict({
+        'description': 'Where the corresponding source is: the FFmpeg commit and the build scripts.',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Source Links',
+        'type': 'array',
+      }),
+      'summary': dict({
+        'description': 'One sentence on who the build is for ("For NVIDIA drivers older than 610").',
+        'title': 'Summary',
+        'type': 'string',
+      }),
+      'version': dict({
+        'description': 'What ``ffmpeg -version`` prints after ``ffmpeg version``.',
+        'title': 'Version',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'name',
+      'label',
+      'summary',
+      'version',
+      'release_version',
+      'license',
+    ]),
+    'title': 'ToolBuildOffer',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[ToolBuilds]
+  dict({
+    '$defs': list([
+      'InstalledToolBuild',
+      'ToolBuildOffer',
+    ]),
+    'additionalProperties': False,
+    'description': 'The builds the user may install, and the one installed in the data folder.',
+    'properties': dict({
+      'builds': dict({
+        'items': dict({
+          '$ref': '#/$defs/ToolBuildOffer',
+        }),
+        'title': 'Builds',
+        'type': 'array',
+      }),
+      'installed': dict({
+        'anyOf': list([
+          dict({
+            '$ref': '#/$defs/InstalledToolBuild',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+      }),
+    }),
+    'title': 'ToolBuilds',
     'type': 'object',
   })
 # ---

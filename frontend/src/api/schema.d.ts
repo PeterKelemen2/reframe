@@ -3664,6 +3664,15 @@ export interface components {
              */
             reason_10bit?: string | null;
             /**
+             * Build Mismatch
+             * @description ``True`` when the encoder is unavailable because this FFmpeg build needs newer system
+             *     software than the computer has (an NVIDIA driver older than the build's NVENC needs, a
+             *     system library too old for the build): a driver update or another FFmpeg build can make it
+             *     available. Never set by a 10-bit-only limit.
+             * @default false
+             */
+            build_mismatch: boolean;
+            /**
              * Device
              * @description The device the encoder works on, for encoders that need one: the VAAPI render node
              *     (``/dev/dri/renderD128``), the first node where the test encode worked, or the node that
@@ -6870,6 +6879,12 @@ export interface components {
             result?: components["schemas"]["JsonValue"];
             /** Error */
             error?: string | null;
+            /**
+             * Error Code
+             * @description A stable code for an expected failure that a client handles on its own
+             *     (``tools.fetch_offline``); ``None`` for the others.
+             */
+            error_code?: string | null;
         };
         /** TaskProgressEvent */
         TaskProgressEvent: {

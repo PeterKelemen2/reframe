@@ -55,6 +55,11 @@ class EncoderStatus(ReframeModel):
     reason_10bit: DisplayText | None = None
     """Why ``supports_10bit`` is ``False`` when the 10-bit test encode failed ("10-bit is not
     supported by this encoder")."""
+    build_mismatch: bool = False
+    """``True`` when the encoder is unavailable because this FFmpeg build needs newer system
+    software than the computer has (an NVIDIA driver older than the build's NVENC needs, a
+    system library too old for the build): a driver update or another FFmpeg build can make it
+    available. Never set by a 10-bit-only limit."""
     device: str | None = None
     """The device the encoder works on, for encoders that need one: the VAAPI render node
     (``/dev/dri/renderD128``), the first node where the test encode worked, or the node that
