@@ -21,7 +21,7 @@ AUDIO_CODES = (
 LAYOUTS = {1: "mono", 2: "stereo", 3: "3.0", 6: "5.1(side)", 8: "7.1"}
 #: One encoder of each mixdown kind.
 MIXDOWN_ENCODERS = ("aac", "ac3", "libmp3lame", "libopus")
-#: For bitrates and sample rates also a lossless encoder (FLAC: no bitrate).
+#: For sample rates also a lossless encoder (FLAC).
 VALUE_ENCODERS = (*MIXDOWN_ENCODERS, "flac")
 
 

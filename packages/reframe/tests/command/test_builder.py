@@ -1,4 +1,4 @@
-"""``build_plan``: what it refuses, the argument order, steps, ranges and the display."""
+"""``build_plan``: the argument order, steps, ranges and the display."""
 
 from __future__ import annotations
 
