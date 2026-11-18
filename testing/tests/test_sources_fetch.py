@@ -212,6 +212,7 @@ def test_a_stage_may_pin_one_repository_at_several_commits(tmp_path: Path) -> No
     origin = tmp_path / "nv-codec-headers"
     first = _repo(origin, {"sdk.h": "13\n", "LICENSE": "MIT"})
     (origin / "sdk.h").write_text("11\n")
+    (origin / "LICENSE").write_text("MIT 11")
     _git("commit", "-q", "-am", "sdk 11", cwd=origin)
     second = _git("rev-parse", "HEAD", cwd=origin)
     entry = _stage_entry(tmp_path, origin, first)
@@ -231,6 +232,7 @@ def test_a_stage_may_pin_one_repository_at_several_commits(tmp_path: Path) -> No
         "btbn-50-x264-abcdef/sdk13/LICENSE",
         "btbn-50-x264-abcdef/sdk13/sdk.h",
     ]
+    assert _texts(out)[entry["archive"]] == {"sdk11/LICENSE": "MIT 11", "sdk13/LICENSE": "MIT"}
 
 
 @pytest.mark.usefixtures("helper_checkout")
@@ -563,29 +565,6 @@ def test_the_licence_texts_hold_the_licence_files_at_the_top_of_each_archive(
             "LICENSE.md": "FFmpeg is LGPL",
             "LICENSES/MIT.txt": "MIT",
         }
-    }
-
-
-@pytest.mark.usefixtures("helper_checkout")
-def test_a_stage_that_checks_out_into_sub_folders_gives_each_ones_licence(
-    tmp_path: Path,
-) -> None:
-    headers, loader = tmp_path / "headers", tmp_path / "loader"
-    first = _repo(headers, {"cl.h": "", "LICENSE": "Apache headers"})
-    second = _repo(loader, {"icd.c": "", "LICENSE": "Apache loader"})
-    entry = _stage_entry(tmp_path, headers, first)
-    entry["commands"] = (
-        f'git-mini-clone "{headers.as_uri()}" "{first}" headers\n'
-        f'git-mini-clone "{loader.as_uri()}" "{second}" loader'
-    )
-    entry["download_hash"] = hashlib.sha256((entry["commands"] + "\n").encode()).hexdigest()
-    entry["variables"] |= {"SCRIPT_REPO2": loader.as_uri(), "SCRIPT_COMMIT2": second}
-
-    sf.fetch_all([entry], tmp_path / "out")
-
-    assert _texts(tmp_path / "out")[entry["archive"]] == {
-        "headers/LICENSE": "Apache headers",
-        "loader/LICENSE": "Apache loader",
     }
 
 

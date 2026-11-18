@@ -21,6 +21,7 @@ from reframe.tools.discovery import (
     locate_tools,
 )
 from reframe_testing import fake_tools as ft
+from reframe_testing.processes import alive
 
 WINDOWS = sys.platform == "win32"
 
@@ -866,15 +867,6 @@ def test_main_reports_and_checks_the_origin(
         main(["--require", "ffmpeeg"])
 
 
-def _alive(pid: int) -> bool:
-    import psutil
-
-    try:
-        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
-    except psutil.Error:
-        return False
-
-
 @pytest.mark.anyio
 async def test_cancelled_discovery_leaves_no_process(tmp_path: Path, empty_path: str) -> None:
     """Cancelling discovery leaves no version-check process behind.
@@ -896,4 +888,4 @@ async def test_cancelled_discovery_leaves_no_process(tmp_path: Path, empty_path:
     pids = fake.pids()
     task.cancel()
     await asyncio.wait({task})
-    assert [pid for pid in pids if _alive(pid)] == []
+    assert [pid for pid in pids if alive(pid)] == []

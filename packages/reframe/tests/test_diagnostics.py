@@ -80,18 +80,16 @@ def section(text: str, title: str) -> list[str]:
     return body.split("\n\n", 1)[0].splitlines()
 
 
-def test_the_report_has_the_version_server_os_and_python_first(tmp_path: Path) -> None:
-    head = report(tmp_path).split("\n\n")[1].splitlines()
+def test_the_default_report_part_by_part(tmp_path: Path) -> None:
+    text = report(tmp_path)
+
+    head = text.split("\n\n")[1].splitlines()
     assert head[:3] == [f"Reframe: {__version__}", "Mode: web", "Login: token"]
     assert head[3].startswith("OS: ")
     assert head[4].startswith("Python: ")
 
-
-def test_each_tool_has_status_origin_path_version_flags_libraries_and_reason(
-    tmp_path: Path,
-) -> None:
-    lines = section(report(tmp_path), "Tools")
-    assert lines[:8] == [
+    tools = section(text, "Tools")
+    assert tools[:8] == [
         "  ffmpeg: found",
         "    origin: settings",
         f"    path: {Path('~/bin/ffmpeg')}",
@@ -101,16 +99,15 @@ def test_each_tool_has_status_origin_path_version_flags_libraries_and_reason(
         "    libraries: libavutil 61.1.102, libavcodec 63.1.102",
         "  ffprobe: too_old",
     ]
-    assert lines[7:] == ["  ffprobe: too_old", "    reason: ffprobe 4.4 is too old"]
+    assert tools[7:] == ["  ffprobe: too_old", "    reason: ffprobe 4.4 is too old"]
 
-
-def test_each_encoder_has_its_status_and_reason_in_a_stable_order(tmp_path: Path) -> None:
-    lines = section(report(tmp_path), "Encoders")
-    assert lines == [
+    assert section(text, "Encoders") == [
         "  hevc_nvenc: unavailable: NVIDIA driver not found",
         "    detail: Cannot load libcuda.so.1",
         "  libx265: available",
     ]
+
+    assert section(text, "Logs")[1] == "  (the folder does not exist yet)"
 
 
 def test_a_running_detection_is_said(tmp_path: Path) -> None:
@@ -177,11 +174,6 @@ def test_the_logs_part_lists_the_files_that_exist(tmp_path: Path) -> None:
 
 def test_the_server_log_is_where_a_cli_client_writes_it(tmp_path: Path) -> None:
     assert server_log(tmp_path) == logs_dir(tmp_path) / SERVER_LOG
-
-
-def test_a_logs_folder_that_does_not_exist_is_said(tmp_path: Path) -> None:
-    lines = section(report(tmp_path), "Logs")
-    assert lines[1] == "  (the folder does not exist yet)"
 
 
 @pytest.mark.parametrize(

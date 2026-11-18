@@ -177,7 +177,7 @@ demo. What is left there is listed in [Not verified](#not-verified).
 | Q-7.9 One validity test per built-in preset (B) | Not started | TDM-01, -03; est. -104 / -37 |
 | Q-7.10 Server, CLI, naming and preview merges (B) | Not started | TSV-03 to -07; TCL-02, -05 to -08; TNP-04, -05; est. -9 / -149 |
 | Q-7.11 Batch, command and probe merges (B) | Not started | TBT-05 to -07; TCD-07, -08, -10; TPM-02, -09 to -11, -13, -16; est. -13 / -113 |
-| Q-7.12 Shared helpers in tools, platform and the testing package (B) | Not started | TTP-06 to -08; TTK-06, -13; est. -6 / -137 |
+| Q-7.12 Shared helpers in tools, platform and the testing package (B) | Done on Linux (2026-11-18) | TTP-06 to -08; TTK-06, -13, none skipped (TTK-13 in the first commit, 9793640): 6 tests removed (1041 to 1035 in the package folders) and about 150 lines net over both commits (322 deleted, 157 added in 20 files by `git diff --stat 6e01109..HEAD`, plus the new 14-line `tools/conftest.py`; blank lines and comments included); the `sorted(top or below)` mutation fails the merged btbn-stage test; coverage comparison left to the orchestrator |
 | Q-7.13 Speed (B; Windows VM for the launcher) | Not started | SPD-05 (pytest-timeout), SPD-08, the Windows half of SPD-04 |
 
 ## Features
