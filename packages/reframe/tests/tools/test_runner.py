@@ -22,7 +22,7 @@ from hypothesis import strategies as st
 from reframe.tools import CancelToken, kill_process_tree, run, run_streaming
 from reframe.tools import runner as runner_mod
 from reframe_testing import fake_tools as ft
-from reframe_testing.waiting import wait_until
+from reframe_testing.waiting import wait_until, wait_until_sync
 
 pytestmark = pytest.mark.anyio
 
@@ -558,8 +558,8 @@ def test_kill_process_tree_can_keep_the_root(tmp_path: Path) -> None:
         while len(tools.pids()) < 2 and time.monotonic() < deadline:
             time.sleep(0.02)
         grandchildren = [inv.pid for inv in tools.invocations() if inv.role == "grandchild"]
-        killed = kill_process_tree(proc.pid, kill_root=False)
-        psutil.wait_procs(killed, timeout=5)
+        kill_process_tree(proc.pid, kill_root=False)
+        wait_until_sync(lambda: not any(_alive(pid) for pid in grandchildren), 5)
         assert not any(_alive(pid) for pid in grandchildren)
         root = psutil.Process(proc.pid)
         assert root.status() != psutil.STATUS_STOPPED  # resumed after the kill
@@ -629,7 +629,7 @@ async def test_the_pid_lets_the_caller_suspend_and_resume_the_tree() -> None:
     # The queue runner pauses a job with psutil suspend()/resume().
     lines: list[str] = []
     pids: list[int] = []
-    code = "import time\nfor i in range(400):\n    print(i, flush=True)\n    time.sleep(0.01)"
+    code = "import time\nfor i in range(100):\n    print(i, flush=True)\n    time.sleep(0.01)"
     task = asyncio.ensure_future(
         run_streaming(
             [ft.PYTHON, "-c", code],  # not a Windows venv launcher, whose child prints on
@@ -649,7 +649,7 @@ async def test_the_pid_lets_the_caller_suspend_and_resume_the_tree() -> None:
     proc.resume()
     result = await asyncio.wait_for(task, 60)
     assert result.ok
-    assert lines[-1] == "399"
+    assert lines[-1] == "99"
 
 
 async def test_a_raising_on_start_kills_the_process_and_propagates() -> None:

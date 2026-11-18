@@ -437,10 +437,12 @@ class FakeTools:
 def posix_launcher(tool: Tool, *, python: str, script: Path, scenario: Path, log: Path) -> str:
     """Text of the POSIX launcher for ``tool``."""
     body = (
-        "import os, runpy, sys\n"
+        "import os, sys\n"
         f"os.environ.setdefault({SCENARIO_ENV!r}, {str(scenario)!r})\n"
         f"os.environ.setdefault({LOG_ENV!r}, {str(log)!r})\n"
-        f"sys.exit(runpy.run_path({str(script)!r})['main']({tool!r}, sys.argv[1:]))\n"
+        f"sys.path.append({str(script.parent)!r})\n"
+        f"import {script.stem}\n"
+        f"sys.exit({script.stem}.main({tool!r}, sys.argv[1:]))\n"
     )
     if len(python) <= _MAX_SHEBANG and not any(c.isspace() for c in python):
         return (
