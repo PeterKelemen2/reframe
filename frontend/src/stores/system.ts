@@ -61,8 +61,15 @@ export const useSystemStore = defineStore('system', () => {
 
   const eventWarnings: AppWarning[] = []
 
+  /** A start-up problem is also published as an event: each code and message is listed once. */
   function showWarnings(): void {
-    warnings.value = [...(info.value?.problems ?? []), ...eventWarnings]
+    const seen = new Set<string>()
+    warnings.value = [...(info.value?.problems ?? []), ...eventWarnings].filter((warning) => {
+      const key = JSON.stringify([warning.code, warning.message])
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
   }
 
   /** Why FFmpeg or FFprobe cannot be used (the first-run screen); `null` when both can. */

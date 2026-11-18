@@ -156,6 +156,24 @@ describe('the system store', () => {
     expect(store.warnings.map((w) => w.code)).toEqual(['settings.corrupt', 'power.inhibit'])
   })
 
+  it('lists a start-up problem that also came as an event once', async () => {
+    const failed = {
+      type: 'app.warning',
+      code: 'tools.fetch_failed',
+      message: "The download of the FFmpeg build 'default' failed",
+      detail: 'cannot reach the download server github.com',
+    } as const
+    system = info({ problems: [failed] })
+    const store = useSystemStore()
+    store.onAppWarning({ ...failed })
+    store.onAppWarning({ ...failed, message: 'Another download failed' })
+    await store.resync()
+    expect(store.warnings.map((w) => w.message)).toEqual([
+      "The download of the FFmpeg build 'default' failed",
+      'Another download failed',
+    ])
+  })
+
   describe('login', () => {
     it('answers false for a wrong password and shows no toast', async () => {
       server.on('POST /api/auth/login', () => problem(401, 'auth.invalid', 'Wrong password'))
