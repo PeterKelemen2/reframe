@@ -292,8 +292,10 @@ start-up (exit 2)
   3. Runtime stage: Debian slim + uv-installed `reframe-server` (no `mkvtoolnix` since C-18,
      [decision 0080](../decisions/0080-own-matroska-header-writer.md); no `mediainfo` since C-19,
      [decision 0081](../decisions/0081-probe-without-mediainfo.md)), and the GPU user-space drivers
-     that FFmpeg loads at runtime (Intel media driver, Mesa VA drivers, oneVPL GPU runtime; the
-     Dockerfile pins the exact packages). Runs as a non-root user (`PUID`/`PGID` env).
+     that FFmpeg loads at runtime (Intel media driver, Mesa VA drivers, the oneVPL GPU runtime
+     and, for Intel GPUs before Tiger Lake, the Media SDK runtime from Debian 12,
+     [decision 0099](../decisions/0099-intel-qsv-on-linux.md); the Dockerfile pins the exact
+     packages). Runs as a non-root user (`PUID`/`PGID` env).
   4. Volumes: `/config`, `/data` (queue DB, logs, cache), `/media` (read), `/output` (write).
   5. `HEALTHCHECK` on `/api/health`.
 - [x] **No FFmpeg in the image** ([decision 0094](../decisions/0094-docker-image-without-ffmpeg.md)): the `tools` stage and
@@ -324,12 +326,12 @@ Intel driver is Debian's non-free build (the free one has no H.264/HEVC encode b
 Lake). Until the packages are on PyPI, `uv tool install` takes the paths of a checkout.
 Behind a reverse proxy in Docker the server trusts `X-Forwarded-*` from the proxy's one
 address only (`FORWARDED_ALLOW_IPS`, the 0059 follow-up). The "Done when" was met on the
-owner's AMD desktop on 2026-10-28 (0059, "The lead's GPU check"); Intel QSV and NVIDIA NVENC
-in Docker are not verified.
+owner's AMD desktop on 2026-10-28 (0059, "The lead's GPU check"); Intel QSV and VAAPI on an
+Intel UHD 620 on 2026-11-19 (0099); NVIDIA NVENC in Docker is not verified.
 
 Done when: `docker compose up` on a Linux host with a GPU (the owner's: AMD) shows its VAAPI
-encoders as available and encodes a fixture file. Intel QSV and NVIDIA NVENC in Docker are
-listed as not verified until such a host is available
+encoders as available and encodes a fixture file. NVIDIA NVENC in Docker is listed as not
+verified until such a host is available (Intel QSV: verified, 0099)
 ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 7).
 
 ## S-7 Local owner mode

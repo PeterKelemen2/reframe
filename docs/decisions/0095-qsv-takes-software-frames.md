@@ -61,8 +61,9 @@ from it fails the same way; the DXVA2 child device cannot be created.
 - Detection without an Intel GPU now fails at `Error creating a MFX session` (the encoder's own
   session); the reason stays "No Intel QSV device". The QSV case of the device-creation rule
   (a failed `-init_hw_device qsv=hw`) is gone with the setup.
-- Verified only on one Intel GPU under Windows. QSV on Linux (VAAPI below oneVPL) and Arc are
-  not checked; the QSV advanced options are still not verified on hardware.
+- Verified on one Intel GPU under Windows, and under Linux in
+  [0099](0099-intel-qsv-on-linux.md) (the same results). Arc is not checked; the QSV advanced
+  options are checked in [0096](0096-qsv-options-on-intel-hardware-and-ffmpeg-that-does-not-exit.md).
 
 ## Plan changes
 

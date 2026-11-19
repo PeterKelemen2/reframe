@@ -52,8 +52,11 @@ generations, so removing them for a UHD 620 would take them from GPUs that have 
   (stopped) and 2 s, and the GPU encoded normally afterwards.
 - A job whose FFmpeg finished correctly but hung while it closed fails instead of being kept;
   none was seen.
-- Not checked: QSV on Linux and on Arc or newer Intel GPUs, AV1 on QSV, the desktop app's
-  windows with QSV (the encoder list and presets come from the same API as the CLI checks).
+- Not checked: QSV on Arc or newer Intel GPUs, AV1 on QSV, the desktop app's windows with QSV
+  (the encoder list and presets come from the same API as the CLI checks). Linux: checked in
+  [0099](0099-intel-qsv-on-linux.md); the options give the same results there, except H.264 low
+  power (refused at a bitrate too) and the H.265 look-ahead depth (ignored), and the FFmpeg
+  that does not exit was not seen.
 
 ## Plan changes
 

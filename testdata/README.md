@@ -688,7 +688,7 @@ Source `-f lavfi -i testsrc2`, output `-f null -`. Decision
   available (8-bit only)`, `hevc_qsv — available`, `av1_qsv — unavailable: This Intel GPU
   cannot encode AV1`. `test_hardware_encode[h264_qsv-multitrack-8]` and
   `[hevc_qsv-hdr10-10]` pass (10-bit H.265 with HDR10 kept).
-- **Not checked**: QSV on Linux (oneVPL over VAAPI), Arc and newer Intel GPUs.
+- **Not checked**: Arc and newer Intel GPUs. Linux: §QSV on Linux.
 
 **Every choice and option** (decision
 [0096](../docs/decisions/0096-qsv-options-on-intel-hardware-and-ffmpeg-that-does-not-exit.md)):
@@ -738,8 +738,9 @@ queue):
 - Bitrate with `extbrc` and look-ahead depth 40, H.264 look-ahead at a bitrate with
   downsampling off, CAVLC and RDO, and the custom parameter `scenario=archive` encode.
 - Tiles and H.264 `g=1` fail with FFmpeg's error in the job. The custom parameter
-  `low_power=1` is caught by the dry run ("some encoding parameters are not supported by the
-  QSV runtime"); `no_such_option=1` by `encoder.custom_param_unknown`.
+  `low_power=1` is caught by the dry run of `reframe plan` ("some encoding parameters are not
+  supported by the QSV runtime"; `reframe encode` runs no dry run, so there the job fails with
+  that error); `no_such_option=1` by `encoder.custom_param_unknown`.
 - H.264 low power at ICQ in the queue, three runs: failed at once (8 s), FFmpeg did not exit
   and the exit limit stopped it (68 s), driver `GPU Hang (-21)` (2 s). The GPU encoded
   normally afterwards. Before the limit, one such job ran more than 10 minutes at about one
@@ -751,6 +752,101 @@ queue):
   `some encoding parameters are not supported` on H.265).
 - Several encodes at once (1080p, 500 frames, `hevc_qsv`): one alone 7 s, two together 13 s,
   four together 25 s, all exit 0. The GPU is shared, so parallel QSV jobs are not faster.
+
+### QSV on Linux
+
+Checked on 2026-11-19 on the laptop of §QSV on an Intel GPU (Intel UHD 620, `8086:5917`), now
+under CachyOS (kernel 7.3.3-1-cachyos): intel-media-driver 26.3.5 (iHD), intel-media-sdk 23.2.2
+(`/usr/lib/libmfxhw64.so.1.35`), libvpl 2.17.0, libva 2.24.1; no vpl-gpu-rt (`libmfx-gen`).
+Builds: the pinned n9.0.2-17-g2a571b6068-20260930, `override-test` n8.1.3-9-g29e619e767-20260930
+and Arch's `/usr/bin/ffmpeg` n9.0.2; the three gave the same results throughout. Decision
+[0099](../docs/decisions/0099-intel-qsv-on-linux.md) is based on these.
+
+- **vainfo** (`--display drm`): iHD 26.3.5; encode entrypoints H.264 Main/High/Constrained
+  Baseline `EncSlice`, `FEI` and `EncSliceLP`; HEVC Main `EncSlice` and `FEI`; HEVC Main10
+  `EncSlice`; MPEG-2, JPEG, VP8; VP9 decode only; no AV1 profile.
+- **Where QSV comes from**: `readelf -d` of the BtbN `libavcodec` / `libavutil` has no
+  `NEEDED` libvpl, libmfx or libva: the oneVPL dispatcher is linked in (its strings name
+  `libmfx-gen.so.1.2`, `libmfxhw64.so.1`, `ONEVPL_SEARCH_PATH`), and `libavutil` loads the
+  system `libva-drm.so.2` at run time. `LD_DEBUG=libs` on an `h264_qsv` encode: it loads
+  `/usr/lib/libmfxhw64.so.1.35`, `/usr/lib/dri/iHD_drv_video.so` and `libigdgmm.so.12`. The
+  `undefined symbol: MFXQueryImplsDescription` lines are the dispatcher probing for the 2.x
+  API, harmless. `ldd libavcodec.so.63` shows `/usr/lib/libvpl.so.2`: an `ldd` artefact (without
+  the `$ORIGIN` rpath it finds the system FFmpeg's libraries of the same soname).
+- **Session lines**: software frames print `Use Intel(R) oneVPL to create MFX session, the
+  required implementation version is 1.1`, `Initialized an internal MFX session using hardware
+  accelerated implementation` and no implementation version; `-init_hw_device qsv=hw` prints
+  `API version is 2.17` and `Initialize MFX session: implementation version is 1.35`.
+- **Test encodes** (3 frames, `-f null -`; QSV with `-pix_fmt`, VAAPI with
+  `format=…,hwupload`):
+
+  | Encoder | nv12 | p010le |
+  |---------|------|--------|
+  | `h264_qsv` | 0 | 0, `Incompatible pixel format 'p010le' for codec 'h264_qsv', auto-selecting format 'nv12'` |
+  | `hevc_qsv` | 0 | 0 |
+  | `av1_qsv` | 171: `This version of runtime doesn't support AV1 encoding` | the same |
+  | `h264_vaapi` | 0 | 218: `No usable encoding profile found.` |
+  | `hevc_vaapi` | 0 (`Driver does not advertise encoder features/block size, using guessed defaults.`) | 0 |
+  | `av1_vaapi` | 218: `No usable encoding profile found.` | the same |
+
+- **The old setup** (`-init_hw_device qsv=hw -filter_hw_device hw`,
+  `format=nv12|p010le,hwupload=extra_hw_frames=64,format=qsv`, and without `extra_hw_frames`):
+  exit 0 for `h264_qsv` and `hevc_qsv`. The texture error of the Windows table is D3D11's.
+- **`reframe encoders`** (both FFmpeg builds, about 0.9 s): `h264_qsv — available (8-bit
+  only)`, `hevc_qsv — available`, `av1_qsv — unavailable: This Intel GPU cannot encode AV1`,
+  `h264_vaapi — available (/dev/dri/renderD128, 8-bit only)`, `hevc_vaapi — available`,
+  `av1_vaapi — unavailable: The VAAPI driver has no AV1 encoder`; NVENC "NVIDIA driver not
+  found", AMF "AMD AMF runtime not found (libamfrt64.so.1)".
+- **Without parts of the stack** (no root: `unshare -rm` with an empty file mounted over the
+  library, or `LD_LIBRARY_PATH`):
+
+  | Missing | FFmpeg `h264_qsv` | QSV reason | VAAPI reason |
+  |---------|-------------------|------------|--------------|
+  | the QSV runtime (`libmfxhw64.so.1.35` empty) | 171: `Error creating a MFX session: -9.` | No Intel QSV device or runtime (…) | available |
+  | the iHD driver (`iHD_drv_video.so` empty) | 251: `Failed to initialise VAAPI connection: -1 (unknown libva error).`, `[h264_qsv] Failed to create a VAAPI device.` | VAAPI driver failed to start (unknown libva error) | the same, "on /dev/dri/renderD128" |
+  | libva (`libva.so.2` empty, `LD_LIBRARY_PATH`) | 171: `Error creating a MFX session: -9.` | No Intel QSV device or runtime (…) | The system library libva-drm.so.2 could not be loaded (libva.so.2: file too short) |
+  | `LIBVA_DRIVERS_PATH=/nonexistent` | 251, as the iHD row | as the iHD row | as the iHD row |
+  | `LIBVA_DRIVER_NAME=reframe_nonexistent` | 0 (QSV names its driver itself) | available | VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error) |
+
+  An empty `libmfxhw64.so.1` in `LD_LIBRARY_PATH` alone changes nothing: the dispatcher falls
+  back to `/usr/lib`.
+- **Options** (0096's table repeated, 12 frames of 1280×720): the same as Windows, except
+  - H.264 `low_power` fails when the encoder opens, at ICQ **and at a bitrate** (exit 218,
+    `Selected ratecontrol mode is unsupported`, then `some encoding parameters are not
+    supported by the QSV runtime`); without a rate control (CQP) it works (`VDENC: ON`). H.265
+    `low_power` fails at open (exit 218).
+  - H.265 `-extbrc 1 -look_ahead_depth 40` at 4000k: `ExtBRC: ON`, `LookAheadDepth: 0`,
+    `GopRefDist: 8`, `NumRefFrame: 4` (Windows: the depth).
+  - H.264 `g=1` with B-frames: `Error during encoding: undefined behavior (-16)`, then the same
+    `Error flushing encoder: Internal bug, should not have happened` (exit 190).
+  - H.264 `-extbrc 1` at a bitrate (not in Reframe's H.264 options): `ExtBRC: ON` with
+    `AdaptiveI: ON; AdaptiveB: ON`.
+- **Through Reframe** (`reframe plan` / `reframe encode`, the queue): every row of the Windows
+  list gives the same result (presets, ICQ and VBR on both encoders, 8- and 10-bit H.265, the
+  AV1 preset's `encoder.unavailable`, 2-pass and H.264 10-bit refused, HDR10 kept on
+  `hdr10.mkv` and `hdr10-4k.mkv` (3840×2160 Main 10 at about 11 fps), `anamorphic`,
+  `interlaced`, `vfr`, tiles failing in the job, the `g=1` conflict, the custom parameters),
+  except that H.264 low power fails at once at a bitrate too. A cancel ends FFmpeg and removes
+  the `.part` file. `h264_vaapi` and `hevc_vaapi` 10-bit (HDR10 kept) encode on the iHD driver.
+- **FFmpeg that does not exit**: H.264 low power at ICQ, four runs through the queue: each
+  failed at open in 0.1 s (`exit code 218`). No hang, no `GPU Hang`; the exit limit was not
+  reached.
+- **VAAPI values that iHD refuses** (`-v error`, 3 frames of 1280×720): `h264_vaapi -level`
+  6, 6.1, 6.2 → exit 251, `Failed to end picture encode issue: 24 (internal encoding error)`,
+  `Encode failed: Input/output error.`; 1 … 5.2 work. `hevc_vaapi -compression_level` 0, 2, 3,
+  5, 6 → the same error; 1, 4, 7 and 8 work (8-bit and 10-bit). `h264_vaapi` takes 0 … 8;
+  `hevc_vaapi` takes every level up to 6.2. The AMD RX 7600 takes all of these.
+- **Docker** (`docker/Dockerfile`, Debian 13, `/dev/dri` passed, the default build downloaded
+  into `/data`): with only `libmfx-gen1.2` 25.1.4, `LD_DEBUG` shows the dispatcher load
+  `libmfx-gen.so.1.2.14`, the iHD driver open, `libmfx-gen` unload and `Error creating a MFX
+  session: -9.`: the oneVPL GPU runtime does not take gen 9.5. `apt-cache` in
+  `debian:trixie-20261027-slim`: no `libmfx1` (main, contrib, non-free), nor in trixie-backports
+  or sid; bookworm main has `libmfx1 22.5.4-1` (`Depends: libc6 (>= 2.34), libgcc-s1 (>= 3.0),
+  libstdc++6 (>= 12), libva2 (>= 2.9.0)`). With it installed, the dispatcher loads both
+  runtimes, drops `libmfx-gen` and uses `libmfxhw64.so.1.35`; `reframe encoders` in the
+  container then matches the bare-metal list, and `h265-qsv-1080p` encodes `multitrack.mkv`
+  (HEVC Main, 100 frames). The image grows from 699 to 735 MB. The container's user gets the
+  groups of `card1` and `renderD128` from the entrypoint, without `group_add`.
 
 ### Encoder definitions (C-6)
 
@@ -2888,7 +2984,8 @@ uv 0.13.5), with the image of `docker/Dockerfile` and no `/dev/dri` in any conta
   25.0.7-2+deb13u1, line 154), so `radeonsi_drv_video.so` in `mesa-va-drivers` has the H.264,
   HEVC and AV1 encoders. Debian's free `intel-media-va-driver` has only some encoders before
   Ice Lake (its package description); `intel-media-va-driver-non-free` has them all.
-  `libmfx-gen1.2` (25.1.4) is the oneVPL GPU runtime. `tzdata` comes with these packages.
+  `libmfx-gen1.2` (25.1.4) is the oneVPL GPU runtime (Tiger Lake and newer; for older Intel
+  GPUs see §QSV on Linux). `tzdata` comes with these packages.
 - **The BtbN shared build** needs only glibc and `libgcc_s` of the system (`ldd bin/ffmpeg`):
   libva is linked in, and finds Debian's drivers through `LIBVA_DRIVERS_PATH`, which tool
   discovery sets to `/usr/lib/x86_64-linux-gnu/dri`.

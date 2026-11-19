@@ -25,7 +25,9 @@ downloads it into `/data/tools/ffmpeg/` (see [Getting FFmpeg](user/ffmpeg.md#doc
 - on `linux/amd64` only, the GPU user-space drivers that a downloaded FFmpeg loads at run time,
   with Debian's libva:
   `mesa-va-drivers` (AMD and other Mesa VAAPI drivers), `intel-media-va-driver-non-free`
-  (Intel VAAPI) and `libmfx-gen1.2` (the oneVPL GPU runtime for Intel QSV). The NVIDIA driver
+  (Intel VAAPI), `libmfx-gen1.2` (the oneVPL GPU runtime for Intel QSV on Tiger Lake and
+  newer) and `libmfx1` (the Media SDK runtime for QSV on older Intel GPUs; Debian 13 has none,
+  so it comes from Debian 12). The NVIDIA driver
   comes from the host, through the NVIDIA Container Toolkit. The `linux/arm64` image has no GPU
   drivers: it has the software encoders only (see [GPU](#gpu));
 - in `/opt/reframe/notices/`: `THIRD_PARTY_NOTICES` (the licence texts, and at its end the
@@ -183,8 +185,8 @@ encodes run at the first start unless `encoders.hardware_tests` is off.
 
 | Host | Status |
 |------|--------|
-| AMD, VAAPI | To be verified on the owner's desktop ([decision 0059](decisions/0059-s6-docker-image-and-bare-metal.md)) |
-| Intel, VAAPI and QSV | Not verified: no such host yet ([decision 0043](decisions/0043-plan-review-before-m3.md) item 7) |
+| AMD, VAAPI | Verified on an RX 7600 ([decision 0059](decisions/0059-s6-docker-image-and-bare-metal.md)) |
+| Intel, VAAPI and QSV | Verified on a UHD 620, Kaby Lake ([decision 0099](decisions/0099-intel-qsv-on-linux.md)); Tiger Lake and newer not verified |
 | NVIDIA, NVENC | Not verified: no such host yet (0043 item 7) |
 
 ### Your own FFmpeg in Docker
@@ -241,7 +243,11 @@ where it counts as the bundled build. `reframe tools status` shows what is used.
 no other tool: it writes Matroska headers and estimates bit rates itself. For VAAPI and QSV,
 install your distribution's VAAPI driver and add your user to the `render` group; the build
 then uses your distribution's libva, and `reframe encoders` says when it is too old for the
-build. [Getting FFmpeg](user/ffmpeg.md) has the choices and the warnings for users.
+build. QSV also needs Intel's QSV runtime, a separate package on most distributions: the Media
+SDK runtime for GPUs before Tiger Lake (`intel-media-sdk` on Arch, `libmfx1` on Debian 12),
+the oneVPL GPU runtime for Tiger Lake and newer (`vpl-gpu-rt` on Arch, `libmfx-gen1.2` on
+Debian). Without it the QSV encoders show "No Intel QSV device or runtime" while VAAPI
+works. [Getting FFmpeg](user/ffmpeg.md) has the choices and the warnings for users.
 
 The web UI is not in the wheel. Build it and put it where the server can find it:
 

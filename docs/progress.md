@@ -29,7 +29,7 @@ hardware the owner does not have.
 | Area | Done | Not done |
 |---|---|---|
 | Core `C-0` to `C-21` | 21 / 22 | C-21 (FFmpeg builds, 0093) |
-| Server `S-0` to `S-8` | 8 / 9 | S-8 (FFmpeg builds API, 0093); S-6's Intel QSV and NVIDIA NVENC checks in Docker (wait for such a host) |
+| Server `S-0` to `S-8` | 8 / 9 | S-8 (FFmpeg builds API, 0093); S-6's NVIDIA NVENC check in Docker (waits for such a host; Intel QSV checked, [0099](decisions/0099-intel-qsv-on-linux.md)) |
 | Frontend `F-0` to `F-20` | 20 / 21 | F-20 (build picker, 0093) |
 | Desktop `D-0` to `D-10` | 9.5 / 11 | D-8 partial: no GitHub release made; D-10 (packages without FFmpeg, 0093) |
 | Quality `Q-x` (43 sub-steps) | about 40 / 43 | Q-2.4 (optional local samples suite) not started; Q-3 partial; Q-1.1 to Q-1.3 written but never run on GitHub |
@@ -45,8 +45,8 @@ are release work, where problems usually show up.
       **0 fail**, 16 partial, 3 not checkable (NVENC/QSV, Windows). The partials are gaps
       against the plan's wording; the largest is C-18 (a batch group does not detect the crop
       per file, so letterboxed episodes are encoded uncropped). The owner decides which to fix.
-- [ ] **Docker image published**: the image is built (S-6). Publishing it and the NVENC/QSV
-      check are open.
+- [ ] **Docker image published**: the image is built (S-6). Publishing it and the NVENC
+      check are open (Intel QSV checked on a UHD 620, 0099).
 - [ ] **Installers on a GitHub release**: AppImage, deb, rpm, NSIS and MSI build and pass
       their install tests. No release made; signing used a test certificate.
 - [ ] **Updater picks up a test release**: works against a local test release. A real
@@ -97,7 +97,7 @@ with `actionlint`. Expect a round of fixes on the first run.
 
 ## After v1 (does not block the release)
 
-- S-6's NVENC/QSV checks (need the hardware).
+- S-6's NVENC check in Docker (needs the hardware); QSV on Tiger Lake and newer Intel GPUs.
 - Q-2.4, the local samples suite (optional).
 - The Windows cold start on slow machines (known limit).
 - The roadmap's post-v1 list: Blu-ray/DVD folders, HandBrake preset import, HDR10+/Dolby
