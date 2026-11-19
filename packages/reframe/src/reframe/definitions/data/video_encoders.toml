@@ -830,8 +830,9 @@ choices = [
     { value = "4.0", label = "4.0", ffmpeg_value = "4" }, { value = "4.1", label = "4.1" },
     { value = "4.2", label = "4.2" }, { value = "5.0", label = "5.0", ffmpeg_value = "5" },
     { value = "5.1", label = "5.1" }, { value = "5.2", label = "5.2" },
-    { value = "6.0", label = "6.0", ffmpeg_value = "6" }, { value = "6.1", label = "6.1" },
-    { value = "6.2", label = "6.2" },
+    { value = "6.0", label = "6.0", ffmpeg_value = "6", help = "Some GPUs refuse it (an Intel UHD 620 does)." },
+    { value = "6.1", label = "6.1", help = "Some GPUs refuse it (an Intel UHD 620 does)." },
+    { value = "6.2", label = "6.2", help = "Some GPUs refuse it (an Intel UHD 620 does)." },
 ]
 
 [encoder.hevc_vaapi]

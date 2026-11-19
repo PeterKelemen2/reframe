@@ -1840,6 +1840,23 @@ def _option_test_value(option: EncoderOption) -> str:
 #: QSV options that are features of the GPU generation: an Intel UHD 620 refuses them.
 _QSV_GPU_FEATURES = frozenset({"low_power", "tile_cols", "tile_rows"})
 
+#: VAAPI values that an Intel UHD 620 (iHD) refuses and an AMD GPU takes: they may fail on an
+#: Intel GPU only. Its H.265 encoder takes the quality levels 1, 4 and 7 only.
+_INTEL_VAAPI_LIMITS = frozenset(
+    {
+        ("h264_vaapi", "levels=6.0@8"),
+        ("h264_vaapi", "levels=6.1@8"),
+        ("h264_vaapi", "levels=6.2@8"),
+        ("hevc_vaapi", "option compression_level"),
+    }
+)
+
+
+@cache
+def _render_node_vendor() -> str:
+    path = Path("/sys/class/drm/renderD128/device/vendor")
+    return path.read_text(encoding="utf-8").strip() if path.exists() else ""
+
 
 @pytest.mark.needs_gpu
 @pytest.mark.parametrize(
@@ -1887,7 +1904,11 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
     def run(job: tuple[str, list[str], int]) -> str | None:
         label, args, depth = job
         result = run_ffmpeg_capture([*_hw_args(enc, depth), *args, "-f", "null", "-"], timeout=60)
-        return f"{label}: {_fail_text(result)}" if result.returncode else None
+        if not result.returncode:
+            return None
+        if (encoder_id, label) in _INTEL_VAAPI_LIMITS and _render_node_vendor() == "0x8086":
+            return None
+        return f"{label}: {_fail_text(result)}"
 
     problems: list[str] = []
     for job in jobs:  # one at a time: the GPU sessions are limited

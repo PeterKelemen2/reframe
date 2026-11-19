@@ -3,7 +3,8 @@
 # `ffmpeg_arg` options are generic FFmpeg codec options (`-bf`, `-refs`, `-g`) that every
 # encoder accepts; `private_opt` options come from `ffmpeg -h encoder=<id>`
 # (testing/reframe_testing/fake_data/help_encoder/). AMF and VAAPI options were encoded on an
-# AMD RX 7600, and the options its driver refuses are not offered (testdata/README.md).
+# AMD RX 7600, and the options its driver refuses are not offered (testdata/README.md); values
+# that an Intel UHD 620 refuses stay offered, and the help says so.
 # QSV options were encoded on an Intel UHD 620 (Windows and Linux); one that GPU refuses or ignores
 # stays offered, since it is a feature of the GPU generation, and the help says so. NVENC
 # options are NOT verified on a GPU. Whether the GPU honours a value (B-frames on AMD H.265,
@@ -357,7 +358,7 @@ type = "int"
 min = 0
 max = 7
 step = 1
-help = "Driver quality/speed level (VAAPI has no presets). Its meaning depends on the driver; usually lower is slower and better."
+help = "Driver quality/speed level (VAAPI has no presets). Its meaning depends on the driver; usually lower is slower and better. An Intel UHD 620 takes only 1, 4 and 7 for H.265."
 mapping = { kind = "ffmpeg_arg", arg = "-compression_level" }
 default = { kind = "encoder", note = "the driver decides" }
 
