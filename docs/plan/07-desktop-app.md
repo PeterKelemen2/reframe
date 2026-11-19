@@ -91,7 +91,7 @@ Reasons:
 | Taskbar progress | `Window.setProgressBar` on Windows. Linux: the app's own Unity `LauncherEntry.Update` signal on the session bus, for launchers that support it (Tauri's needs libunity; [decision 0069](../decisions/0069-m5-desktop-shell.md)) |
 | Single instance + "Open with Reframe" | `tauri-plugin-single-instance`. Paths from argv are forwarded to the running window and probed |
 | File associations (optional) | NSIS registry entries. Linux `.desktop` `MimeType=` |
-| Reveal in folder, open externally | Reveal: `tauri-plugin-opener` (D-Bus `FileManager1` on Linux). Open externally: the shell's `open_external` command (the preview clip links only); in an AppImage it starts the opener's launchers itself, with the user's environment and folder ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) "Fix round — FA") |
+| Reveal in folder, open externally | Reveal: `tauri-plugin-opener` (D-Bus `FileManager1` on Linux). Open externally: the shell's `open_external` command (the preview clip links only), which opens the clip's cached file (`GET /api/preview/clips/{id}/file`, desktop mode only), else the link ([decision 0100](../decisions/0100-desktop-app-with-intel-qsv-on-linux.md)); in an AppImage it starts the opener's launchers itself, with the user's environment and folder ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) "Fix round — FA") |
 | Remember window size/position | `tauri-plugin-window-state` |
 | Detached preview window | A second webview window on route `/preview/:sourceId`, same backend |
 | Tray (optional) | Queue progress, pause all, show, quit |
@@ -104,12 +104,20 @@ Webview codec support differs: WebView2 plays H.264 out of the box, but HEVC and
 Windows extensions. WebKitGTK depends on the GStreamer plugins that are installed. Because of
 this:
 
-- The preview clip plays in-app when the webview can decode it (checked with
-  `HTMLMediaElement.canPlayType`).
+- The preview clip plays in-app when the webview can decode it: the `<video>` decides, and its
+  error shows the frame compare instead (`canPlayType` is not reliable,
+  [decision 0067](../decisions/0067-m8-picture.md) item 4). A webview without its media
+  framework is not asked: WebKitGTK aborts its web process instead of reporting an error when
+  GStreamer lacks the player's elements, as in the AppImage, whose AppRun points GStreamer at
+  an empty plugin folder. The shell's `webview_plays_video` says so, and the preview shows the
+  frame compare at once ([decision 0100](../decisions/0100-desktop-app-with-intel-qsv-on-linux.md)).
 - **Frame compare works for every codec.** FFmpeg decodes frames from the encoded preview clip
   to PNG, and the split view shows them next to the source frame. This is the main quality
-  check and does not depend on the webview.
-- **Open in external player** (mpv, VLC, or the system default) is always available.
+  check and does not depend on the webview. The clip starts on a source frame, so its frame at
+  `t` is the source frame at `start + t`.
+- **Open in external player** is always available. The desktop app opens the cached clip file,
+  so the system's video player opens it (a link would open the browser); the web app opens the
+  signed link.
 
 ## Tool bundling
 
@@ -288,6 +296,13 @@ Done when: the Linux packages and the Windows installers contain no `ffmpeg`/`ff
 binaries; the smoke test passes on Linux; an installed .deb in an Ubuntu 22.04 container
 downloads (or installs from a file) the `default` build and detects VAAPI with the copied libva.
 
+Intel QSV (2026-11-19, a UHD 620 under CachyOS,
+[decision 0100](../decisions/0100-desktop-app-with-intel-qsv-on-linux.md)): the AppImage's
+downloaded build with the copied libva, and the CLI's build with the system's, both use QSV and
+VAAPI on iHD 26.3.5 and Media SDK 23.2.2; the .deb in an Ubuntu 22.04 container does on
+Ubuntu's iHD 22.3.1. The AppImage shows no taskbar progress without an installed
+`Reframe.desktop`.
+
 ## Risks
 
 | Risk | Mitigation |
@@ -295,6 +310,7 @@ downloads (or installs from a file) the `default` build and detects VAAPI with t
 | Orphaned FFmpeg or sidecar after a crash | Job Object (Windows), PDEATHSIG + parent watch (Linux). Tested in D-0 and D-9 |
 | Antivirus false positives on the PyInstaller binary (Windows) | Onedir build (not onefile), code signing, submit to vendors if needed |
 | WebKitGTK differences (CSS, performance, codecs) | D-0 spike, Playwright WebKit project in CI, frame compare that does not need webview codecs |
+| The AppImage's WebKitGTK has no GStreamer plugins: a `<video>` aborts its web process | No `<video>` where the shell's `webview_plays_video` is false; frame compare and the external player instead. Bundling the plugins is open ([decision 0100](../decisions/0100-desktop-app-with-intel-qsv-on-linux.md)) |
 | The bundled FFmpeg cannot use VAAPI/QSV on some Linux hosts (driver path or libva mismatch) | D-7 tests on several distros. `LIBVA_DRIVERS_PATH` handling in `C-1`. Capability reasons in Settings name the cause. Users can point the override to their distro FFmpeg |
 | A fresh install needs the FFmpeg archive (the packages contain none) | Download at the first run, or install from a file; the user's own FFmpeg path. BtbN keeps a month-end build for two years: re-pin (or mirror) before then ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)) |
 | Startup time of the Python sidecar | Onedir build, lazy imports, the UI shows a skeleton while it connects |

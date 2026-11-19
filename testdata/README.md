@@ -847,6 +847,25 @@ and Arch's `/usr/bin/ffmpeg` n9.0.2; the three gave the same results throughout.
   container then matches the bare-metal list, and `h265-qsv-1080p` encodes `multitrack.mkv`
   (HEVC Main, 100 frames). The image grows from 699 to 735 MB. The container's user gets the
   groups of `card1` and `renderD128` from the entrypoint, without `group_add`.
+- **The desktop app** (2026-11-19, the AppImage and .deb of `build.sh`, decision
+  [0100](../docs/decisions/0100-desktop-app-with-intel-qsv-on-linux.md)): a build downloaded
+  through the app has the packaged libva (built on Ubuntu 22.04) in its `lib/`; its ffmpeg maps
+  that `libva.so.2` and `libva-drm.so.2`, `/usr/lib/dri/iHD_drv_video.so`,
+  `libigdgmm.so.12.10.0`, `/usr/lib/libmfxhw64.so.1.35` and the system's `libva-x11.so.2`
+  (loaded by the Media SDK runtime), with `LIBVA_DRIVERS_PATH=/usr/lib64/dri:/usr/lib/dri` and
+  no AppImage paths. The CLI's build maps the system `libva.so.2.2400.0` instead. Both give the
+  encoder list above, and QSV and VAAPI encode (HDR10 kept). The .deb in `ubuntu:22.04` with
+  `--device /dev/dri`, intel-media-va-driver-non-free 22.3.1, libmfx1 22.3.0 and libva 2.14:
+  `LD_DEBUG=libs` shows the packaged libva, Ubuntu's iHD and `libmfxhw64.so.1.35`, and
+  `h265-qsv-1080p` encodes. A 1080p25 `h265-qsv-1080p` encode runs at about 150 fps and uses
+  about 3.3 of the 8 threads (decoding, scaling and the format conversion are on the CPU).
+- **The AppImage's GStreamer**: the image carries GStreamer 1.20.3 core libraries and no
+  plugins; AppRun sets `GST_PLUGIN_SYSTEM_PATH_1_0=$APPDIR/usr/lib/gstreamer-1.0:` (no such
+  folder). A `<video>` in its window: `no such element factory "appsink"!`, `"appsrc"`,
+  `"autoaudiosink"`, `GStreamer element autoaudiosink not found. Please install it`,
+  `g_signal_connect_data: assertion 'G_TYPE_CHECK_INSTANCE (instance)' failed`, then
+  WebKitWebProcess ends with SIGABRT in `libwebkit2gtk-4.1.so.0` (no media error reaches the
+  page).
 
 ### Encoder definitions (C-6)
 
@@ -1903,6 +1922,15 @@ based on these. `packages/reframe/tests/preview/` asserts them (`test_frames.py`
 **Fast seek gives the frame of a slow seek.** `-ss T` before `-i` decodes from the keyframe
 before T and outputs the first frame at or after T: on `letterbox.mkv` at 0.2, 1.52, 2.0 and
 3.96 s the PNG is pixel-identical to `-i … -ss T` (which decodes everything before T).
+
+**A clip cut between two frames starts late.** (2026-11-19, the pinned n9.0.2 build.) At 25 fps,
+`-ss 0.1 -i hdr10.mkv … -c:v hevc_qsv` (and `libx265`) keeps the frame at 0.12, which gets the
+timestamp 0.02; the encoder rounds it to its 1/25 s time base, and the clip's `start_time` is
+0.04. With `-ss 0.12` or `-ss 0.2` it is 0. `-ss` counts from the file's `start_time` (`-ss 1.01`
+gives the same frame of `letterbox.mkv` and of a copy with `-output_ts_offset 10`), but
+ffprobe's `-read_intervals` takes timestamps (`1.01%+0.2` on that copy starts at its first
+packet, 10.0). `test_clip.py::test_a_clip_asked_between_two_frames_starts_on_the_next_one`
+asserts the result.
 
 **Past the last frame FFmpeg writes nothing and exits 0**, with nothing on stderr at
 `-loglevel error`:
