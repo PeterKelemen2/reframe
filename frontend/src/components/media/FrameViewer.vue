@@ -67,6 +67,30 @@ function failed(frame: FrameLink): void {
   if (!preview.imageFailed(frame)) broken.value = frame.url
 }
 
+// The next output frame takes the last one's place while it renders, so the page does not jump.
+const lastOutput = ref<FrameLink | null>(null)
+watch(
+  () => preview.output,
+  (frame) => {
+    if (frame !== null) lastOutput.value = frame
+  },
+)
+watch(
+  () => preview.sourceId,
+  () => {
+    lastOutput.value = null
+  },
+)
+const pendingBox = computed(() => {
+  const frame = lastOutput.value ?? preview.current
+  if (frame === null) return undefined
+  const pictures = preview.viewMode === 'side' ? 2 : 1
+  return {
+    width: boxWidth(frame, preview.zoom, pictures),
+    aspectRatio: `${frame.width * pictures} / ${frame.height}`,
+  }
+})
+
 const hasFrames = computed(() => preview.sourceId !== null && !preview.noVideo)
 
 // The button goes away while the frames are made: the stage, where they show, takes the focus.
@@ -216,7 +240,8 @@ const notes = computed(() => [
         </div>
         <p
           v-else-if="preview.output === null"
-          class="frame-viewer__state"
+          class="frame-viewer__state frame-viewer__pending"
+          :style="pendingBox"
           role="status"
           data-state="rendering"
           aria-busy="true"
@@ -349,7 +374,16 @@ const notes = computed(() => [
   outline-offset: 2px;
 }
 
+.frame-viewer__pending {
+  place-content: center;
+  justify-items: center;
+  max-width: none;
+  border-radius: var(--rf-radius-sm);
+  background: var(--rf-color-surface-hover);
+}
+
 .frame-viewer__picture,
+.frame-viewer__pending,
 .frame-viewer__stage > .frame-viewer__image,
 .frame-viewer__stage > .split-compare {
   margin-inline: auto;
