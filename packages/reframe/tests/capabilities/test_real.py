@@ -183,6 +183,24 @@ async def test_vaapi_and_amf_on_an_amd_gpu(hardware_snapshot: CapabilitySnapshot
 
 
 @pytest.mark.needs_gpu
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="VAAPI is Linux only")
+async def test_qsv_and_vaapi_on_an_intel_gpu(hardware_snapshot: CapabilitySnapshot) -> None:
+    """Needs the QSV runtime installed: the media driver alone gives VAAPI only."""
+    if "0x8086" not in pci_vendors() or not exists("/dev/dri/renderD128"):
+        pytest.skip("no Intel GPU")
+    for encoder in ("h264_qsv", "hevc_qsv", "h264_vaapi", "hevc_vaapi"):
+        assert hardware_snapshot.status(encoder).state is EncoderState.AVAILABLE, encoder
+    assert hardware_snapshot.status("hevc_qsv").supports_10bit is True
+    assert hardware_snapshot.status("h264_qsv").supports_10bit is False
+    av1 = hardware_snapshot.status("av1_qsv")
+    if av1.state is not EncoderState.AVAILABLE:
+        assert (av1.state, av1.reason) == (
+            EncoderState.UNAVAILABLE,
+            "This Intel GPU cannot encode AV1",
+        ), av1
+
+
+@pytest.mark.needs_gpu
 async def test_the_facade_caches_the_real_result(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
