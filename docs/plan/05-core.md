@@ -220,7 +220,7 @@ and returns statuses, never exceptions.
       found"; `Driver does not support the required nvenc API version` → "NVIDIA driver too
       old"; `No VA display found for device X` → "No VAAPI device (X)";
       `Failed to initialise VAAPI connection` → "VAAPI driver failed to start";
-      `Error creating a MFX session` → "No Intel QSV device"; `DLL libamfrt64.so.1 failed
+      `Error creating a MFX session` → "No Intel QSV device or runtime"; `DLL libamfrt64.so.1 failed
       to open` → "AMD AMF runtime not found". A known text gives `unavailable`. Any other
       failure gives `error` with the most informative line: the first line that the encoder
       logs (`[hevc_nvenc @ …]`), else the first line of a hardware device (`[VAAPI @ …]`),

@@ -585,7 +585,7 @@ command and the captures were not made again):
 |---------|-----------|-----------------|--------------------|
 | `detect_h264_vaapi_ok`, `detect_hevc_vaapi_10bit_ok`, `detect_hevc_amf_ok`, `detect_hevc_amf_10bit_ok` | 0 | — | available |
 | `detect_hevc_nvenc_no_driver` | 255 | `[hevc_nvenc @ 0x…] Cannot load libcuda.so.1` | NVIDIA driver not found |
-| `detect_hevc_qsv_no_device` | 171 | `[hevc_qsv @ 0x…] Error creating a MFX session: -9.` | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `detect_hevc_qsv_no_device` | 171 | `[hevc_qsv @ 0x…] Error creating a MFX session: -9.` | No Intel QSV device or runtime (needs an Intel GPU, its media driver and its QSV runtime) |
 | `detect_h264_vaapi_bad_device` (`renderD999`) | 234 | `[VAAPI @ 0x…] No VA display found for device /dev/dri/renderD999.` | No VAAPI device (/dev/dri/renderD999) |
 | `detect_h264_vaapi_no_driver` (`LIBVA_DRIVER_NAME=reframe_nonexistent`) | 251 | `[VAAPI @ 0x…] Failed to initialise VAAPI connection: -1 (unknown libva error).` | VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error) |
 | `detect_hevc_amf_no_runtime` | 171 | `[AMF @ 0x…] DLL libamfrt64.so.1 failed to open`, then `[hevc_amf @ 0x…] Failed to create  hardware device context (AMF) : Unknown error occurred` | AMD AMF runtime not found (libamfrt64.so.1) |
@@ -651,7 +651,7 @@ usable):
 |---------|-------|--------|--------|--------|
 | `libx264`, `libx265`, `libsvtav1`, `libvpx-vp9` | available | yes | – | |
 | `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` | unavailable | – | – | NVIDIA driver not found |
-| `h264_qsv`, `hevc_qsv`, `av1_qsv` | unavailable | – | – | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `h264_qsv`, `hevc_qsv`, `av1_qsv` | unavailable | – | – | No Intel QSV device or runtime (needs an Intel GPU, its media driver and its QSV runtime) |
 | `h264_amf` | available | no (no 10-bit format in the definition) | – | |
 | `hevc_amf`, `av1_amf` | available | yes | – | |
 | `h264_vaapi` | available | no (no 10-bit format in the definition) | `/dev/dri/renderD128` | |

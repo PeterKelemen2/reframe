@@ -126,7 +126,7 @@ async def test_driver_errors_are_mapped(fake_tools: ft.FakeTools, fake_ffmpeg: T
     assert row("av1_nvenc") == (AVAILABLE, None)  # no rule: the fake's test encode works
     assert row("hevc_qsv") == (
         UNAVAILABLE,
-        "No Intel QSV device (needs an Intel GPU with its media driver)",
+        "No Intel QSV device or runtime (needs an Intel GPU, its media driver and its QSV runtime)",
     )
     assert row("h264_vaapi") == (
         UNAVAILABLE,

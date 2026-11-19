@@ -145,7 +145,9 @@ def _library_not_loaded(match: re.Match[str], _ctx: TestContext, _texts: Sequenc
     return f"{reason} ({error})" if error else reason
 
 
-_NO_QSV = "No Intel QSV device (needs an Intel GPU with its media driver)"
+_NO_QSV = (
+    "No Intel QSV device or runtime (needs an Intel GPU, its media driver and its QSV runtime)"
+)
 _NVENC = frozenset({"nvenc"})
 
 #: Known texts, most specific first. The first rule that matches any line wins.

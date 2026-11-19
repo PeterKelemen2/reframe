@@ -53,7 +53,8 @@ def ctx(encoder: str, device: str | None = None) -> TestContext:
             "hevc_qsv",
             None,
             UNAVAILABLE,
-            "No Intel QSV device (needs an Intel GPU with its media driver)",
+            "No Intel QSV device or runtime "
+            "(needs an Intel GPU, its media driver and its QSV runtime)",
             "[hevc_qsv] Error creating a MFX session: -9.",
         ),
         (
@@ -189,7 +190,8 @@ def tagged(encoder: str, *lines: str) -> str:
         (
             "hevc_qsv",
             tagged("hevc_qsv", "Error initializing an MFX session"),
-            "No Intel QSV device (needs an Intel GPU with its media driver)",
+            "No Intel QSV device or runtime "
+            "(needs an Intel GPU, its media driver and its QSV runtime)",
         ),
         (
             "av1_qsv",
