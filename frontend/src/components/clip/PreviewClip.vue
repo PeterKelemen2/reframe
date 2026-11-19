@@ -49,6 +49,12 @@ const linkError = ref<string | null>(null)
 /** Why the player could not play the clip; the frame compare shows instead. */
 const playError = ref<string | null>(null)
 const comparing = ref(false)
+/** `null` until the platform answers; a `<video>` is made only once it says `true`. */
+const playable = ref<boolean | null>(null)
+async function askPlayable(): Promise<void> {
+  playable.value = await platform.canPlayVideo()
+}
+void askPlayable()
 // Cancel came before the server named the task.
 const stopAsked = ref(false)
 // A clip link works for an hour: the first failure asks for a new one before giving up.
@@ -209,6 +215,12 @@ function openExternal(): void {
   if (link.value !== null) void platform.openExternal(link.value)
 }
 
+watch([made, playable], ([clip, value]) => {
+  if (clip === null || value !== false) return
+  playError.value = t('clip.playback.noPlayer')
+  comparing.value = true
+})
+
 // Another file drops the clip and stops an encode of the last one.
 watch(
   () => preview.sourceId,
@@ -339,7 +351,7 @@ watch(running, async (now) => {
       </div>
       <ClipCompare v-if="comparing" :clip="made.clip" :source-id="made.sourceId" :job="made.job" />
       <video
-        v-else-if="link !== null"
+        v-else-if="link !== null && playable === true"
         class="preview-clip__video"
         :src="link"
         :aria-label="t('clip.player')"

@@ -291,6 +291,17 @@ describe('the other native integrations', () => {
     expect(refused).toEqual([])
   })
 
+  it('asks the shell whether the window can play video, and assumes it can when the ask fails', async () => {
+    const platform = shell()
+    answers.webview_plays_video = () => false
+    expect(await platform.canPlayVideo()).toBe(false)
+    answers.webview_plays_video = () => true
+    expect(await platform.canPlayVideo()).toBe(true)
+    answers.webview_plays_video = () => Promise.reject('not allowed')
+    expect(await platform.canPlayVideo()).toBe(true)
+    expect(console.error).toHaveBeenCalled()
+  })
+
   it('puts the progress on the taskbar, and a failure there breaks nothing', async () => {
     const platform = shell()
     platform.setTaskbarProgress(0.42, '42%')

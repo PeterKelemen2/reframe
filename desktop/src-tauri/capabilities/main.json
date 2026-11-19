@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The main window: the shell's commands and events, native dialogs, drag-and-drop, notifications, reveal in the file manager, and the preview clip in an external player.",
+  "description": "The main window: the shell's commands and events, native dialogs, drag-and-drop, notifications, reveal in the file manager, the preview clip in an external player, and whether the window can play it.",
   "windows": ["main"],
   "permissions": [
     "allow-backend-info",
@@ -22,6 +22,7 @@
     "notification:allow-request-permission",
     "notification:allow-notify",
     "opener:allow-reveal-item-in-dir",
-    "allow-open-external"
+    "allow-open-external",
+    "allow-webview-plays-video"
   ]
 }

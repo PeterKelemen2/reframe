@@ -9,6 +9,7 @@ mod backend;
 mod comfort;
 mod desktop_settings;
 mod external;
+mod media;
 mod open_paths;
 mod progress;
 mod quit;
@@ -47,6 +48,7 @@ fn main() {
             desktop_settings::desktop_settings,
             desktop_settings::set_desktop_settings,
             external::open_external,
+            media::webview_plays_video,
         ])
         .on_window_event(quit::on_window_event)
         .setup(|app| {

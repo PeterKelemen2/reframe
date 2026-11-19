@@ -13,6 +13,11 @@ export interface Platform {
   /** Web: `null` (the action is hidden). */
   revealInFolder(path: string): Promise<void> | null
   openExternal(target: string): Promise<void>
+  /**
+   * `false`: a `<video>` would crash this window instead of reporting an error (a webview
+   * without its media framework). Web: `true`.
+   */
+  canPlayVideo(): Promise<boolean>
   /** Web: the Notification API. */
   notify(title: string, body: string): Promise<void>
   /**

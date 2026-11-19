@@ -302,6 +302,18 @@ describe('the preview clip', () => {
     expect(video(wrapper).exists()).toBe(true)
   })
 
+  it('shows the frame compare and no player when the window cannot play video', async () => {
+    vi.spyOn(platform, 'canPlayVideo').mockResolvedValue(false)
+    const { wrapper } = await encoded()
+    expect(video(wrapper).exists()).toBe(false)
+    expect(wrapper.find('[data-field="clip-play-error"]').text()).toContain(
+      'this window has no video player',
+    )
+    expect(wrapper.find('[data-field="clip-compare"]').exists()).toBe(true)
+    expect(wrapper.find('[data-action="play-clip"]').exists()).toBe(false)
+    expect(wrapper.find('[data-action="open-external"]').attributes('disabled')).toBeUndefined()
+  })
+
   it('switches between the player and the frame compare', async () => {
     const { wrapper } = await encoded()
     await wrapper.find('[data-action="compare-frames"]').trigger('click')
