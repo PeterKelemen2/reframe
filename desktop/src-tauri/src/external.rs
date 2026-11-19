@@ -1,9 +1,13 @@
-//! Opens a preview clip in the user's player. Inside an AppImage the opener plugin's launcher
-//! would inherit the image's environment, whose libraries break the user's programs, so there
-//! the launcher is started here with the user's environment.
+//! Opens a preview clip in the user's player: its cached file, since the system gives a URL to
+//! the browser. Inside an AppImage the opener plugin's launcher would inherit the image's
+//! environment, whose libraries break the user's programs, so there the launcher is started
+//! here with the user's environment.
 
 #[cfg(target_os = "linux")]
 use std::ffi::OsString;
+use std::path::PathBuf;
+
+use crate::backend::Backend;
 
 /// Only the server's preview clips may be opened.
 fn is_preview_clip(url: &str) -> bool {
@@ -14,20 +18,57 @@ fn is_preview_clip(url: &str) -> bool {
     })
 }
 
+/// The id of a clip link (`/api/preview/clips/<32 hex digits>`).
+fn clip_id(url: &str) -> Option<String> {
+    let url = tauri::Url::parse(url).ok()?;
+    let id = url.path().strip_prefix("/api/preview/clips/")?;
+    let hex = |byte: u8| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte);
+    (id.len() == 32 && id.bytes().all(hex)).then(|| id.to_owned())
+}
+
+/// The file in the server's answer to `GET /api/preview/clips/<id>/file`.
+fn clip_file_of(status: u16, body: &[u8]) -> Option<PathBuf> {
+    #[derive(serde::Deserialize)]
+    struct ClipFile {
+        path: PathBuf,
+    }
+    if status != 200 {
+        return None;
+    }
+    let file: ClipFile = serde_json::from_slice(body).ok()?;
+    file.path.is_absolute().then_some(file.path)
+}
+
+/// `None` from a web-mode owner, which does not give the file.
+async fn clip_file(backend: &Backend, url: &str) -> Option<PathBuf> {
+    let id = clip_id(url)?;
+    let path = format!("/api/preview/clips/{id}/file");
+    let (status, body) = backend.send("GET", &path).await.ok()?;
+    clip_file_of(status, &body).filter(|file| file.is_file())
+}
+
 #[tauri::command]
-pub async fn open_external(url: String) -> Result<(), String> {
+pub async fn open_external(url: String, backend: tauri::State<'_, Backend>) -> Result<(), String> {
     if !is_preview_clip(&url) {
         return Err(format!("Not a preview clip: {url}"));
     }
+    let file = clip_file(&backend, &url).await;
     #[cfg(target_os = "linux")]
     if let Some((env, folder)) = appimage_user_side() {
-        let commands = open::commands(&url);
+        let commands = match &file {
+            Some(file) => open::commands(file),
+            None => open::commands(&url),
+        };
         return tauri::async_runtime::spawn_blocking(move || launch(commands, &env, &folder))
             .await
             .map_err(|error| error.to_string())?
             .map_err(|error| error.to_string());
     }
-    tauri_plugin_opener::open_url(url, None::<&str>).map_err(|error| error.to_string())
+    match file {
+        Some(file) => tauri_plugin_opener::open_path(file, None::<&str>),
+        None => tauri_plugin_opener::open_url(url, None::<&str>),
+    }
+    .map_err(|error| error.to_string())
 }
 
 /// The user's environment and folder; `None` outside an AppImage. The app's own working folder
@@ -128,6 +169,36 @@ mod tests {
         ] {
             assert!(!is_preview_clip(url), "{url}");
         }
+    }
+
+    #[test]
+    fn the_clip_id_is_the_last_part_of_a_clip_link() {
+        let id = "0123456789abcdef0123456789abcdef";
+        let link = format!("http://127.0.0.1:8731/api/preview/clips/{id}?exp=1&sig=x");
+        assert_eq!(clip_id(&link), Some(id.to_owned()));
+        for url in [
+            "http://127.0.0.1:8731/api/preview/clips/c1",
+            &format!("http://127.0.0.1:8731/api/preview/clips/{id}/frames"),
+            "http://127.0.0.1:8731/api/preview/clips/0123456789ABCDEF0123456789ABCDEF",
+        ] {
+            assert_eq!(clip_id(url), None, "{url}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_clip_file_is_the_servers_absolute_path() {
+        let ok = br#"{"path": "/home/u/.cache/reframe/clips/c.mkv"}"#;
+        assert_eq!(
+            clip_file_of(200, ok),
+            Some(std::path::PathBuf::from(
+                "/home/u/.cache/reframe/clips/c.mkv"
+            ))
+        );
+        let web = br#"{"code": "preview.no_clip_file"}"#;
+        assert_eq!(clip_file_of(404, web), None);
+        assert_eq!(clip_file_of(200, b"not json"), None);
+        assert_eq!(clip_file_of(200, br#"{"path": "clips/c.mkv"}"#), None);
     }
 
     #[cfg(target_os = "linux")]

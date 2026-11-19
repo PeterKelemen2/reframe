@@ -18,7 +18,7 @@ from reframe.preview.cache import PreviewCache
 from reframe.tasks import TaskContext
 from reframe_server.sources import source_id
 from reframe_testing import fake_tools as ft
-from reframe_testing.server import PROBE_RULE, Api
+from reframe_testing.server import PROBE_RULE, Api, ApiFactory
 from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
@@ -251,6 +251,30 @@ async def test_frames_of_a_clip_not_in_the_cache_is_404(api: Api) -> None:
 async def test_the_link_of_a_clip_not_in_the_cache_is_404(api: Api) -> None:
     response = await api.client.get(f"/api/preview/clips/{'a' * 32}/link")
     assert (response.status_code, response.json()["code"]) == (404, "preview.unknown_clip")
+
+
+def _cached_clip(api: Api) -> Path:
+    clip = PreviewCache(api.reframe.cache_dir).clip("c" * 32, ".mkv")
+    clip.parent.mkdir(parents=True, exist_ok=True)
+    clip.write_bytes(b"x" * 100)
+    return clip
+
+
+async def test_the_desktop_app_gets_the_file_of_a_clip(make_api: ApiFactory) -> None:
+    async with make_api(mode="desktop") as api:
+        clip = _cached_clip(api)
+        response = await api.client.get(f"/api/preview/clips/{'c' * 32}/file")
+        assert response.status_code == 200, response.text
+        assert Path(response.json()["path"]) == clip
+        missing = await api.client.get(f"/api/preview/clips/{'a' * 32}/file")
+        assert (missing.status_code, missing.json()["code"]) == (404, "preview.unknown_clip")
+
+
+async def test_a_web_client_gets_no_file_of_a_clip(api: Api) -> None:
+    clip = _cached_clip(api)
+    response = await api.client.get(f"/api/preview/clips/{'c' * 32}/file")
+    assert (response.status_code, response.json()["code"]) == (404, "preview.no_clip_file")
+    assert str(clip) not in response.text
 
 
 async def test_cache_size_and_clear(api: Api) -> None:

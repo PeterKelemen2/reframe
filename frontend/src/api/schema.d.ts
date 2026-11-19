@@ -650,6 +650,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/preview/clips/{clip_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Clip Path
+         * @description The file of a cached clip, desktop mode only: a player given the clip's URL would be the
+         *     browser. Web mode: ``404 preview.no_clip_file`` (the file is on the server's computer).
+         */
+        get: operations["preview_clip_path"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/preview/clips/{clip_id}/frames": {
         parameters: {
             query?: never;
@@ -2868,6 +2889,14 @@ export interface components {
          *     an ``AuthMessage``.
          */
         ClientMessage: components["schemas"]["AuthMessage"] | components["schemas"]["DetachMessage"];
+        /** ClipFile */
+        ClipFile: {
+            /**
+             * Path
+             * @description The cached clip file, for the desktop app to open in the user's player.
+             */
+            path: string;
+        };
         /** ClipFramesRequest */
         ClipFramesRequest: {
             /**
@@ -9159,6 +9188,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MediaLink"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    preview_clip_path: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClipFile"];
                 };
             };
             /** @description An expected failure */
