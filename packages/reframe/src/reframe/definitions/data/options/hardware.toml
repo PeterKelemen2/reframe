@@ -4,7 +4,7 @@
 # encoder accepts; `private_opt` options come from `ffmpeg -h encoder=<id>`
 # (testing/reframe_testing/fake_data/help_encoder/). AMF and VAAPI options were encoded on an
 # AMD RX 7600, and the options its driver refuses are not offered (testdata/README.md).
-# QSV options were encoded on an Intel UHD 620 (Windows); one that GPU refuses or ignores
+# QSV options were encoded on an Intel UHD 620 (Windows and Linux); one that GPU refuses or ignores
 # stays offered, since it is a feature of the GPU generation, and the help says so. NVENC
 # options are NOT verified on a GPU. Whether the GPU honours a value (B-frames on AMD H.265,
 # for example) is up to the driver.
@@ -220,7 +220,7 @@ min = 0
 max = 100
 step = 1
 unit = "frames"
-help = "Frames analysed ahead (needs extended rate control, at a bitrate)."
+help = "Frames analysed ahead (needs extended rate control, at a bitrate). An Intel UHD 620 ignores it on Linux."
 mapping = { kind = "private_opt", name = "look_ahead_depth" }
 requires = [{ field = "rate_control", value = "bitrate" }, { field = "option:extbrc", value = true }]
 default = { kind = "encoder", note = "the driver decides" }
@@ -643,7 +643,7 @@ key = "low_power"
 label = "Low-power mode"
 category = "Performance"
 type = "bool"
-help = "Uses the fixed-function (VDENC) encoder: faster and more efficient, with fewer features on some GPUs. Not every GPU has it: an Intel UHD 620 refuses it for H.265, and for H.264 at a constant quality."
+help = "Uses the fixed-function (VDENC) encoder: faster and more efficient, with fewer features on some GPUs. Not every GPU has it: an Intel UHD 620 refuses it for H.265, and for H.264 at a constant quality (on Linux also at a bitrate)."
 mapping = { kind = "private_opt", name = "low_power" }
 default = { kind = "encoder", note = "the driver decides" }
 
