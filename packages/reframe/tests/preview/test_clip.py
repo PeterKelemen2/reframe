@@ -236,6 +236,36 @@ async def test_the_encoded_frames_are_the_output_frames(
         assert rgb_pixels(a.path) == rgb_pixels(b.path), a.timestamp
 
 
+async def test_a_clip_asked_between_two_frames_starts_on_the_next_one(
+    tmp_path: Path, fixture_media: Media
+) -> None:
+    """At 25 fps 1.01 s is between the frames at 1.00 and 1.04: an encoder would round the first
+    frame's timestamp, and the clip's frames would no longer be the output frames at start + t."""
+    src = fixture_media("letterbox")
+    env = make_env(tmp_path / "cache")
+    job = lossless(src)
+    result = await clip(env, job, start=1.01, seconds=1.0)
+    assert result.start == pytest.approx(1.04)
+    assert float(probe(result.path)["format"]["start_time"]) == pytest.approx(0.0)
+    times = [0.03, 0.25, 0.51, 0.77]
+    done, clip_frames = await env.finish(
+        start_frames(env.ctx, result.path, count=None, timestamps=times, job=None)
+    )
+    assert done.state is TaskState.DONE, done.error
+    done, job_frames = await env.finish(
+        start_frames(
+            env.ctx, src, count=None, timestamps=[result.start + t for t in times], job=job
+        )
+    )
+    assert done.state is TaskState.DONE, done.error
+    assert isinstance(clip_frames, FrameSet)
+    assert isinstance(job_frames, FrameSet)
+    encoded = [f for f in clip_frames.frames if f.kind == "source"]
+    rendered = [f for f in job_frames.frames if f.kind == "output"]
+    for a, b in zip(encoded, rendered, strict=True):
+        assert rgb_pixels(a.path) == rgb_pixels(b.path), a.timestamp
+
+
 async def test_the_clip_runs_to_the_end(tmp_path: Path, fixture_media: Media) -> None:
     env = make_env(tmp_path / "cache")
     result = await clip(env, lossless(fixture_media("letterbox")), start=3.0, seconds=60.0)

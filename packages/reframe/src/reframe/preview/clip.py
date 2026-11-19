@@ -3,14 +3,16 @@
 The clip is a copy of the job with the range ``start … start + seconds`` (to the end when that
 is past it) and no in-place edit, so its output goes to the cache and never to the source.
 The clip id hashes the source version, the plan and the tool builds: the same request gives
-the cached clip at once. The clip's timeline starts at 0: its frame at ``t`` is the source
-frame at ``start + t``.
+the cached clip at once. The clip starts on the first video frame at or after the asked
+start, which ``PreviewClip.start`` gives; its timeline starts at 0: its frame at ``t`` is the
+source frame at ``start + t``.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import math
 import os
 import time
@@ -31,6 +33,7 @@ from reframe.models import (
     Measurement,
     MediaSource,
     TimeRange,
+    ToolInfo,
     ToolSet,
 )
 from reframe.models.issues import Severity, ValidationIssue
@@ -42,7 +45,7 @@ from reframe.queue import loudnorm
 from reframe.queue.files import write_plan_files
 from reframe.queue.progress import ProgressParser, ProgressTracker
 from reframe.tasks import TaskContext
-from reframe.tools import run_streaming
+from reframe.tools import CancelToken, run, run_streaming
 from reframe.validation import LocalFileSystem, validate
 
 __all__ = ["make_clip"]
@@ -50,6 +53,39 @@ __all__ = ["make_clip"]
 #: The output name used to compute a clip's id (the id cannot depend on itself).
 _PLACEHOLDER = "0" * 32
 _STDERR_LINES = 200
+#: Seconds of packets read after the asked start to find the first frame there.
+_FRAME_WINDOW = 1.0
+_PROBE_TIMEOUT = 30.0
+
+
+async def _first_frame_at(
+    ffprobe: ToolInfo, source: MediaSource, start: float, cancel: CancelToken
+) -> float:
+    """The time of the first video frame at or after ``start`` (the frame that ``-ss start``
+    keeps), in seconds from the file's start as ``-ss`` counts them; ``start`` when it cannot be
+    read. An encoder rounds a first timestamp that is off its frame grid, which would shift the
+    whole clip by part of a frame."""
+    if not ffprobe.usable or ffprobe.path is None:
+        return start
+    offset = source.container.start_time or 0.0
+    at = offset + start  # -read_intervals takes timestamps, not seconds from the file's start
+    argv = [
+        str(ffprobe.path), "-v", "error", "-of", "json",
+        "-select_streams", str(source.video[0].index),
+        "-show_entries", "packet=pts_time",
+        "-read_intervals", f"{at:.6f}%{at + _FRAME_WINDOW:.6f}",
+        "-i", str(source.ref.path),
+    ]  # fmt: skip
+    result = await run(argv, timeout=_PROBE_TIMEOUT, cancel=cancel, extra_env=ffprobe.env or None)
+    if not result.ok:
+        return start
+    try:
+        packets = json.loads(result.stdout_text).get("packets", [])
+        times = [float(packet["pts_time"]) for packet in packets if "pts_time" in packet]
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return start
+    later = [pts for pts in times if pts >= at - 1e-6]
+    return round(min(later) - offset, 6) if later else start
 
 
 def _clip_job(job: JobSettings, *, start: float, end: float | None, output: Path) -> JobSettings:
@@ -125,12 +161,13 @@ async def make_clip(
         raise TaskFailed(
             f"The clip start {start:g} s is not before the end of {path.name} ({duration:g} s)."
         )
+    tools = await ctx.tools.status()
+    start = await _first_frame_at(tools.get("ffprobe"), source, start, tctx.cancel)
     end: float | None = start + seconds
     if duration is not None and end is not None and end >= duration:
         end = None  # to the end
     defs = ctx.definitions()
     extension = defs.containers[job.output.container].extensions[0]
-    tools = await ctx.tools.status()
     cache = PreviewCache(ctx.cache_dir)
     try:
         await asyncio.to_thread(cache.clips.mkdir, parents=True, exist_ok=True)
