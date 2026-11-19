@@ -67,22 +67,26 @@ COPY --from=notices /notices/THIRD_PARTY_NOTICES /opt/reframe/notices/THIRD_PART
 COPY docker/debian-packages.sh /tmp/debian-packages.sh
 # The GPU drivers that a downloaded FFmpeg loads, with Debian's libva. non-free: the Intel
 # media driver with every encoder (the free build has no H.264/HEVC encode before Ice Lake).
+# QSV runtimes: libmfx-gen for Tiger Lake and newer; libmfx1 (Media SDK) for the older GPUs,
+# which libmfx-gen refuses. Debian 13 has no libmfx1, so it comes from Debian 12, pinned low.
 # arm64 gets no GPU drivers: its image claims software encoders only. ca-certificates: the
 # FFmpeg download checks the server's certificate.
 # Versions are exact; a Debian point release that drops one fails the build.
 RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}" \
     && case "$arch" in \
-        amd64) gpu="intel-media-va-driver-non-free=25.2.3+ds1-1 libmfx-gen1.2=25.1.4-1 mesa-va-drivers=25.0.7-2+deb13u1" ;; \
+        amd64) gpu="intel-media-va-driver-non-free=25.2.3+ds1-1 libmfx-gen1.2=25.1.4-1 libmfx1=22.5.4-1 mesa-va-drivers=25.0.7-2+deb13u1" ;; \
         arm64) gpu="" ;; \
         *) echo "no image is built for $arch" >&2; exit 1 ;; \
     esac \
     && sed -i 's/^Components: main$/Components: main non-free/' /etc/apt/sources.list.d/debian.sources \
+    && echo "deb http://deb.debian.org/debian bookworm main" > /etc/apt/sources.list.d/bookworm.list \
+    && printf 'Package: *\nPin: release n=bookworm\nPin-Priority: 100\n' > /etc/apt/preferences.d/bookworm \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
         $gpu \
         ca-certificates=20250419+deb13u1 \
         tini=0.19.0-3+b8 \
-    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/lib/apt/lists/* /etc/apt/sources.list.d/bookworm.list /etc/apt/preferences.d/bookworm \
     && sh /tmp/debian-packages.sh /opt/reframe/notices/DEBIAN_PACKAGES \
         /opt/reframe/notices/THIRD_PARTY_NOTICES \
     && rm /tmp/debian-packages.sh

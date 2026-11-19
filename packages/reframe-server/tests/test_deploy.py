@@ -141,6 +141,20 @@ def test_the_image_has_no_ffmpeg_and_a_download_lands_in_the_data_mount() -> Non
     assert any(download.is_relative_to(folder) for folder in mounted)
 
 
+def test_the_amd64_image_has_a_qsv_runtime_for_old_and_new_intel_gpus() -> None:
+    """libmfx-gen does not take Intel GPUs before Tiger Lake; they need the Media SDK runtime,
+    which Debian 13 does not have. The older suite's source must not stay in the image."""
+    [run] = [rest for keyword, rest in instructions() if keyword == "RUN" and "gpu=" in rest]
+    amd64 = re.search(r'amd64\) gpu="([^"]*)"', run)
+    assert amd64 is not None
+    packages = {item.split("=", 1)[0] for item in amd64[1].split()}
+    assert {"libmfx-gen1.2", "libmfx1", "intel-media-va-driver-non-free"} <= packages
+    sources = re.findall(r">\s*(/etc/apt/\S+)", run)
+    assert sources, "libmfx1 comes from Debian 12, so the RUN adds its source"
+    removed = re.findall(r"\brm -rf ([^&]*)", run)
+    assert all(any(path in cleanup.split() for cleanup in removed) for path in sources)
+
+
 FAKE_TOOLS = {
     "id": "echo 0",
     "mkdir": ":",
