@@ -189,12 +189,15 @@ def test_every_capture_has_its_files() -> None:
 
 
 PINNED_BUILD = "n9.0.2-17-g2a571b6068-20260930"  # tools/ffmpeg.toml [builds.default] version
+#: Captures made with another build. The GPU that provoked the NVENC session limit has no driver
+#: that the pinned build's NVENC accepts; ``compat`` prints the same lines.
+OTHER_BUILDS = {"detect_hevc_nvenc_session_limit": "n8.1.3-9-g29e619e767-20260930"}
 
 
 def test_captures_come_from_the_pinned_build() -> None:
     for cap in ft.captures().values():
         assert cap.build is not None
-        assert cap.build.split()[2] == PINNED_BUILD, cap.name
+        assert cap.build.split()[2] == OTHER_BUILDS.get(cap.name, PINNED_BUILD), cap.name
     version = data("ffmpeg_version.stdout.txt").decode()
     assert version.startswith(f"ffmpeg version {PINNED_BUILD} ")
     assert "configuration: --prefix=/ffbuild/prefix" in version

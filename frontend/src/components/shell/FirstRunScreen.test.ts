@@ -380,7 +380,7 @@ describe('the offered FFmpeg builds', () => {
     await flushPromises()
     expect(first.find('details a').attributes('href')).toContain('github.com/FFmpeg')
     expect((first.find('input').element as HTMLInputElement).checked).toBe(true)
-    expect(wrapper.find('[data-build="compat"]').text()).toContain('older than 610')
+    expect(wrapper.find('[data-build="compat"]').text()).toContain('570 to 609')
     expect(wrapper.find('[data-field="installed"]').exists()).toBe(false)
   })
 

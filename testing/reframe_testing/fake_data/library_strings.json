@@ -204,6 +204,12 @@
         "string": "Vulkan device does not support all required features!"
       }
     ],
+    "incompatible client key": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "incompatible client key"
+      }
+    ],
     "libamfrt64.so.1": [
       {
         "file": "lib/libavutil.so.61.1.102",

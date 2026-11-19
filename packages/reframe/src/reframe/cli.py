@@ -14,6 +14,7 @@ import io
 import json
 import logging
 import os
+import re
 import signal
 import sys
 import tempfile
@@ -80,6 +81,7 @@ from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.tasks import TaskInfo, TaskState
 from reframe.models.text import json_text
 from reframe.models.tools import (
+    ToolBuildOffer,
     ToolBuilds,
     ToolFetchResult,
     ToolInfo,
@@ -3207,29 +3209,45 @@ def build_in_use(tools: ToolSet | None, builds: ToolBuilds | None, data_dir: Pat
     return builds.installed.name
 
 
-def other_build(in_use: str | None, builds: ToolBuilds | None) -> str:
-    """The offered build to suggest instead of the build in use (``in_use``: the downloaded
-    build's name, ``None`` for any other FFmpeg)."""
-    names = [offer.name for offer in builds.builds] if builds is not None else []
-    if in_use is None and (FALLBACK_BUILD in names or not names):
-        return FALLBACK_BUILD
-    return next((name for name in names if name != in_use), FALLBACK_BUILD)
+def _release(offer: ToolBuildOffer) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\d+", offer.release_version))
 
 
-def build_mismatch_hints(statuses: Iterable[EncoderStatus], other: str) -> list[str]:
+def other_build(in_use: str | None, builds: ToolBuilds | None) -> str | None:
+    """The offered build to suggest for a driver too old for the build in use (``in_use``:
+    the downloaded build's name, ``None`` for any other FFmpeg). Only a build of an older
+    FFmpeg release can need an older driver; ``None`` when the build in use has none."""
+    offers = builds.builds if builds is not None else []
+    names = [offer.name for offer in offers]
+    current = next((offer for offer in offers if offer.name == in_use), None)
+    if current is None:
+        if in_use is None and (FALLBACK_BUILD in names or not names):
+            return FALLBACK_BUILD
+        return next((name for name in names if name != in_use), FALLBACK_BUILD)
+    older = [offer for offer in offers if _release(offer) < _release(current)]
+    return max(older, key=_release).name if older else None
+
+
+def build_mismatch_hints(statuses: Iterable[EncoderStatus], other: str | None) -> list[str]:
     """The ``hint:`` lines for the encoders that this FFmpeg build cannot use on this computer:
     one per cause. Another build cannot fix a system library, so only a driver's line names
-    one."""
+    one (``other``; ``None``: no offered build needs an older driver)."""
     mismatches = [status for status in statuses if status.build_mismatch]
     library = [s.id for s in mismatches if s.build_mismatch_cause == "system_library"]
     driver = [s.id for s in mismatches if s.id not in library]
     hints = []
     if driver:
-        hints.append(
-            f"hint: {', '.join(driver)} {_need(driver)} newer system software than this FFmpeg "
-            f"build expects: update the driver, or use another build (reframe tools fetch "
-            f"--build {other}, or REFRAME_FFMPEG / tools.ffmpeg)."
-        )
+        head = f"hint: {', '.join(driver)} {_need(driver)} newer system software than this FFmpeg "
+        if other is None:
+            hints.append(
+                f"{head}build expects: update the driver (no offered build works with an older "
+                "one), or use your own FFmpeg (REFRAME_FFMPEG / tools.ffmpeg)."
+            )
+        else:
+            hints.append(
+                f"{head}build expects: update the driver, or use another build (reframe tools "
+                f"fetch --build {other}, or REFRAME_FFMPEG / tools.ffmpeg)."
+            )
     if library:
         hints.append(
             f"hint: {', '.join(library)} {_need(library)} a system library (libva) that is "

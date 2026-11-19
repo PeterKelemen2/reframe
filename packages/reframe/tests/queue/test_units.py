@@ -33,6 +33,7 @@ from reframe.queue.process import resume_tree, suspend_tree
 from reframe.queue.verify import check_output, expected_streams
 from reframe.queue.watchdog import StepWatch, tree_cpu_seconds
 from reframe.tools import RunResult, crashed
+from reframe_testing import fake_tools as ft
 
 from .conftest import draft, recorded
 
@@ -160,6 +161,16 @@ def test_stderr_reason_picks_the_cause() -> None:
     assert stderr_reason(["", "Conversion failed!"]) is None
     assert stderr_reason([]) is None
     assert stderr_reason(["Error: " + "x" * 400])[-1:] == "…"  # type: ignore[index]
+
+
+def test_stderr_reason_names_the_nvenc_session_limit() -> None:
+    capture = ft.captures()["detect_hevc_nvenc_session_limit"]
+    assert capture.stderr is not None
+    lines = (ft.DATA_DIR / capture.stderr).read_text(encoding="utf-8").splitlines()
+    assert stderr_reason(lines) == (
+        "Every NVENC session of the GPU is in use by other programs (GeForce cards run only a "
+        "few at once). Run the job again when they finish."
+    )
 
 
 def test_exit_text() -> None:

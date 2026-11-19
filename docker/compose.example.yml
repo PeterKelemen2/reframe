@@ -38,7 +38,7 @@ x-reframe: &reframe
     # name does. A list replaces that default, so name the addresses you use too:
     # REFRAME_ALLOWED_HOSTS: '["nas.local", "reframe.example.org", "192.168.1.10"]'
     # Download this FFmpeg build at start when none is installed in /data, without a visit
-    # to the web UI first (`default`, or `compat` for NVIDIA drivers older than 610):
+    # to the web UI first (`default`, or `compat` for NVIDIA drivers 570 to 609):
     # REFRAME_FFMPEG_BUILD: default
     # Your own FFmpeg build instead of a downloaded one (also mount it, under `volumes`):
     # REFRAME_FFMPEG: /opt/custom-ffmpeg/bin/ffmpeg

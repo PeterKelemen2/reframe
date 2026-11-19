@@ -121,10 +121,14 @@ address and SHA-256 checksum.
 | Build | Choose it when |
 |-------|----------------|
 | **Recommended** (`default`) | Almost always. It is the build that Reframe is tested with. For NVIDIA hardware encoding (NVENC) it needs NVIDIA driver 610 or newer. |
-| **Compatibility** (`compat`) | You have an NVIDIA card whose newest driver is older than 610, for example a GeForce 10 series card (GTX 1050, 1060, 1070, 1080) or older. It is an older FFmpeg version. |
+| **Compatibility** (`compat`) | Your NVIDIA driver is 570 to 609, for example a GeForce 10 series card (GTX 1050, 1060, 1070, 1080) with driver 580, its last driver series. It is an older FFmpeg version. For NVENC it needs NVIDIA driver 570 or newer. |
 
 If you are not sure, take **Recommended**. If Reframe then shows the warning below for an
 NVIDIA encoder, change to **Compatibility**.
+
+With an NVIDIA driver older than 570, no build can use NVENC. For example, Debian 13 has
+driver 550. Update the driver to 570 or newer, or use your own FFmpeg that was built for your
+driver.
 
 ## The "needs newer system software" warning
 
@@ -146,7 +150,19 @@ example:
 hint: hevc_nvenc needs newer system software than this FFmpeg build expects: update the driver, or use another build (reframe tools fetch --build compat, or REFRAME_FFMPEG / tools.ffmpeg).
 ```
 
+When the **Compatibility** build already shows this warning, no other build helps, and the
+hint says so: update the driver, or use your own FFmpeg.
+
 An encoder that works only in 8-bit is not this warning: you can still use it for 8-bit video.
+
+## "Every NVENC session of the GPU is in use"
+
+A GeForce card runs only a few NVENC encodes at the same time, for all programs together.
+When other programs (for example a media server that transcodes) use all of them, Reframe
+cannot check its NVIDIA encoders. It tries again a few times, and then shows the encoder as
+"could not be checked" with this reason. A job that starts at that moment fails with the same
+reason. When the other encodes finish, click **Check again** in Settings → Tools, or run
+`reframe encoders` again, and run the job again.
 
 ## After an app update
 

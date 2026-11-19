@@ -46,6 +46,12 @@ _KNOWN_CAUSES = (
     ("Permission denied", "Permission denied."),
     ("Read-only file system", "The output folder is on a read-only file system."),
     ("Cannot allocate memory", "Not enough memory."),
+    # NVENC's answer at the GeForce session limit; FFmpeg's own lines blame the parameters.
+    (
+        "OpenEncodeSessionEx failed: incompatible client key (21)",
+        "Every NVENC session of the GPU is in use by other programs (GeForce cards run only a "
+        "few at once). Run the job again when they finish.",
+    ),
 )
 _ERROR_WORDS = re.compile(
     r"error|failed|invalid|cannot|can't|could not|unable|not supported|unsupported|"

@@ -141,7 +141,7 @@ class ToolBuildOffer(ReframeModel):
     label: DisplayText
     """A short name for the picker ("Recommended")."""
     summary: DisplayText
-    """One sentence on who the build is for ("For NVIDIA drivers older than 610")."""
+    """One sentence on who the build is for ("For NVIDIA drivers 570 to 609")."""
     version: str
     """What ``ffmpeg -version`` prints after ``ffmpeg version``."""
     release_version: str

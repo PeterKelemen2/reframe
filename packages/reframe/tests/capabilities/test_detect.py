@@ -15,8 +15,10 @@ from reframe.capabilities import (
     filter_test_argv,
     vaapi_nodes,
 )
+from reframe.capabilities import detect as detect_module
 from reframe.capabilities import hwtest as hwtest_module
-from reframe.definitions import load_definitions
+from reframe.capabilities.reasons import NVENC_BUSY
+from reframe.definitions import VideoEncoderDef, load_definitions
 from reframe.models import EncoderState, EncoderStatus, ToolInfo, ToolStatus
 from reframe.tools import CancelToken, RunResult, run
 from reframe_testing import fake_tools as ft
@@ -241,6 +243,39 @@ async def test_a_crash_is_an_error(fake_tools: ft.FakeTools, fake_ffmpeg: ToolIn
     status = snap.status("hevc_amf")
     assert status.state is ERROR
     assert status.reason == "The test encode failed with no message (exit code 139)"
+
+
+async def test_a_gpu_that_stays_busy_is_tested_again_then_an_error(
+    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
+) -> None:
+    fake_tools.set_scenario(ft.Scenario([detect_rule("detect_hevc_nvenc_session_limit")]))
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, linux(busy_wait=0.01))
+    hevc = snap.status("hevc_nvenc")
+    assert (hevc.state, hevc.reason, hevc.build_mismatch) == (ERROR, NVENC_BUSY, False)
+    assert len([c for c in fake_tools.calls() if "hevc_nvenc" in c]) == 3
+    assert snap.status("h264_nvenc").state is AVAILABLE
+
+
+async def test_a_gpu_that_becomes_free_passes_the_test(
+    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_tools.set_scenario(ft.Scenario([detect_rule("detect_hevc_nvenc_session_limit")]))
+    real = hwtest_module.run_hardware_test
+    runs: list[str] = []
+
+    async def busy_once(*args: object, **kw: object) -> hwtest_module.TestOutcome:
+        encoder = args[1]
+        assert isinstance(encoder, VideoEncoderDef)
+        runs.append(encoder.id)
+        if encoder.id == "hevc_nvenc" and runs.count("hevc_nvenc") > 1:
+            fake_tools.set_scenario(ft.Scenario([]))
+        return await real(*args, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(detect_module, "run_hardware_test", busy_once)
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, linux(busy_wait=0.01))
+    hevc = snap.status("hevc_nvenc")
+    assert (hevc.state, hevc.reason, hevc.supports_10bit) == (AVAILABLE, None, True)
+    assert runs.count("hevc_nvenc") == 3  # busy, free, then the 10-bit test
 
 
 async def test_hardware_tests_off(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:

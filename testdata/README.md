@@ -470,6 +470,7 @@ uv run python testing/reframe_testing/capture_fake_data.py --ffmpeg "$BIN/ffmpeg
 | `No capable devices found\n` | `lib/libavcodec.so.63.1.102` | NVENC: no GPU that can encode. **`No NVENC capable devices found` is not in the build** |
 | `No CUDA capable devices found\n` | `lib/libavcodec.so.63.1.102` | NVENC: CUDA finds no GPU |
 | `OpenEncodeSessionEx failed` | `lib/libavcodec.so.63.1.102` | NVENC session error (followed by the NVENC status text) |
+| `incompatible client key` | `lib/libavcodec.so.63.1.102` | NVENC status 21: the GeForce session limit (provoked on another machine, below) |
 | `Error creating a MFX session: %d.\n` | `lib/libavcodec.so.63.1.102`, `lib/libavutil.so.61.1.102` (and without `: %d.` in `lib/libavfilter.so.12.1.102`) | QSV: no Intel GPU / no runtime (provoked above, `-9`) |
 | `Error initializing an MFX session\n` | `lib/libavcodec.so.63.1.102` | QSV session init |
 | `Error querying a MFX session: %d.\n` | `lib/libavutil.so.61.1.102` | QSV device query |
@@ -508,6 +509,37 @@ limit and a filter never do.
 requirement line also after a failed load of the NVENC library (`Cannot load
 libnvidia-encode.so.1`, a driver without it, as in a container without the `video`
 capability). That case is not a build mismatch: its own rule comes first.
+
+#### The NVENC minimum driver of each offered build
+
+`libavcodec/nvenc.c` at each pinned commit sets the driver that the NVENC API version of the
+build needs (`minver`, printed as "The minimum required Nvidia driver for nvenc is …"):
+`default` (release/9.0, API 13.1) needs `610.00`, `compat` (release/8.1, API 13.0) needs
+`570.0`, the same on Windows and Linux. API 12.2 (driver 550.54.14 on Linux) is in neither.
+Confirmed on 2026-11-19 on Debian 13 with a GeForce GTX 1050 Ti: with driver 550.163.01
+(Debian's own) both builds refuse NVENC (`Required: 13.0 Found: 12.2`, `570.0 or newer` with
+`compat`). With driver 580.159.04 (580 is the last driver series for Pascal: its README lists
+the card as supported, the 590 README lists it under legacy GPUs) `compat` has `h264_nvenc`
+(8-bit only) and `hevc_nvenc`, and `default` still needs `610.00`.
+
+#### NVENC session limit (GeForce)
+
+Checked on 2026-11-19 on Debian 13, GeForce GTX 1050 Ti, driver 580.159.04, `compat` build
+(n8.1.3): with 8 NVENC encodes running (`nvidia-smi --query-gpu=encoder.stats.sessionCount`
+says 8), a 9th fails, at the default log level and with `-v verbose` alike, with exit code 187:
+
+```text
+[hevc_nvenc @ …] OpenEncodeSessionEx failed: incompatible client key (21): (no details)
+[hevc_nvenc @ …] No capable devices found
+```
+
+With 7 running, the next one works. FFmpeg skips a GPU whose session does not open, so the
+"No capable devices found" line follows any session error: the session error is the cause.
+The status text `incompatible client key` is in the pinned `default` build too. Capture:
+`detect_hevc_nvenc_session_limit` (the `C-4` test command, made with `compat`, since `default`
+cannot open NVENC on this driver). Detection treats it as busy: it runs the test again and
+then reports `error`, not `unavailable`. Parallel GPU tests under xdist reach the limit, which
+made `test_the_facade_caches_the_real_result` fail now and then before this was handled.
 
 ### Language tags (FFmpeg n9.0.2, MKVToolNix v101.0)
 
@@ -589,6 +621,7 @@ command and the captures were not made again):
 | `detect_h264_vaapi_bad_device` (`renderD999`) | 234 | `[VAAPI @ 0x…] No VA display found for device /dev/dri/renderD999.` | No VAAPI device (/dev/dri/renderD999) |
 | `detect_h264_vaapi_no_driver` (`LIBVA_DRIVER_NAME=reframe_nonexistent`) | 251 | `[VAAPI @ 0x…] Failed to initialise VAAPI connection: -1 (unknown libva error).` | VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error) |
 | `detect_hevc_amf_no_runtime` | 171 | `[AMF @ 0x…] DLL libamfrt64.so.1 failed to open`, then `[hevc_amf @ 0x…] Failed to create  hardware device context (AMF) : Unknown error occurred` | AMD AMF runtime not found (libamfrt64.so.1) |
+| `detect_hevc_nvenc_session_limit` (made with `compat` on a GTX 1050 Ti with 8 other NVENC encodes running) | 187 | `[hevc_nvenc @ 0x…] OpenEncodeSessionEx failed: incompatible client key (21): (no details)`, then `[hevc_nvenc @ 0x…] No capable devices found` | Every NVENC session of the GPU is in use by other programs (…) (error, after two more tries) |
 | `detect_h264_amf_10bit` (`-pix_fmt p010le -c:v h264_amf`) | 183 | `[h264_amf @ 0x…] 10-bit input video is not supported by AMF H264 encoder` | 10-bit is not supported by this encoder |
 
 - **A missing AMF runtime can be provoked without root**: `LD_LIBRARY_PATH` pointing at a

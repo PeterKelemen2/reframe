@@ -23,7 +23,15 @@ from reframe.cli import (
     FetchView,
     fetched_text,
 )
-from reframe.models import TaskInfo, TaskState, ToolInfo, ToolSet, ToolStatus
+from reframe.models import (
+    EncoderState,
+    EncoderStatus,
+    TaskInfo,
+    TaskState,
+    ToolInfo,
+    ToolSet,
+    ToolStatus,
+)
 from reframe.models.tools import InstalledToolBuild, ToolBuildOffer, ToolBuilds
 from reframe.tools import ENV_VARS
 from reframe.tools import fetch as fetch_module
@@ -383,8 +391,8 @@ def test_offered_builds_text_lists_only_the_offered_builds() -> None:
         "Builds to choose:",
         "default (Recommended): The build Reframe is tested with. NVIDIA NVENC needs driver 610 "
         "or newer.",
-        "compat (Compatibility): FFmpeg 8.1, for NVIDIA drivers older than 610 (GeForce 10 "
-        "series and older). Checked with driver 582.78.",
+        "compat (Compatibility): FFmpeg 8.1, for NVIDIA drivers 570 to 609, such as a GeForce "
+        "10 series card with driver 580. Checked with drivers 582.78 and 580.159.",
     ]
 
 
@@ -590,10 +598,18 @@ def test_status_says_when_the_downloaded_build_is_outdated(
     ) in result.stdout.splitlines()
 
 
+RELEASES = {"default": "9.0.2", "compat": "8.1.3", "older": "7.1.2"}
+
+
 def _builds(*names: str, installed: str | None = None) -> ToolBuilds:
     offers = [
         ToolBuildOffer(
-            name=name, label=name, summary="", version="v", release_version="9.0", license="GPL"
+            name=name,
+            label=name,
+            summary="",
+            version="v",
+            release_version=RELEASES[name],
+            license="GPL",
         )
         for name in names
     ]
@@ -606,16 +622,34 @@ def _builds(*names: str, installed: str | None = None) -> ToolBuilds:
     [
         (None, _builds("default", "compat"), "compat"),  # the user's own or a packaged FFmpeg
         ("default", _builds("default", "compat"), "compat"),
-        ("compat", _builds("default", "compat"), "default"),
-        ("default", _builds("default"), "compat"),
+        ("default", _builds("default", "older", "compat"), "compat"),  # the closest older one
+        ("compat", _builds("default", "compat", "older"), "older"),
+        # a newer FFmpeg never needs an older driver: nothing to suggest
+        ("compat", _builds("default", "compat"), None),
+        ("default", _builds("default"), None),
         (None, _builds("default"), "default"),
         (None, None, "compat"),
+        ("gone", _builds("default", "compat"), "default"),  # no longer offered
     ],
 )
-def test_the_hint_names_another_offered_build(
-    in_use: str | None, builds: ToolBuilds | None, other: str
+def test_the_hint_names_an_offered_build_of_an_older_ffmpeg(
+    in_use: str | None, builds: ToolBuilds | None, other: str | None
 ) -> None:
     assert cli.other_build(in_use, builds) == other
+
+
+def test_without_an_older_build_the_hint_names_only_the_driver_and_an_own_ffmpeg() -> None:
+    status = EncoderStatus(
+        id="hevc_nvenc",
+        state=EncoderState.UNAVAILABLE,
+        build_mismatch=True,
+        build_mismatch_cause="driver",
+    )
+    assert cli.build_mismatch_hints([status], None) == [
+        "hint: hevc_nvenc needs newer system software than this FFmpeg build expects: update "
+        "the driver (no offered build works with an older one), or use your own FFmpeg "
+        "(REFRAME_FFMPEG / tools.ffmpeg)."
+    ]
 
 
 def test_the_build_in_use_is_the_downloaded_one_only_when_discovery_picked_it(

@@ -7070,7 +7070,7 @@ export interface components {
             label: string;
             /**
              * Summary
-             * @description One sentence on who the build is for ("For NVIDIA drivers older than 610").
+             * @description One sentence on who the build is for ("For NVIDIA drivers 570 to 609").
              */
             summary: string;
             /**

@@ -1,7 +1,8 @@
 """Turn a failed hardware test encode into a plain-language reason. Pure.
 
-A known text gives ``unavailable`` with its reason. Anything else gives ``error`` ("the check
-itself failed") with the most informative line (:func:`informative_line`). The same mapping
+A known text gives ``unavailable`` with its reason (``error`` when it says the GPU is busy).
+Anything else gives ``error`` ("the check itself failed") with the most informative line
+(:func:`informative_line`). The same mapping
 explains a failed filter run test.
 
 The texts that FFmpeg prints are recorded in ``testdata/README.md`` ("Hardware encoder
@@ -69,6 +70,8 @@ class Failure:
     """The FFmpeg line the reason comes from (pointer addresses removed)."""
     cause: BuildMismatchCause | None = None
     """What the build needs that the computer lacks (``EncoderStatus.build_mismatch_cause``)."""
+    busy: bool = False
+    """Other programs held the GPU's encoder: the same test may pass a little later."""
 
     @property
     def build_mismatch(self) -> bool:
@@ -85,6 +88,8 @@ class _Rule:
     families: frozenset[str] | None = None
     """Only for these encoder families (``None``: any)."""
     mismatch: BuildMismatchCause | None = None
+    busy: bool = False
+    """The text says the GPU is busy: ``error`` (not checked), never ``unavailable``."""
 
 
 def _fixed(text: str) -> _Reason:
@@ -148,6 +153,10 @@ def _library_not_loaded(match: re.Match[str], _ctx: TestContext, _texts: Sequenc
 _NO_QSV = (
     "No Intel QSV device or runtime (needs an Intel GPU, its media driver and its QSV runtime)"
 )
+NVENC_BUSY = (
+    "Every NVENC session of the GPU is in use by other programs (GeForce cards run only a few "
+    "at once). Check the encoders again when they finish"
+)
 _NVENC = frozenset({"nvenc"})
 
 #: Known texts, most specific first. The first rule that matches any line wins.
@@ -173,6 +182,18 @@ _RULES: tuple[_Rule, ...] = (
     ),
     _Rule(_NVENC_DRIVER, lambda m, _ctx, _t: _nvenc_driver(m["driver"]), mismatch="driver"),
     _Rule(re.compile(r"No CUDA capable devices found"), _fixed("No NVIDIA GPU found")),
+    # A GPU whose session could not be opened is skipped, so "No capable devices found"
+    # follows: the session error is the cause. Status 21 is the GeForce session limit.
+    _Rule(
+        re.compile(r"OpenEncodeSessionEx failed: incompatible client key \(21\)"),
+        _fixed(NVENC_BUSY),
+        _NVENC,
+        busy=True,
+    ),
+    _Rule(
+        re.compile(r"OpenEncodeSessionEx failed:?\s*(?P<rest>.*)$"),
+        _with_rest("NVENC could not open an encoding session"),
+    ),
     _Rule(
         re.compile(r"^No capable devices found"),
         lambda _m, ctx, _t: f"No NVIDIA GPU that can encode {_codec(ctx)}",
@@ -182,10 +203,6 @@ _RULES: tuple[_Rule, ...] = (
         re.compile(r"^Codec not supported$"),
         lambda _m, ctx, _t: f"This NVIDIA GPU cannot encode {_codec(ctx)}",
         _NVENC,
-    ),
-    _Rule(
-        re.compile(r"OpenEncodeSessionEx failed:?\s*(?P<rest>.*)$"),
-        _with_rest("NVENC could not open an encoding session"),
     ),
     _Rule(
         re.compile(r"^10 bit encode not supported$"),
@@ -359,7 +376,8 @@ def explain_failure(stderr: str, ctx: TestContext, *, returncode: int | None = N
                 reason = rule.reason(match, ctx, texts)
                 # libplacebo falls back to zscale: a filter never asks for another build.
                 cause = rule.mismatch if ctx.family != "filter" else None
-                return Failure(EncoderState.UNAVAILABLE, reason, line, cause=cause)
+                state = EncoderState.ERROR if rule.busy else EncoderState.UNAVAILABLE
+                return Failure(state, reason, line, cause=cause, busy=rule.busy)
     detail = informative_line(stderr, ctx.encoder)
     test = f"the {ctx.encoder} test" if ctx.family == "filter" else "the test encode"
     crash = _crash(returncode)

@@ -93,6 +93,10 @@ class DetectionOptions:
     encoder is tested (:func:`reframe.capabilities.devices.render_nodes`)."""
     test_timeout: float = TEST_TIMEOUT
     list_timeout: float = LIST_TIMEOUT
+    busy_retries: int = 2
+    """How many times a test that found the GPU busy is run again."""
+    busy_wait: float = 2.0
+    """Seconds before the first run again; each later wait is this much longer."""
 
 
 def _now() -> datetime:
@@ -342,19 +346,27 @@ class _Detection:
     async def run_test(
         self, encoder: VideoEncoderDef, bit_depth: BitDepth, device: str | None = None
     ) -> TestOutcome:
-        async with self.tests:
-            started = time.monotonic()
-            outcome = await run_hardware_test(
-                self.binary,
-                encoder,
-                bit_depth,
-                vaapi_device=device or DEFAULT_VAAPI_DEVICE,
-                timeout=self.options.test_timeout,
-                cancel=self.cancel,
-                extra_env=self.env,
-            )
-        _log_outcome(f"test encode {encoder.id} {bit_depth}-bit", outcome, started)
-        return outcome
+        """One test encode. A test that found the GPU busy runs again after a wait (outside
+        the parallel limit): the other programs' encodes may have ended by then."""
+        attempt = 0
+        while True:
+            async with self.tests:
+                started = time.monotonic()
+                outcome = await run_hardware_test(
+                    self.binary,
+                    encoder,
+                    bit_depth,
+                    vaapi_device=device or DEFAULT_VAAPI_DEVICE,
+                    timeout=self.options.test_timeout,
+                    cancel=self.cancel,
+                    extra_env=self.env,
+                )
+            _log_outcome(f"test encode {encoder.id} {bit_depth}-bit", outcome, started)
+            busy = outcome.failure is not None and outcome.failure.busy
+            if not busy or attempt >= self.options.busy_retries:
+                return outcome
+            attempt += 1
+            await asyncio.sleep(self.options.busy_wait * attempt)
 
     async def test(self, encoder: VideoEncoderDef) -> None:
         """The 8-bit test (on each render node in turn for VAAPI), then the 10-bit test on the

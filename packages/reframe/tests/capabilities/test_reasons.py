@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 
 from reframe.capabilities import TestContext, explain_failure
-from reframe.capabilities.reasons import informative_line
+from reframe.capabilities.reasons import NVENC_BUSY, informative_line
 from reframe.models import EncoderState
 from reframe_testing import fake_tools as ft
 
@@ -99,6 +99,15 @@ def ctx(encoder: str, device: str | None = None) -> TestContext:
             "[h264_amf] 10-bit input video is not supported by AMF H264 encoder",
         ),
         (
+            # the GeForce session limit: busy, so "error" (not checked), never "no GPU"
+            "detect_hevc_nvenc_session_limit",
+            "hevc_nvenc",
+            None,
+            ERROR,
+            NVENC_BUSY,
+            "[hevc_nvenc] OpenEncodeSessionEx failed: incompatible client key (21): (no details)",
+        ),
+        (
             # a command-builder mistake (no hwupload): not a known reason, so "error" with the
             # most informative line, never the generic last line
             "hw_h264_vaapi_no_hwupload",
@@ -124,6 +133,7 @@ def test_real_failures(
         stderr(capture), ctx(encoder, device), returncode=ft.captures()[capture].exit_code
     )
     assert (failure.state, failure.reason, failure.detail) == (state, reason, detail)
+    assert failure.busy is (reason == NVENC_BUSY)
 
 
 NVENC_API = "Driver does not support the required nvenc API version. Required: 13.0 Found: 12.1"
@@ -175,12 +185,14 @@ def tagged(encoder: str, *lines: str) -> str:
             "This NVIDIA GPU cannot encode AV1",
         ),
         (
+            # another session error: the GPU is skipped, so "No capable devices found" follows
             "hevc_nvenc",
             tagged(
                 "hevc_nvenc",
-                "OpenEncodeSessionEx failed: incompatible client key (21): (no details)",
+                "OpenEncodeSessionEx failed: out of memory (10): (no details)",
+                "No capable devices found",
             ),
-            "NVENC could not open an encoding session (incompatible client key (21): (no details))",
+            "NVENC could not open an encoding session (out of memory (10): (no details))",
         ),
         (
             "hevc_nvenc",
@@ -232,6 +244,7 @@ def test_the_mapped_texts_are_in_the_pinned_build() -> None:
     util = "lib/libavutil.so.61.1.102"
     assert codec in found["10 bit encode not supported"]
     assert codec in found["Codec not supported"]
+    assert codec in found["incompatible client key"]
     assert codec in found["10-bit input video is not supported by AMF"]
     assert codec in found["10-bit encoder is not supported by AMD GPU drivers"]
     assert codec in found["This version of runtime doesn't support AV1 encoding"]

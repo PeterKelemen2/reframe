@@ -191,6 +191,7 @@ LIBRARY_STRINGS = (
     "No CUDA capable devices found",
     "No NVENC capable devices found",
     "OpenEncodeSessionEx failed",
+    "incompatible client key",
     # Intel QSV (oneVPL)
     "Error creating a MFX session",
     "Error initializing an MFX session",

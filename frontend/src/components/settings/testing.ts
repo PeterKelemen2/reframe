@@ -72,7 +72,7 @@ export function toolBuilds(extra: Partial<Schemas['ToolBuilds']> = {}): Schemas[
       {
         name: 'compat',
         label: 'Older NVIDIA drivers',
-        summary: 'For NVIDIA drivers older than 610 (GeForce 10 and older).',
+        summary: 'For NVIDIA drivers 570 to 609 (a GeForce 10 series card with driver 580).',
         version: 'n8.1.3-9-g29e619e767-20260930',
         release_version: '8.1.3',
         license: 'GPL-3.0-or-later',

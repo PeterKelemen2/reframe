@@ -226,6 +226,13 @@ and returns statuses, never exceptions.
       logs (`[hevc_nvenc @ …]`), else the first line of a hardware device (`[VAAPI @ …]`),
       else the first line that is not fftools bookkeeping. Never the last line: it is a
       generic `Conversion failed!`.
+- [ ] **Busy GPU** ([decision 0101](../decisions/0101-nvenc-session-limit-and-older-build-hint.md)):
+      an NVENC session error comes before `No capable devices found` (FFmpeg skips the GPU,
+      so that line always follows). Status 21 (`incompatible client key`, the GeForce limit
+      of concurrent sessions) means the GPU is busy: the test runs again twice (after 2 s,
+      then 4 s, outside the parallel limit), and a test that stays busy gives `error` with
+      "Every NVENC session of the GPU is in use by other programs …", never `unavailable`.
+      A job that fails on it gets the same cause in plain words.
 - [ ] **Cache**: key = ffmpeg path + size + mtime + version, plus a GPU fingerprint (Linux:
       `/sys/class/drm/*/device/{vendor,device}`, `/proc/driver/nvidia/version`. Windows:
       display adapter name + driver version, read once in the background). On start, the cached
@@ -902,6 +909,10 @@ says when a system does not fit a build
       `REFRAME_FFMPEG`, `tools.ffmpeg`; system library: install or update it, or your own
       FFmpeg, no `--build`; 0098); `reframe tools status` names the installed build
       and says when it is outdated; `reframe tools fetch` lists the offered builds in `--help`.
+      The driver hint names only an offered build of an older FFmpeg release than the
+      downloaded build in use (a newer FFmpeg never needs an older driver); without one it
+      says to update the driver or use an own FFmpeg
+      ([decision 0101](../decisions/0101-nvenc-session-limit-and-older-build-hint.md)).
 
 Done when:
 

@@ -77,7 +77,7 @@ with `actionlint`. Expect a round of fixes on the first run.
 2. **FFmpeg download and build choice** (C-21, S-8, F-20, D-10,
    [decision 0093](decisions/0093-ffmpeg-download-and-build-choice.md)): the desktop packages
    stop bundling FFmpeg; the first run offers pinned builds (`default`, and `compat` for
-   NVIDIA drivers older than 610), install from a file, or the user's own path; a warning when
+   NVIDIA drivers 570 to 609), install from a file, or the user's own path; a warning when
    an encoder is unavailable because the system does not fit the build.
 3. **User docs**, after those fixes, so they describe what ships.
 4. **The four open licence-text groups**.
