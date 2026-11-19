@@ -9,8 +9,11 @@
 # REFRAME_FFMPEG_BUILD below) into /data/tools/ffmpeg: keep /data a persistent folder of the
 # host, or every new container downloads it again. See docs/user/ffmpeg.md.
 #
-# `docker compose up` starts the Intel/AMD service. On an NVIDIA host start the other one:
+# `docker compose up` starts the Intel/AMD service. On an NVIDIA host start the other one, and
+# name it in each command: it is in the profile `nvidia`, which a command without a service name
+# skips (`docker compose stop` does not stop it; `down` needs `--profile nvidia`):
 #   docker compose -f docker/compose.yml up -d reframe-nvidia
+#   docker compose -f docker/compose.yml exec -it reframe-nvidia reframe-server --set-password
 # A host without a GPU: delete the `devices` lines of the `reframe` service.
 
 x-reframe: &reframe
@@ -38,7 +41,8 @@ x-reframe: &reframe
     # name does. A list replaces that default, so name the addresses you use too:
     # REFRAME_ALLOWED_HOSTS: '["nas.local", "reframe.example.org", "192.168.1.10"]'
     # Download this FFmpeg build at start when none is installed in /data, without a visit
-    # to the web UI first (`default`, or `compat` for NVIDIA drivers 570 to 609):
+    # to the web UI first (`default`, or `compat` for NVIDIA drivers 570 to 609, such as a
+    # GeForce 10 series card with driver 580):
     # REFRAME_FFMPEG_BUILD: default
     # Your own FFmpeg build instead of a downloaded one (also mount it, under `volumes`):
     # REFRAME_FFMPEG: /opt/custom-ffmpeg/bin/ffmpeg

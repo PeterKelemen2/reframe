@@ -122,14 +122,21 @@ time, each with its own notices.
    `docker exec`, so the server can read the file they write. A running server reads the
    new password at once; sessions that are open stay open until it restarts.
 
+   On an NVIDIA host the service is `reframe-nvidia` ([GPU](#gpu)). Name it in each command
+   of this page: `up -d reframe-nvidia`, `exec -it reframe-nvidia reframe-server
+   --set-password`, `stop reframe-nvidia`, `logs reframe-nvidia`. It is in the profile
+   `nvidia`, and a command without a service name skips that profile: `docker compose stop`
+   does not stop it, `exec reframe …` says `service "reframe" is not running`, and `down`
+   leaves it running unless you add `--profile nvidia`.
+
 4. Open `http://<host>:8765/`. `GET /api/health` needs no login; the image's `HEALTHCHECK`
    calls it every 30 s.
 
 5. Get FFmpeg: the first-run screen offers the download (or **Install from file** with an
    archive in `/media`). Or set `REFRAME_FFMPEG_BUILD: default` in the compose file, and the
    server downloads it at start when no usable FFmpeg is found (an override you set is never
-   replaced). The download stays in `/data`, so keep
-   that folder: [Getting FFmpeg](user/ffmpeg.md#docker).
+   replaced). With an NVIDIA driver 570 to 609, use `compat` ([GPU](#gpu)). The download
+   stays in `/data`, so keep that folder: [Getting FFmpeg](user/ffmpeg.md#docker).
 
 `docker compose stop` stops a running encode and removes its partial file; the job is
 `interrupted` at the next start. The CLI works in the container too, for example
@@ -171,9 +178,31 @@ the IP addresses you use too. Loopback names always work.
 (`--group-add $(getent group render | cut -d: -f3)`).
 
 **NVIDIA (NVENC).** Install the NVIDIA Container Toolkit on the host, then start the other
-service: `docker compose -f docker/compose.yml up -d reframe-nvidia`. It reserves the GPUs
-with `deploy.resources.reservations.devices`; the image sets
-`NVIDIA_DRIVER_CAPABILITIES=compute,video,utility`, so the toolkit mounts the encoder library.
+service: `docker compose -f docker/compose.yml up -d reframe-nvidia`, and name it in the other
+commands too ([Run with Docker Compose](#run-with-docker-compose), step 3). It reserves the
+GPUs with `deploy.resources.reservations.devices`. With `docker run`, `--gpus all` and the CDI
+name `--device nvidia.com/gpu=all` do the same. The toolkit mounts the driver's libraries
+(`libnvidia-encode`, `libcuda`) and `nvidia-smi` into the container. The image sets
+`NVIDIA_DRIVER_CAPABILITIES=compute,video,utility` for a toolkit that selects the libraries by
+these capabilities; a toolkit that uses its CDI specification (toolkit 1.20 with
+`nvidia-cdi-refresh`) mounts all of them anyway.
+
+The FFmpeg build must fit the host's NVIDIA driver, as on bare metal
+([Which build to choose](user/ffmpeg.md#which-build-to-choose)):
+
+| Host driver | Build | NVENC |
+|-------------|-------|-------|
+| 610 or newer | `default` | Works |
+| 570 to 609, for example 580, the last series for the GeForce 10 series (Pascal) | `compat` | Works. With `default` each NVENC encoder is unavailable: "NVIDIA driver too old: NVENC needs driver 610.00 or newer" |
+| Older than 570 | none | Update the driver, or mount your own FFmpeg |
+
+Set `REFRAME_FFMPEG_BUILD: compat` before the first start, or change the build later in
+Settings → Tools (it installs the other build into `/data/tools/ffmpeg` and checks the encoders
+again). `docker compose exec reframe-nvidia reframe tools fetch --build compat` also installs it,
+but the running server goes on with what it found before: click **Check again** in Settings →
+Tools, or restart the container. The server's console says nothing about the driver; Settings →
+Encoders shows it, and `docker compose exec reframe-nvidia reframe encoders` prints it with a
+`hint:` line.
 
 **No GPU.** Delete the `devices` lines. The software encoders (x264, x265, SVT-AV1) work.
 
@@ -187,7 +216,7 @@ encodes run at the first start unless `encoders.hardware_tests` is off.
 |------|--------|
 | AMD, VAAPI | Verified on an RX 7600 ([decision 0059](decisions/0059-s6-docker-image-and-bare-metal.md)) |
 | Intel, VAAPI and QSV | Verified on a UHD 620, Kaby Lake ([decision 0099](decisions/0099-intel-qsv-on-linux.md)); Tiger Lake and newer not verified |
-| NVIDIA, NVENC | Not verified: no such host yet (0043 item 7) |
+| NVIDIA, NVENC | Verified on a GeForce GTX 1050 Ti (Pascal) with driver 580 and the `compat` build (decision 0102): `h264_nvenc` (8-bit) and `hevc_nvenc` (8- and 10-bit, HDR10 kept); this GPU has no AV1 encoder. The `default` build with a driver 610 or newer is not verified |
 
 ### Your own FFmpeg in Docker
 
