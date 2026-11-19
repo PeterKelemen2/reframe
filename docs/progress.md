@@ -31,7 +31,7 @@ hardware the owner does not have.
 | Core `C-0` to `C-21` | 21 / 22 | C-21 (FFmpeg builds, 0093) |
 | Server `S-0` to `S-8` | 8 / 9 | S-8 (FFmpeg builds API, 0093); S-6's NVIDIA NVENC check in Docker (waits for such a host; Intel QSV checked, [0099](decisions/0099-intel-qsv-on-linux.md)) |
 | Frontend `F-0` to `F-20` | 20 / 21 | F-20 (build picker, 0093) |
-| Desktop `D-0` to `D-10` | 9.5 / 11 | D-8 partial: no GitHub release made; D-10 (packages without FFmpeg, 0093) |
+| Desktop `D-0` to `D-10` | 9.5 / 11 | D-8 partial: no GitHub release made; D-10 (packages without FFmpeg, 0093). The AppImage and .deb with Intel QSV on Linux checked, five defects fixed on `desktop-qsv-linux` ([0100](decisions/0100-desktop-app-with-intel-qsv-on-linux.md)) |
 | Quality `Q-x` (43 sub-steps) | about 40 / 43 | Q-2.4 (optional local samples suite) not started; Q-3 partial; Q-1.1 to Q-1.3 written but never run on GitHub |
 
 By step count about 98 of 102 (96 %). The overall figure is lower because the open items
@@ -94,6 +94,7 @@ with `actionlint`. Expect a round of fixes on the first run.
 - The Windows FFmpeg build (BtbN n9.0.2) crashes now and then with Detelecine: report it
   upstream or try another build.
 - A layout for windows below about 1100×700: after v1 (the default) or before.
+- Decision [0100](decisions/0100-desktop-app-with-intel-qsv-on-linux.md): bundle GStreamer plugins into the AppImage so that preview clips play in its window (size, LGPL notices, the AppImage's source manifest), or keep the frame compare there; and whether the AppImage should install a desktop entry (taskbar progress).
 
 ## After v1 (does not block the release)
 

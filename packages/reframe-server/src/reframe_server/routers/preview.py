@@ -1,5 +1,6 @@
 """Frames, crop detection, preview clips and the preview cache. An answer never holds a path
-of the cache folder: frames and clips are reached by signed URLs."""
+of the cache folder, except a clip's file in desktop mode: frames and clips are reached by
+signed URLs."""
 
 from __future__ import annotations
 
@@ -112,6 +113,13 @@ class MediaLink(BaseModel):
     """A signed URL for a ``<video>``; it works for an hour."""
 
 
+class ClipFile(BaseModel):
+    model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
+
+    path: str
+    """The cached clip file, for the desktop app to open in the user's player."""
+
+
 class CacheSize(BaseModel):
     model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
 
@@ -175,6 +183,18 @@ async def clip_link(clip_id: str, reframe: ReframeDep, config: ConfigDep) -> Med
         raise ProblemError(404, "preview.unknown_clip", "The clip is not in the cache")
     url = CLIP_URL.format(clip_id=clip_id)
     return MediaLink(url=security.sign_media_url(config, url, ttl=CLIP_LINK_TTL))
+
+
+@router.get("/preview/clips/{clip_id}/file")
+async def clip_path(clip_id: str, reframe: ReframeDep, config: ConfigDep) -> ClipFile:
+    """The file of a cached clip, desktop mode only: a player given the clip's URL would be the
+    browser. Web mode: ``404 preview.no_clip_file`` (the file is on the server's computer)."""
+    if config.mode != "desktop":
+        raise ProblemError(404, "preview.no_clip_file", "Only the desktop app opens a clip file")
+    path = await reframe.jobs.preview_clip_path(clip_id)
+    if path is None:
+        raise ProblemError(404, "preview.unknown_clip", "The clip is not in the cache")
+    return ClipFile(path=str(path))
 
 
 @router.post("/preview/clips/{clip_id}/frames")

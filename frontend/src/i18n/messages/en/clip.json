@@ -21,6 +21,7 @@
   "playback": {
     "unsupported": "this browser cannot play {codec} video",
     "failed": "the player stopped with an error ({reason})",
+    "noPlayer": "this window has no video player",
     "fallback": "The clip does not play here: {reason}. Its frames are shown next to the source frames instead; Open in external player plays it."
   },
   "compare": {

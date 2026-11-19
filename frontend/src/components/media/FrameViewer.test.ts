@@ -172,6 +172,35 @@ describe('the frame viewer', () => {
     expect(wrapper.find('[data-state="rendering"]').attributes('role')).toBe('status')
   })
 
+  it("keeps the picture's place while the next output frame is rendered", async () => {
+    const { wrapper, preview, server } = await viewer()
+    preview.zoom = 1
+    preview.viewMode = 'output'
+    await flushPromises()
+    expect(wrapper.find('[data-field="output"]').exists()).toBe(true)
+    server.on('POST /api/preview/render', () => new Promise(() => {}))
+    preview.select(3)
+    await flushPromises()
+    const waiting = wrapper.find<HTMLElement>('[data-state="rendering"]')
+    expect(waiting.element.style.width).toBe('640px')
+    expect(waiting.attributes('style')).toContain('aspect-ratio: 640 / 268')
+    preview.viewMode = 'side'
+    await flushPromises()
+    expect(wrapper.find<HTMLElement>('[data-state="rendering"]').element.style.width).toBe('1280px')
+  })
+
+  it('sizes the place of the first output frame like the source frame', async () => {
+    const server = previewServer()
+    server.on('POST /api/preview/render', () => new Promise(() => {}))
+    const { wrapper, preview } = await viewer({ server })
+    preview.zoom = 1
+    preview.viewMode = 'output'
+    await flushPromises()
+    const waiting = wrapper.find<HTMLElement>('[data-state="rendering"]')
+    expect(waiting.element.style.width).toBe('320px')
+    expect(waiting.attributes('style')).toContain('aspect-ratio: 320 / 180')
+  })
+
   it("reads a typed time in the app's locale, whatever the browser's is", async () => {
     browserLocale('de')
     const { wrapper, server } = await viewer()

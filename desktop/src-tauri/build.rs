@@ -12,6 +12,7 @@ fn main() {
         "desktop_settings",
         "set_desktop_settings",
         "open_external",
+        "webview_plays_video",
     ]);
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(manifest))
         .expect("the Tauri build step");

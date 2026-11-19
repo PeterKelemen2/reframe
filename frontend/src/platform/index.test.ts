@@ -29,6 +29,11 @@ describe('platform selector', () => {
 })
 
 describe('web platform', () => {
+  it('leaves playing video to the browser, which reports what it cannot play', async () => {
+    const platform = await loadPlatform()
+    expect(await platform.canPlayVideo()).toBe(true)
+  })
+
   it('shows taskbar progress in the document title', async () => {
     setActivePinia(createPinia())
     document.title = 'Reframe'

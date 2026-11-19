@@ -42,6 +42,10 @@ export function createWebPlatform(): Platform {
       return Promise.resolve()
     },
 
+    canPlayVideo() {
+      return Promise.resolve(true)
+    },
+
     async notify(title, body) {
       if (typeof Notification === 'undefined') return
       const permission =

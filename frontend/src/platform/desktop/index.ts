@@ -144,6 +144,15 @@ export function createDesktopPlatform(): Platform {
       return invoke('open_external', { url: target })
     },
 
+    async canPlayVideo() {
+      try {
+        return await invoke<boolean>('webview_plays_video')
+      } catch (error) {
+        console.error('platform.canPlayVideo failed', error)
+        return true
+      }
+    },
+
     async notify(title, body) {
       if (!inMainWindow()) return
       // Resolves at once on the desktop, where no one is asked.
