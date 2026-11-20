@@ -94,9 +94,14 @@ describe('the Filters tab', () => {
       expect(part('avoid-when')).toBe(filter.help.avoid_when)
       expect(part('speed-cost')).toBe(SPEED[filter.help.speed_cost])
       expect(part('settings')).toBe(filter.help.settings)
-      const tunes = filter.implementations.flatMap((impl) => impl.tunes ?? [])
-      const missing = tunes.filter((tune) => !help.text().includes(`${tune.label} · ${tune.help}`))
-      expect(missing.filter((tune) => tune.help !== '')).toEqual([])
+      const choices = filter.implementations.flatMap((impl) => [
+        ...impl.presets,
+        ...(impl.tunes ?? []),
+      ])
+      for (const choice of choices) {
+        expect(choice.help, `${filter.id}: ${choice.id}`).not.toBe('')
+        expect(help.text()).toContain(`${choice.label} · ${choice.help}`)
+      }
     }
   })
 

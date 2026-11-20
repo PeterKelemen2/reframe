@@ -55,7 +55,7 @@ min = 1
 max = 16
 step = 1
 unit = "frames"
-help = "How many earlier frames a frame can reference. More helps animation and static scenes, costs speed; old players limit it (level)."
+help = "How many earlier frames a frame can reference (1–16; medium uses 3, veryslow 16). More helps animation and static scenes, costs speed; old players limit it (level)."
 mapping = { kind = "x26x_param", name = "ref" }
 default = { kind = "preset", tunes = ["animation"], values = { ultrafast = 1, superfast = 1, veryfast = 1, faster = 2, fast = 2, medium = 3, slow = 5, slower = 8, veryslow = 16, placebo = 16 } }
 
@@ -81,7 +81,7 @@ min = 1
 max = 1000
 step = 1
 unit = "frames"
-help = "Minimum distance between keyframes at scene cuts. Auto is a tenth of the keyframe interval, at most the frame rate."
+help = "Minimum distance between keyframes at scene cuts. Auto is a tenth of the keyframe interval, at most the frame rate: 25 for the default 250 at 25 fps or more."
 mapping = { kind = "x26x_param", name = "min-keyint" }
 default = { kind = "encoder", note = "auto: keyint / 10, at most the frame rate" }
 
@@ -93,7 +93,7 @@ type = "int"
 min = 0
 max = 100
 step = 1
-help = "How eagerly a keyframe is placed at a scene change. 0 turns scene-cut detection off."
+help = "How eagerly a keyframe is placed at a scene change. 40 is the default; higher places more keyframes, 0 turns scene-cut detection off."
 mapping = { kind = "x26x_param", name = "scenecut" }
 default = { kind = "preset", values = { ultrafast = 0, superfast = 40, veryfast = 40, faster = 40, fast = 40, medium = 40, slow = 40, slower = 40, veryslow = 40, placebo = 40 } }
 
@@ -169,7 +169,7 @@ type = "float"
 min = 0
 max = 1
 step = 0.05
-help = "0 is constant bitrate, 1 constant quantiser. Higher values keep more detail in complex scenes (grain tune: 0.8)."
+help = "0 is constant bitrate, 1 constant quantiser; 0.6 is the default. Higher values keep more detail in complex scenes (grain tune: 0.8)."
 mapping = { kind = "x26x_param", name = "qcomp" }
 default = { kind = "fixed", value = 0.6 }
 
@@ -245,7 +245,7 @@ type = "int"
 min = -6
 max = 6
 step = 1
-help = "Which edges deblocking treats as block edges. Usually set to the same value as the strength."
+help = "Which edges deblocking treats as block edges (-6 … 6, 0 by default). Usually set to the same value as the strength, as the tunes do (film -1, grain -2, animation +1)."
 mapping = { kind = "x26x_param", name = "deblock", part = 1 }
 default = { kind = "preset", tunes = ["animation", "film", "grain", "stillimage"], values = { ultrafast = 0, superfast = 0, veryfast = 0, faster = 0, fast = 0, medium = 0, slow = 0, slower = 0, veryslow = 0, placebo = 0 } }
 
@@ -415,7 +415,7 @@ type = "int"
 min = 0
 max = 69
 step = 1
-help = "The highest QP x264 may use. A lower limit avoids very blocky frames in average-bitrate encodes; by default there is no limit."
+help = "The highest QP x264 may use (up to 69 for 8-bit). A lower limit avoids very blocky frames in average-bitrate encodes; by default there is no limit."
 mapping = { kind = "x26x_param", name = "qpmax" }
 default = { kind = "encoder", note = "no limit (69 for 8-bit, 81 for 10-bit)" }
 
