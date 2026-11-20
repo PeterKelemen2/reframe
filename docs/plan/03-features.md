@@ -526,7 +526,7 @@ block:
 | Field | Control | Written as |
 |-------|---------|------------|
 | Language | Language picker (below) | MKV: `language` (ISO 639-2/B) + `LanguageIETF` (BCP 47). MP4: ISO 639-2/T |
-| Name | Text, or a name template such as `{lang_name} {channels} {codec}` → `Japanese 5.1 Opus` | `title` |
+| Name | Text, or a name template such as `{lang_name} {channels} {codec}` → `Japanese 5.1 Opus`. A name with a brace that parses and uses only the track variables (`lang`, `lang_name`, `lang_native`, `channels`, `codec`, `bitrate`, `title`, `source_codec`) is a template, expanded when the job is planned; `{{` and `}}` write a brace, `<…>` is an optional group; any other name is written as typed ([0103](../decisions/0103-owner-decisions-before-v1.md) item 6) | `title` |
 | Default | Toggle. Usually one track per type is default; more than one is allowed, with a warning that offers to keep only the first ([0044](../decisions/0044-code-review-follow-ups.md)) | disposition / FlagDefault |
 | Forced | Toggle | FlagForced |
 | Commentary | Toggle | FlagCommentary |
@@ -793,7 +793,9 @@ Same behaviour as HandBrake:
   whose output is the output or the source of another waiting or running job is added as
   failed (`queue.output_claimed`,
   [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)).
-- **When done**: nothing · notify · quit · sleep · shut down (desktop and bare-metal only).
+- **When done**: nothing · notify · quit · sleep · shut down (desktop and bare-metal only). A server in a
+  container (the Docker image) offers neither sleep nor shut down, a web server no quit; the API
+  refuses them (`queue.when_done_unavailable`, [0103](../decisions/0103-owner-decisions-before-v1.md) item 7).
 - **Sleep inhibit** while encoding (Windows `SetThreadExecutionState`, Linux the desktop
   session's inhibit and logind over D-Bus). It stops automatic (idle) sleep only: the user's own Sleep, the
   power button and the lid always work, and the encode then pauses with the system and

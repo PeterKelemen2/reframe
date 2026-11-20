@@ -104,8 +104,8 @@ before the user docs, and then a `v1.0.0-rc.1` tag tries the release pipeline.
   a low level (older TVs at 4.1) may refuse them. Setting a level in the preset is the way back.
 - The AppImage grows by the GStreamer plugins, and its notices and source manifest get LGPL
   entries.
-- Removing `default_container` makes a settings file of this version unreadable for an older
-  version only through the usual down-level path (the migration note).
+- Removing `default_container` bumps the settings schema to 3: an older version sees a newer
+  file (`settings.newer_version`), uses its defaults and leaves the file as it is.
 - Windows users may see a rare Detelecine crash; the job fails and can be retried by hand.
 
 ## Plan changes
@@ -165,3 +165,24 @@ owner's choice (open). Item 13 works as written; the dialog is mounted in `App.v
   decoders with their parsers (H.264, HEVC and AV1 on Intel and AMD GPUs) from
   gst-plugins-bad, which need no FFmpeg. No libav plugin and no openh264. NVIDIA and
   software-only systems keep the frame compare for H.264 and HEVC clips.
+
+## Follow-up (2026-11-20): items 3, 6, 7, 8, 10 and 11
+
+- **Item 3** built: settings schema 3; the migration drops the field.
+- **Item 6** built: a name with a brace that parses and uses only the track variables (`lang`,
+  `lang_name`, `lang_native`, `channels`, `codec`, `bitrate`, `title`, `source_codec`) is a
+  template; `{{` and `}}` write a brace and `<…>` is an optional group; any other name is
+  written as typed (a title such as `Signs {Karaoke}` stays). The job keeps the template;
+  `build_plan` expands it, so the preview clip, the dry run and the queue agree.
+  `POST /api/jobs/track-names` serves the Summary. A typo in a variable is written as typed,
+  with no warning yet.
+- **Item 7** built: the image sets `REFRAME_CONTAINER=1`; the refusals are
+  `403 queue.when_done_unavailable`.
+- **Item 8** built: the label is derived from the `encoder.unavailable` issue (no new state, no
+  schema change). The closest-encoder fix in the queue adds the fixed job at the failed job's
+  place and removes the failed one; it is not an in-place retry.
+- **Item 10** built: Start is offered for a waiting job only when the runner does not take it now.
+- **Item 11** built; the definitions linter enforces it.
+- **Item 5** in the web UI: *Add group to queue* asks `batch/resolve-run` with `detect_crop`;
+  the matrix shown while editing does not detect.
+
