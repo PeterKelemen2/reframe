@@ -3883,3 +3883,20 @@ The pinned BtbN build `n9.0.2-17-g2a571b6068-20260930`, MKVToolNix 103.0 and Med
   is no `mesa-va-drivers` package), whose VAAPI offers no H.264 or H.265 encoding: FFmpeg says
   `No usable encoding profile found.`; AV1 encodes. The `mkvtoolnix` and `mediainfo` packages
   put their programs in `/usr/sbin`.
+
+### Encoder defaults behind the option help (C-6, decision 0103 item 11)
+
+Checked for the help texts of the advanced options (FFmpeg n9.0.2, RX 7600 with radeonsi):
+
+- FFmpeg's libvpx wrapper sets `kf_min_dist` only when `-keyint_min` equals `-g` (two-pass encode).
+- libvpx with no `-g` puts a keyframe every 128 frames, in good and realtime mode.
+- VAAPI with no `-g`: a keyframe every 120 frames (H.264, H.265, AV1); `h264_vaapi` uses 2
+  B-frames.
+- AMF with no `-g`: a keyframe every 240 frames at 25 and 30 fps, no B-frames.
+- x264 and x265's automatic min-keyint is min(keyint / 10, fps): 25 at 30 and 60 fps, 24 at
+  24 fps.
+- x265's `lookahead-slices` depends on the resolution: preset medium gives 4 at 720p, 6 at
+  1080p, 8 at 2160p.
+- SVT-AV1's `max-qp` also works with CRF (36 KB against 408 KB), although the app's help names
+  VBR and CBR only.
+- VP9's under/overshoot default of 25 is from the libvpx source; test encodes could not show it.
