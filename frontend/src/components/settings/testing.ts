@@ -95,6 +95,7 @@ export function systemInfo(
     mode: 'web',
     auth: 'token',
     platform: 'linux',
+    container: false,
     problems: [],
     settings_read_only: false,
     tools: { ffmpeg: tool('ffmpeg', tools.ffmpeg), ffprobe: tool('ffprobe', tools.ffprobe) },

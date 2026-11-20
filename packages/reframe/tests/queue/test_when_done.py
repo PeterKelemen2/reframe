@@ -106,7 +106,9 @@ class FakePower:
         )
 
 
-def queue_with(h: Harness, power: object) -> QueueService:
+def queue_with(
+    h: Harness, power: object, unavailable: dict[WhenDone, str] | None = None
+) -> QueueService:
     """A queue like the harness's, with ``power`` as its power service."""
     return QueueService(
         h.events,
@@ -117,6 +119,7 @@ def queue_with(h: Harness, power: object) -> QueueService:
         sources=h.sources,
         inhibitor=h.inhibitor,
         power=cast(PowerService, power),
+        unavailable_when_done=unavailable,
         stall_after=None,
         watchdog_tick=0.05,
         log_interval=0.02,
@@ -435,6 +438,22 @@ async def test_without_a_power_service_nothing_is_done(harness: Harness) -> None
         "nothing was done."
     )
     assert warning.detail == "when_done=sleep: this Reframe has no power service"
+
+
+async def test_an_action_this_process_cannot_carry_out_is_a_warning(
+    harness: Harness, power: FakePower
+) -> None:
+    h = harness
+    h.queue = queue_with(h, power, {"shutdown": "in a container"})
+    h.settings.queue.when_done = "shutdown"
+    await h.run_one(h.job("A"))
+    assert power.scheduled == []
+    [warning] = warnings(h, "queue.when_done_unavailable")
+    assert "When done: “Shut down” is not available here" in warning.message
+    assert warning.detail == "when_done=shutdown: in a container"
+    h.settings.queue.when_done = "sleep"
+    await h.run_one(h.job("B"))
+    assert [action for _, action, _ in power.scheduled] == ["sleep"]
 
 
 async def test_nothing_and_notify_never_use_the_power_service(

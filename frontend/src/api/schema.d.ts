@@ -1509,7 +1509,9 @@ export interface paths {
         /**
          * Set When Done
          * @description Set what happens when the queue is finished (the ``queue.when_done`` setting). A power
-         *     countdown that is running for another action is cancelled.
+         *     countdown that is running for another action is cancelled. An action this server cannot
+         *     carry out (``quit`` in web mode, ``sleep`` and ``shutdown`` in a container) is a 403
+         *     problem.
          */
         put: operations["queue_set_when_done"];
         post?: never;
@@ -6881,6 +6883,12 @@ export interface components {
              * @description The server's ``sys.platform``: ``linux``, ``win32``, ``darwin``.
              */
             platform: string;
+            /**
+             * Container
+             * @description The server runs in a container (the Docker image): it offers no *Sleep* and no *Shut
+             *     down* when the queue is done.
+             */
+            container: boolean;
             /** @description Each tool's status, path and version, after discovery. */
             tools: components["schemas"]["ToolSet"];
             /**

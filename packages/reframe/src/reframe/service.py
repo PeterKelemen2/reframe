@@ -37,7 +37,7 @@ from reframe.models.job import JobSettings
 from reframe.models.media import MediaSource, SubtitleFileInfo
 from reframe.models.naming import NamingOptions
 from reframe.models.preset import FieldChange, Preset, PresetFile
-from reframe.models.settings import AppSettings, LogLevel
+from reframe.models.settings import AppSettings, LogLevel, WhenDone
 from reframe.models.tasks import TaskInfo
 from reframe.models.template import JobTemplate
 from reframe.models.tools import ToolBuilds, ToolInfo, ToolSet
@@ -900,6 +900,7 @@ class Reframe:
         data_dir: Path,
         cache_dir: Path,
         on_log_level: Callable[[LogLevel], None] | None = None,
+        unavailable_when_done: Mapping[WhenDone, str] | None = None,
     ) -> None:
         """Wire the services without starting anything. Use :meth:`create` instead."""
         self.config_dir = config_dir
@@ -974,6 +975,7 @@ class Reframe:
             sources=self.sources,
             naming=preset_naming,
             power=self.power,
+            unavailable_when_done=unavailable_when_done,
         )
 
     @classmethod
@@ -984,6 +986,7 @@ class Reframe:
         *,
         cache_dir: Path | None = None,
         on_log_level: Callable[[LogLevel], None] | None = None,
+        unavailable_when_done: Mapping[WhenDone, str] | None = None,
     ) -> Reframe:
         """Create the facade and start tool discovery and encoder detection in the background.
         Returns at once. The saved queue is not opened here: the queue opens it at its first use.
@@ -993,12 +996,20 @@ class Reframe:
         until a service writes there.
 
         ``on_log_level`` is called with the new level whenever a settings change sets another
-        ``diagnostics.log_level``, before ``settings.update`` returns.
+        ``diagnostics.log_level``, before ``settings.update`` returns. ``unavailable_when_done``:
+        when-done actions this process cannot carry out, with the reason; when the queue empties
+        with one of them set, nothing runs and an ``app.warning`` says why.
         """
         config = Path(config_dir) if config_dir is not None else paths.config_dir()
         data = Path(data_dir) if data_dir is not None else paths.data_dir()
         cache = Path(cache_dir) if cache_dir is not None else paths.cache_dir()
-        app = cls(config_dir=config, data_dir=data, cache_dir=cache, on_log_level=on_log_level)
+        app = cls(
+            config_dir=config,
+            data_dir=data,
+            cache_dir=cache,
+            on_log_level=on_log_level,
+            unavailable_when_done=unavailable_when_done,
+        )
         app.tools.start()
         app.capabilities.start()
         return app

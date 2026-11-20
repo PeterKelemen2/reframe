@@ -9,7 +9,16 @@ from pathlib import PurePath
 
 from pydantic import BaseModel, ConfigDict
 
-from reframe.models import AppSettings, AppWarningEvent, FieldChange, JsonPatch, ToolPaths
+from reframe.models import (
+    AppSettings,
+    AppWarningEvent,
+    FieldChange,
+    JsonPatch,
+    Severity,
+    ToolPaths,
+    ValidationIssue,
+)
+from reframe.queue.whendone import POWER_LABELS
 from reframe.tools import ENV_VARS
 from reframe_server import security
 from reframe_server.api import api_router
@@ -59,9 +68,28 @@ async def change(patch: JsonPatch, reframe: ReframeDep, config: ConfigDep) -> Se
     )
 
 
+def check_when_done(config: ServerConfig, old: AppSettings, new: AppSettings) -> None:
+    """:raises ProblemError: 403 when the patch sets a when-done action that this server cannot
+    carry out (``quit`` in web mode, ``sleep`` and ``shutdown`` in a container)."""
+    action = new.queue.when_done
+    reason = config.unavailable_when_done.get(action)
+    if reason is None or action == old.queue.when_done:
+        return
+    label = POWER_LABELS[action][1]
+    message = f"When done: “{label}” is not available here"
+    issue = ValidationIssue(
+        severity=Severity.ERROR,
+        code="queue.when_done_unavailable",
+        path="queue.when_done",
+        message=f"{message}. {reason}",
+    )
+    raise ProblemError(403, issue.code, message, reason, issues=[issue])
+
+
 def _check(config: ServerConfig, old: AppSettings, new: AppSettings) -> None:
     """Runs under the store's lock on the settings the patch was applied to, so a concurrent
     change cannot slip a patch past it. A value the patch does not change is not checked."""
+    check_when_done(config, old, new)
     if config.mode == "web":
         programs = _programs_set(old.tools, new.tools)
         if programs:

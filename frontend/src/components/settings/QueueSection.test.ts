@@ -4,6 +4,7 @@ import Select from 'primevue/select'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/api/client'
+import Field from '@/components/base/Field.vue'
 import { useQueueStore } from '@/stores/queue'
 
 import QueueSection from './QueueSection.vue'
@@ -24,8 +25,8 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-async function mountQueue(mode: 'web' | 'desktop' = 'web') {
-  const result = await mountSettings(QueueSection, { info: systemInfo({ mode }) })
+async function mountQueue(mode: 'web' | 'desktop' = 'web', container = false) {
+  const result = await mountSettings(QueueSection, { info: systemInfo({ mode, container }) })
   mounted.push(result.wrapper)
   const queue = useQueueStore()
   queue.setWhenDone = vi.fn<() => Promise<void>>(async () => undefined)
@@ -62,6 +63,32 @@ describe('the Queue section', () => {
     mounted.splice(0)
     const desktop = await mountQueue('desktop')
     expect(disabledOf(desktop.whenDone())).toEqual([])
+  })
+
+  it('offers no Sleep and no Shut down in a container, and says why', async () => {
+    const { whenDone, wrapper } = await mountQueue('web', true)
+    const values = (whenDone()?.props('options') as { value: string }[] | undefined)?.map(
+      (o) => o.value,
+    )
+    expect(values).toEqual(['nothing', 'notify', 'quit'])
+    expect(disabledOf(whenDone())).toEqual(['quit'])
+    const field = wrapper
+      .findAllComponents(Field)
+      .find((found) => found.props('label') === 'When done')
+    expect(field?.props('help')).toBe(
+      'The server runs in a container: it cannot put its computer to sleep or shut it down.',
+    )
+  })
+
+  it('still names a saved Sleep in a container, which cannot be chosen again', async () => {
+    const { whenDone, queue } = await mountQueue('web', true)
+    queue.whenDone = 'sleep'
+    await flushPromises()
+    const values = (whenDone()?.props('options') as { value: string }[] | undefined)?.map(
+      (o) => o.value,
+    )
+    expect(values).toEqual(['nothing', 'notify', 'quit', 'sleep'])
+    expect(disabledOf(whenDone())).toEqual(['quit', 'sleep'])
   })
 
   it('shows a refused when-done value at its field', async () => {

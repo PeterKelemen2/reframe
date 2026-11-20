@@ -101,8 +101,10 @@ RUN chmod 0755 /usr/local/bin/reframe-entrypoint \
     && mkdir -p /config /data /media /output
 
 # List values are JSON, as pydantic-settings reads them from the environment.
+# REFRAME_CONTAINER: the server offers no sleep or shut down, which a container cannot do.
 ENV PUID=1000 \
     PGID=1000 \
+    REFRAME_CONTAINER=1 \
     REFRAME_HOST=0.0.0.0 \
     REFRAME_PORT=8765 \
     REFRAME_AUTH=password \

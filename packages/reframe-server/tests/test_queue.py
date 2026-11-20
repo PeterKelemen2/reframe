@@ -6,12 +6,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 
 import pytest
 
-from reframe.models import JobSettings
+from reframe.models import AppWarningEvent, JobSettings
 from reframe_server.routers.queue import LOG_CHUNK
 from reframe_testing import fake_tools as ft
+from reframe_testing.helpers import drain
 from reframe_testing.server import PROBE_RULE, Api, ApiFactory
 from reframe_testing.waiting import wait_until
 
@@ -267,6 +269,63 @@ async def test_when_done_is_saved_in_the_settings(api: Api) -> None:
     assert response.json() == {"when_done": "sleep"}
     saved = json.loads((api.reframe.config_dir / "settings.json").read_text(encoding="utf-8"))
     assert saved["queue"]["when_done"] == "sleep"
+
+
+@pytest.mark.parametrize(
+    ("config", "refused", "allowed"),
+    [
+        ({"container": True}, ["quit", "sleep", "shutdown"], ["nothing", "notify"]),
+        ({}, ["quit"], ["sleep", "shutdown"]),
+        ({"mode": "desktop"}, [], ["quit", "sleep", "shutdown"]),
+    ],
+)
+async def test_when_done_refuses_what_the_server_cannot_do(
+    make_api: ApiFactory, config: dict[str, object], refused: list[str], allowed: list[str]
+) -> None:
+    async with make_api(**config) as api:
+        for when_done in refused:
+            response = await api.client.put("/api/queue/when-done", json={"when_done": when_done})
+            assert response.status_code == 403, when_done
+            problem = response.json()
+            assert problem["code"] == "queue.when_done_unavailable"
+            assert "is not available here" in problem["title"]
+            [issue] = problem["issues"]
+            assert (issue["path"], issue["severity"]) == ("queue.when_done", "error")
+            assert api.reframe.settings.get().queue.when_done == "nothing"
+            patch = [{"op": "replace", "path": "/queue/when_done", "value": when_done}]
+            response = await api.client.put("/api/settings", json=patch)
+            assert (response.status_code, response.json()["code"]) == (
+                403,
+                "queue.when_done_unavailable",
+            )
+        for when_done in allowed:
+            response = await api.client.put("/api/queue/when-done", json={"when_done": when_done})
+            assert response.status_code == 200, when_done
+        system = (await api.client.get("/api/system")).json()
+        assert system["container"] is config.get("container", False)
+
+
+async def test_a_container_runs_no_power_action_that_the_settings_file_still_has(
+    make_api: ApiFactory, tmp_path: Path
+) -> None:
+    config = tmp_path / "config"
+    config.mkdir(parents=True, exist_ok=True)
+    (config / "settings.json").write_text(
+        json.dumps({"queue": {"when_done": "shutdown"}}), encoding="utf-8"
+    )
+    async with make_api(container=True) as api:
+        subscription = api.reframe.events.subscribe()
+        [job_id] = await api.add_jobs("Show.mkv")
+        await api.client.post("/api/queue/start")
+        await ended(api, job_id)
+        seen: list[str] = []
+
+        def warned() -> bool:
+            seen.extend(e.code for e in drain(subscription) if isinstance(e, AppWarningEvent))
+            return "queue.when_done_unavailable" in seen
+
+        await wait_until(warned)
+        assert api.reframe.power.pending is None
 
 
 @pytest.mark.parametrize(("when_done", "kept"), [("sleep", False), ("shutdown", True)])

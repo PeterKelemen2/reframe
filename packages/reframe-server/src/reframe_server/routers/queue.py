@@ -22,6 +22,7 @@ from reframe_server.config import ServerConfig
 from reframe_server.deps import ConfigDep, HubDep, ReframeDep
 from reframe_server.errors import ProblemError
 from reframe_server.folders import hide_server_folders
+from reframe_server.routers.settings import check_when_done
 
 router = api_router("queue")
 
@@ -187,11 +188,16 @@ async def reorder(body: QueueOrder, reframe: ReframeDep) -> None:
 
 
 @router.put("/queue/when-done")
-async def set_when_done(body: WhenDoneSetting, reframe: ReframeDep) -> WhenDoneSetting:
+async def set_when_done(
+    body: WhenDoneSetting, reframe: ReframeDep, config: ConfigDep
+) -> WhenDoneSetting:
     """Set what happens when the queue is finished (the ``queue.when_done`` setting). A power
-    countdown that is running for another action is cancelled."""
+    countdown that is running for another action is cancelled. An action this server cannot
+    carry out (``quit`` in web mode, ``sleep`` and ``shutdown`` in a container) is a 403
+    problem."""
     update = await reframe.settings.update(
-        [{"op": "replace", "path": "/queue/when_done", "value": body.when_done}]
+        [{"op": "replace", "path": "/queue/when_done", "value": body.when_done}],
+        check=lambda old, new: check_when_done(config, old, new),
     )
     when_done = update.settings.queue.when_done
     pending = reframe.power.pending
