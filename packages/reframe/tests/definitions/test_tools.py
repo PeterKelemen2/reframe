@@ -1992,8 +1992,9 @@ def _fits(enc: VideoEncoderDef, label: str) -> bool:
     sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi", "qsv", "nvenc")),
 )
 def test_hardware_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Path) -> None:
-    """As ``test_quality_range_ends_are_honoured``, on the GPU, with the rate buffer that the
-    command builder gives an NVENC constant quality."""
+    """As ``test_quality_range_ends_are_honoured``, on the GPU. NVENC gets the rate buffer of
+    the command builder, and a grainy picture: on the plain one CQ 1 and 2 give the same file
+    even at level 6.2, and without the buffer they do on the grainy one too."""
     enc = VIDEO[encoder_id]
     if not _hw_usable(enc):
         pytest.skip(f"{encoder_id} does not work on this machine")
@@ -2001,11 +2002,12 @@ def test_hardware_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Pat
     assert q is not None
     quality = VideoSettings(encoder=enc.id, rate_control=ConstantQuality(value=q.default))
     limit = nvenc_quality_rate_limit(enc.id, quality)
+    grain = ["-vf", "noise=alls=8:allf=t"] if enc.family == "nvenc" else []
     results: dict[str, tuple[int, str]] = {}
     for label, value in _quality_points(q).items():  # one at a time: GPU sessions are limited
         args, _ = _quality_args(q, value)
         out = tmp_path / f"{label}.mkv"
-        got = _encode_digest([*_hw_args(enc, 8), *args, *limit], out, timeout=60)
+        got = _encode_digest([*_hw_args(enc, 8), *grain, *args, *limit], out, timeout=60)
         assert not isinstance(got, str), f"{label}: {got}"
         results[label] = got
     assert _check_quality_points(results) == []

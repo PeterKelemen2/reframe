@@ -1003,8 +1003,15 @@ does not bind at CQ 10 either. It still binds at 2160p CQ 10 (201 MB of 559 MB),
 source at 2160p25 and 1080p60 (H.265), and at 2160p60: the grainy 2160p CQ 10 needs about
 480M, which makes every output level 6.1. Larger buffers are not monotonic: H.265 1080p25 at CQ
 10 is 141 MB at 160M–200M, 130 MB at 300M and 108 MB at 800M. NVENC AV1 was not measured (no
-AV1 encoder on Pascal) and gets no buffer. `test_hardware_quality_range_ends_are_honoured` runs
-the range ends with the buffer: CQ 1 and 2 differ.
+AV1 encoder on Pascal) and gets no buffer.
+
+The range end: on the plain 320x240 test picture (5 frames) H.265 CQ 1 and 2 give the same file
+with the buffer and even with `-level 6.2` (CQ 3 differs; H.264: CQ 1 to 4 alike), so that is
+the picture, not the level. With `-vf noise=alls=8:allf=t` (the noise filter's fixed seed gives
+the same file each run) H.265 CQ 1 and 2 give the same file without the buffer (68 483 bytes,
+level 2.0) and differ with it (305 582 and 280 116 bytes); H.264 likewise.
+`test_hardware_quality_range_ends_are_honoured` runs NVENC on that grainy picture with the
+buffer.
 
 **Docker.** With the NVIDIA Container Toolkit 1.20.2 in CDI mode, `--gpus all`, `--device
 nvidia.com/gpu=all`, `--runtime nvidia` and the compose `deploy` reservation all mount the same 63
