@@ -2472,8 +2472,10 @@ async def run_batch(
     group and print the groups and the resolution matrix; without ``--dry-run``, queue the
     files without errors in episode order and encode them as ``reframe encode`` does.
     The batch is resolved as a whole (``Reframe.batch.resolve_batch``): the name checks
-    cover every group, and the outputs of an earlier run are left out. A dry run validates
-    in this process, as ``reframe plan`` does. Returns the exit code."""
+    cover every group, and the outputs of an earlier run are left out. Before the files are
+    queued, the crop of each file whose crop is automatic or conservative is detected; a dry
+    run skips that and validates in this process, as ``reframe plan`` does. Returns the exit
+    code."""
     if as_json and not dry_run:
         _error("--json needs --dry-run: the encode prints progress, not JSON.")
         return EXIT_USAGE
@@ -2500,7 +2502,7 @@ async def run_batch(
         try:
             async with open_queue(app, console, in_process=in_process, detach=detach) as session:
                 resolutions, unreadable, _ = await _show_batch(
-                    session.batch, chosen, files, level, console
+                    session.batch, chosen, files, level, console, detect_crop=True
                 )
                 return await _queue_batch(session, resolutions, unreadable, console, detach)
         except _CommandEnds as end:
@@ -2515,16 +2517,25 @@ async def _show_batch(
     console: Console,
     *,
     as_json: bool = False,
+    detect_crop: bool = False,
 ) -> tuple[list[BatchResolution], int, int]:
     """Resolve the batch and print it; return the resolutions and the numbers of unreadable
-    and left-out files."""
-    grouping, resolutions = await service.resolve_batch(chosen, files, level=level)
+    and left-out files. ``detect_crop``: measure the crop of the files that need one, with a
+    line for each."""
+
+    def measuring(path: Path, number: int, total: int) -> None:
+        _say(console, f"Detecting the crop of {path.name} ({number} of {total})…", "dim")
+
+    if not as_json:
+        _say(console, f"Preset: {chosen.name}")
+    grouping, resolutions = await service.resolve_batch(
+        chosen, files, level=level, detect_crop=detect_crop, progress=measuring
+    )
     unreadable = [i for i in grouping.issues if i.severity is Severity.ERROR]
     left_out = [i for i in grouping.issues if i.severity is not Severity.ERROR]
     if as_json:
         _write_json({"grouping": grouping, "resolutions": resolutions})
         return resolutions, len(unreadable), len(left_out)
-    _say(console, f"Preset: {chosen.name}")
     if unreadable:
         _section(console, "Files that cannot be read")
         render_issues(console, unreadable)
@@ -3975,8 +3986,9 @@ def build_app() -> typer.Typer:
         ✗ no match for a required rule, a dash: skipped), the output name, then each file's
         errors and warnings. A file of the batch is never overwritten, and a file that is
         the planned output of another file (an earlier run's output) is left out. Without
-        --dry-run, the files without errors are queued in episode order and encoded as
-        "reframe encode" does; the others are listed."""
+        --dry-run, the black bars of each file are detected when the preset crops
+        automatically, then the files without errors are queued in episode order and encoded
+        as "reframe encode" does; the others are listed."""
         _run(
             run_batch(
                 paths,

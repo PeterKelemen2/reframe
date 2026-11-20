@@ -22,6 +22,7 @@ import { useToastStore } from '@/stores/toasts'
 import { useUiStore } from '@/stores/ui'
 
 import ApplyToGroupDialog from './ApplyToGroupDialog.vue'
+import GroupChapterNames from './GroupChapterNames.vue'
 
 type GroupItem = Extract<PanelItem, { kind: 'group' }>
 
@@ -192,6 +193,7 @@ watch(mode, async () => {
           data-field="scope"
           @update:model-value="setScope"
         />
+        <GroupChapterNames />
       </div>
       <div v-if="editor.matrixError !== null" class="group-banner__error" data-state="matrix-error">
         <span role="alert">{{

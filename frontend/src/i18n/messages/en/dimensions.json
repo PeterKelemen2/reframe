@@ -59,7 +59,7 @@
     "failed": "Crop detection failed: {reason}",
     "cancelled": "The crop detection was cancelled.",
     "again": "Detect again",
-    "group": "In a group, Automatic and Conservative queue the files without a crop: their black bars are not detected. Choose Manual to crop every file the same way.",
+    "group": "In a group, Automatic and Conservative detect the black bars of each file when the group is queued. Choose Manual to crop every file the same way.",
     "shownFile": "This file: {line}"
   },
   "snap": {

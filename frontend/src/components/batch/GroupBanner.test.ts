@@ -164,6 +164,29 @@ describe('the group banner', () => {
     expect(setScope).toHaveBeenCalledExactlyOnceWith('file')
   })
 
+  it("sets the group's chapter names: each file's own, or numbered", async () => {
+    const { wrapper, editor } = await mountBanner('group')
+    const patchTemplate = vi.spyOn(editor, 'patchTemplate').mockResolvedValue()
+    const names = wrapper
+      .findAllComponents(SelectButton)
+      .find((found) => found.attributes('data-field') === 'chapter-names')
+    if (names === undefined) throw new Error('no chapter names control')
+    expect(names.props('modelValue')).toBe('source')
+    expect((names.props('options') as { label: string }[]).map((option) => option.label)).toEqual([
+      'From each file',
+      'Chapter 1, Chapter 2, …',
+    ])
+    expect(text($(`#${names.attributes('aria-labelledby')}`))).toBe('Chapter names')
+    names.vm.$emit('update:modelValue', 'generated')
+    await flushPromises()
+    expect(patchTemplate).toHaveBeenCalledExactlyOnceWith([
+      { op: 'add', path: '/chapter_name_policy', value: 'generated' },
+    ])
+    names.vm.$emit('update:modelValue', 'source')
+    await flushPromises()
+    expect(patchTemplate).toHaveBeenCalledOnce()
+  })
+
   it('checks the group in the matrix and queues it', async () => {
     await mountBanner('group')
     const openMatrix = vi.spyOn(useUiStore(), 'openMatrix')
