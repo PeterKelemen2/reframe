@@ -20,7 +20,9 @@ for library in "$tools"/*/*.so.*; do
     fi
 done
 # linuxdeploy would copy the packaged libraries a second time into usr/lib of the AppImage,
-# and it fails on those that find each other only through the loading program.
+# and it fails on those that find each other only through the loading program. Keeping libva out
+# of usr/lib also makes GStreamer's va plugin load the host's libva, the one the host's VA-API
+# drivers are built for (Ubuntu 22.04's cannot load a driver newer than its own).
 LINUXDEPLOY_EXCLUDED_LIBRARIES=$(find "$tools" -name '*.so*' -type f -printf '%f\n' | paste -sd ';' -)
 export LINUXDEPLOY_EXCLUDED_LIBRARIES
 

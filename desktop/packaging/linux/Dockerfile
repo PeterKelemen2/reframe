@@ -55,5 +55,11 @@ COPY --from=uv /uv /usr/local/bin/uv
 ENV UV_PYTHON_INSTALL_DIR=/opt/python UV_PYTHON_PREFERENCE=only-managed
 RUN uv python install 3.14.8
 
+# The source of the AppImage's plugins from GStreamer's "bad" set (appimage-gstreamer-plugins.txt);
+# the libraries it pulls in for its other plugins stay in the image.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gstreamer1.0-plugins-bad \
+    && rm -rf /var/lib/apt/lists/*
+
 # The bundler cannot mount the linuxdeploy AppImages without FUSE, which containers lack.
 ENV APPIMAGE_EXTRACT_AND_RUN=1

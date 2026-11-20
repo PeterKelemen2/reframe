@@ -22,6 +22,7 @@ gir1.2-rsvg-2.0
 gir1.2-soup-3.0
 glib-networking
 gsettings-desktop-schemas
+gstreamer1.0-plugins-bad
 gstreamer1.0-plugins-base
 gstreamer1.0-plugins-good
 libapparmor1
@@ -66,6 +67,7 @@ libgnutls30
 libgraphite2-3
 libgssapi-krb5-2
 libgstreamer-gl1.0-0
+libgstreamer-plugins-bad1.0-0
 libgstreamer-plugins-base1.0-0
 libgstreamer1.0-0
 libgtk-3-0
