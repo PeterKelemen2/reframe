@@ -54,6 +54,10 @@ FRONTEND = REPO_ROOT / "frontend"
 #: The sources release's licence texts (sources-fetch.py writes it next to the archives).
 TEXTS = "licence-texts.json"
 DOC_ROOT = Path("/usr/share/doc")
+#: A licence that a Debian copyright file names (it ends a sentence: the dot is not the name's).
+_COMMON_LICENCE = re.compile(
+    r"/usr/share/common-licenses/([A-Za-z0-9][A-Za-z0-9.+_-]*[A-Za-z0-9+])"
+)
 
 LICENSE_CHECKER = "license-checker@25.0.1"
 RUST_TARGETS = {"linux-x64": "x86_64-unknown-linux-gnu", "windows-x64": "x86_64-pc-windows-msvc"}
@@ -363,18 +367,24 @@ def read_sources_texts(path: Path) -> dict[str, list[tuple[str, str]]]:
 
 def _copyright_texts(entry: Mapping[str, Any], doc_root: Path) -> list[tuple[str, str]]:
     """The ``copyright`` file of each binary package of an Ubuntu source package, as dpkg
-    installed it: the text the binary package ships under."""
-    texts = []
-    for package in entry.get("binary_packages", []):
-        path = doc_root / str(package).partition(":")[0] / "copyright"
+    installed it: the text the binary package ships under, and the full text of each common
+    licence it names (``/usr/share/common-licenses/LGPL``) instead of carrying it."""
+
+    def read(path: Path) -> tuple[str, str]:
         try:
-            texts.append((path.as_posix(), path.read_text(encoding="utf-8", errors="replace")))
+            return path.as_posix(), path.read_text(encoding="utf-8", errors="replace")
         except OSError as e:
             raise NoticesError(
                 f"{entry['archive']}: cannot read {path} ({e.strerror or e}): the Linux "
                 "packages' notices run in their build image, which has these packages"
             ) from e
-    return texts
+
+    texts = [
+        read(doc_root / str(package).partition(":")[0] / "copyright")
+        for package in entry.get("binary_packages", [])
+    ]
+    named = dict.fromkeys(name for _, text in texts for name in _COMMON_LICENCE.findall(text))
+    return texts + [read(doc_root.parent / "common-licenses" / name) for name in named]
 
 
 def source_text_entries(

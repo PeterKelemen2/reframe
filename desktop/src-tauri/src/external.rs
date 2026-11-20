@@ -48,13 +48,17 @@ async fn clip_file(backend: &Backend, url: &str) -> Option<PathBuf> {
 }
 
 #[tauri::command]
-pub async fn open_external(url: String, backend: tauri::State<'_, Backend>) -> Result<(), String> {
+pub async fn open_external(
+    url: String,
+    #[cfg_attr(not(target_os = "linux"), allow(unused_variables))] app: tauri::AppHandle,
+    backend: tauri::State<'_, Backend>,
+) -> Result<(), String> {
     if !is_preview_clip(&url) {
         return Err(format!("Not a preview clip: {url}"));
     }
     let file = clip_file(&backend, &url).await;
     #[cfg(target_os = "linux")]
-    if let Some((env, folder)) = appimage_user_side() {
+    if let Some((env, folder)) = appimage_user_side(&app.config().identifier) {
         let commands = match &file {
             Some(file) => open::commands(file),
             None => open::commands(&url),
@@ -74,10 +78,10 @@ pub async fn open_external(url: String, backend: tauri::State<'_, Backend>) -> R
 /// The user's environment and folder; `None` outside an AppImage. The app's own working folder
 /// is inside the image, which goes away when the app quits.
 #[cfg(target_os = "linux")]
-fn appimage_user_side() -> Option<(Vec<(OsString, OsString)>, std::path::PathBuf)> {
+fn appimage_user_side(identifier: &str) -> Option<(Vec<(OsString, OsString)>, std::path::PathBuf)> {
     std::env::var_os("APPDIR")?;
     let exe = std::env::current_exe().ok()?;
-    let env = crate::appimage::user_environ(std::env::vars_os(), &exe);
+    let env = crate::appimage::user_environ(std::env::vars_os(), &exe, identifier);
     let folder = crate::appimage::launch_folder(|name| std::env::var_os(name))
         .filter(|folder| folder.is_dir())
         .unwrap_or_else(|| "/".into());

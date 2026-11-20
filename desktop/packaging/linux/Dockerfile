@@ -15,6 +15,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # archive's signatures alone, as it does with the image's default http:// archive.
 ARG APT_SNAPSHOT=20261114T000000Z
 # libdrm-dev, meson and ninja-build: bundle-tools.py builds the libva that the packages ship.
+# patchelf: the bundler's GStreamer plugin points the AppImage's plugins at its libraries.
 RUN printf 'deb https://snapshot.ubuntu.com/ubuntu/%s %s main restricted universe multiverse\n' \
         "$APT_SNAPSHOT" jammy "$APT_SNAPSHOT" jammy-updates "$APT_SNAPSHOT" jammy-security \
         > /etc/apt/sources.list \
@@ -24,7 +25,7 @@ RUN printf 'deb https://snapshot.ubuntu.com/ubuntu/%s %s main restricted univers
     && apt-get install -y --no-install-recommends \
         build-essential ca-certificates curl file git pkg-config wget xz-utils \
         libayatana-appindicator3-dev librsvg2-dev libssl-dev libwebkit2gtk-4.1-dev libxdo-dev \
-        desktop-file-utils libdrm-dev meson ninja-build gcc \
+        desktop-file-utils libdrm-dev meson ninja-build gcc patchelf \
     && rm -rf /var/lib/apt/lists/*
 
 ARG NODE_VERSION=24.22.1

@@ -21,9 +21,16 @@ use tauri::Manager;
 fn main() {
     // Until the build: the arguments are read, and a second launch hands over its folder, there.
     let image_folder = appimage::enter_launch_folder();
+    let context = tauri::generate_context!();
+    #[cfg(unix)]
+    if let Some(registry) =
+        appimage::gstreamer_registry(|name| std::env::var_os(name), &context.config().identifier)
+    {
+        // SAFETY: no other thread runs yet; the web processes inherit it.
+        unsafe { std::env::set_var("GST_REGISTRY_1_0", registry) };
+    }
     // Before the builder: the owner is looked for, and the sidecar started, while GTK and
     // WebKitGTK load.
-    let context = tauri::generate_context!();
     let backend = backend::Backend::start(&context);
     let app = tauri::Builder::default()
         // First: a second launch must reach the running app before anything else starts.
