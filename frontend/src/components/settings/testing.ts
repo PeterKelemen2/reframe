@@ -29,7 +29,6 @@ export function defaultSettings(): AppSettings {
         output_folder_mode: 'fixed',
         output_folder: '/media/out',
       },
-      default_container: 'mkv',
       collision: 'auto_rename',
       partial_file: 'delete',
     },

@@ -12,7 +12,6 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from reframe.models.base import DocumentModel, LanguageTag, PositiveInt
-from reframe.models.job import Container
 from reframe.models.naming import NamingOptions
 
 __all__ = [
@@ -58,7 +57,6 @@ class OutputDefaults(DocumentModel):
     """The output settings."""
 
     naming: NamingOptions = Field(default_factory=NamingOptions)
-    default_container: Container = "mkv"
     collision: CollisionPolicy = "auto_rename"
     """``ask`` needs a UI: the CLI and the queue treat it as an error with fixes. The default
     never overwrites and never blocks."""
@@ -100,7 +98,7 @@ class DiagnosticsSettings(DocumentModel):
 class AppSettings(DocumentModel):
     """``<config>/settings.json``."""
 
-    schema_version: PositiveInt = 2
+    schema_version: PositiveInt = 3
     tools: ToolPaths = Field(default_factory=ToolPaths)
     encoders: EncoderSettings = Field(default_factory=EncoderSettings)
     output: OutputDefaults = Field(default_factory=OutputDefaults)

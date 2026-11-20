@@ -151,6 +151,20 @@ def _settings_1_to_2(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+@REGISTRY.register("settings", from_version=2)
+def _settings_2_to_3(data: dict[str, Any]) -> dict[str, Any]:
+    """Settings 3 has no ``output.default_container``: the preset's container decides, and
+    nothing read the setting.
+
+    Down-level note: Reframe before version 3 finds a newer settings file, uses the default
+    settings and leaves the file unchanged (``settings.newer_version``).
+    """
+    output = data.get("output")
+    if isinstance(output, dict):
+        output.pop("default_container", None)
+    return data
+
+
 #: The stream lists of a ``MediaSource`` whose entries have a ``bitrate``.
 _BITRATE_STREAMS = ("video", "audio")
 

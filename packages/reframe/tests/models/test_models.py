@@ -241,7 +241,7 @@ def test_migration_errors() -> None:
 
 
 def test_module_level_migrate() -> None:
-    assert migrate("settings", {}) == {"schema_version": 2}
+    assert migrate("settings", {}) == {"schema_version": 3}
     settings = load_document("settings", {"queue": {"parallel_jobs": 2}})
     assert isinstance(settings, AppSettings)
     assert settings.queue.parallel_jobs == 2
@@ -425,7 +425,7 @@ def test_settings_2_drops_the_mkvpropedit_and_mediainfo_paths_only() -> None:
     }  # fmt: skip
     migrated = migrate("settings", old)
     assert migrated == {
-        "schema_version": 2,
+        "schema_version": 3,
         "tools": {"ffmpeg": "/opt/ff/ffmpeg", "future": 1},
         "queue": {"parallel_jobs": 3},
     }
@@ -438,7 +438,29 @@ def test_settings_2_drops_the_mkvpropedit_and_mediainfo_paths_only() -> None:
 
 
 def test_settings_2_takes_a_file_without_tools() -> None:
-    assert migrate("settings", {"tools": None}) == {"schema_version": 2, "tools": None}
+    assert migrate("settings", {"tools": None}) == {"schema_version": 3, "tools": None}
+
+
+def test_settings_3_drops_the_default_container_only() -> None:
+    old: dict[str, Any] = {
+        "schema_version": 2,
+        "output": {"default_container": "mp4", "collision": "overwrite", "future": 1},
+    }
+    migrated = migrate("settings", old)
+    assert migrated == {
+        "schema_version": 3,
+        "output": {"collision": "overwrite", "future": 1},
+    }
+    assert old["output"]["default_container"] == "mp4"  # the input is not changed
+    settings = load_document("settings", old)
+    assert isinstance(settings, AppSettings)
+    output = settings.model_dump(mode="json")["output"]
+    assert "default_container" not in output
+    assert (output["collision"], output["future"]) == ("overwrite", 1)
+    assert migrate("settings", {"schema_version": 2, "output": None}) == {
+        "schema_version": 3,
+        "output": None,
+    }
 
 
 def test_media_source_2_turns_mediainfo_bit_rates_into_estimated() -> None:

@@ -1767,7 +1767,7 @@ export interface components {
         AppSettings: {
             /**
              * Schema Version
-             * @default 2
+             * @default 3
              */
             schema_version: number;
             tools?: components["schemas"]["ToolPaths"];
@@ -5503,12 +5503,6 @@ export interface components {
          */
         OutputDefaults: {
             naming?: components["schemas"]["NamingOptions"];
-            /**
-             * Default Container
-             * @default mkv
-             * @enum {string}
-             */
-            default_container: "mkv" | "mp4" | "webm";
             /**
              * Collision
              * @description ``ask`` needs a UI: the CLI and the queue treat it as an error with fixes. The default

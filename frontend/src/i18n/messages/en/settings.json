@@ -88,7 +88,6 @@
   },
   "output": {
     "title": "Output",
-    "container": "Default container",
     "collisionLabel": "When the file exists",
     "collisionHelp": "Ask: the job stops and asks. Auto-rename: adds a number to the name. Overwrite: replaces the file.",
     "collision": {
