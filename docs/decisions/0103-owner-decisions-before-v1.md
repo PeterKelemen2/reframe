@@ -155,3 +155,13 @@ owner's choice (open). Item 13 works as written; the dialog is mounted in `App.v
 - **Item 9** built: the limit is 320×200 (width and height) for `h264_amf`, `hevc_amf` and
   `av1_amf`, and the `qvbr`, `hqvbr` and `hqcbr` rate controls start pre-analysis too.
 
+
+## Follow-up (2026-11-20): the owner's answers to the two deviations
+
+- **NVENC 4K constant quality** keeps level 5.1 (the 160M buffer as built). The help of the
+  NVENC quality value says that very low CQ values on grainy 4K sources are held at the
+  level's bitrate, and that a level or `maxrate` in the preset lifts it.
+- **The AppImage's decoders**: GStreamer's `dav1d` (AV1, royalty-free) and the `va` hardware
+  decoders with their parsers (H.264, HEVC and AV1 on Intel and AMD GPUs) from
+  gst-plugins-bad, which need no FFmpeg. No libav plugin and no openh264. NVIDIA and
+  software-only systems keep the frame compare for H.264 and HEVC clips.
