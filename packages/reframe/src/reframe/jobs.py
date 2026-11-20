@@ -42,6 +42,7 @@ from reframe.models.settings import AppSettings, LanguageSettings
 from reframe.models.tasks import TaskInfo
 from reframe.models.template import JobTemplate
 from reframe.naming import resolve_output_name
+from reframe.naming.track_names import expand_track_names
 from reframe.probe import ProbeError
 from reframe.probe.folder import list_media_files
 from reframe.queue import files as queue_files
@@ -502,7 +503,7 @@ class JobService:
         tools = await self._tools.status()
         try:
             return build_plan(
-                job,
+                expand_track_names(job, media, self.definitions),
                 media,
                 self._capabilities.snapshot,
                 tools,

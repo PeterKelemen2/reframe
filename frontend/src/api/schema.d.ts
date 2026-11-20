@@ -1028,6 +1028,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/track-names": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Track Names
+         * @description Each track's name as it will be written: a name with a track name variable
+         *     (``{lang_name} {channels} {codec}``) is filled in for its track.
+         */
+        post: operations["jobs_track_names"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chapters/import": {
         parameters: {
             query?: never;
@@ -7630,6 +7651,27 @@ export interface components {
             original?: boolean | null;
         };
         /**
+         * TrackNames
+         * @description The name each track of a job is written with: a name template filled in.
+         */
+        TrackNames: {
+            /**
+             * Video
+             * @description ``null`` keeps the source title; ``""`` writes no title.
+             */
+            video: string | null;
+            /**
+             * Audio
+             * @description In the order of the job's audio tracks.
+             */
+            audio: (string | null)[];
+            /**
+             * Subtitles
+             * @description In the order of the job's subtitle tracks.
+             */
+            subtitles: (string | null)[];
+        };
+        /**
          * TrackRole
          * @description What a track is for. One vocabulary for audio and subtitles.
          * @enum {string}
@@ -9822,6 +9864,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RenderedTags"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    jobs_track_names: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SingleJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackNames"];
                 };
             };
             /** @description An expected failure */

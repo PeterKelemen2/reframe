@@ -104,6 +104,18 @@ async def test_a_run_and_its_events_in_order(harness: Harness) -> None:
     assert h.leftovers() == []
 
 
+async def test_a_track_name_template_is_written_filled_in(harness: Harness) -> None:
+    h = harness
+    h.scenario(encode_rule(ft.write_output()))
+    job = h.job()
+    job.audio[0].metadata.name = "{lang_name} {channels} {codec}"
+    ended = await h.run_one(job)
+    assert ended.state is JobState.DONE
+    assert ended.plan is not None
+    assert "title=Japanese 5.1 AAC" in ended.plan.steps[0].argv
+    assert ended.settings.audio[0].metadata.name == "{lang_name} {channels} {codec}"
+
+
 async def test_job_log_events_are_rate_limited(harness: Harness) -> None:
     h = harness
     h.queue._runner.log_interval = 30.0  # one batch at the end

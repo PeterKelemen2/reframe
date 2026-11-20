@@ -156,6 +156,7 @@
     "keepLanguageOf": "As the source ({language})",
     "fileLanguageUnset": "Not set (written as und)",
     "name": "Name",
+    "nameHelp": "Text, or a name template that is filled in for this track: {example} gives {result}. Variables: {variables}. Write {open} and {close} for a brace.",
     "nameKeep": "As the source: {title}",
     "nameKeepUntitled": "As the source (no title)",
     "nameNone": "No title",
