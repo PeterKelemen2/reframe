@@ -72,6 +72,7 @@ from reframe.models import (
     VideoSettings,
     VideoStream,
 )
+from reframe.naming.track_names import expand_track_names
 
 __all__ = [
     "GLOBAL_ARGS",
@@ -311,6 +312,7 @@ def build_plan(
     without ``now``).
     """
     defs = definitions if definitions is not None else load_definitions()
+    job = expand_track_names(job, source, defs)
     container = defs.containers[job.output.container]
     if not source.video:
         raise PlanError("the source has no video stream")
