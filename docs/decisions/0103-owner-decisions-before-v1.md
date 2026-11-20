@@ -121,3 +121,15 @@ before the user docs, and then a `v1.0.0-rc.1` tag tries the release pipeline.
   of the AppImage), §Risks.
 - `08-roadmap.md`: §M10 (this record's changes before the release checklist), §After v1 (the
   small-window layout).
+
+## Follow-up (2026-11-20): items 12 and 13
+
+Built on Linux (D-8). Item 12 deviates: Ubuntu 22.04's `gstreamer1.0-libav` depends on
+`libavcodec58`, `libavformat58`, `libavfilter7` and `libavutil56`, which bring 59 packages with
+GPL x264 and x265; no package may contain FFmpeg ([0093](0093-ffmpeg-download-and-build-choice.md),
+D-10), so only GStreamer's base and good plugins are bundled (+3.4 MiB). Measured in the
+AppImage through WebKitWebDriver: VP9 plays (Opus, Vorbis, FLAC, MP3 audio; AAC, AC-3, E-AC-3
+are silent); H.264 and HEVC end in a media error, and the preview shows the frame compare;
+AV1 plays its audio without a picture and without an error, which the preview now treats as a
+codec the window cannot play. The decoders for H.264, HEVC and AV1 in the AppImage are the
+owner's choice (open). Item 13 works as written; the dialog is mounted in `App.vue`.
