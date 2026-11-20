@@ -466,8 +466,12 @@ def test_a_started_owner_leaves_out_every_option_of_the_server() -> None:
     """A server option added later would reach the owners that clients start."""
     from reframe_server.config import ServerConfig
 
-    kept = {"CONFIG_DIR", "DATA_DIR", "ENDPOINT_FILE"}
+    # A started owner in a container is in that container too.
+    kept = {"CONFIG_DIR", "DATA_DIR", "ENDPOINT_FILE", "CONTAINER"}
     assert {name.upper() for name in ServerConfig.model_fields} - kept == SERVER_OPTIONS
+    environ = {"REFRAME_CONTAINER": "1", "REFRAME_MODE": "web"}
+    assert owner_environment(Path("data"), environ)["REFRAME_CONTAINER"] == "1"
+    assert "REFRAME_MODE" not in owner_environment(Path("data"), environ)
 
 
 def test_an_owner_started_by_a_frozen_cli_gets_the_users_library_path(
