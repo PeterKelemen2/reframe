@@ -157,7 +157,8 @@ export function useQueueGroup(): QueueGroup {
       if (target?.kind !== 'group' || target.groupId !== groupId) await editor.editGroup(groupId)
       let resolution: BatchResolution
       try {
-        resolution = await editor.resolveNow()
+        // Queueing detects each file's crop: the matrix shown while editing does not.
+        resolution = await editor.resolveNow({ detectCrop: true })
       } catch (error) {
         // `resolveNow` shows no toast of its own.
         if (!(error instanceof ApiError)) throw error

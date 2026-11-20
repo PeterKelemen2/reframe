@@ -216,6 +216,7 @@ describe('the editor store, group target', () => {
         template: templateOfPreset(preset),
         source_ids: ['e1'],
         overrides: {},
+        detect_crop: false,
       })
       expect(body<ResolveBody>(requests('POST /api/batch/resolve-run')[0])).toMatchObject({
         source_ids: IDS,
@@ -866,6 +867,17 @@ describe('the editor store, group target', () => {
       expect(requests('POST /api/batch/derive')).toHaveLength(1)
       expect(answer.rows?.[0]?.job?.video?.encoder).toBe('libx264')
       expect(editor.resolution).toEqual(answer)
+      expect(body<ResolveBody>(requests('POST /api/batch/resolve-run').at(-1))).toMatchObject({
+        detect_crop: false,
+      })
+    })
+
+    it('resolveNow asks for the crop of each file when queueing needs it', async () => {
+      const editor = await edited()
+      await editor.resolveNow({ detectCrop: true })
+      expect(body<ResolveBody>(requests('POST /api/batch/resolve-run').at(-1))).toMatchObject({
+        detect_crop: true,
+      })
     })
 
     it('resolveNow waits for a field’s pending edit and the derive it leads to', async () => {

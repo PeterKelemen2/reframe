@@ -199,6 +199,7 @@ async function resolved(
     template: document.template,
     source_ids: [sourceId],
     overrides: override.length > 0 ? { [sourceId]: override } : {},
+    detect_crop: false,
   }
   const answer = unwrap(await client.POST('/api/batch/resolve', { body, signal }))
   return deepFreeze(cloneJson(answer.rows?.[0] as Resolution))
@@ -825,7 +826,7 @@ export const useEditorStore = defineStore('editor', () => {
   let matrixTimer: ReturnType<typeof setTimeout> | undefined
 
   /** Rejects with the `ApiError` of a failed request, without a toast. */
-  async function askMatrix(): Promise<BatchResolution> {
+  async function askMatrix(detectCrop = false): Promise<BatchResolution> {
     clearTimeout(matrixTimer)
     matrixTimer = undefined
     const state = requireGroup('resolve')
@@ -841,6 +842,7 @@ export const useEditorStore = defineStore('editor', () => {
       source_ids: ids,
       level: (group.value as BatchGroup).level,
       overrides,
+      detect_crop: detectCrop,
     }
     const mine = ++matrixAsks
     resolving.value = true
@@ -1478,7 +1480,7 @@ export const useEditorStore = defineStore('editor', () => {
    * *Add group to queue* queues. Rejects with an `ApiError` and shows no toast: a failed
    * resolve (also `matrixError`), or an edit that could not reach the group.
    */
-  async function resolveNow(): Promise<BatchResolution> {
+  async function resolveNow(options: { detectCrop?: boolean } = {}): Promise<BatchResolution> {
     requireGroup('resolveNow')
     flushEdits()
     if (editing.value) {
@@ -1506,7 +1508,7 @@ export const useEditorStore = defineStore('editor', () => {
         code: 'edit.failed',
       })
     }
-    return askMatrix()
+    return askMatrix(options.detectCrop ?? false)
   }
 
   /** The group that holds a state's representative now, else the most of its members. */

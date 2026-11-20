@@ -2511,6 +2511,14 @@ export interface components {
             source_ids: string[];
             /** @description Per-file JSON patches on the job, by ``source_id``. */
             overrides?: components["schemas"]["Overrides"];
+            /**
+             * Detect Crop
+             * @description Detect the crop of each file whose job crops automatically or conservatively without a
+             *     rectangle, as for queueing: one FFmpeg run per sample frame and file, so ask for it only
+             *     when the group is queued.
+             * @default false
+             */
+            detect_crop: boolean;
         };
         /**
          * BatchRun
@@ -2532,6 +2540,14 @@ export interface components {
             source_ids: string[];
             /** @description Per-file JSON patches on the job, by ``source_id``. */
             overrides?: components["schemas"]["Overrides"];
+            /**
+             * Detect Crop
+             * @description Detect the crop of each file whose job crops automatically or conservatively without a
+             *     rectangle, as for queueing: one FFmpeg run per sample frame and file, so ask for it only
+             *     when the group is queued.
+             * @default false
+             */
+            detect_crop: boolean;
             /**
              * Level
              * @default standard

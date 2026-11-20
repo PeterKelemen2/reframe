@@ -34,7 +34,7 @@ const editor = reactive({
   target: null as EditorTarget | null,
   group: null as BatchGroup | null,
   editGroup: vi.fn<(groupId: string) => Promise<void>>(async () => {}),
-  resolveNow: vi.fn<() => Promise<BatchResolution>>(),
+  resolveNow: vi.fn<(options?: { detectCrop?: boolean }) => Promise<BatchResolution>>(),
 })
 const sources = reactive({ entries: [] as SourceEntry[] })
 vi.mock('@/stores/editor', () => ({ useEditorStore: () => editor }))
@@ -138,6 +138,7 @@ describe('queueGroup without errors', () => {
     await group.queueGroup('g1')
     expect(editor.editGroup).not.toHaveBeenCalled()
     expect(editor.resolveNow).toHaveBeenCalledOnce()
+    expect(editor.resolveNow).toHaveBeenCalledWith({ detectCrop: true })
     const bodies = queueBodies()
     expect(bodies).toHaveLength(1)
     expect(outputs(bodies[0])).toEqual([

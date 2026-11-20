@@ -157,7 +157,9 @@ export async function pasteIntoFile(sourceId: string, copied: Copied): Promise<v
         )
       : withSection(base ?? copied.template, copied.template, copied.section)
   const answer = unwrap(
-    await api.POST('/api/batch/resolve', { body: { template, source_ids: [sourceId] } }),
+    await api.POST('/api/batch/resolve', {
+      body: { template, source_ids: [sourceId], detect_crop: false },
+    }),
   )
   const target = editor.target
   // Another file was opened while the requests were on their way.

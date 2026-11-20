@@ -249,6 +249,7 @@ describe('pasteIntoFile', () => {
     expect(resolve?.body).toEqual({
       template: { ...TEMPLATE, audio_rules: [OPUS_RULE] },
       source_ids: ['e02'],
+      detect_crop: false,
     })
     expect(editor.patch).toHaveBeenCalledOnce()
     const [ops] = editor.patch.mock.calls[0]!
@@ -272,6 +273,7 @@ describe('pasteIntoFile', () => {
     expect(resolve?.body).toEqual({
       template: { ...TEMPLATE, audio_rules: [OPUS_RULE] },
       source_ids: ['e02'],
+      detect_crop: false,
     })
     expect(editor.patch).toHaveBeenCalledOnce()
   })

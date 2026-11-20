@@ -67,6 +67,10 @@ class BatchResolveRequest(BaseModel):
     source_ids: list[str]
     overrides: Overrides = Field(default_factory=dict)
     """Per-file JSON patches on the job, by ``source_id``."""
+    detect_crop: bool = False
+    """Detect the crop of each file whose job crops automatically or conservatively without a
+    rectangle, as for queueing: one FFmpeg run per sample frame and file, so ask for it only
+    when the group is queued."""
 
 
 class BatchRunRequest(BatchResolveRequest):
@@ -153,7 +157,11 @@ async def resolve(
     collisions."""
     sources, overrides = await _inputs(reframe, registry, config, body)
     resolution = await reframe.batch.resolve(
-        body.template, sources, overrides=overrides, check=_jail(config)
+        body.template,
+        sources,
+        overrides=overrides,
+        check=_jail(config),
+        detect_crop=body.detect_crop,
     )
     return await asyncio.to_thread(_checked, config, resolution)
 
@@ -166,7 +174,12 @@ async def resolve_run(
     checks over every group. A source that is the planned output of another is left out."""
     sources, overrides = await _inputs(reframe, registry, config, body)
     grouping, resolutions = await reframe.batch.resolve_batch(
-        body.template, sources, level=body.level, overrides=overrides, check=_jail(config)
+        body.template,
+        sources,
+        level=body.level,
+        overrides=overrides,
+        check=_jail(config),
+        detect_crop=body.detect_crop,
     )
     checked = await asyncio.to_thread(lambda: [_checked(config, one) for one in resolutions])
     return BatchRun(grouping=grouping, resolutions=checked)

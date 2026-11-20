@@ -111,6 +111,29 @@ async def test_resolve_run_groups_and_resolves(api: Api) -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("route", "method"), [("resolve", "resolve"), ("resolve-run", "resolve_batch")]
+)
+@pytest.mark.parametrize("detect", [True, False])
+async def test_the_crop_is_detected_only_when_asked(
+    api: Api, monkeypatch: pytest.MonkeyPatch, route: str, method: str, detect: bool
+) -> None:
+    asked: list[bool] = []
+    real = getattr(api.reframe.batch, method)
+
+    async def spy(*args: Any, **kwargs: Any) -> Any:
+        asked.append(kwargs["detect_crop"])
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(api.reframe.batch, method, spy)
+    body: dict[str, Any] = {"source_ids": await add_sources(api, 1)}
+    if detect:
+        body["detect_crop"] = True
+    response = await api.client.post(f"/api/batch/{route}", json=body)
+    assert response.status_code == 200
+    assert asked == [detect]
+
+
 async def test_save_preset(api: Api) -> None:
     template = {"video": {"encoder": "libx264"}}
     response = await api.client.post(
