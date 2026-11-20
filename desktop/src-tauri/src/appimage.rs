@@ -31,27 +31,73 @@ pub fn leave_launch_folder(image: Option<PathBuf>) {
 }
 
 /// Set for the image with values that do not name it: the runtime's own, the GTK hook's forced
-/// theme, AppRun's Python switch.
+/// theme, AppRun's Python switch, the GStreamer hook's scanner switch.
 #[cfg(unix)]
-const IMAGE_ONLY: [&str; 5] = [
+const IMAGE_ONLY: [&str; 6] = [
     "APPIMAGE",
     "ARGV0",
     "OWD",
     "GTK_THEME",
     "PYTHONDONTWRITEBYTECODE",
+    "GST_REGISTRY_REUSE_PLUGIN_SCANNER",
 ];
+
+#[cfg(unix)]
+const GST_REGISTRY: &str = "GST_REGISTRY_1_0";
+
+/// The registry file of the image's GStreamer plugins, in the user's cache.
+#[cfg(unix)]
+fn gstreamer_registry_file(
+    vars: &impl Fn(&str) -> Option<OsString>,
+    identifier: &str,
+) -> Option<PathBuf> {
+    let cache = vars("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .filter(|folder| folder.is_absolute())
+        .or_else(|| Some(PathBuf::from(vars("HOME")?).join(".cache")))
+        .filter(|folder| folder.is_absolute())?;
+    Some(cache.join(identifier).join("gstreamer-1.0.registry"))
+}
+
+/// The registry to set when AppRun points GStreamer at the image's plugins: GStreamer's default
+/// one is shared with the system's GStreamer, another version with other plugins. `None`
+/// outside an AppImage, or when the user chose a registry.
+#[cfg(unix)]
+pub fn gstreamer_registry(
+    vars: impl Fn(&str) -> Option<OsString>,
+    identifier: &str,
+) -> Option<PathBuf> {
+    let appdir = PathBuf::from(vars("APPDIR")?);
+    vars("APPIMAGE")?;
+    if vars(GST_REGISTRY).is_some() {
+        return None;
+    }
+    let plugins = vars("GST_PLUGIN_SYSTEM_PATH_1_0")?;
+    if !std::env::split_paths(&plugins).any(|folder| folder.starts_with(&appdir)) {
+        return None;
+    }
+    gstreamer_registry_file(&vars, identifier)
+}
 
 /// The environment for a program opened for the user (a player, a browser): every entry under
 /// `APPDIR` is dropped from every variable (a variable left empty is removed), and so are the
-/// variables set only for the image. Unchanged unless `exe` is inside `APPDIR`.
+/// variables set only for the image, the registry of [`gstreamer_registry`] among them.
+/// Unchanged unless `exe` is inside `APPDIR`.
 #[cfg(unix)]
 pub fn user_environ(
     vars: impl IntoIterator<Item = (OsString, OsString)>,
     exe: &std::path::Path,
+    identifier: &str,
 ) -> Vec<(OsString, OsString)> {
     use std::os::unix::ffi::{OsStrExt, OsStringExt};
 
     let vars: Vec<_> = vars.into_iter().collect();
+    let lookup = |wanted: &str| {
+        vars.iter()
+            .find(|(name, _)| name == wanted)
+            .map(|(_, value)| value.clone())
+    };
+    let registry = gstreamer_registry_file(&lookup, identifier).map(OsString::from);
     let appdir = vars
         .iter()
         .find(|(name, _)| name == "APPDIR")
@@ -76,6 +122,7 @@ pub fn user_environ(
     };
     vars.into_iter()
         .filter(|(name, _)| !IMAGE_ONLY.iter().any(|only| name == only))
+        .filter(|(name, value)| name != GST_REGISTRY || Some(value) != registry.as_ref())
         .filter_map(|(name, value)| {
             let entries: Vec<&[u8]> = value.as_bytes().split(|byte| *byte == b':').collect();
             if !entries.iter().any(|entry| inside(entry)) {
@@ -125,24 +172,88 @@ mod tests {
     }
 
     #[cfg(unix)]
+    mod registry {
+        use super::*;
+
+        const ID: &str = "org.reframe.desktop";
+
+        /// The runtime's variables and the GStreamer hook's plugin path.
+        fn image(more: &[(&'static str, &'static str)]) -> Vec<(&'static str, &'static str)> {
+            let mut pairs = vec![
+                ("APPIMAGE", "/home/u/Apps/Reframe.AppImage"),
+                ("APPDIR", "/tmp/.mount_ab12"),
+                ("HOME", "/home/u"),
+                (
+                    "GST_PLUGIN_SYSTEM_PATH_1_0",
+                    "/tmp/.mount_ab12/usr/lib/gstreamer-1.0:",
+                ),
+            ];
+            pairs.extend_from_slice(more);
+            pairs
+        }
+
+        #[test]
+        fn the_images_plugins_get_a_registry_of_their_own_in_the_users_cache() {
+            assert_eq!(
+                gstreamer_registry(vars(&image(&[])), ID),
+                Some(PathBuf::from(
+                    "/home/u/.cache/org.reframe.desktop/gstreamer-1.0.registry"
+                ))
+            );
+            let xdg = image(&[("XDG_CACHE_HOME", "/data/cache")]);
+            assert_eq!(
+                gstreamer_registry(vars(&xdg), ID),
+                Some(PathBuf::from(
+                    "/data/cache/org.reframe.desktop/gstreamer-1.0.registry"
+                ))
+            );
+            let relative = image(&[("XDG_CACHE_HOME", "cache")]);
+            assert_eq!(
+                gstreamer_registry(vars(&relative), ID),
+                Some(PathBuf::from(
+                    "/home/u/.cache/org.reframe.desktop/gstreamer-1.0.registry"
+                ))
+            );
+        }
+
+        #[test]
+        fn a_registry_the_user_chose_stays() {
+            let chosen = image(&[("GST_REGISTRY_1_0", "/home/u/my.registry")]);
+            assert_eq!(gstreamer_registry(vars(&chosen), ID), None);
+        }
+
+        #[test]
+        fn the_systems_plugins_keep_the_systems_registry() {
+            let mut pairs = image(&[]);
+            pairs.retain(|(name, _)| *name != "GST_PLUGIN_SYSTEM_PATH_1_0");
+            assert_eq!(gstreamer_registry(vars(&pairs), ID), None);
+            pairs.push(("GST_PLUGIN_SYSTEM_PATH_1_0", "/usr/lib/gstreamer-1.0"));
+            assert_eq!(gstreamer_registry(vars(&pairs), ID), None);
+            let not_an_image = [("GST_PLUGIN_SYSTEM_PATH_1_0", "/opt/R/usr/lib/gstreamer-1.0")];
+            assert_eq!(gstreamer_registry(vars(&not_an_image), ID), None);
+        }
+    }
+
+    #[cfg(unix)]
     mod environ {
         use super::*;
         use std::path::Path;
 
         const APPDIR: &str = "/tmp/.mount_ab12";
+        const ID: &str = "org.reframe.desktop";
 
         fn user(pairs: &[(&str, &str)], exe: &str) -> HashMap<String, String> {
             let pairs = pairs
                 .iter()
                 .map(|(name, value)| (OsString::from(name), OsString::from(value)));
-            user_environ(pairs, Path::new(exe))
+            user_environ(pairs, Path::new(exe), ID)
                 .into_iter()
                 .map(|(name, value)| (name.into_string().unwrap(), value.into_string().unwrap()))
                 .collect()
         }
 
-        /// What the AppImage runtime, AppRun and its GTK hook give the app (read from the built
-        /// AppImage), on top of the user's own variables.
+        /// What the AppImage runtime, AppRun and its hooks give the app (read from the built
+        /// AppImage), with the shell's GStreamer registry, on top of the user's own variables.
         fn image_env() -> Vec<(&'static str, String)> {
             let d = APPDIR;
             vec![
@@ -168,6 +279,20 @@ mod tests {
                 ("PYTHONHOME", format!("{d}/usr/")),
                 ("PYTHONDONTWRITEBYTECODE", "1".to_owned()),
                 ("GTK_THEME", "Adwaita:dark".to_owned()),
+                (
+                    "GST_PLUGIN_SYSTEM_PATH_1_0",
+                    format!("{d}/usr/lib/gstreamer-1.0"),
+                ),
+                ("GST_PLUGIN_PATH_1_0", format!("{d}/usr/lib/gstreamer-1.0")),
+                (
+                    "GST_PLUGIN_SCANNER_1_0",
+                    format!("{d}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"),
+                ),
+                ("GST_REGISTRY_REUSE_PLUGIN_SCANNER", "no".to_owned()),
+                (
+                    "GST_REGISTRY_1_0",
+                    "/home/u/.cache/org.reframe.desktop/gstreamer-1.0.registry".to_owned(),
+                ),
                 ("HOME", "/home/u".to_owned()),
                 ("LANG", "hu_HU.UTF-8".to_owned()),
                 ("WAYLAND_DISPLAY", "wayland-0".to_owned()),
@@ -238,9 +363,21 @@ mod tests {
                     (OsString::from("MY_PATH"), bad),
                 ],
                 Path::new("/tmp/.mount_ab12/usr/bin/reframe-desktop"),
+                ID,
             );
             let kept = OsString::from_vec(b"/media/\xff".to_vec());
             assert_eq!(env, [(OsString::from("MY_PATH"), kept)]);
+        }
+
+        #[test]
+        fn a_registry_the_user_chose_reaches_the_program() {
+            let pairs = image_env();
+            let mut pairs: Vec<(&str, &str)> =
+                pairs.iter().map(|(n, v)| (*n, v.as_str())).collect();
+            pairs.retain(|(name, _)| *name != "GST_REGISTRY_1_0");
+            pairs.push(("GST_REGISTRY_1_0", "/home/u/my.registry"));
+            let env = user(&pairs, &format!("{APPDIR}/usr/bin/reframe-desktop"));
+            assert_eq!(env["GST_REGISTRY_1_0"], "/home/u/my.registry");
         }
     }
 }

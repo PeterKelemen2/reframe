@@ -82,6 +82,28 @@ describe('the Settings view', () => {
     }
   })
 
+  it.each([
+    { appimage: '/a/Reframe.AppImage', sections: ['desktop', 'menu'] },
+    { appimage: null, sections: ['diagnostics', 'desktop'] },
+  ])('shows the application menu entry in the AppImage only ($appimage)', async (row) => {
+    platform.desktop = {
+      settings: async () => ({ tray: false }),
+      menuEntry: async () => ({ appimage: row.appimage, added: true, other: null }),
+    } as Partial<DesktopShell> as DesktopShell
+    try {
+      const { wrapper } = await mountView()
+      await flushPromises()
+      const sections = wrapper.findAll('[data-section]').map((s) => s.attributes('data-section'))
+      expect(sections.slice(-2)).toEqual(row.sections)
+      expect(wrapper.find('[data-section-link="menu"]').exists()).toBe(row.appimage !== null)
+      expect(wrapper.findAll('[data-field="menu-entry"] input:checked')).toHaveLength(
+        row.appimage === null ? 0 : 1,
+      )
+    } finally {
+      platform.desktop = null
+    }
+  })
+
   it('shows read-only settings read-only, with a note', async () => {
     const { wrapper } = await mountView({ readOnly: true })
     expect(wrapper.find('[data-field="read-only"]').exists()).toBe(true)

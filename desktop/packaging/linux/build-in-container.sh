@@ -38,6 +38,16 @@ uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py "$@"
 LDAI_RUNTIME_FILE=$(sh desktop/packaging/linux/appimage-runtime.sh "$HOME/.cache/reframe")
 export LDAI_RUNTIME_FILE
 
+# The bundler's GStreamer plugin copies every file of these folders into the AppImage.
+gstreamer=/usr/lib/x86_64-linux-gnu/gstreamer-1.0
+GSTREAMER_PLUGINS_DIR=$(mktemp -d)
+GSTREAMER_HELPERS_DIR=$(mktemp -d)
+for plugin in $(sed 's/#.*//' desktop/packaging/linux/appimage-gstreamer-plugins.txt); do
+    cp "$gstreamer/libgst$plugin.so" "$GSTREAMER_PLUGINS_DIR/"
+done
+cp /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner "$GSTREAMER_HELPERS_DIR/"
+export GSTREAMER_PLUGINS_DIR GSTREAMER_HELPERS_DIR
+
 rm -rf "$CARGO_TARGET_DIR/release/bundle"
 (cd desktop && npx tauri build --verbose)
 

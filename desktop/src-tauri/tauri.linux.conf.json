@@ -3,6 +3,9 @@
   "bundle": {
     "targets": ["deb", "rpm", "appimage"],
     "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
       "deb": {
         "desktopTemplate": "linux/Reframe.desktop.hbs"
       },

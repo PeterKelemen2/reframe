@@ -15,6 +15,7 @@ import type {
 } from '../types'
 
 import { openPreviewWindow, setSettings, settings } from './comfort'
+import { menuEntry, setMenuEntry } from './menuEntry'
 import { onOpenPaths } from './openPaths'
 import { subscribe } from './subscribe'
 import { openReadable } from './unreadable'
@@ -104,6 +105,8 @@ export function createDesktopPlatform(): Platform {
     settings,
     setSettings,
     openPreviewWindow,
+    menuEntry,
+    setMenuEntry,
   }
 
   return {

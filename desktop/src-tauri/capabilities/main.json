@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The main window: the shell's commands and events, native dialogs, drag-and-drop, notifications, reveal in the file manager, the preview clip in an external player, and whether the window can play it.",
+  "description": "The main window: the shell's commands and events, native dialogs, drag-and-drop, notifications, reveal in the file manager, the preview clip in an external player, whether the window can play it, and the AppImage's entry in the application menu.",
   "windows": ["main"],
   "permissions": [
     "allow-backend-info",
@@ -23,6 +23,8 @@
     "notification:allow-notify",
     "opener:allow-reveal-item-in-dir",
     "allow-open-external",
-    "allow-webview-plays-video"
+    "allow-webview-plays-video",
+    "allow-menu-entry",
+    "allow-set-menu-entry"
   ]
 }

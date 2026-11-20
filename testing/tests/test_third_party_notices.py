@@ -707,6 +707,32 @@ def test_a_bundled_archive_without_licence_texts_is_an_error(
 
 
 @pytest.mark.usefixtures("no_sections")
+def test_the_common_licences_that_a_copyright_file_names_are_carried_once(tmp_path: Path) -> None:
+    options = _sources(tmp_path)
+    (tmp_path / "doc" / "libgtk-3-0" / "copyright").write_text(
+        "GTK+ is LGPL-2.1+: see /usr/share/common-licenses/LGPL-2.1.\n"
+    )
+    (tmp_path / "doc" / "libgtk-3-common" / "copyright").write_text(
+        "On Debian systems, /usr/share/common-licenses/LGPL-2.1 and\n"
+        "/usr/share/common-licenses/GPL-2 have the texts.\n"
+    )
+    common = tmp_path / "common-licenses"
+    common.mkdir()
+    (common / "LGPL-2.1").write_text("GNU LESSER GENERAL PUBLIC LICENSE Version 2.1\n")
+    (common / "GPL-2").write_text("GNU GENERAL PUBLIC LICENSE Version 2\n")
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out), *options]) == 0
+    section = _section(out.read_text(), TEXTS_SECTION)
+    assert section.count("GNU LESSER GENERAL PUBLIC LICENSE Version 2.1") == 1
+    assert section.count("GNU GENERAL PUBLIC LICENSE Version 2") == 1
+    assert f"{common.as_posix()}/LGPL-2.1:" in section
+
+    (common / "GPL-2").unlink()
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out), *options]) == 1
+
+
+@pytest.mark.usefixtures("no_sections")
 def test_an_ubuntu_package_without_its_copyright_file_is_an_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -10,6 +10,7 @@ mod comfort;
 mod desktop_settings;
 mod external;
 mod media;
+mod menu_entry;
 mod open_paths;
 mod progress;
 mod quit;
@@ -21,9 +22,16 @@ use tauri::Manager;
 fn main() {
     // Until the build: the arguments are read, and a second launch hands over its folder, there.
     let image_folder = appimage::enter_launch_folder();
+    let context = tauri::generate_context!();
+    #[cfg(unix)]
+    if let Some(registry) =
+        appimage::gstreamer_registry(|name| std::env::var_os(name), &context.config().identifier)
+    {
+        // SAFETY: no other thread runs yet; the web processes inherit it.
+        unsafe { std::env::set_var("GST_REGISTRY_1_0", registry) };
+    }
     // Before the builder: the owner is looked for, and the sidecar started, while GTK and
     // WebKitGTK load.
-    let context = tauri::generate_context!();
     let backend = backend::Backend::start(&context);
     let app = tauri::Builder::default()
         // First: a second launch must reach the running app before anything else starts.
@@ -49,12 +57,15 @@ fn main() {
             desktop_settings::set_desktop_settings,
             external::open_external,
             media::webview_plays_video,
+            menu_entry::menu_entry,
+            menu_entry::set_menu_entry,
         ])
         .on_window_event(quit::on_window_event)
         .setup(|app| {
             app.state::<backend::Backend>().attach(app.handle().clone());
             comfort::create_main_window(app.handle())?;
             tray::setup(app.handle())?;
+            menu_entry::follow_at_start(app.handle());
             Ok(())
         })
         .build(context)

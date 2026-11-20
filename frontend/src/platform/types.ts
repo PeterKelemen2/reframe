@@ -65,6 +65,16 @@ export interface DesktopSettings {
   tray: boolean
 }
 
+/** The AppImage's entry in the user's application menu (`Reframe.desktop`). */
+export interface DesktopMenuEntry {
+  /** The AppImage the app runs from; `null` outside one (no entry is offered). */
+  appimage: string | null
+  /** The app's own entry is there. */
+  added: boolean
+  /** Another entry of the name (an installed package's): the app adds none. */
+  other: string | null
+}
+
 export interface DesktopShell {
   /** Waits while the backend starts; rejects with a `DesktopBackendError`. */
   backendInfo(): Promise<DesktopBackend>
@@ -86,4 +96,7 @@ export interface DesktopShell {
   setSettings(settings: DesktopSettings): Promise<DesktopSettings>
   /** Opens (or focuses) the detached preview window of a source. */
   openPreviewWindow(sourceId: string): Promise<void>
+  menuEntry(): Promise<DesktopMenuEntry>
+  /** Adds or removes the app's own entry; rejects with the shell's reason (a string). */
+  setMenuEntry(add: boolean): Promise<DesktopMenuEntry>
 }

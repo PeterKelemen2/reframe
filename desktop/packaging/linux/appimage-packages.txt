@@ -22,6 +22,10 @@ gir1.2-rsvg-2.0
 gir1.2-soup-3.0
 glib-networking
 gsettings-desktop-schemas
+gstreamer1.0-plugins-base
+gstreamer1.0-plugins-good
+libapparmor1
+libasyncns0
 libatk-bridge2.0-0
 libatk1.0-0
 libatomic1
@@ -51,6 +55,7 @@ libenchant-2-2
 libepoxy0
 libevdev2
 libffi8
+libflac8
 libgcc-s1
 libgcrypt20
 libgdk-pixbuf-2.0-0
@@ -84,8 +89,11 @@ liblzma5
 libmanette-0.2-0
 libmd0
 libmount1
+libmpg123-0
 libnettle8
 libnghttp2-14
+libogg0
+libopus0
 liborc-0.4-0
 libp11-kit0
 libpango-1.0-0
@@ -98,15 +106,16 @@ libpixman-1-0
 libpng16-16
 libproxy1v5
 libpsl5
+libpulse0
 librsvg2-2
 librsvg2-common
 librsvg2-dev
 libseccomp2
 libsecret-1-0
 libselinux1
+libsndfile1
 libsoup-3.0-0
 libsqlite3-0
-libstdc++6
 libsystemd0
 libtasn1-6
 libthai0
@@ -114,6 +123,9 @@ libtiff5
 libudev1
 libunistring2
 libunwind8
+libvorbis0a
+libvorbisenc2
+libvpx7
 libwayland-cursor0
 libwayland-egl1
 libwayland-server0
@@ -140,4 +152,3 @@ libxrandr2
 libxrender1
 libxslt1.1
 libzstd1
-zlib1g
