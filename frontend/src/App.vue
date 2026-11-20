@@ -9,6 +9,7 @@ import PowerBanner from '@/components/queue/PowerBanner.vue'
 import BackendErrorScreen from '@/components/shell/BackendErrorScreen.vue'
 import BootScreen from '@/components/shell/BootScreen.vue'
 import LoginScreen from '@/components/shell/LoginScreen.vue'
+import MenuEntryOffer from '@/components/shell/MenuEntryOffer.vue'
 import NavRail from '@/components/shell/NavRail.vue'
 import PrivateQueueBanner from '@/components/shell/PrivateQueueBanner.vue'
 import QuitDialog from '@/components/shell/QuitDialog.vue'
@@ -99,6 +100,10 @@ watch(
   <FileBrowserDialog v-if="platform.kind === 'web'" />
   <QuitDialog :question="quit.question.value" @answer="answerQuit" />
   <DefaultsDialog v-if="system.phase === 'ready'" />
+  <MenuEntryOffer
+    v-if="system.phase === 'ready' && platform.desktop !== null"
+    :shell="platform.desktop"
+  />
 </template>
 
 <style scoped>

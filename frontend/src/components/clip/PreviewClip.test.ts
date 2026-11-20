@@ -85,6 +85,12 @@ function video(wrapper: VueWrapper) {
   return wrapper.find('[data-field="clip-video"]')
 }
 
+async function videoLoaded(wrapper: VueWrapper, width: number): Promise<void> {
+  Object.defineProperty(video(wrapper).element, 'videoWidth', { value: width, configurable: true })
+  await video(wrapper).trigger('loadeddata')
+  await flushPromises()
+}
+
 async function videoError(wrapper: VueWrapper, code: number): Promise<void> {
   const element = video(wrapper).element
   Object.defineProperty(element, 'error', { value: { code, message: 'Decoder gone' } })
@@ -296,10 +302,27 @@ describe('the preview clip', () => {
   it('asks for a new link again after the clip has played', async () => {
     const { wrapper, server } = await encoded()
     await videoError(wrapper, 4)
-    await video(wrapper).trigger('loadeddata')
+    await videoLoaded(wrapper, 320)
     await videoError(wrapper, 2)
     expect(server.count('GET /api/preview/clips/clip-1/link')).toBe(3)
     expect(video(wrapper).exists()).toBe(true)
+  })
+
+  it('shows the frame compare when the player loads the clip without a picture', async () => {
+    const { wrapper } = await encoded()
+    await videoLoaded(wrapper, 0)
+    expect(video(wrapper).exists()).toBe(false)
+    expect(wrapper.find('[data-field="clip-play-error"]').text()).toContain(
+      'this browser cannot play hevc video',
+    )
+    expect(wrapper.find('[data-field="clip-compare"]').exists()).toBe(true)
+  })
+
+  it('keeps the player when the clip loads with a picture', async () => {
+    const { wrapper } = await encoded()
+    await videoLoaded(wrapper, 320)
+    expect(video(wrapper).exists()).toBe(true)
+    expect(wrapper.find('[data-field="clip-play-error"]').exists()).toBe(false)
   })
 
   it('shows the frame compare and no player when the window cannot play video', async () => {

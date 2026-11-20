@@ -190,8 +190,17 @@ async function loadLink(): Promise<void> {
   }
 }
 
-function played(): void {
+function played(event: Event): void {
   linkRetried = false
+  // A webview without the codec's decoder can still play the audio of a clip and report
+  // no error; a picture without width is the only sign.
+  if ((event.target as HTMLVideoElement).videoWidth === 0) unplayable()
+}
+
+function unplayable(): void {
+  const clip = (made.value as Made).clip
+  playError.value = t('clip.playback.unsupported', { codec: clip.video_codec ?? clip.container })
+  comparing.value = true
 }
 
 function playFailed(event: Event): void {
@@ -202,12 +211,13 @@ function playFailed(event: Event): void {
     return
   }
   const error = (event.target as HTMLVideoElement).error
-  const clip = (made.value as Made).clip
-  const codec = clip.video_codec ?? clip.container
-  playError.value =
-    error?.code === SRC_NOT_SUPPORTED
-      ? t('clip.playback.unsupported', { codec })
-      : t('clip.playback.failed', { reason: error?.message || String(error?.code ?? '') })
+  if (error?.code === SRC_NOT_SUPPORTED) {
+    unplayable()
+    return
+  }
+  playError.value = t('clip.playback.failed', {
+    reason: error?.message || String(error?.code ?? ''),
+  })
   comparing.value = true
 }
 
