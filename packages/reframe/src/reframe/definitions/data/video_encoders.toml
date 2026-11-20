@@ -107,7 +107,7 @@ default = 27
 args = ["-rc", "vbr", "-cq", "{value}", "-b:v", "0", "-init_qpI", "{qp_i}", "-init_qpP", "{qp_p}", "-init_qpB", "{qp_b}"]
 derived = { qp_i = { offset = -2, min = 0, integer = true }, qp_p = { integer = true }, qp_b = { offset = 2, max = 51, integer = true } }
 scale = [[1, 1], [27, 22], [30, 24], [51, 51]]
-help = "Constant quality in VBR mode (target quality, no bitrate limit). Lower is better quality and a bigger file."
+help = "Constant quality in VBR mode. Lower is better quality and a bigger file. Without a level, H.265 may reach 160 Mbit/s (level 5.1) and H.264 200 Mbit/s (level 5.0); very low values on grainy 4K sources can hit that limit. A level, or maxrate and bufsize in the custom parameters, sets another."
 
 [base.nvenc.rate_control.bitrate]
 args = ["-rc", "vbr", "-b:v", "{kbps}k"]
@@ -619,6 +619,7 @@ derived = { qp_i = { factor = 4.047619047619048, offset = -8, min = 0, max = 255
 # ASSUMED: HandBrake has no NVENC AV1 preset; the H.265 points scaled to the 1-63 range.
 default = 33
 scale = [[1, 1], [33, 22], [37, 24], [63, 51]]
+help = "Constant quality in VBR mode. Lower is better quality and a bigger file."
 
 [encoder.h264_qsv]
 label = "Intel QSV H.264"
