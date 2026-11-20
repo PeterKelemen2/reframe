@@ -163,6 +163,36 @@ def test_stderr_reason_picks_the_cause() -> None:
     assert stderr_reason(["Error: " + "x" * 400])[-1:] == "…"  # type: ignore[index]
 
 
+def test_stderr_reason_leaves_out_the_guess_when_the_encoder_says_why() -> None:
+    guess = (
+        "[vost#0:0/hevc_nvenc @ 0x55] [enc:hevc_nvenc @ 0x56] Error while opening encoder - "
+        "maybe incorrect parameters such as bit_rate, rate, width or height."
+    )
+    refused = [
+        "[hevc_nvenc @ 0x55b38489cd40] Multiple reference frames are not supported by the device",
+        "[hevc_nvenc @ 0x55b38489cd40] No capable devices found",
+        guess,
+        "Conversion failed!",
+    ]
+    assert stderr_reason(refused) == "Multiple reference frames are not supported by the device"
+    no_b_frames = [
+        "[hevc_nvenc @ 0x55b38489cd40] Max B-frames 2 exceed 0",
+        "[hevc_nvenc @ 0x55b38489cd40] No capable devices found",
+        guess,
+        "[vf#0:0 @ 0x5] Error sending frames to consumers: Generic error in an external library",
+        "Conversion failed!",
+    ]
+    assert stderr_reason(no_b_frames) == (
+        "This GPU has no B-frames for this codec: set B-frames to 0."
+    )
+    lookahead = ["[h264_nvenc @ 0x5] Lookahead level not supported. Maximum level: 0", guess]
+    assert stderr_reason(lookahead) == "Lookahead level not supported. Maximum level: 0"
+    assert stderr_reason([guess, "Conversion failed!"]) == (
+        "Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width "
+        "or height."
+    )
+
+
 def test_stderr_reason_names_the_nvenc_session_limit() -> None:
     capture = ft.captures()["detect_hevc_nvenc_session_limit"]
     assert capture.stderr is not None

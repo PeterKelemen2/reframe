@@ -415,7 +415,10 @@ def video_encoder_args(
                 out.add_params(two_pass.turbo_params if turbo else two_pass.full_params, values)
     _choice(encoder.presets, video.preset, "speed preset", out)
     _tune(encoder, video, out)
-    _choice(encoder.profiles, video.profile, "profile", out)
+    profile = video.profile
+    if profile is None and encoder.profiles is not None and encoder.profiles.write_default:
+        profile = encoder.profiles.default_for(video.bit_depth)
+    _choice(encoder.profiles, profile, "profile", out)
     _choice(encoder.levels, video.level, "level", out)
     if hdr:
         for name, value in hdr_params(encoder, stream).items():

@@ -182,8 +182,8 @@ _RULES: tuple[_Rule, ...] = (
     ),
     _Rule(_NVENC_DRIVER, lambda m, _ctx, _t: _nvenc_driver(m["driver"]), mismatch="driver"),
     _Rule(re.compile(r"No CUDA capable devices found"), _fixed("No NVIDIA GPU found")),
-    # A GPU whose session could not be opened is skipped, so "No capable devices found"
-    # follows: the session error is the cause. Status 21 is the GeForce session limit.
+    # A GPU whose session or capability check fails is skipped, so "No capable devices found"
+    # follows: the line before it is the cause. Status 21 is the GeForce session limit.
     _Rule(
         re.compile(r"OpenEncodeSessionEx failed: incompatible client key \(21\)"),
         _fixed(NVENC_BUSY),
@@ -195,6 +195,11 @@ _RULES: tuple[_Rule, ...] = (
         _with_rest("NVENC could not open an encoding session"),
     ),
     _Rule(
+        re.compile(r"^10 bit encode not supported$"),
+        _fixed("10-bit is not supported by this GPU"),
+        _NVENC,
+    ),
+    _Rule(
         re.compile(r"^No capable devices found"),
         lambda _m, ctx, _t: f"No NVIDIA GPU that can encode {_codec(ctx)}",
         _NVENC,
@@ -202,11 +207,6 @@ _RULES: tuple[_Rule, ...] = (
     _Rule(
         re.compile(r"^Codec not supported$"),
         lambda _m, ctx, _t: f"This NVIDIA GPU cannot encode {_codec(ctx)}",
-        _NVENC,
-    ),
-    _Rule(
-        re.compile(r"^10 bit encode not supported$"),
-        _fixed("10-bit is not supported by this GPU"),
         _NVENC,
     ),
     # Intel QSV (oneVPL): libavcodec/qsv.c, libavutil/hwcontext_qsv.c

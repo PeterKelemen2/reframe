@@ -50,6 +50,7 @@ const help = computed(() =>
 )
 const enumSetting = computed(() => ({
   choices: props.option.choices ?? [],
+  write_default: false,
   mapping: props.option.mapping,
   help: '',
 }))

@@ -900,6 +900,67 @@ and Arch's `/usr/bin/ffmpeg` n9.0.2; the three gave the same results throughout.
   WebKitWebProcess ends with SIGABRT in `libwebkit2gtk-4.1.so.0` (no media error reaches the
   page).
 
+### NVENC on Linux
+
+Checked on 2026-11-20 on Debian 13 with a GeForce GTX 1050 Ti (Pascal), driver 580.159.04 and
+the `compat` build (n8.1.3), decision 0102. Each line was run with the `C-4` software-frame
+setup (`-pix_fmt yuv420p` / `p010le`, `-c:v h264_nvenc|hevc_nvenc`).
+
+**Choices and options** (`test_hardware_choices_rate_control_and_options_encode`): every preset
+(p1–p7), the tunes hq, ll, ull, lossless, every rate control and the other options encode. Pascal
+refuses at the start (exit 187, the line, then `No capable devices found`):
+
+| Option | H.264 | H.265 | Line |
+|--------|-------|-------|------|
+| `-refs 2` | refused | refused | `Multiple reference frames are not supported by the device` |
+| `-tf_level 4` | refused | refused | `Temporal filtering not supported by the device` |
+| `-lookahead_level 3` (with look-ahead) | refused | refused | `Lookahead level not supported. Maximum level: 0` |
+| `-bf 2` | works | refused | `Max B-frames 2 exceed 0` |
+| `-b_ref_mode middle` / `each` | works | refused | `B frames as references are not supported` / `Each B frame as reference is not supported` |
+| `-temporal-aq 1` | works | refused | `Temporal AQ not supported` |
+| `-unidir_b 1` | — | refused | `Unidirectional B-Frames not supported by the device` |
+| `-tune uhq` | — | refused (exit 234) | `InitializeEncoder failed: invalid param (8): Ultra High Quality Tuning Info is not supported on this architecture.` |
+| `-pix_fmt p010le` | refused | works | `10 bit encode not supported` |
+
+Any GPU (the driver's own text, exit 234): `-weighted_pred 1` with B-frames (`Weighted
+Prediction not supported with B-frames.`), `-g 2` with B-frames (`Gop Length should be greater
+than number of B frames + 1`).
+
+**Default profile.** Without `-profile`, `h264_nvenc` writes Main with FFmpeg 8.1 and High with
+9.0 (`ffmpeg -h encoder=h264_nvenc`: "default main" / "default high"); `hevc_nvenc` writes Main
+(Main 10 for 10-bit input) in both.
+
+**Levels.** NVENC refuses a level it cannot meet with `InitializeEncoder failed: invalid param
+(8): Invalid Level.` (exit 234):
+
+- When the picture size or the frame rate is above the level: H.264 table A-1 (MaxFS, MaxMBPS)
+  and H.265 table A.8 (MaxLumaPs, MaxLumaSr). Checked: H.264 1080p60 needs 4.2 (4.1 refused),
+  1080p30 4.0 (3.2 refused), 720p60 3.2 (3.1 refused), 320x240 at 25 fps 1.3; H.265 1080p60
+  4.1, 1080p30 4.0, 2160p60 5.1 (`test_nvenc_level_picture_limits_match_the_rule`).
+- In bitrate mode, when the bitrate is too high. FFmpeg sets the buffer to twice the bitrate
+  (`libavcodec/nvenc.c`: `vbvBufferSize = 2 * averageBitRate` without `-bufsize`), and NVENC
+  checks the buffer against MaxCPB and the bitrate against MaxBR, both with the NAL factor
+  (H.264 1.2 for Baseline and Main, 1.5 for High; H.265 1.1). Explicit values show it: H.264
+  High 4.1 takes `-bufsize 93750k` (62500 × 1.5), not 93751k, and `-maxrate 75000k`; H.265
+  Main 4.1 takes 22000k for both. The highest `-b:v` for each level, profile and tier is the
+  table in `validation/levels.py`, measured by bisection and checked by
+  `test_the_nvenc_level_bitrates_match_the_gpu`. Main 10 has the Main limits; the High tier
+  below level 4 takes any bitrate. In CQ mode (`-cq N -b:v 0`) every level fits.
+
+**Constant quality is capped by the level NVENC picks.** Without `-level`, NVENC picks the lowest
+level that fits the picture and keeps the bitrate under it in CQ mode too. A noisy 1080p25
+source (testsrc2 with `noise=alls=20:allf=t`, 50 frames): H.265 CQ 5 to 21 give the same size
+(3.1 MB, level 4.0); with `-level 4.1` 5.1 MB, `-level 5.1` 9.4 MB, `-level 6.2` 26 MB at CQ 10
+and 13 MB at CQ 20; `-maxrate 100M -bufsize 200M` lets NVENC pick level 5.0 (21 MB). H.264: about
+24 Mbit/s at its automatic level 4.0, 38 MB at CQ 10 with level 5.1. On the 320x240 test picture
+CQ 1 and 2 give the same file, so `test_hardware_quality_range_ends_are_honoured` expects that
+failure for NVENC.
+
+**Docker.** With the NVIDIA Container Toolkit 1.20.2 in CDI mode, `--gpus all`, `--device
+nvidia.com/gpu=all`, `--runtime nvidia` and the compose `deploy` reservation all mount the same 63
+driver libraries (`libnvidia-encode.so.1`, `libcuda.so.1`, `nvidia-smi`), whatever
+`NVIDIA_DRIVER_CAPABILITIES` says.
+
 ### Encoder definitions (C-6)
 
 Checked on 2026-10-13 with both n9.0.2 builds (Arch `/usr/bin/ffmpeg` and the pinned BtbN

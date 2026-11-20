@@ -12,6 +12,7 @@ from reframe.jsonpatch import apply_patch
 from reframe.models import (
     AudioCodecRule,
     AudioOutputSettings,
+    AverageBitrate,
     ConstantQuality,
     EncoderState,
     EncoderStatus,
@@ -320,6 +321,14 @@ CASES: list[Case] = [
         INFO,
         rule(codec="ac3", mixdown="5.1", max_bitrate=700),
         rule(codec="ac3", mixdown="5.1", max_bitrate=640),
+    ),
+    Case(
+        "NVENC H.265 level 4.1 above its bitrate",
+        "encoder.level_bitrate_too_high",
+        "video.rate_control.kbps",
+        ERR,
+        video(encoder="hevc_nvenc", level="4.1", rate_control=AverageBitrate(kbps=12000)),
+        video(encoder="hevc_nvenc", level="4.1", rate_control=AverageBitrate(kbps=11000)),
     ),
     # The advanced-option rules need only the video settings.
     Case(

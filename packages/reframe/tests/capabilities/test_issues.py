@@ -189,6 +189,23 @@ def test_unavailable_with_a_fix() -> None:
     assert encoder_issues(fixed.video.encoder, snapshot, DEFS) == []
 
 
+def test_a_build_mismatch_names_the_other_builds() -> None:
+    snapshot = caps(**NO_HEVC_HARDWARE)
+    snapshot.encoders["hevc_nvenc"] = snapshot.encoders["hevc_nvenc"].model_copy(
+        update={
+            "reason": "NVIDIA driver too old: NVENC needs driver 610.00 or newer",
+            "build_mismatch": True,
+            "build_mismatch_cause": "driver",
+        }
+    )
+    (issue,) = encoder_issues("hevc_nvenc", snapshot, DEFS)
+    assert issue.message == (
+        "hevc_nvenc (NVIDIA NVENC H.265) is not available: NVIDIA driver too old: NVENC needs "
+        "driver 610.00 or newer. Another FFmpeg build may work with this computer (Settings → "
+        "Tools, or reframe tools fetch --build)."
+    )
+
+
 def test_error_state_is_unavailable_too() -> None:
     (issue,) = encoder_issues("hevc_vaapi", caps(**NO_HEVC_HARDWARE), DEFS)
     assert issue.code == "encoder.unavailable"

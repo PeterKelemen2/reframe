@@ -439,6 +439,9 @@ functions in a registry, grouped by area.
 - [ ] Silent losses: gain / DRC / loudness on a copied
       passthru track, an x265 level too small for the output
       ([0014](../decisions/0014-validation-rules-and-severities.md) "Follow-up (M2 review)").
+- [ ] NVENC levels ([0102](../decisions/0102-nvenc-on-linux.md)): an H.264 or H.265 NVENC
+      level too small for the output (`encoder.level_too_low`), and in bitrate mode a bitrate
+      above what NVENC takes at the level (`encoder.level_bitrate_too_high`, measured table).
 - [ ] Range is outside the duration.
 - [ ] Everything the command builder refuses (`PlanError`) is a validation error (a test
       builds a job for each refusal, decision 0013).

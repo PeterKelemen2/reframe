@@ -504,4 +504,21 @@ async def detect_capabilities(
         time.monotonic() - started,
         ", ".join(f"{count} {state}" for state, count in sorted(counts.items())),
     )
+    _log_build_mismatch(snapshot)
     return snapshot
+
+
+def _log_build_mismatch(snapshot: CapabilitySnapshot) -> None:
+    """One line per cause for the server console (the CLI prints its own hint)."""
+    by_reason: dict[str, list[str]] = {}
+    for status in snapshot.encoders.values():
+        if status.build_mismatch and status.state is EncoderState.UNAVAILABLE:
+            by_reason.setdefault(status.reason or "unknown reason", []).append(status.id)
+    for reason, ids in by_reason.items():
+        log.info(
+            "%s cannot be used with this FFmpeg build (%s): update the driver or system "
+            "library, or choose another build (Settings → Tools, REFRAME_FFMPEG_BUILD, or "
+            "reframe tools fetch --build)",
+            ", ".join(sorted(ids)),
+            reason,
+        )

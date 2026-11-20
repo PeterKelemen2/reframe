@@ -66,6 +66,23 @@ _GENERIC = re.compile(
     r"error closing file: invalid argument|press \[q\])",
     re.IGNORECASE,
 )
+#: Follow-up lines that read like errors but only guess or repeat: used when nothing else says
+#: more. A hardware encoder that refuses a setting skips the GPU, so "No capable devices" follows.
+_FOLLOW_UP = re.compile(
+    r"^(error while opening encoder - maybe incorrect parameters|"
+    r"error sending frames to consumers|no capable devices found)",
+    re.IGNORECASE,
+)
+#: An NVENC encoder's own line names the cause even without an error word (at the default
+#: log level NVENC prints nothing else).
+_HW_ENCODER = re.compile(r"^\[\w+_nvenc @ 0x[0-9a-fA-F]+\]")
+#: Encoder texts that need a word of explanation: (pattern, text).
+_EXPLAINED = (
+    (
+        re.compile(r"Max B-frames \d+ exceed 0\b"),
+        "This GPU has no B-frames for this codec: set B-frames to 0.",
+    ),
+)
 _PREFIX = re.compile(r"^(\[[^\]]+ @ 0x[0-9a-fA-F]+\]\s*)+")
 #: How many lines from the end are searched.
 TAIL = 40
@@ -87,15 +104,21 @@ def stderr_reason(lines: Sequence[str], *, last_line: bool = True) -> str | None
     for needle, text in _KNOWN_CAUSES:
         if any(needle in line for line in tail):
             return text
+    for pattern, text in _EXPLAINED:
+        if any(pattern.search(line) for line in tail):
+            return text
     candidates: list[str] = []
+    follow_ups: list[str] = []
     for line in tail:
         text = _clean(line)
         if not text or line.startswith((" ", "\t")) or _GENERIC.match(text):
             continue
-        if _ERROR_WORDS.search(text) and text not in candidates:
-            candidates.append(text)
-    if candidates:
-        return _shorten("; ".join(candidates[:2]))
+        found = follow_ups if _FOLLOW_UP.match(text) else candidates
+        cause = _ERROR_WORDS.search(text) or _HW_ENCODER.match(line.strip())
+        if cause and text not in found:
+            found.append(text)
+    if candidates or follow_ups:
+        return _shorten("; ".join((candidates or follow_ups)[:2]))
     if not last_line:
         return None
     for line in reversed(tail):

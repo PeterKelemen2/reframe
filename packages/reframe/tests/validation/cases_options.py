@@ -32,6 +32,14 @@ def cases(h: Any) -> list[Any]:
             video(encoder="libx265", preset="slow", advanced={"amp": True}),
         ),
         case(
+            "NVENC weighted prediction without B-frames set to 0",
+            "encoder.option_inactive",
+            "video.advanced.weighted_pred",
+            warn,
+            video(encoder="h264_nvenc", advanced={"weighted_pred": True}),
+            video(encoder="h264_nvenc", advanced={"weighted_pred": True, "bf": 0}),
+        ),
+        case(
             "x264 HRD without VBV",
             "encoder.option_inactive",
             "video.advanced.nal-hrd",

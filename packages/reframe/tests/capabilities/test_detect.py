@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from pathlib import Path
 
@@ -162,8 +163,9 @@ NVENC_DRIVER_TOO_OLD = (
 
 
 async def test_a_build_mismatch_reaches_the_encoder_status(
-    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
+    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo, caplog: pytest.LogCaptureFixture
 ) -> None:
+    caplog.set_level(logging.INFO, logger="reframe.capabilities.detect")
     fake_tools.set_scenario(
         ft.Scenario(
             [
@@ -201,6 +203,11 @@ async def test_a_build_mismatch_reaches_the_encoder_status(
     av1 = snap.status("av1_amf")  # 10-bit only: usable in 8-bit
     assert (av1.state, av1.supports_10bit, av1.build_mismatch) == (AVAILABLE, False, False)
     assert {s.id for s in snap.encoders.values() if s.build_mismatch} == {"hevc_nvenc", "h264_qsv"}
+    # one console line per cause (a server without a browser open)
+    messages = [record.getMessage() for record in caplog.records]
+    lines = [m for m in messages if "cannot be used with this FFmpeg" in m]
+    assert sorted(line.split(" ", 1)[0] for line in lines) == ["h264_qsv", "hevc_nvenc"]
+    assert any("NVIDIA driver too old: NVENC needs driver 610.00 or newer" in x for x in lines)
 
 
 async def test_timeouts_are_errors(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:

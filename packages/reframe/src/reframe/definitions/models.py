@@ -131,8 +131,16 @@ class ChoiceSetting(ReframeModel):
     """The value used when none is given. ``None``: the encoder decides."""
     default_by_depth: dict[BitDepth, str] = Field(default_factory=dict)
     """Overrides ``default`` per bit depth, keyed by ``"8"`` or ``"10"``."""
+    write_default: bool = False
+    """The command writes the default when none is chosen: FFmpeg releases differ in their
+    own default for this setting."""
     mapping: OptionMapping
     help: str = ""
+
+    def default_for(self, bit_depth: int) -> str | None:
+        """The default at ``bit_depth`` (``default_by_depth`` first)."""
+        key: BitDepth = "10" if bit_depth == 10 else "8"
+        return self.default_by_depth.get(key, self.default)
 
     def values(self, bit_depth: int | None = None) -> list[str]:
         """The stored ids, optionally only those valid for ``bit_depth``."""

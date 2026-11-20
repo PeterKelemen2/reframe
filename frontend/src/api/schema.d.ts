@@ -2875,6 +2875,13 @@ export interface components {
             default_by_depth?: {
                 [key: string]: string;
             };
+            /**
+             * Write Default
+             * @description The command writes the default when none is chosen: FFmpeg releases differ in their
+             *     own default for this setting.
+             * @default false
+             */
+            write_default: boolean;
             /** Mapping */
             mapping: components["schemas"]["X26xParam"] | components["schemas"]["FfmpegArg"] | components["schemas"]["PrivateOpt"];
             /**

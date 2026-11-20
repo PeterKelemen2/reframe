@@ -91,6 +91,16 @@ def test_choices_written_values() -> None:
     assert unknown[unknown.index("-preset:v:0") + 1] == "superslow"
 
 
+def test_an_unset_h264_nvenc_profile_writes_the_shown_default() -> None:
+    def profile(out: list[str]) -> str | None:
+        return out[out.index("-profile:v:0") + 1] if "-profile:v:0" in out else None
+
+    assert profile(args("h264_nvenc")) == "high"
+    assert profile(args("h264_nvenc", bit_depth=10)) == "high10"
+    assert profile(args("h264_nvenc", profile="main")) == "main"
+    assert profile(args("hevc_nvenc")) is None  # FFmpeg picks Main or Main 10 from the input
+
+
 def test_a_choice_the_encoder_does_not_have() -> None:
     with pytest.raises(PlanError, match="no level setting"):
         args("h264_qsv", level="4.1")

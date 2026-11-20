@@ -73,6 +73,11 @@ def _unavailable_text(status: EncoderStatus) -> str:
     reason = status.reason or "no reason given"
     if status.state is EncoderState.ERROR:
         return f"could not be checked: {reason}"
+    if status.build_mismatch:
+        return (
+            f"is not available: {reason}. Another FFmpeg build may work with this computer "
+            "(Settings → Tools, or reframe tools fetch --build)"
+        )
     return f"is not available: {reason}"
 
 

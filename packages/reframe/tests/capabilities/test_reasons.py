@@ -200,6 +200,12 @@ def tagged(encoder: str, *lines: str) -> str:
             "10-bit is not supported by this GPU",
         ),
         (
+            # what the 10-bit test of h264_nvenc prints on a GeForce 10 series GPU
+            "h264_nvenc",
+            tagged("h264_nvenc", "10 bit encode not supported", "No capable devices found"),
+            "10-bit is not supported by this GPU",
+        ),
+        (
             "hevc_qsv",
             tagged("hevc_qsv", "Error initializing an MFX session"),
             "No Intel QSV device or runtime "

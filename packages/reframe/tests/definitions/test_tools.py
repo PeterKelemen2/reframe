@@ -10,6 +10,7 @@ import re
 import struct
 import subprocess
 from collections.abc import Callable, Sequence
+from fractions import Fraction
 from functools import cache
 from pathlib import Path
 from typing import Any, cast
@@ -31,6 +32,7 @@ from reframe.definitions.models import TRACK_FLAGS
 from reframe.models.capabilities import EncoderStatus
 from reframe.models.job import Container, OptionValue
 from reframe.tools.versions import parse_ffmpeg_version
+from reframe.validation.levels import h264_level_fits, x265_level_fits
 from reframe_testing.encoders import (
     LAVFI_VIDEO,
     encode_args,
@@ -1821,13 +1823,27 @@ def _hw_args(enc: VideoEncoderDef, depth: int) -> list[str]:
     return [*LAVFI_VIDEO, "-frames:v", "5", "-pix_fmt", pix, "-c:v", enc.id]
 
 
-def _hw_usable(enc: VideoEncoderDef) -> bool:
-    if enc.id not in _encoders_in_build():
+def _hw_usable(enc: VideoEncoderDef, depth: int = 8) -> bool:
+    return _hw_usable_id(enc.id, depth)
+
+
+@cache
+def _hw_usable_id(encoder_id: str, depth: int) -> bool:
+    if encoder_id not in _encoders_in_build():
         return False
-    return run_ffmpeg_capture([*_hw_args(enc, 8), "-f", "null", "-"], timeout=30).returncode == 0
+    args = [*_hw_args(VIDEO[encoder_id], depth), "-f", "null", "-"]
+    return run_ffmpeg_capture(args, timeout=30).returncode == 0
 
 
-def _option_test_value(option: EncoderOption) -> str:
+#: Test values where the generic one does not fit: the machine may have one GPU only, and
+#: NVENC needs a keyframe interval larger than the B-frames plus 1.
+_OPTION_TEST_VALUES = {("nvenc", "gpu"): "0", ("nvenc", "g"): "30"}
+
+
+def _option_test_value(option: EncoderOption, family: str = "") -> str:
+    fixed = _OPTION_TEST_VALUES.get((family, option.key))
+    if fixed is not None:
+        return fixed
     if option.type == "bool":
         return "1"
     if option.type == "enum":
@@ -1839,6 +1855,26 @@ def _option_test_value(option: EncoderOption) -> str:
 
 #: QSV options that are features of the GPU generation: an Intel UHD 620 refuses them.
 _QSV_GPU_FEATURES = frozenset({"low_power", "tile_cols", "tile_rows"})
+
+#: NVENC choices and options that are features of the GPU generation: a GeForce 10 series
+#: (Pascal) GPU refuses them at run time ("… not supported …"; testdata/README.md).
+_NVENC_GPU_FEATURES = frozenset(
+    {
+        ("h264_nvenc", "option lookahead_level"),
+        ("h264_nvenc", "option refs"),
+        ("h264_nvenc", "option tf_level"),
+        ("hevc_nvenc", "option lookahead_level"),
+        ("hevc_nvenc", "option refs"),
+        ("hevc_nvenc", "option tf_level"),
+        ("hevc_nvenc", "option bf"),
+        ("hevc_nvenc", "option b_ref_mode"),
+        ("hevc_nvenc", "option temporal-aq"),
+        ("hevc_nvenc", "option unidir_b"),
+        ("hevc_nvenc", "tunes=uhq@8"),
+        ("hevc_nvenc", "tunes=uhq@10"),
+    }
+)
+_GPU_LACKS = re.compile(r"not supported|exceed 0\b")
 
 #: VAAPI values that an Intel UHD 620 (iHD) refuses and an AMD GPU takes: they may fail on an
 #: Intel GPU only. Its H.265 encoder takes the quality levels 1, 4 and 7 only.
@@ -1860,7 +1896,8 @@ def _render_node_vendor() -> str:
 
 @pytest.mark.needs_gpu
 @pytest.mark.parametrize(
-    "encoder_id", sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi", "qsv"))
+    "encoder_id",
+    sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi", "qsv", "nvenc")),
 )
 def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> None:
     """Choices that an older build lacks (``_ADDED_IN``) must fail on that build and work on
@@ -1876,14 +1913,23 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
     }
     jobs: list[tuple[str, list[str], int]] = []
     absent: list[tuple[str, list[str], int]] = []
-    for label, args, _params, depth in _choice_jobs(enc):
-        if enc.family == "amf" and enc.codec == "h264" and depth == 10:
-            continue
-        (absent if label.split("@", 1)[0] in missing else jobs).append((label, args, depth))
-    assert len({label.split("@", 1)[0] for label, _a, _d in absent}) == len(missing)
     q, b = enc.rate_control.quality, enc.rate_control.bitrate
     assert q is not None
     assert b is not None
+    # NVENC checks a level against the bitrate: give it the rate control of a job.
+    rate = _quality_args(q, q.default)[0] if enc.family == "nvenc" else []
+    refused: list[tuple[str, list[str], int]] = []  # levels too low for the test picture
+    for label, args, _params, depth in _choice_jobs(enc):
+        if depth == 10 and not _hw_usable(enc, 10):
+            continue
+        job = (label, [*rate, *args], depth)
+        if label.split("@", 1)[0] in missing:
+            absent.append(job)
+        elif enc.family == "nvenc" and label.startswith("levels=") and not _fits(enc, label):
+            refused.append(job)
+        else:
+            jobs.append(job)
+    assert len({label.split("@", 1)[0] for label, _a, _d in absent}) == len(missing)
     for value in (q.min, q.default, q.max):
         args = []
         for arg in q.args:
@@ -1895,10 +1941,15 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
     jobs.append(("bitrate", [a.replace("{kbps}", "2000") for a in b.args], 8))
     # As in a job, which always has a rate control: QSV look-ahead fails without one.
     quality, _ = _quality_args(q, q.default)
+    options = {option.key: option for option in enc.options}
     for option in enc.options:
         if enc.family == "qsv" and option.key in _QSV_GPU_FEATURES:
             continue
-        args, _ = mapping_args(option.mapping, _option_test_value(option))
+        args, _ = mapping_args(option.mapping, _option_test_value(option, enc.family))
+        for need in option.requires:  # an option that needs another one set to a value
+            other = options.get(need.field.removeprefix("option:"))
+            if need.op == "eq" and other is not None and not isinstance(need.value, list):
+                args += mapping_args(other.mapping, written_text(need.value))[0]
         jobs.append((f"option {option.key}", [*quality, *args], 8))
 
     def run(job: tuple[str, list[str], int]) -> str | None:
@@ -1907,6 +1958,8 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
         if not result.returncode:
             return None
         if (encoder_id, label) in _INTEL_VAAPI_LIMITS and _render_node_vendor() == "0x8086":
+            return None
+        if (encoder_id, label) in _NVENC_GPU_FEATURES and _GPU_LACKS.search(result.stderr):
             return None
         return f"{label}: {_fail_text(result)}"
 
@@ -1918,12 +1971,24 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
     for job in absent:  # the older build refuses the value
         if run(job) is None:
             problems.append(f"{job[0]}: works on {series}, expected to fail")
+    for job in refused:  # encoder.level_too_low agrees with NVENC
+        if run(job) is None:
+            problems.append(f"{job[0]}: works, expected NVENC to refuse the level")
     assert problems == []
+
+
+def _fits(enc: VideoEncoderDef, label: str) -> bool:
+    """The level of a choice job fits the 320x240 25 fps test picture (encoder.level_too_low)."""
+    level = label.removeprefix("levels=").split("@", 1)[0]
+    if enc.codec == "h264":
+        return h264_level_fits(level, 320, 240, Fraction(25)) is None
+    return x265_level_fits(level, 320, 240, Fraction(25), None, min_cu=8) is None
 
 
 @pytest.mark.needs_gpu
 @pytest.mark.parametrize(
-    "encoder_id", sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi", "qsv"))
+    "encoder_id",
+    sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi", "qsv", "nvenc")),
 )
 def test_hardware_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Path) -> None:
     """As ``test_quality_range_ends_are_honoured``, on the GPU."""
@@ -1938,7 +2003,10 @@ def test_hardware_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Pat
         got = _encode_digest([*_hw_args(enc, 8), *args], tmp_path / f"{label}.mkv", timeout=60)
         assert not isinstance(got, str), f"{label}: {got}"
         results[label] = got
-    assert _check_quality_points(results) == []
+    problems = _check_quality_points(results)
+    if enc.family == "nvenc" and problems == ["min gives the same file as min+1"]:
+        pytest.xfail("NVENC caps a constant quality at the bitrate of the level it picks")
+    assert problems == []
 
 
 @pytest.mark.needs_gpu

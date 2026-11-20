@@ -141,7 +141,9 @@ What to do:
 - Update the driver, if your graphics card can get a newer one, or
 - Use another build: **Use another FFmpeg…** on the Video tab opens Settings → Tools, where you
   can install the other build, install a build from a file, or set your own path. On the
-  command line: `reframe tools fetch --build compat`, or set `REFRAME_FFMPEG`.
+  command line: `reframe tools fetch --build compat`, or set `REFRAME_FFMPEG`. A server or app
+  that already runs does not see a build that the command line installed: click **Check
+  again** in Settings → Tools, or restart it.
 
 `reframe encoders` and `reframe tools status` print the same advice as a `hint:` line, for
 example:

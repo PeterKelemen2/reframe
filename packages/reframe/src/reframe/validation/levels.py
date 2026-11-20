@@ -1,14 +1,15 @@
-"""Encoder rules for x265 levels, and for the advanced options and custom parameters.
+"""Encoder rules for levels (x265 and NVENC), and for the advanced options and custom
+parameters.
 
-Without the level rule, a level too small for the picture would validate, and x265 would then
-refuse to start. The option and custom-parameter rules also run for templates, since they need
-only the video settings.
+Without the level rules, a level too small for the picture or the bitrate would validate, and
+the encoder would then refuse to start. The bitrate, option and custom-parameter rules also run
+for templates, since they need only the video settings.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from fractions import Fraction
 
 from reframe.definitions import VideoEncoderDef, effective_option
@@ -28,7 +29,14 @@ from reframe.validation.video import (
     video_option_rule_issues,
 )
 
-__all__ = ["X265_LEVELS", "x265_level_fits", "x265_min_cu_size"]
+__all__ = [
+    "H264_LEVELS",
+    "X265_LEVELS",
+    "h264_level_fits",
+    "nvenc_level_kbps",
+    "x265_level_fits",
+    "x265_min_cu_size",
+]
 
 #: level → (MaxLumaPs, MaxLumaSr), H.265 table A.8 (the same for both tiers).
 X265_LEVELS: dict[str, tuple[int, int]] = {
@@ -87,6 +95,48 @@ def x265_level_fits(
     return None
 
 
+#: level → (MaxMBPS, MaxFS) in 16x16 macroblocks, H.264 table A-1. NVENC refuses a level that
+#: the picture size or frame rate exceeds (checked with h264_nvenc).
+H264_LEVELS: dict[str, tuple[int, int]] = {
+    "1.0": (1_485, 99),
+    "1b": (1_485, 99),
+    "1.1": (3_000, 396),
+    "1.2": (6_000, 396),
+    "1.3": (11_880, 396),
+    "2.0": (11_880, 396),
+    "2.1": (19_800, 792),
+    "2.2": (20_250, 1_620),
+    "3.0": (40_500, 1_620),
+    "3.1": (108_000, 3_600),
+    "3.2": (216_000, 5_120),
+    "4.0": (245_760, 8_192),
+    "4.1": (245_760, 8_192),
+    "4.2": (522_240, 8_704),
+    "5.0": (589_824, 22_080),
+    "5.1": (983_040, 36_864),
+    "5.2": (2_073_600, 36_864),
+    "6.0": (4_177_920, 139_264),
+    "6.1": (8_355_840, 139_264),
+    "6.2": (16_711_680, 139_264),
+}
+
+
+def h264_level_fits(level: str, width: int, height: int, rate: Fraction | None) -> str | None:
+    """Why an H.264 encoder refuses ``level`` for this picture (``None``: it fits, or the level
+    is not in the table)."""
+    limits = H264_LEVELS.get(level)
+    if limits is None:
+        return None
+    max_rate, max_blocks = limits
+    blocks = -(-width // 16) * -(-height // 16)
+    longest = math.isqrt(8 * max_blocks) * 16
+    if blocks > max_blocks or width > longest or height > longest:
+        return "the picture is too large"
+    if rate is not None and blocks * rate > max_rate:
+        return "the frame rate is too high for the picture size"
+    return None
+
+
 def _rate(ctx: JobContext) -> Fraction | None:
     """The frame rate x265 gets: the chosen one, else the source's average (or its frame
     rate)."""
@@ -101,20 +151,38 @@ def _rate(ctx: JobContext) -> Fraction | None:
 
 
 @job_rule("encoder", "encoder.level_too_low")
-def x265_level(ctx: JobContext) -> Iterator[ValidationIssue]:
+def level_fits(ctx: JobContext) -> Iterator[ValidationIssue]:
     video = ctx.job.video
     size = ctx.output_size
-    if video.passthrough or video.encoder != "libx265" or video.level is None or size is None:
+    fits_checks = {"libx265", "hevc_nvenc", "h264_nvenc"}
+    if video.passthrough or video.encoder not in fits_checks or video.level is None or size is None:
         return
     encoder = ctx.definitions.video_encoders.get(video.encoder)
     levels = encoder.levels if encoder is not None else None
     if encoder is None or levels is None or levels.get(video.level) is None:
         return  # encoder.level_unsupported
-    preset = effective_preset(encoder, video)
-    min_cu = x265_min_cu_size(video, encoder)
     rate = _rate(ctx)
     width, height = size
-    why = x265_level_fits(video.level, width, height, rate, preset, min_cu=min_cu)
+    if encoder.id == "libx265":
+        preset = effective_preset(encoder, video)
+        min_cu = x265_min_cu_size(video, encoder)
+
+        def why_not(level: str) -> str | None:
+            return x265_level_fits(level, width, height, rate, preset, min_cu=min_cu)
+
+        table: Collection[str] = X265_LEVELS
+        name = "x265"
+    else:
+        h264 = encoder.id == "h264_nvenc"
+
+        def why_not(level: str) -> str | None:
+            if h264:
+                return h264_level_fits(level, width, height, rate)
+            return x265_level_fits(level, width, height, rate, None, min_cu=8)
+
+        table = H264_LEVELS if h264 else X265_LEVELS
+        name = encoder.label
+    why = why_not(video.level)
     if why is None:
         return
     fixes: list[Fix] = []
@@ -122,22 +190,110 @@ def x265_level(ctx: JobContext) -> Iterator[ValidationIssue]:
         (
             choice.value
             for choice in levels.choices
-            if choice.value in X265_LEVELS
-            and x265_level_fits(choice.value, width, height, rate, preset, min_cu=min_cu) is None
+            if choice.value in table and why_not(choice.value) is None
         ),
         None,
     )
     if fitting is not None:
         fixes.append(fix(f"Use level {fitting}", replace("video.level", fitting)))
-    fixes.append(fix("Let x265 choose the level", replace("video.level", None)))
+    fixes.append(fix(f"Let {name} choose the level", replace("video.level", None)))
     shown = f" at {float(rate):.3g} fps" if rate is not None else ""
     yield error(
         "encoder.level_too_low",
         "video.level",
-        f"x265 level {video.level} is too low for {width}x{height}{shown}: {why}, and x265 "
-        "would refuse to encode.",
+        f"{name} level {video.level} is too low for {width}x{height}{shown}: {why}, and "
+        f"{name} would refuse to encode.",
         *fixes,
     )
+
+
+#: The highest average bitrate (kb/s) NVENC takes at an H.264 level, for Baseline and Main /
+#: for High. Measured: it is min(MaxBR, MaxCPB / 2) times the NAL factor, because FFmpeg gives
+#: NVENC a buffer of twice the bitrate and NVENC checks both against the level.
+NVENC_H264_LEVEL_KBPS: dict[str, tuple[int, int]] = {
+    "1.0": (76, 96),
+    "1b": (153, 192),
+    "1.1": (230, 288),
+    "1.2": (460, 576),
+    "1.3": (921, 1152),
+    "2.0": (1200, 1500),
+    "2.1": (2400, 3000),
+    "2.2": (2400, 3000),
+    "3.0": (6000, 7500),
+    "3.1": (8400, 10500),
+    "3.2": (12000, 15000),
+    "4.0": (15000, 18750),
+    "4.1": (37500, 46875),
+    "4.2": (37500, 46875),
+    "5.0": (81000, 101250),
+    "5.1": (144000, 180000),
+    "5.2": (144000, 180000),
+    "6.0": (144000, 180000),
+    "6.1": (288000, 360000),
+    "6.2": (480000, 600000),
+}
+#: The same for H.265 (Main and Main 10 alike), Main tier / High tier. ``None``: the level has
+#: no High tier, and NVENC then checks no bitrate.
+NVENC_HEVC_LEVEL_KBPS: dict[str, tuple[int, int | None]] = {
+    "1.0": (140, None),
+    "2.0": (825, None),
+    "2.1": (1650, None),
+    "3.0": (3300, None),
+    "3.1": (5500, None),
+    "4.0": (6600, 16500),
+    "4.1": (11000, 27500),
+    "5.0": (13750, 55000),
+    "5.1": (22000, 88000),
+    "5.2": (33000, 132000),
+    "6.0": (33000, 132000),
+    "6.1": (66000, 264000),
+    "6.2": (132000, 440000),
+}
+
+
+def nvenc_level_kbps(encoder: str, level: str, profile: str | None, tier: str | None) -> int | None:
+    """The highest bitrate NVENC takes at ``level`` in bitrate mode; ``None``: not known."""
+    if encoder == "h264_nvenc":
+        limits = NVENC_H264_LEVEL_KBPS.get(level)
+        if limits is None or profile not in ("baseline", "main", "high"):
+            return None  # High 10: not measured (no GPU at hand encodes 10-bit H.264)
+        return limits[1] if profile == "high" else limits[0]
+    if encoder == "hevc_nvenc":
+        tiers = NVENC_HEVC_LEVEL_KBPS.get(level)
+        if tiers is None:
+            return None
+        return tiers[1] if tier == "high" else tiers[0]
+    return None
+
+
+@shared_rule("encoder", "encoder.level_bitrate_too_high")
+def nvenc_level_bitrate(ctx: JobContext | TemplateContext) -> list[ValidationIssue]:
+    video = ctx.doc.video
+    rc = video.rate_control
+    encoder = ctx.definitions.video_encoders.get(video.encoder)
+    if video.passthrough or encoder is None or video.level is None or rc.mode != "bitrate":
+        return []
+    if "maxrate" in video.custom_params or "bufsize" in video.custom_params:
+        return []  # the user's own rate buffer: NVENC checks that instead
+    profile = video.profile
+    if profile is None and encoder.profiles is not None:
+        profile = encoder.profiles.default_for(video.bit_depth)
+    tier = video.advanced.get("tier")
+    limit = nvenc_level_kbps(
+        encoder.id, video.level, profile, tier if isinstance(tier, str) else None
+    )
+    if limit is None or rc.kbps <= limit:
+        return []
+    return [
+        error(
+            "encoder.level_bitrate_too_high",
+            "video.rate_control.kbps",
+            f"{encoder.label} refuses level {video.level} at {rc.kbps} kb/s: at that level it "
+            f"takes at most {limit} kb/s (FFmpeg gives it a rate buffer of twice the bitrate).",
+            fix(f"Use {limit} kb/s", replace("video.rate_control.kbps", limit)),
+            fix("Let the encoder choose the level", replace("video.level", None)),
+        )
+    ]
 
 
 @shared_rule("encoder", *OPTION_RULE_CODES)

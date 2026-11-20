@@ -510,6 +510,8 @@ option_sets = ["nvenc", "nvenc_qp51", "nvenc_h264", "nvenc_bluray"]
 mapping = { kind = "private_opt", name = "profile" }
 default = "high"
 default_by_depth = { "10" = "high10" }
+# FFmpeg 8.1 writes Main without -profile, 9.0 High.
+write_default = true
 help = "Limits the features for older players."
 choices = [
     { value = "baseline", label = "Baseline", bit_depths = [8] },

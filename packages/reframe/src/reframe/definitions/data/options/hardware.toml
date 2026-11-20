@@ -19,7 +19,7 @@ min = 0
 max = 4
 step = 1
 unit = "frames"
-help = "Number of B-frames. 3 improves compression on Turing and newer GPUs."
+help = "Number of B-frames. 3 improves compression on Turing and newer GPUs. A GeForce 10 series (Pascal) GPU has no B-frames in H.265."
 mapping = { kind = "ffmpeg_arg", arg = "-bf" }
 default = { kind = "encoder", note = "from the preset" }
 
@@ -33,7 +33,7 @@ choices = [
     { value = "each", label = "Each B-frame" },
     { value = "middle", label = "Middle B-frame" },
 ]
-help = "Lets B-frames be used as references (B-pyramid). Middle is widely supported."
+help = "Lets B-frames be used as references (B-pyramid). Middle is widely supported. A GeForce 10 series (Pascal) GPU refuses it in H.265."
 mapping = { kind = "private_opt", name = "b_ref_mode" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -46,7 +46,7 @@ min = 0
 max = 16
 step = 1
 unit = "frames"
-help = "Number of reference frames; 0 = the driver decides."
+help = "Number of reference frames; 0 = the driver decides. A GeForce 10 series (Pascal) GPU refuses more than 1."
 mapping = { kind = "ffmpeg_arg", arg = "-refs" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -59,7 +59,7 @@ min = 1
 max = 1000
 step = 1
 unit = "frames"
-help = "Maximum distance between keyframes (seek points)."
+help = "Maximum distance between keyframes (seek points). With B-frames, NVENC needs it larger than the number of B-frames plus 1."
 mapping = { kind = "ffmpeg_arg", arg = "-g" }
 default = { kind = "encoder", note = "the encoder decides" }
 
@@ -90,7 +90,7 @@ key = "temporal-aq"
 label = "Temporal AQ"
 category = "Psycho-visual"
 type = "bool"
-help = "Adaptive quantisation over time: more quality for static parts that later frames reference."
+help = "Adaptive quantisation over time: more quality for static parts that later frames reference. A GeForce 10 series (Pascal) GPU refuses it in H.265."
 mapping = { kind = "private_opt", name = "temporal-aq" }
 default = { kind = "fixed", value = false }
 
@@ -400,7 +400,8 @@ key = "weighted_pred"
 label = "Weighted prediction"
 category = "Frame types / GOP"
 type = "bool"
-help = "Weighted prediction: better fades. Some GPUs and drivers do not allow it together with B-frames."
+help = "Weighted prediction: better fades. NVENC refuses it together with B-frames: only with B-frames set to 0."
+requires = [{ field = "option:bf", op = "eq", value = 0 }]
 mapping = { kind = "private_opt", name = "weighted_pred" }
 default = { kind = "fixed", value = false }
 
@@ -434,7 +435,7 @@ choices = [
     { value = "2", label = "2" },
     { value = "3", label = "3", help = "Best, slowest." },
 ]
-help = "How much analysis the look-ahead does (needs a recent GPU and driver). Only with look-ahead."
+help = "How much analysis the look-ahead does (needs a recent GPU and driver; a GeForce 10 series (Pascal) GPU takes only Automatic). Only with look-ahead."
 mapping = { kind = "private_opt", name = "lookahead_level" }
 requires = [{ field = "option:rc-lookahead", op = "ne", value = 0 }]
 default = { kind = "encoder", note = "automatic" }
@@ -448,7 +449,7 @@ choices = [
     { value = "0", label = "Off" },
     { value = "4", label = "On (level 4)" },
 ]
-help = "Temporal noise filtering of the source before encoding (needs a recent GPU and driver, and B-frames)."
+help = "Temporal noise filtering of the source before encoding (needs a recent GPU and driver, and B-frames; a GeForce 10 series (Pascal) GPU refuses it)."
 mapping = { kind = "private_opt", name = "tf_level" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -609,7 +610,7 @@ key = "unidir_b"
 label = "Unidirectional B-frames"
 category = "Frame types / GOP"
 type = "bool"
-help = "B-frames that reference only earlier frames (lower latency, recent GPUs)."
+help = "B-frames that reference only earlier frames (lower latency, recent GPUs; a GeForce 10 series (Pascal) GPU refuses it)."
 mapping = { kind = "private_opt", name = "unidir_b" }
 default = { kind = "fixed", value = false }
 
