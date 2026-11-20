@@ -1716,8 +1716,11 @@ MKV, 0.6 / 0 / 0.979 in MP4 (an edit list). The builder adds, when the option is
   shown until the second; with a constant frame rate FFmpeg repeats it (frames at 0, 0.04, …).
 - each encoded audio track: `aresample=async=1:first_pts=0` first in its chain (before the
   layout, the gain and `loudnorm`, also in the loudness analysis): silence from 0 to the first
-  sample (FFmpeg's documented use of `first_pts`). `async=1` fills and trims; it does not
-  stretch (no `max_soft_comp`).
+  sample (FFmpeg's documented use of `first_pts`). `async=1` fills and trims, it does not
+  stretch (`ffmpeg -h filter=aresample`: "1(filling and trimming), >1(maximum stretch/squeeze
+  in samples per second)"). It also fills a gap of more than 0.1 s (`min_hard_comp`) inside a
+  track with silence: a sine with a 0.5 s timestamp gap at 1 s stays 3.5 s long either way, but
+  without the filter the gap has no samples (141 packets), with it 0.5 s of silence (147).
 
 Checked with `ffprobe` and, in the file's own timestamps (`ffmpeg -copyts`), the first frame
 with `signalstats` YAVG > 200 and the first `silencedetect` end of each track: every stream
