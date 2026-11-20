@@ -164,7 +164,8 @@ E11         │ ✓ 1080p    │ ✓ #1                   │ ✗ none          
 
 - Some settings are per-file by nature, and the template holds a **policy** for them, not a
   value:
-  - **Crop**: "auto-detect per file" (default) or "same manual crop for all".
+  - **Crop**: "auto-detect per file" (default: each file's crop is detected when the group is
+    queued) or "same manual crop for all".
   - **Chapter names**: from source, or generated.
   - **Tags and output name**: templates.
   - **Range**: full file (default).

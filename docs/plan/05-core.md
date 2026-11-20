@@ -397,10 +397,10 @@ class EncodePlan(BaseModel):
       2b)"). The end of a chapter range is clamped to the last chapter
       ([decision 0026](../decisions/0026-builder-and-validation-agree.md)).
 - [ ] Tags with `-metadata`. Passthru common metadata = `-map_metadata 0` before the overrides.
-- [ ] NVENC constant quality: with no level and no `maxrate`/`bufsize` in the custom
+- [x] NVENC constant quality: with no level and no `maxrate`/`bufsize` in the custom
       parameters, a `-maxrate`/`-bufsize` high enough that the level NVENC picks does not cap
       the quality (values measured, [0103](../decisions/0103-owner-decisions-before-v1.md) item 1).
-- [ ] Align A/V start: the output's streams start together (0103 item 4).
+- [x] Align A/V start: the output's streams start together (0103 item 4).
 
 Done when: syrupy snapshots of `EncodePlan` exist for ≥ 40 fixture jobs (every encoder family,
 every container, burn-in, 2-pass, loudnorm, external subs, range, HDR → SDR). An
@@ -446,7 +446,7 @@ functions in a registry, grouped by area.
 - [ ] NVENC levels ([0102](../decisions/0102-nvenc-on-linux.md)): an H.264 or H.265 NVENC
       level too small for the output (`encoder.level_too_low`), and in bitrate mode a bitrate
       above what NVENC takes at the level (`encoder.level_bitrate_too_high`, measured table).
-- [ ] AMF pre-analysis on a picture below 200 lines, which the encoder refuses at run time
+- [x] AMF pre-analysis on a picture below 320×200, which the encoder refuses at run time
       ([0103](../decisions/0103-owner-decisions-before-v1.md) item 9).
 - [ ] Range is outside the duration.
 - [ ] Everything the command builder refuses (`PlanError`) is a validation error (a test

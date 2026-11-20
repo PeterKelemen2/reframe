@@ -133,3 +133,25 @@ are silent); H.264 and HEVC end in a media error, and the preview shows the fram
 AV1 plays its audio without a picture and without an error, which the preview now treats as a
 codec the window cannot play. The decoders for H.264, HEVC and AV1 in the AppImage are the
 owner's choice (open). Item 13 works as written; the dialog is mounted in `App.vue`.
+
+## Follow-up (2026-11-20): items 1, 2, 4, 5 and 9
+
+- **Item 1** built: NVENC CQ without a level gets `-maxrate 160M -bufsize 320M` (H.265; NVENC
+  picks level 5.1) or `200M`/`400M` (H.264; level 5.0). NVENC picks the level from the maxrate
+  alone. Measured on the GTX 1050 Ti (`testdata/README.md` §NVENC on Linux): CQ 10 and CQ 20
+  now differ clearly at 1080p and 2160p, and 1080p CQ 10 is no longer capped. **Deviation:**
+  grainy 2160p CQ 10 is still capped at level 5.1 (201 MB against 559 MB uncapped); lifting it
+  needs about 480M, which writes level 6.1 into every 4K CQ file, a level few players accept.
+  AV1 NVENC is unchanged (Pascal has none). The GPU range-end test runs on a grainy picture:
+  the plain test picture gives the same file at CQ 1 and 2 even at level 6.2.
+- **Item 2** built: Main 10, level 5.1 on the host; HDR10 stays PQ.
+- **Item 4** built: video `setpts='if(eq(N,0),0,PTS)'` at the end of the chain, each encoded
+  audio track `aresample=async=1:first_pts=0` first. A copied (passthru) track cannot be
+  filtered and keeps its start; validation says so (`container.align_copied_track`, info).
+  Subtitles keep their times. A range keeps FFmpeg's 20 ms snap of video to its frame grid.
+- **Item 5** built in the core and `reframe batch` (the dry run does not detect); the crop
+  detected for each file is a note on its matrix row. The group's chapter-name control is in
+  the group banner.
+- **Item 9** built: the limit is 320×200 (width and height) for `h264_amf`, `hevc_amf` and
+  `av1_amf`, and the `qvbr`, `hqvbr` and `hqcbr` rate controls start pre-analysis too.
+
