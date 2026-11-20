@@ -5,6 +5,7 @@
     "paused": "Paused",
     "done": "Done",
     "failed": "Failed",
+    "failedEncoder": "Failed — encoder unavailable",
     "cancelled": "Cancelled",
     "interrupted": "Interrupted"
   },
@@ -57,6 +58,7 @@
     "moveUp": "Move {job} up",
     "moveDown": "Move {job} down"
   },
+  "encoderFixes": "Fixes for {job}",
   "actionTips": {
     "start": "Start this job only",
     "pause": "Pause",

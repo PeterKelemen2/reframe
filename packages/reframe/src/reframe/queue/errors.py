@@ -10,14 +10,36 @@ import re
 import signal
 from collections.abc import Sequence
 
+from reframe.models.issues import Severity, ValidationIssue
+from reframe.models.queue import JobState, QueueJob
+
 __all__ = [
+    "ENCODER_UNAVAILABLE",
     "JobStateError",
     "QueueError",
     "UnknownJobError",
+    "encoder_unavailable",
     "exit_text",
     "printable",
     "stderr_reason",
 ]
+
+ENCODER_UNAVAILABLE = "encoder.unavailable"
+
+
+def encoder_unavailable(job: QueueJob) -> ValidationIssue | None:
+    """The error of a failed job whose encoder was not available when the job was checked
+    (``Failed — encoder unavailable``), with its fixes; ``None`` for any other job."""
+    if job.state is not JobState.FAILED:
+        return None
+    return next(
+        (
+            issue
+            for issue in job.issues
+            if issue.code == ENCODER_UNAVAILABLE and issue.severity is Severity.ERROR
+        ),
+        None,
+    )
 
 
 class QueueError(Exception):

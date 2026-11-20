@@ -4,7 +4,15 @@ import { createI18n } from 'vue-i18n'
 import type { JobProgress } from '@/api/types'
 import { createAppI18n, en } from '@/i18n'
 
-import { isHeld, jobActions, liveColumns, runState, stepText } from './format'
+import {
+  encoderUnavailable,
+  isHeld,
+  jobActions,
+  jobStateLabel,
+  liveColumns,
+  runState,
+  stepText,
+} from './format'
 import { job } from './testing'
 
 const { t, n } = createAppI18n().global
@@ -132,6 +140,29 @@ describe('the actions of a job', () => {
       'remove',
     ])
     expect(jobActions(job('a', 'failed'), false, true)).not.toContain('start')
+  })
+})
+
+describe('a job whose encoder is unavailable', () => {
+  const issue = {
+    severity: 'error',
+    code: 'encoder.unavailable',
+    path: 'video.encoder',
+    message: 'No NVENC',
+  } as const
+
+  it('is a failed job with that error, and says so in its state', () => {
+    const failed = job('a', 'failed', { issues: [issue] })
+    expect(encoderUnavailable(failed)).toEqual(issue)
+    expect(jobStateLabel(failed, t)).toBe('Failed — encoder unavailable')
+  })
+
+  it('is no other job', () => {
+    expect(encoderUnavailable(job('a', 'waiting', { issues: [issue] }))).toBeNull()
+    expect(
+      encoderUnavailable(job('a', 'failed', { issues: [{ ...issue, severity: 'warning' }] })),
+    ).toBeNull()
+    expect(jobStateLabel(job('a', 'failed'), t)).toBe('Failed')
   })
 })
 

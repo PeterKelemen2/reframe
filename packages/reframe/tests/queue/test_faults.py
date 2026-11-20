@@ -528,6 +528,40 @@ async def test_encoder_unavailable_after_detection(harness: Harness) -> None:
     assert "not in this build" in ended.error
 
 
+async def test_a_job_whose_encoder_became_unavailable_fails_with_its_fixes_and_the_queue_goes_on(
+    harness: Harness,
+) -> None:
+    h = harness
+    from reframe.models import EncoderState
+    from reframe.queue.errors import encoder_unavailable
+
+    from .conftest import all_caps
+
+    h.caps.snapshot = all_caps(state=EncoderState.CHECKING)
+    gone = all_caps()
+    for encoder in ("h264_nvenc", "h264_qsv", "h264_amf", "h264_vaapi"):
+        gone.encoders[encoder] = gone.encoders[encoder].model_copy(
+            update={"state": EncoderState.UNAVAILABLE, "reason": "NVIDIA driver not found"}
+        )
+    h.caps.final = gone
+    first = await h.queue.add(h.job("Nvenc", encoder="h264_nvenc", preset="p4"))
+    second = await h.queue.add(h.job("Software"))
+    h.queue.start()
+    failed, done = await h.queue.wait([first.id, second.id])
+    assert (failed.state, done.state) == (JobState.FAILED, JobState.DONE)
+    issue = encoder_unavailable(failed)
+    assert issue is not None
+    assert issue.path == "video.encoder"
+    assert "NVIDIA driver not found" in issue.message
+    [fix] = issue.fixes
+    assert fix.label.startswith("Use libx264 (closest match")
+    assert fix.target == "job"
+    assert {"op": "replace", "path": "/video/encoder", "value": "libx264"} in [
+        op.model_dump() for op in fix.patch
+    ]
+    assert encoder_unavailable(done) is None
+
+
 async def test_plan_error_is_a_failure(harness: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
     from reframe.command import PlanError
     from reframe.queue import runner

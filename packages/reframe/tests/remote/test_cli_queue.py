@@ -8,12 +8,13 @@ import json
 import os
 import sqlite3
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from reframe import cli
-from reframe.models import JobState, QueueJob
+from reframe.models import Fix, JobState, QueueJob, ReplaceOp, Severity, ValidationIssue
 from reframe.queue import lock as lock_module
 from reframe.queue.logs import log_file
 from reframe.queue.store import STORE_FILE
@@ -335,6 +336,42 @@ async def test_the_list_says_why_a_job_failed(
     lines = capsys.readouterr().out.splitlines()
     assert lines[1].split()[:3] == ["1", failed.id[:8], "failed"]
     assert lines[2].strip().startswith("failed: The job has errors: ")
+
+
+async def test_the_list_marks_a_job_whose_encoder_is_unavailable_and_gives_its_fixes(
+    server: Server,
+) -> None:
+    settings = await server.job("Gpu.mkv")
+    issue = ValidationIssue(
+        severity=Severity.ERROR,
+        code="encoder.unavailable",
+        path="video.encoder",
+        message="hevc_nvenc is not available: NVIDIA driver not found.",
+        fixes=[
+            Fix(
+                label="Use libx265 (closest match)",
+                patch=[ReplaceOp(path="/video/encoder", value="libx265")],
+            ),
+            Fix(label="Save in the preset", patch=[], target="template"),
+        ],
+    )
+    job = QueueJob(
+        id="0123456789abcdef",
+        position=0,
+        state=JobState.FAILED,
+        settings=settings,
+        issues=[issue],
+        created_at=datetime.now(UTC),
+        error=f"The job has errors: {issue.message}",
+    )
+    lines = [line.strip() for line in cli.queue_rows([job])]
+    assert lines[1].split()[:3] == ["1", "01234567", "failed"]
+    assert lines[2:5] == [
+        "failed — encoder unavailable: hevc_nvenc is not available: NVIDIA driver not found.",
+        "fix: Use libx265 (closest match)",
+        "or choose another encoder (edit the job in the app), or check again: reframe "
+        "encoders, then reframe queue retry 01234567",
+    ]
 
 
 def saved_queue(api_data: Path, sql: str, *params: object) -> None:

@@ -1,4 +1,4 @@
-import type { JobProgress, JobState, QueueJob } from '@/api/types'
+import type { JobProgress, JobState, QueueJob, ValidationIssue } from '@/api/types'
 import type { StatusTone } from '@/components/base/types'
 import { fileName, type FormatNumber, formatDuration } from '@/components/shell/format'
 import { formatBytes, type Translate } from '@/components/summary/format'
@@ -11,6 +11,22 @@ export const STATE_TONE: Record<JobState, StatusTone> = {
   failed: 'error',
   cancelled: 'off',
   interrupted: 'warn',
+}
+
+/** The error of a failed job whose encoder was not available, with its fixes. */
+export function encoderUnavailable(job: QueueJob): ValidationIssue | null {
+  if (job.state !== 'failed') return null
+  return (
+    (job.issues ?? []).find(
+      (issue) => issue.code === 'encoder.unavailable' && issue.severity === 'error',
+    ) ?? null
+  )
+}
+
+/** The state as the queue shows it: a failed job says when its encoder was unavailable. */
+export function jobStateLabel(job: QueueJob, t: Translate): string {
+  if (encoderUnavailable(job) !== null) return t('queue.state.failedEncoder')
+  return stateLabel(job.state, t)
 }
 
 export function stateLabel(state: JobState, t: Translate): string {

@@ -5,6 +5,7 @@ import { api, unwrap } from '@/api/client'
 import { createMirror } from '@/api/mirror'
 import type {
   EventOf,
+  Fix,
   JobLogChunk,
   JobSettings,
   JobState,
@@ -13,6 +14,8 @@ import type {
   Schemas,
   WhenDone,
 } from '@/api/types'
+
+import { applyOps } from '@/editor/patch'
 
 import { useSettingsStore } from './settings'
 
@@ -327,6 +330,24 @@ export const useQueueStore = defineStore('queue', () => {
     return added
   }
 
+  /**
+   * Replaces a failed job with its settings after `fix` (one of its issues' fixes): the new job
+   * takes its place and is checked as any added job, then the failed one is removed.
+   */
+  async function retryWith(jobId: string, fix: Fix): Promise<void> {
+    const job = byId(jobId)
+    if (job === undefined) return
+    const settings = applyOps(job.settings, fix.patch)
+    await adds(
+      async () =>
+        unwrap(
+          await api.POST('/api/queue', { body: { jobs: [settings], position: job.position } }),
+        ),
+      (answer) => answer,
+    )
+    await remove(jobId)
+  }
+
   async function duplicate(jobId: string): Promise<void> {
     await adds(
       async () => unwrap(await api.POST('/api/queue/{job_id}/duplicate', jobPath(jobId))),
@@ -408,6 +429,7 @@ export const useQueueStore = defineStore('queue', () => {
     resume,
     cancel,
     retry,
+    retryWith,
     duplicate,
     remove,
     reorder,
