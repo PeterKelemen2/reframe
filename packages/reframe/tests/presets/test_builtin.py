@@ -347,9 +347,9 @@ HANDBRAKE: dict[str, tuple[str, str, list[tuple[str, str, int]]]] = {
         "hevc_nvenc 27 p4 - - 8 1920x1080 -:variable mp4 none -",
         AAC160,
     ),
-    "h265-nvenc-2160p-4k": (
+    "h265-nvenc-2160p-4k": (  # HandBrake's is 8-bit; 10-bit like the other 4K presets
         "H.265 NVENC 2160p 4K",
-        "hevc_nvenc 30 p4 - - 8 3840x2160 -:variable mp4 none -",
+        "hevc_nvenc 30 p4 - - 10 3840x2160 -:variable mp4 none -",
         AAC160,
     ),
     "h265-qsv-1080p": (
