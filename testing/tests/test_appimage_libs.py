@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import struct
 import sys
@@ -242,8 +243,12 @@ def test_the_committed_list_is_one_package_name_per_line() -> None:
 
     assert all(name.replace(".", "").replace("+", "").replace("-", "").isalnum() for name in names)
     assert {"libwebkit2gtk-4.1-0", "libgtk-3-0", "libayatana-appindicator3-1"} <= set(names)
-    # The frozen sidecar's system libraries, in the .deb and .rpm too.
-    assert {"libgcc-s1", "libstdc++6", "zlib1g"} <= set(names)
+    # The frozen sidecar's system library, in the .deb and .rpm too.
+    assert "libgcc-s1" in names
+    # WebKitGTK's player, without FFmpeg.
+    assert {"gstreamer1.0-plugins-base", "gstreamer1.0-plugins-good"} <= set(names)
+    ffmpeg = re.compile(r"ffmpeg|gstreamer1\.0-libav|libav(codec|device|filter|format|util)\d")
+    assert not [name for name in names if ffmpeg.match(name)]
 
 
 SIDECAR_INDEX = {
