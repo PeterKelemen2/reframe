@@ -250,6 +250,16 @@ def tall_source(s: Any) -> None:
     s.source.video[0].height = 1160
 
 
+def aligned_with_late_copy(late: float) -> Mod:
+    def mod(s: Any) -> None:
+        s.job.output.align_av_start = True
+        s.source.video[0].start_time = 0.0
+        s.source.audio[0].start_time = 0.0
+        s.source.audio[1].start_time = late  # the passthru AAC track
+
+    return mod
+
+
 def narrow_source(s: Any) -> None:
     s.source.video[0].width = 318
     s.source.video[0].height = 720
@@ -712,6 +722,14 @@ CASES: list[Case] = [
         ERR,
         x265_level("4.0", framerate=Rational(num=60, den=1), framerate_mode="constant"),
         x265_level("4.1", framerate=Rational(num=60, den=1), framerate_mode="constant"),
+    ),
+    Case(
+        "Align A/V start with a copied track that starts late",
+        "container.align_copied_track",
+        "audio[1].action",
+        INFO,
+        aligned_with_late_copy(0.5),
+        aligned_with_late_copy(0.03),
     ),
     Case(
         "AMF pre-analysis on a picture below 200 lines",

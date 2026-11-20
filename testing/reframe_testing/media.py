@@ -872,6 +872,43 @@ def _hdr10_4k_recipe() -> Recipe:
     )
 
 
+#: Where the streams of av-offset.mkv start (seconds); the white frame and both beeps are at
+#: AV_OFFSET_MARK. The offsets are whole frames at 25 fps: FFmpeg rounds ``-itsoffset`` to the
+#: stream's time base.
+AV_OFFSET_VIDEO_START = 0.6
+AV_OFFSET_LATE_AUDIO_START = 1.0
+AV_OFFSET_MARK = 2.0
+
+
+def _beep(frequency: int, start: float, duration: float) -> tuple[str, ...]:
+    expr = f"'0.5*sin(2*PI*{frequency}*t)*between(t,{start:g},{start + 0.1:g})'"
+    return ("-f", "lavfi", "-i", f"aevalsrc=exprs={expr}:s=48000:d={duration:g}")
+
+
+def _av_offset_recipe() -> Recipe:
+    video, late, mark = AV_OFFSET_VIDEO_START, AV_OFFSET_LATE_AUDIO_START, AV_OFFSET_MARK
+    end = 4.6
+    flash = round((mark - video) * 25)
+    args = (
+        "-itsoffset", f"{video:g}",
+        "-f", "lavfi", "-i",
+        f"testsrc2=size=320x180:rate=25:duration={end - video:g},"
+        f"drawbox=c=white:t=fill:enable='eq(n,{flash})'",
+        *_beep(1000, mark, end),
+        "-itsoffset", f"{late:g}", *_beep(500, mark - late, end - late),
+        "-map", "0:v", "-map", "1:a", "-map", "2:a", "-fps_mode", "passthrough", *_X264,
+        "-c:a:0", "aac", "-b:a:0", "64k", "-c:a:1", "ac3", "-b:a:1", "96k",
+        "-metadata:s:a:0", "language=eng", "-metadata:s:a:1", "language=eng",
+    )  # fmt: skip
+    return _simple(
+        "av-offset",
+        f"video from {video:g} s, AAC from 0 s, AC-3 from {late:g} s; a white frame and a beep "
+        f"in each audio track at {mark:g} s",
+        "av-offset.mkv",
+        args,
+    )
+
+
 def _vfr_args(out: str) -> tuple[str, ...]:
     rates = ("24", "30", "60")
     args: list[str] = []
@@ -983,6 +1020,7 @@ def build_recipes() -> dict[str, Recipe]:
         ),
         _hdr10_recipe(),
         _hdr10_4k_recipe(),
+        _av_offset_recipe(),
         _chapters_recipe(),
         _season_recipe(),
         _dts_hd_ma_recipe(),

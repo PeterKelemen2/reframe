@@ -53,6 +53,7 @@ uv run python scripts/make-testdata.py --list          # names and descriptions
 | `hdr10` | `hdr10.mkv` | HEVC Main 10, BT.2020 / PQ, mastering display (G 0.265,0.69 … L 0.0001–1000 cd/m²), MaxCLL 1000 / MaxFALL 400, as stream **and** frame side data |
 | `hdr10-4k` | `hdr10-4k.mkv` | 3840×2160 HEVC Main 10, BT.2020 / PQ, HDR10 metadata as SEI only (one libx265 pass), 5 s at 23.976 fps, keyint 48 (2 s). The 4K source of the C-10 frame budget (Q-3; the one fixture that is not low resolution, decision 0030); about 6 MB and 4 s to generate |
 | `chapters` | `chapters.mkv` | 5 s, 4 chapters (Opening, Part One, Part Two, Credits) and a title, from an FFMETADATA file |
+| `av-offset` | `av-offset.mkv` | Streams that start at different times (`-itsoffset`): H.264 320×180 25 fps from **0.6 s**, `eng` AAC stereo from 0, `eng` AC-3 stereo from **1.0 s**, all to 4.6 s. A white frame (frame 35 of the video) and a beep in each audio track (1 kHz / 500 Hz, 0.1 s) at **2.0 s**. Align A/V start |
 | `season` | `season/Show.S01E01.Title.mkv` … `E12` | 12 copies of the multi-track layout (title `Show - S01Enn`). **E05** has an extra `eng` AC-3 2.0 "Commentary" (comment) as the 4th audio track. **E09** has no second audio track ("English Stereo") |
 | `dts-hd-ma` | `dts-hd-ma.mkv` | H.264 320×180, 4 s. Audio: `hun` **DTS-HD MA** 5.1(side) 24-bit 48 kHz "DTS-HD MA 5.1" **default**, a real lossless (XLL) stream written by `reframe_testing/dts.py` with **no bit rate in the file** (ffprobe: `profile` `DTS-HD MA`, no `bit_rate`; 375 frames, 1 069 764 bytes = 2 139 528 b/s); `eng` AC-3 5.1 224 kb/s "English AC-3 5.1"; `eng` AC-3 stereo 192 kb/s "English Stereo". M6 demo 1 (Measure) and the audio-defaults demo |
 | `pgs` | `pgs.mkv` | H.264 720×480, 4 s. Two PGS (`hdmv_pgs_subtitle`) tracks written by `reframe_testing/pgs.py`: `eng` "English" **default**, 6 events (2 with the forced flag, at 0.2 s and 2.1 s), 12 display sets; `eng` "English (forced)" **forced**, 2 forced events, 4 display sets |
@@ -1703,6 +1704,32 @@ refuses some values and silently changes others, so the builder snaps them itsel
 | stereo → `aresample=matrix_encoding=dplii:out_chlayout=stereo` | the same PCM (MD5 of the decoded `s16le`) as without the filter: nothing to matrix-encode, so the builder keeps the source layout |
 
 E-AC-3 at 44.1 kHz with `-b:a 1536k` reads back as 1 535 231 b/s (whole frames).
+
+**Align A/V start** (2026-11-20, `/usr/bin/ffmpeg` n9.0.2; decision 0103 item 4). The
+`av-offset` fixture: video from 0.6 s, AAC from 0, AC-3 from 1.0 s, a white frame at 2.0 s and
+a beep in each audio track at 2.0 s. Without options FFmpeg keeps each stream's start (shifted
+by the input's start time): `ffprobe -show_entries stream=start_time` says 0.6 / 0 / 1.0 in
+MKV, 0.6 / 0 / 0.979 in MP4 (an edit list). The builder adds, when the option is on:
+
+- video: `setpts='if(eq(N,0),0,PTS)'` at the end of the chain, before the format or hardware
+  tail (in the overlay graph of a bitmap burn-in too): the first frame moves to 0 and is
+  shown until the second; with a constant frame rate FFmpeg repeats it (frames at 0, 0.04, …).
+- each encoded audio track: `aresample=async=1:first_pts=0` first in its chain (before the
+  layout, the gain and `loudnorm`, also in the loudness analysis): silence from 0 to the first
+  sample (FFmpeg's documented use of `first_pts`). `async=1` fills and trims; it does not
+  stretch (no `max_soft_comp`).
+
+Checked with `ffprobe` and, in the file's own timestamps (`ffmpeg -copyts`), the first frame
+with `signalstats` YAVG > 200 and the first `silencedetect` end of each track: every stream
+starts at 0.000 in MKV and MP4, the white frame and both beeps stay at 2.00. With a range
+(`-ss 0.3 -i … -ss 0`) the streams start at 0 and the marks are where the same range puts them
+without the option: the beeps at 1.70 and the white frame at 1.72, because FFmpeg puts the
+video on its 1/25 s frame grid after a seek that is not on it (0.3 s → the first frame at 0.32,
+also without the option). A copied track cannot be filtered: an AC-3 track passed through keeps
+its start (1.0 s) while the others start at 0, and validation says so
+(`container.align_copied_track`, info, without a range). A copied video keeps its start too.
+Subtitle tracks keep their times (nothing is moved, only the start is filled); a burned-in
+subtitle is drawn before the video filter. `test_align_av_start_*` in `test_integration.py`.
 
 ### Validation (C-8)
 

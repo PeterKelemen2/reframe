@@ -375,6 +375,17 @@ def test_chapters(probe: Callable[..., Probe]) -> None:
     assert p["format"]["tags"]["title"] == "Reframe chapters fixture"
 
 
+def test_av_offset(probe: Callable[..., Probe]) -> None:
+    p = probe("av-offset.mkv")
+    got = [(s["codec_type"], s["codec_name"], float(s["start_time"])) for s in p["streams"]]
+    assert got == [
+        ("video", "h264", media.AV_OFFSET_VIDEO_START),
+        ("audio", "aac", 0.0),
+        ("audio", "ac3", media.AV_OFFSET_LATE_AUDIO_START),
+    ]
+    assert [tags(s).get("language") for s in streams(p, "audio")] == ["eng", "eng"]
+
+
 def test_season_set(all_media: Path, probe: Callable[..., Probe]) -> None:
     files = sorted(p.name for p in (all_media / "season").glob("*.mkv"))
     assert files == [media.season_file_name(n) for n in range(1, 13)]

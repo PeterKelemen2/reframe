@@ -22,6 +22,7 @@ from reframe.models import (
 )
 
 __all__ = [
+    "ALIGN_VIDEO_START",
     "HDR_SIDE_DATA",
     "BitmapBurn",
     "TextBurn",
@@ -51,6 +52,10 @@ HDR_SIDE_DATA = (
 )
 #: ffprobe colour values that mean "not known".
 _UNKNOWN_COLOUR = frozenset({"unknown", "unspecified", "reserved", ""})
+#: Align A/V start for the video: the first frame moves to the output's time 0 and is shown
+#: until the second one, so a video that starts after the audio starts with it. The other
+#: frames keep their times.
+ALIGN_VIDEO_START = "setpts='if(eq(N,0),0,PTS)'"
 
 
 def escape_value(text: str) -> str:
@@ -302,11 +307,13 @@ def build_video_graph(
     available: Mapping[str, bool],
     text_burn: TextBurn | None = None,
     bitmap_burn: BitmapBurn | None = None,
+    align_start: bool = False,
 ) -> VideoGraph:
     """The video filters of one job, in the fixed order.
 
     ``tail`` is the format stage (``["format=yuv420p"]`` or a hardware filter tail).
-    Unknown filter ids raise :class:`PlanError` (validation reports them).
+    ``align_start`` adds :data:`ALIGN_VIDEO_START` before it. Unknown filter ids raise
+    :class:`PlanError` (validation reports them).
     """
     for filter_id in filters:
         if filter_id not in definitions.filters:
@@ -346,6 +353,8 @@ def build_video_graph(
         elif stage == "format":
             if text_burn is not None:
                 after.extend(_text_burn(text_burn))
+            if align_start:
+                after.append(ALIGN_VIDEO_START)
             after.extend(tail)
         else:
             target = before if not _past_crop(stage, definitions) else after

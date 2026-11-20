@@ -1,8 +1,8 @@
 """Audio output tracks: a copy, or an encoder with its bitrate, sample rate and one filter chain.
 
-The chain is the layout, the gain, then ``loudnorm``. The mixdown is in the chain, not ``-ac``,
-so that ``loudnorm`` measures the audio that is encoded. :func:`planned_audio` holds the snapped
-values, so the builder and validation agree.
+The chain is the start alignment, the layout, the gain, then ``loudnorm``. The mixdown is in the
+chain, not ``-ac``, so that ``loudnorm`` measures the audio that is encoded.
+:func:`planned_audio` holds the snapped values, so the builder and validation agree.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from reframe.models import (
 )
 
 __all__ = [
+    "ALIGN_AUDIO_START",
     "DRC_CODECS",
     "ENCODER_LAYOUTS",
     "FALLBACK_ENCODER",
@@ -50,6 +51,9 @@ __all__ = [
 FALLBACK_ENCODER = "aac"
 #: Source codecs whose decoder applies dynamic range compression (``-drc_scale``).
 DRC_CODECS = frozenset({"ac3", "eac3"})
+#: Align A/V start for an encoded track: silence from the output's time 0 to the first sample
+#: (or the samples before 0 cut). ``async=1`` fills and trims; it never stretches the audio.
+ALIGN_AUDIO_START = "aresample=async=1:first_pts=0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -342,8 +346,11 @@ def audio_output(
     stream: AudioStream,
     container: ContainerDef,
     definitions: Definitions,
+    *,
+    align_start: bool = False,
 ) -> AudioOut:
-    """The arguments of output audio track ``index`` (``a:index``)."""
+    """The arguments of output audio track ``index`` (``a:index``). ``align_start`` puts
+    :data:`ALIGN_AUDIO_START` first in an encoded track's chain; a copy cannot be filtered."""
     a = f"a:{index}"
     planned, encoder = _plan(track, stream, container, definitions)
     if encoder is None:
@@ -361,7 +368,7 @@ def audio_output(
         out.args += [spec("-ar", a), str(planned.samplerate)]
     if (stream.codec or "") in DRC_CODECS:
         out.drc = track.drc
-    pre: list[str] = []
+    pre: list[str] = [ALIGN_AUDIO_START] if align_start else []
     layout_filter = _layout_filter(planned, definitions)
     if layout_filter is not None:
         pre.append(layout_filter)
