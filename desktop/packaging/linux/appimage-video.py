@@ -2,10 +2,15 @@
 can play video (``webview_plays_video``), then for each clip whether a ``<video>`` plays it
 (``currentTime`` advances, with a picture or without one: no decoder for its video), reports a
 media error, or neither; and that the web process is still there after each one. Prints one JSON
-line per clip and a summary; exits 1 when the shell's answer is not ``--expect-player``, a clip
-ends in neither state, or the web process is gone.
+line per clip, the VA-API libraries that the web processes loaded, and a summary.
 
-    python3 appimage-video.py APPIMAGE CLIP_DIR [--expect-player yes|no] [--driver WebKitWebDriver]
+A clip's codec is its file name up to the first ``-`` or ``.``. Exits 1 when the shell's answer
+is not ``--expect-player``, a clip ends in neither state, the web process is gone, a clip of a
+``--must-play`` codec does not play with a picture, or any other clip does not end where the
+preview shows its frame compare (a media error, or its data loaded without a picture width).
+
+    python3 appimage-video.py APPIMAGE CLIP_DIR [--expect-player yes|no] [--must-play vp9,av1]
+        [--driver WebKitWebDriver]
 
 The AppImage runs with ``TAURI_WEBVIEW_AUTOMATION=true`` (and the caller's environment); a
 display must be set.
@@ -18,6 +23,7 @@ import functools
 import http.server
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -35,10 +41,12 @@ video.muted = true;
 video.src = url;
 document.body.append(video);
 const end = Date.now() + 8000;
+let loadedWidth = null;
+video.addEventListener('loadeddata', () => { loadedWidth = video.videoWidth; });
 const report = (state) => {
   const error = video.error ? video.error.code : null;
   done({state, error, readyState: video.readyState, currentTime: video.currentTime,
-        width: video.videoWidth, height: video.videoHeight});
+        width: video.videoWidth, height: video.videoHeight, loadedWidth});
   video.removeAttribute('src');
   video.load();
   video.remove();
@@ -83,6 +91,39 @@ class Driver:
         )
 
 
+def codec(clip: str) -> str:
+    return re.split(r"[-.]", clip, maxsplit=1)[0]
+
+
+def as_expected(result: dict[str, Any], must_play: bool) -> bool:
+    """The preview plays a clip from its ``loadeddata``, and shows the frame compare instead on
+    a media error or when that event finds no picture width."""
+    loaded = result.get("loadedWidth")
+    if must_play:
+        return bool(result["state"] == "playing" and loaded)
+    return bool(result["state"] == "error" or loaded == 0)
+
+
+def web_process_va_libraries() -> list[str]:
+    """The libva, VA-API driver and GStreamer VA files that WebKit's web processes have mapped."""
+    found: set[str] = set()
+    for proc in Path("/proc").iterdir():
+        try:
+            if not (proc / "comm").read_text().startswith("WebKitWebProces"):
+                continue
+            maps = (proc / "maps").read_text()
+        except OSError:
+            continue
+        for line in maps.splitlines():
+            fields = line.split(maxsplit=5)
+            name = fields[-1].rsplit("/", 1)[-1] if len(fields) == 6 else ""
+            if name.startswith(("libva.so", "libva-drm.so", "libgstva")) or name.endswith(
+                "_drv_video.so"
+            ):
+                found.add(fields[-1])
+    return sorted(found)
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -106,8 +147,10 @@ def main() -> int:
     parser.add_argument("appimage", type=Path)
     parser.add_argument("clips", type=Path)
     parser.add_argument("--expect-player", choices=["yes", "no"], default="yes")
+    parser.add_argument("--must-play", default="", help="comma-separated codecs")
     parser.add_argument("--driver", default="WebKitWebDriver")
     args = parser.parse_args()
+    must_play = {name for name in args.must_play.split(",") if name}
 
     clips_url = serve(args.clips)
     port = free_port()
@@ -141,10 +184,13 @@ def main() -> int:
         for clip in sorted(args.clips.iterdir()):
             result = driver.script(PLAY, f"{clips_url}/{clip.name}")
             alive = driver.script("return 1", run="sync") == 1
-            print(json.dumps({"clip": clip.name, **result, "web_process": alive}), flush=True)
+            expected = as_expected(result, codec(clip.name) in must_play)
+            line = {"clip": clip.name, **result, "web_process": alive, "as_expected": expected}
+            print(json.dumps(line), flush=True)
             summary.setdefault(result["state"] if alive else "crashed", []).append(clip.name)
-            if result["state"] == "stuck" or not alive:
+            if result["state"] == "stuck" or not alive or not expected:
                 failed = True
+        print(json.dumps({"web_process_va": web_process_va_libraries()}), flush=True)
         print(json.dumps({"summary": summary}), flush=True)
     finally:
         if driver.session:
