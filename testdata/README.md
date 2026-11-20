@@ -953,8 +953,58 @@ source (testsrc2 with `noise=alls=20:allf=t`, 50 frames): H.265 CQ 5 to 21 give 
 (3.1 MB, level 4.0); with `-level 4.1` 5.1 MB, `-level 5.1` 9.4 MB, `-level 6.2` 26 MB at CQ 10
 and 13 MB at CQ 20; `-maxrate 100M -bufsize 200M` lets NVENC pick level 5.0 (21 MB). H.264: about
 24 Mbit/s at its automatic level 4.0, 38 MB at CQ 10 with level 5.1. On the 320x240 test picture
-CQ 1 and 2 give the same file, so `test_hardware_quality_range_ends_are_honoured` expects that
-failure for NVENC.
+CQ 1 and 2 gave the same file.
+
+**The rate buffer of a CQ encode** (2026-11-20, same GPU, driver and build, decision 0103 item 1).
+With `-maxrate` set and no `-level`, NVENC picks the level from the maxrate (and the picture):
+the lowest level whose High-tier MaxBR (H.265) or MaxBR × 1.5 (H.264 High) is at least the
+maxrate; `-bufsize` does not change it. H.265 30M → 4.0, 40M → 4.1, 60M and 100M → 5.0, 150M
+and 160M → 5.1, 176M and 240M → 5.2, 300M and 480M → 6.1, 800M → 6.2; H.264 50M → 4.1, 80M and
+202M → 5.0, 203M and 300M → 5.1, 480M → 6.1, 800M → 6.2 (ffprobe `level`: 150 = 5.0, 51 = 5.1). The sources are testsrc2 with
+temporal noise ("grainy": `noise=alls=8:allf=t`; "heavy": `alls=20`), 250 frames, the CQ
+arguments of the definitions plus the profile, bufsize = 2 × maxrate:
+
+```sh
+ffmpeg -f lavfi -i testsrc2=size=1920x1080:rate=25 -vf noise=alls=8:allf=t -frames:v 250 \
+  -pix_fmt yuv420p -c:v hevc_nvenc -rc vbr -cq 10 -b:v 0 -init_qpI 8 -init_qpP 10 -init_qpB 12 \
+  -profile:v main -maxrate 160M -bufsize 320M out.mkv
+ffprobe -v error -select_streams v:0 -show_entries stream=profile,level -of csv=p=0 out.mkv
+```
+
+| Codec, picture | maxrate (level) | grainy CQ 10 / 20 / 27 (MB) | heavy CQ 10 / 20 / 27 (MB) |
+|----------------|-----------------|------------------------------|-----------------------------|
+| H.265 1080p25 | none (4.0) | 12.9 / 12.9 / 11.0 | 12.9 / 12.9 / 12.9 |
+| H.265 1080p25 | 100M (5.0) | 125.5 / 32.0 / 11.1 | 98.4 / 61.1 / 18.7 |
+| H.265 1080p25 | **160M (5.1)** | 141.2 / 32.0 / 11.1 | 149.1 / 61.1 / 18.5 |
+| H.265 1080p25 | 200M (5.2) | 141.3 / 32.0 / 11.1 | 189.0 / 61.0 / 18.6 |
+| H.265 1080p25 | 300M (6.1) | 130.2 / 31.8 / 11.1 | 205.8 / 61.0 / 18.8 |
+| H.265 1080p60 | **160M (5.1)** | 86.9 / 32.0 / 11.1 | 63.0 / 63.2 / 18.7 |
+| H.265 2160p25 | none (5.0) | 25.8 / 25.8 / 25.8 | 26.9 / 26.9 / 26.9 |
+| H.265 2160p25 | **160M (5.1)** | 201.2 / 126.3 / 43.7 | 201.3 / 201.1 / 74.5 |
+| H.265 2160p25 | 240M (5.2) | 301.8 / 126.1 / 43.7 | 280.4 / 285.0 / 74.2 |
+| H.265 2160p25 | 480M (6.1) | 558.9 / 126.1 / 43.8 | 497.6 / 236.2 / 74.3 |
+| H.265 2160p60 | **160M (5.1)** | 85.2 / 85.5 / 42.0 | 86.4 / 86.4 / 73.8 |
+| H.264 1080p25 | none (4.0) | 21.9 / 21.9 / 9.2 | 22.0 / 22.0 / 16.9 |
+| H.264 1080p25 | 100M (5.0) | 121.6 / 29.3 / 9.2 | 136.3 / 83.2 / 16.8 |
+| H.264 1080p25 | **200M (5.0)** | 121.6 / 29.2 / 9.2 | 225.1 / 83.2 / 16.8 |
+| H.264 1080p25 | 800M (6.2) | 121.0 / 29.4 / 9.2 | 226.1 / 83.2 / 16.9 |
+| H.264 1080p60 | **200M (5.0)** | 112.2 / 28.9 / 8.8 | 114.8 / 82.6 / 17.1 |
+| H.264 2160p25 | none (5.1) | 160.8 / 115.4 / 36.1 | 160.9 / 160.7 / 66.9 |
+| H.264 2160p25 | **200M (5.1)** | 260.4 / 115.4 / 36.2 | 260.1 / 259.9 / 67.3 |
+| H.264 2160p25 | 480M (6.1) | 481.6 / 114.9 / 36.1 | 606.7 / 328.2 / 66.8 |
+| H.264 2160p60 | **200M (5.2)** | 115.0 / 112.2 / 35.1 | 115.3 / 115.2 / 68.0 |
+
+(60 fps rows are 250 frames, 4.2 s.) The command builder gives a CQ encode without a level and
+without `maxrate` / `bufsize` in the custom parameters `-maxrate 160M -bufsize 320M` (H.265) and
+`-maxrate 200M -bufsize 400M` (H.264): the highest values that keep H.265 at level 5.1 (the
+usual level of 4K players) and H.264 at 5.0 (5.1 and 5.2 where the picture needs them). With them, CQ 10 and CQ 20 give clearly different files on
+the grainy source at 1080p and 2160p (25 fps), CQ 20 and 27 are not capped, and at 1080p the cap
+does not bind at CQ 10 either. It still binds at 2160p CQ 10 (201 MB of 559 MB), on the heavy
+source at 2160p25 and 1080p60 (H.265), and at 2160p60: the grainy 2160p CQ 10 needs about
+480M, which makes every output level 6.1. Larger buffers are not monotonic: H.265 1080p25 at CQ
+10 is 141 MB at 160M–200M, 130 MB at 300M and 108 MB at 800M. NVENC AV1 was not measured (no
+AV1 encoder on Pascal) and gets no buffer. `test_hardware_quality_range_ends_are_honoured` runs
+the range ends with the buffer: CQ 1 and 2 differ.
 
 **Docker.** With the NVIDIA Container Toolkit 1.20.2 in CDI mode, `--gpus all`, `--device
 nvidia.com/gpu=all`, `--runtime nvidia` and the compose `deploy` reservation all mount the same 63

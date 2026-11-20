@@ -13,6 +13,7 @@ import math
 from collections.abc import Collection, Iterator
 from fractions import Fraction
 
+from reframe.command.video import sets_rate_buffer
 from reframe.definitions import VideoEncoderDef, effective_option
 from reframe.definitions.custom_params import CustomParam, split_custom_params
 from reframe.definitions.options import effective_preset
@@ -277,7 +278,7 @@ def nvenc_level_bitrate(ctx: JobContext | TemplateContext) -> list[ValidationIss
     encoder = ctx.definitions.video_encoders.get(video.encoder)
     if video.passthrough or encoder is None or video.level is None or rc.mode != "bitrate":
         return []
-    if "maxrate" in video.custom_params or "bufsize" in video.custom_params:
+    if sets_rate_buffer(video.custom_params):
         return []  # the user's own rate buffer: NVENC checks that instead
     profile = video.profile
     if profile is None and encoder.profiles is not None:

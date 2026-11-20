@@ -3100,7 +3100,7 @@
 # ---
 # name: test_plan_snapshot[h264_nvenc_mp4]
   dict({
-    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 h264_nvenc -rc:v:0 vbr -cq:v:0 22 -b:v:0 0 -init_qpI:v:0 20 -init_qpP:v:0 22 -init_qpB:v:0 24 -preset:v:0 p5 -tune:v:0 hq -profile:v:0 high -bf:v:0 3 -b_ref_mode:v:0 middle -spatial-aq:v:0 1 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 mov_text -c:s:1 mov_text -c:s:2 mov_text -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f mp4 /out/multitrack.part.mp4 && mv -f -- /out/multitrack.part.mp4 /out/multitrack.mp4',
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 h264_nvenc -rc:v:0 vbr -cq:v:0 22 -b:v:0 0 -init_qpI:v:0 20 -init_qpP:v:0 22 -init_qpB:v:0 24 -maxrate:v:0 200M -bufsize:v:0 400M -preset:v:0 p5 -tune:v:0 hq -profile:v:0 high -bf:v:0 3 -b_ref_mode:v:0 middle -spatial-aq:v:0 1 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 mov_text -c:s:1 mov_text -c:s:2 mov_text -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f mp4 /out/multitrack.part.mp4 && mv -f -- /out/multitrack.part.mp4 /out/multitrack.mp4',
     'expected_duration': 4.021,
     'files': list([
     ]),
@@ -3152,6 +3152,10 @@
           '22',
           '-init_qpB:v:0',
           '24',
+          '-maxrate:v:0',
+          '200M',
+          '-bufsize:v:0',
+          '400M',
           '-preset:v:0',
           'p5',
           '-tune:v:0',
@@ -4026,7 +4030,7 @@
 # ---
 # name: test_plan_snapshot[hevc_nvenc_10bit_hdr10]
   dict({
-    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/movie-hdr10-2160p.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 hevc_nvenc -rc:v:0 vbr -cq:v:0 22 -b:v:0 0 -init_qpI:v:0 20 -init_qpP:v:0 22 -init_qpB:v:0 24 -profile:v:0 main10 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/movie-hdr10-2160p.part.mkv && mv -f -- /out/movie-hdr10-2160p.part.mkv /out/movie-hdr10-2160p.mkv',
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/movie-hdr10-2160p.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 hevc_nvenc -rc:v:0 vbr -cq:v:0 22 -b:v:0 0 -init_qpI:v:0 20 -init_qpP:v:0 22 -init_qpB:v:0 24 -maxrate:v:0 160M -bufsize:v:0 320M -profile:v:0 main10 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/movie-hdr10-2160p.part.mkv && mv -f -- /out/movie-hdr10-2160p.part.mkv /out/movie-hdr10-2160p.mkv',
     'expected_duration': 1.005,
     'files': list([
     ]),
@@ -4068,6 +4072,10 @@
           '22',
           '-init_qpB:v:0',
           '24',
+          '-maxrate:v:0',
+          '160M',
+          '-bufsize:v:0',
+          '320M',
           '-profile:v:0',
           'main10',
           '-c:a:0',

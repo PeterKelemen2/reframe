@@ -91,6 +91,44 @@ def test_choices_written_values() -> None:
     assert unknown[unknown.index("-preset:v:0") + 1] == "superslow"
 
 
+def _rate_buffer(out: list[str]) -> tuple[str, str] | None:
+    if "-maxrate:v:0" not in out:
+        assert "-bufsize:v:0" not in out
+        return None
+    return out[out.index("-maxrate:v:0") + 1], out[out.index("-bufsize:v:0") + 1]
+
+
+def test_an_nvenc_constant_quality_without_a_level_gets_a_high_rate_buffer() -> None:
+    hevc = args("hevc_nvenc", rate_control=ConstantQuality(value=20))
+    assert _rate_buffer(hevc) == ("160M", "320M")
+    # Right after the quality arguments, before the speed preset.
+    assert hevc.index("-maxrate:v:0") == hevc.index("-init_qpB:v:0") + 2
+    assert _rate_buffer(args("h264_nvenc", rate_control=ConstantQuality(value=20))) == (
+        "200M",
+        "400M",
+    )
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"encoder": "hevc_nvenc", "level": "5.1"},
+        {"encoder": "hevc_nvenc", "custom_params": "maxrate=50M"},
+        {"encoder": "h264_nvenc", "custom_params": "rc-lookahead=20:bufsize=100M"},
+        {"encoder": "hevc_nvenc", "rate_control": AverageBitrate(kbps=5000)},
+        {"encoder": "av1_nvenc"},  # not measured: no NVENC AV1 on the GPU at hand
+        {"encoder": "hevc_qsv"},
+        {"encoder": "libx265"},
+    ],
+)
+def test_no_rate_buffer_is_added(settings: dict[str, Any]) -> None:
+    out = args(**settings)
+    custom = settings.get("custom_params", "")
+    assert out.count("-maxrate:v:0") == custom.count("maxrate")
+    assert out.count("-bufsize:v:0") == custom.count("bufsize")
+    assert not {"160M", "200M"} & set(out)
+
+
 def test_an_unset_h264_nvenc_profile_writes_the_shown_default() -> None:
     def profile(out: list[str]) -> str | None:
         return out[out.index("-profile:v:0") + 1] if "-profile:v:0" in out else None
