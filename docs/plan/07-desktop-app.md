@@ -111,6 +111,8 @@ this:
   GStreamer lacks the player's elements, as in the AppImage, whose AppRun points GStreamer at
   an empty plugin folder. The shell's `webview_plays_video` says so, and the preview shows the
   frame compare at once ([decision 0100](../decisions/0100-desktop-app-with-intel-qsv-on-linux.md)).
+  The AppImage bundles GStreamer's base, good and libav plugins, so clips play in it too
+  ([decision 0103](../decisions/0103-owner-decisions-before-v1.md) item 12).
 - **Frame compare works for every codec.** FFmpeg decodes frames from the encoded preview clip
   to PNG, and the split view shows them next to the source frame. This is the main quality
   check and does not depend on the webview. The clip starts on a source frame, so its frame at
@@ -272,7 +274,11 @@ marisa-trie ([decision 0081](../decisions/0081-probe-without-mediainfo.md),
 - [ ] Updater: signed `latest.json` in GitHub Releases. The plugin, the test key, the question,
       the install through the quit flow and a signed `latest.json` are built and checked from a
       test release served to the VM (0072 task W, with the release job's steps); a GitHub
-      release has not been made (no workflow runs, and the repository is private).
+      release has not been made (no workflow has run on GitHub yet).
+- [ ] The AppImage bundles GStreamer's base, good and libav plugins (their LGPL notices and
+      corresponding source in the notices and the sources release), and at its first start
+      offers once to add `~/.local/share/applications/Reframe.desktop` (taskbar progress,
+      open-with); Settings can remove it ([decision 0103](../decisions/0103-owner-decisions-before-v1.md) items 12, 13).
 
 ### D-9 Desktop smoke tests
 - [ ] `tauri-driver` (WebDriver) on Linux and Windows CI: the app starts, the backend becomes
@@ -310,7 +316,7 @@ Ubuntu's iHD 22.3.1. The AppImage shows no taskbar progress without an installed
 | Orphaned FFmpeg or sidecar after a crash | Job Object (Windows), PDEATHSIG + parent watch (Linux). Tested in D-0 and D-9 |
 | Antivirus false positives on the PyInstaller binary (Windows) | Onedir build (not onefile), code signing, submit to vendors if needed |
 | WebKitGTK differences (CSS, performance, codecs) | D-0 spike, Playwright WebKit project in CI, frame compare that does not need webview codecs |
-| The AppImage's WebKitGTK has no GStreamer plugins: a `<video>` aborts its web process | No `<video>` where the shell's `webview_plays_video` is false; frame compare and the external player instead. Bundling the plugins is open ([decision 0100](../decisions/0100-desktop-app-with-intel-qsv-on-linux.md)) |
+| The AppImage's WebKitGTK has no GStreamer plugins: a `<video>` aborts its web process | No `<video>` where the shell's `webview_plays_video` is false; frame compare and the external player instead. The AppImage bundles the plugins ([decision 0103](../decisions/0103-owner-decisions-before-v1.md) item 12) |
 | The bundled FFmpeg cannot use VAAPI/QSV on some Linux hosts (driver path or libva mismatch) | D-7 tests on several distros. `LIBVA_DRIVERS_PATH` handling in `C-1`. Capability reasons in Settings name the cause. Users can point the override to their distro FFmpeg |
 | A fresh install needs the FFmpeg archive (the packages contain none) | Download at the first run, or install from a file; the user's own FFmpeg path. BtbN keeps a month-end build for two years: re-pin (or mirror) before then ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)) |
 | Startup time of the Python sidecar | Onedir build, lazy imports, the UI shows a skeleton while it connects |

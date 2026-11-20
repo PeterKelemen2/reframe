@@ -209,6 +209,14 @@ steps (`Q-6.11` to `Q-6.19`) follow if there is time; a Tier B step that is not 
 after v1 and does not block the release
 ([decision 0083](../decisions/0083-simplification-step-before-v1.md)).
 
+### Owner decisions before the release checklist
+
+The changes of [decision 0103](../decisions/0103-owner-decisions-before-v1.md) (items 1–13: NVENC constant quality, the 4K NVENC
+preset, `default_container` removed, Align A/V start, batch crop per file, track name
+templates, no power actions in Docker, the queue's fix actions, AMF pre-analysis, Start for
+one job, help texts, the AppImage's GStreamer plugins and desktop entry). Then the first push
+to GitHub and a `v1.0.0-rc.1` tag, before the user docs.
+
 ### Release checklist
 
 - [x] The Tier A steps of `Q-6` are done.
@@ -236,4 +244,4 @@ after v1 and does not block the release
 
 In rough priority order: Blu-ray/DVD folder input · HandBrake preset import · HDR10+/Dolby
 Vision tooling · VMAF/SSIM after encode · watch folders (web) · subtitle OCR · chunked encoding
-· macOS build. See [01-scope.md §Later](01-scope.md#later-post-v1).
+· macOS build · a layout for windows below 1100×700 ([decision 0103](../decisions/0103-owner-decisions-before-v1.md) item 15). See [01-scope.md §Later](01-scope.md#later-post-v1).

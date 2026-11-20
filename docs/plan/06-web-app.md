@@ -128,7 +128,7 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | Area | Method & path | Purpose |
 |------|---------------|---------|
 | System | `GET /api/health` | Version, `api_version`, `instance` (random id of this run), uptime |
-| | `GET /api/system` | Tool statuses, versions, platform, mode |
+| | `GET /api/system` | Tool statuses, versions, platform, mode, and whether the server runs in a container (the Docker image: no sleep or shut down, [0103](../decisions/0103-owner-decisions-before-v1.md) item 7) |
 | | `GET /api/system/encoders` · `POST /api/system/encoders/rescan` → 202 | Capability statuses, re-detection (a task: hardware test encodes take seconds; [0049](../decisions/0049-s2-system-fs-settings-sources-preview.md)) |
 | | `POST /api/system/shutdown` | Graceful shutdown (desktop mode only, else 403) |
 | | `POST /api/system/tools/rescan` · `POST /api/system/tools/fetch` `{build?}` → 202 | Tool discovery again; download an offered FFmpeg build (`tools.fetch`; S-8 adds the build list, the install from a file and `tools.fetch_offline`). `GET /api/system` also returns the start-up problems of the settings and preset stores |

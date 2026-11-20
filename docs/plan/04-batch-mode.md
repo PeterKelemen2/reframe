@@ -217,8 +217,9 @@ as the matrix above shows; [0040](../decisions/0040-batch-engine-and-reframe-bat
 2. **Edit group**. In Audio: A1 = jpn TrueHD → Opus 5.1 448k, name `Japanese 5.1`, default.
    A2 = eng DTS-HD MA → AC-3 5.1 640k, name `English 5.1`. In Subtitles: S1 = Signs (forced
    flag), S2 = Full (default).
-3. **Check group** → all ✓. E05's commentary track is not selected, because no rule asks for
-   the `commentary` role.
+3. **Check group**. E05 is ⚠: its commentary track is not selected, because no rule asks
+   for the `commentary` role. E11 has no English dub (A2 ✗) and its signs track matches
+   without the title (≈). **Make the rule optional** on A2 skips it for E11.
 4. **Add group to queue** → 12 jobs.
 
 ## Core API (implemented in `C-12`)
