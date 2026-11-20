@@ -1059,6 +1059,28 @@ extra lines repeat the picture's edge. 1280x720 and 3840x2160 stay as they are. 
 the same GPU writes 1920x1080; `hevc_amf` keeps the display size and pads only the coded size
 (`coded_height` 1088). `test_av1_amf_pads_the_picture` records it.
 
+**AMF pre-analysis needs a picture of at least 320x200** (RX 7600, `/usr/bin/ffmpeg` n9.0.2,
+2026-11-20). `h264_amf`, `hevc_amf` and `av1_amf` alike, with `-preanalysis 1` on the picture
+the encoder gets (the output size: 318x240 fails, 320x200 works; `av1_amf` checks before it
+pads). Below it the encoder does not start, exit 190:
+
+```
+[AMFPreAnalysisImpl]   Error: …/AMFPreAnalysisImpl.cpp(1376):Assertion failed:Init() - height (180) not in [200, 4352]
+[AMFPreAnalysisImpl]   Error: …/AMFPreAnalysisImpl.cpp(1375):Assertion failed:Init() - width (318) not in [320, 8192]
+```
+
+These lines come from the AMF runtime without FFmpeg's tag. Before them `h264_amf` and
+`hevc_amf` log `[warning] VBAQ is not supported by cqp Rate Control Method, automatically
+disabled` in CQP mode (with or without `-vbaq`), and FFmpeg ends with "Error while opening
+encoder - maybe incorrect parameters such as bit_rate, rate, width or height". Without
+`-preanalysis` (and with `-preanalysis 0`, every `-quality`, or `-pa_lookahead_buffer_depth`
+alone) 320x180 encodes. The rate controls `qvbr`, `hqvbr` and `hqcbr` (H.264, H.265) start the
+pre-analysis themselves and fail the same way; `cqp`, `cbr`, `vbr_peak` and `vbr_latency` do
+not. The upper ends (8192, 4352) are above what the encoders take anyway (`h264_amf` refuses
+1920x4352 with `AMF_OUT_OF_RANGE: SetPropertyInternal() FrameSize`). Validation:
+`encoder.preanalysis_picture_too_small`; `test_amf_preanalysis_needs_the_smallest_picture_of_the_rule`
+checks it on the GPU.
+
 **Hardware rate control (AMF, VAAPI on radeonsi).** Every preset, profile, level, the quality
 mode at min / default / max, average bitrate and every option encode:
 

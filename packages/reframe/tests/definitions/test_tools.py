@@ -32,7 +32,7 @@ from reframe.definitions.models import TRACK_FLAGS
 from reframe.models.capabilities import EncoderStatus
 from reframe.models.job import Container, OptionValue
 from reframe.tools.versions import parse_ffmpeg_version
-from reframe.validation.levels import h264_level_fits, x265_level_fits
+from reframe.validation.levels import AMF_PREANALYSIS_MIN_SIZE, h264_level_fits, x265_level_fits
 from reframe_testing.encoders import (
     LAVFI_VIDEO,
     encode_args,
@@ -2007,6 +2007,40 @@ def test_hardware_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Pat
     if enc.family == "nvenc" and problems == ["min gives the same file as min+1"]:
         pytest.xfail("NVENC caps a constant quality at the bitrate of the level it picks")
     assert problems == []
+
+
+@pytest.mark.needs_gpu
+@pytest.mark.parametrize("encoder_id", ["h264_amf", "hevc_amf", "av1_amf"])
+def test_amf_preanalysis_needs_the_smallest_picture_of_the_rule(encoder_id: str) -> None:
+    """``encoder.preanalysis_picture_too_small``: below the size the encoder does not start;
+    the QVBR rate controls start the pre-analysis themselves."""
+    enc = VIDEO[encoder_id]
+    if not _hw_usable(enc):
+        pytest.skip(f"{encoder_id} does not work on this machine")
+    min_width, min_height = AMF_PREANALYSIS_MIN_SIZE
+
+    def encode(width: int, height: int, *args: str) -> subprocess.CompletedProcess[str]:
+        size = f"testsrc2=size={width}x{height}:rate=25"
+        return run_ffmpeg_capture(
+            ["-f", "lavfi", "-i", size, "-frames:v", "2", "-pix_fmt", "nv12", "-c:v", enc.id,
+             *args, "-f", "null", "-"],
+            timeout=60,
+        )  # fmt: skip
+
+    works = encode(min_width, min_height, "-preanalysis", "1")
+    assert works.returncode == 0, _fail_text(works)
+    low = encode(min_width, min_height - 2, "-preanalysis", "1")
+    assert low.returncode != 0
+    assert f"height ({min_height - 2}) not in [{min_height}," in low.stderr
+    narrow = encode(min_width - 2, 240, "-preanalysis", "1")
+    assert narrow.returncode != 0
+    assert f"width ({min_width - 2}) not in [{min_width}," in narrow.stderr
+    plain = encode(min_width, 180)
+    assert plain.returncode == 0, _fail_text(plain)
+    if enc.codec != "av1":
+        qvbr = encode(min_width, 180, "-rc", "qvbr")
+        assert qvbr.returncode != 0
+        assert "height (180) not in" in qvbr.stderr
 
 
 @pytest.mark.needs_gpu

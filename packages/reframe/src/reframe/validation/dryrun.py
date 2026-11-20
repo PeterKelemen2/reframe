@@ -138,6 +138,8 @@ _ERROR_LEVELS = frozenset({"error", "fatal", "panic"})
 # x265 and SVT-AV1 write these lines themselves, without FFmpeg's level tag.
 _ENCODER_WARNING = re.compile(r"^(?:x26[45] \[warning\]:|Svt\[warn\]:)\s*(?P<text>.*)$")
 _ENCODER_ERROR = re.compile(r"^(?:x26[45] \[error\]:|Svt\[error\]:)\s*(?P<text>.*)$")
+# The AMF runtime writes its own lines: ``<time> <thread> [<component>] Error: <file>(<n>):<text>``.
+_AMF_ERROR = re.compile(r"\[(?P<component>AMF\w*)\]\s+Error:\s*(?:[^\s(]+\(\d+\):)?(?P<text>.*)$")
 _FAILURE_WORDS = re.compile(
     r"error|fail|invalid|cannot|could not|must|not supported|out of range|unsupported", re.I
 )
@@ -167,21 +169,26 @@ def control_names(control: str) -> list[str]:
 
 
 def failure_detail(stderr: str, encoder_id: str) -> str | None:
-    """The line that says best why a dry run failed: the encoder library's own error, else a
-    failure line the encoder logged (with libvpx's ``Additional information`` appended), else
-    the encoder's first line at the error level, else
-    :func:`~reframe.capabilities.reasons.informative_line`. Without tags and addresses."""
+    """The line that says best why a dry run failed: the encoder library's own error (x265,
+    SVT-AV1, the AMF runtime), else a failure line the encoder logged that is not a warning
+    (with libvpx's ``Additional information`` appended), else the encoder's first line at the
+    error level, else :func:`~reframe.capabilities.reasons.informative_line`. Without tags and
+    addresses."""
     lines = _log_lines(stderr)
     for _level, raw in lines:
         match = _ENCODER_ERROR.match(raw)
         if match is not None:
             return match["text"].strip()
+        amf = _AMF_ERROR.search(raw)
+        if amf is not None:
+            return f"{amf['component']}: {amf['text'].strip()}"
     tag = f"[{encoder_id} @"
     tagged = [(level, _strip_tag(raw)) for level, raw in lines if raw.startswith(tag)]
     info = "Additional information:"
     extra = next((t.removeprefix(info).strip() for _, t in tagged if t.startswith(info)), None)
-    for _level, text in tagged:
-        if _FAILURE_WORDS.search(text) and not text.startswith(info):
+    for level, text in tagged:
+        # AMF warns "VBAQ is not supported by cqp …, automatically disabled" before any failure.
+        if level != "warning" and _FAILURE_WORDS.search(text) and not text.startswith(info):
             return f"{text} ({extra})" if extra else text
     for level, text in tagged:
         if level in _ERROR_LEVELS and not text.startswith(info):
