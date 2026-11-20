@@ -43,6 +43,27 @@ def test_missing_help_is_reported() -> None:
     assert _has(problems, "libx264.options.bframes", "help")
 
 
+@pytest.mark.parametrize(
+    "help_text",
+    [
+        "How many earlier frames a frame can reference.",
+        "Like the setting of x264, H.265 and AV1 encoders.",
+    ],
+)
+def test_a_number_whose_help_states_no_value_is_reported(help_text: str) -> None:
+    problems = _lint_mutated(lambda raw: _option(raw, "libx264", "ref").update(help=help_text))
+    assert _has(problems, "libx264.options.ref", "range or a typical value"), problems
+
+
+def test_a_number_whose_help_states_a_range_is_clean() -> None:
+    def mutate(raw: dict[str, Any]) -> None:
+        _option(raw, "libx264", "ref")["help"] = "Reference frames, 1 to 16."
+        _option(raw, "libx264", "deblock-beta")["help"] = "Deblock threshold (-6 … 6)."
+        _option(raw, "libx264", "me")["help"] = "Motion search method of x264."
+
+    assert _lint_mutated(mutate) == []
+
+
 def test_bad_mappings_are_reported() -> None:
     def mutate(raw: dict[str, Any]) -> None:
         _option(raw, "hevc_nvenc", "bf")["mapping"] = {"kind": "ffmpeg_arg", "arg": "bf"}
@@ -437,6 +458,24 @@ def test_filter_problems_are_reported() -> None:
         "empty chain",
     ):
         assert _has(problems, needle), needle
+
+
+def test_filter_presets_and_tunes_without_help_are_reported() -> None:
+    def mutate(raw: dict[str, Any]) -> None:
+        nlmeans = _impl(raw, "denoise", "nlmeans")
+        nlmeans["presets"][0]["help"] = ""
+        nlmeans["tunes"][0]["help"] = " "
+        del _impl(raw, "sharpen", "unsharp")["tunes"][1]["help"]
+        _impl(raw, "denoise", "hqdn3d")["presets"][-1].pop("help")
+
+    problems = _lint_mutated(mutate)
+    for needle in (
+        "denoise.nlmeans.presets.ultralight: needs help text",
+        "denoise.nlmeans.tunes.film: needs help text",
+        "sharpen.unsharp.tunes.fine: needs help text",
+        "denoise.hqdn3d.presets.custom: needs help text",
+    ):
+        assert _has(problems, needle), (needle, problems)
 
 
 def test_only_audio_encoders_missing_from_gpl_builds_fall_back() -> None:

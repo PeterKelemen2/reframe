@@ -36,6 +36,7 @@ function info(extra: Partial<SystemInfo> = {}): SystemInfo {
     mode: 'web',
     auth: 'token',
     platform: 'linux',
+    container: false,
     tools: tools(),
     problems: [],
     settings_read_only: false,

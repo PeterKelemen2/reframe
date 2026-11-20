@@ -100,6 +100,7 @@ from reframe.queue import (
     UnknownJobError,
     read_saved_queue,
 )
+from reframe.queue.errors import encoder_unavailable
 from reframe.queue.lock import LOCK_FILE
 from reframe.queue.logs import log_file
 from reframe.service import ProbeError, ProbeErrorKind, Reframe
@@ -2871,6 +2872,21 @@ def _job_name(job: QueueJob) -> str:
     return f"{job.id[:SHORT_ID]} {Path(job.settings.source.path).name}"
 
 
+def _encoder_unavailable_lines(job: QueueJob, issue: ValidationIssue, lead: str) -> list[str]:
+    """The reason and the fixes of a job that failed because its encoder is not available."""
+    lines = [printable(f"{lead}failed — encoder unavailable: {_one_line(issue.message)}")]
+    lines += [
+        printable(f"{lead}  fix: {_one_line(fix.label)}")
+        for fix in issue.fixes
+        if fix.target == "job"
+    ]
+    lines.append(
+        f"{lead}  or choose another encoder (edit the job in the app), or check again: "
+        f"reframe encoders, then reframe queue retry {job.id[:SHORT_ID]}"
+    )
+    return lines
+
+
 def queue_rows(jobs: Sequence[QueueJob]) -> list[str]:
     """The lines of ``reframe queue list``: position, id, state, progress, the source and the
     output, the error of a job that failed, then the counts."""
@@ -2903,7 +2919,10 @@ def queue_rows(jobs: Sequence[QueueJob]) -> list[str]:
     lead = " " * (sum(widths[:2]) + 4)
     for row, job in zip(rows, jobs, strict=True):
         lines.append(line(row))
-        if job.error and job.state is not JobState.DONE:
+        unavailable = encoder_unavailable(job)
+        if unavailable is not None:
+            lines += _encoder_unavailable_lines(job, unavailable, lead)
+        elif job.error and job.state is not JobState.DONE:
             lines.append(printable(f"{lead}{job.state.value}: {_one_line(job.error)}"))
     counts = [
         f"{sum(1 for job in jobs if job.state is state)} {state.value}"

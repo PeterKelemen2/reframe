@@ -315,6 +315,32 @@ describe('the queue store', () => {
       await queue.duplicate('a')
       expect(queue.jobs.map((j) => j.id)).toEqual(['a', 'a2', 'b'])
     })
+
+    it('replaces a failed job with its fixed settings at its place', async () => {
+      const failed = job('b', 'failed', {
+        position: 1,
+        settings: {
+          source: { path: '/media/b.mkv' },
+          video: { encoder: 'hevc_nvenc' },
+        } as unknown as JobSettings,
+      })
+      const queue = await loaded(job('a'), failed, job('c', 'waiting', { position: 2 }))
+      server.on('POST /api/queue', [job('b2', 'waiting', { position: 1 })])
+      server.on('DELETE /api/queue/b', () => new Response(null, { status: 204 }))
+      await queue.retryWith('b', {
+        label: 'Use libx265 (closest match)',
+        patch: [{ op: 'replace', path: '/video/encoder', value: 'libx265' }],
+        target: 'job',
+      })
+      const [added, removed] = server.requests.filter((r) => r.method !== 'GET')
+      expect(`${added?.method} ${added?.path}`).toBe('POST /api/queue')
+      expect(added?.body).toEqual({
+        jobs: [{ source: { path: '/media/b.mkv' }, video: { encoder: 'libx265' } }],
+        position: 1,
+      })
+      expect(`${removed?.method} ${removed?.path}`).toBe('DELETE /api/queue/b')
+      expect(queue.byId('b2')?.state).toBe('waiting')
+    })
   })
 
   it('follows the when-done countdown by its id', async () => {

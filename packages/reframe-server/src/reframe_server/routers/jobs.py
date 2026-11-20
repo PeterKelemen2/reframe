@@ -33,6 +33,7 @@ from reframe.models import (
     TrackDraft,
     ValidationIssue,
 )
+from reframe.naming.track_names import track_names
 from reframe.probe import ProbeError
 from reframe.service import Reframe
 from reframe_server import security
@@ -233,6 +234,19 @@ class JobGeometry(BaseModel):
     """``null`` when the video is copied or the source has no video."""
 
 
+class TrackNames(BaseModel):
+    """The name each track of a job is written with: a name template filled in."""
+
+    model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
+
+    video: str | None
+    """``null`` keeps the source title; ``""`` writes no title."""
+    audio: list[str | None]
+    """In the order of the job's audio tracks."""
+    subtitles: list[str | None]
+    """In the order of the job's subtitle tracks."""
+
+
 @router.post("/jobs/draft")
 async def draft(
     body: DraftRequest, reframe: ReframeDep, registry: SourcesDep, config: ConfigDep
@@ -375,6 +389,18 @@ async def rendered_tags(
     jail_job(config, body.job)
     media = await job_source(reframe, body.job)
     return reframe.jobs.rendered_tags(body.job, media)
+
+
+@router.post("/jobs/track-names", name="track_names")
+async def written_track_names(
+    body: SingleJobRequest, reframe: ReframeDep, config: ConfigDep
+) -> TrackNames:
+    """Each track's name as it will be written: a name with a track name variable
+    (``{lang_name} {channels} {codec}``) is filled in for its track."""
+    jail_job(config, body.job)
+    media = await job_source(reframe, body.job)
+    names = track_names(body.job, media, reframe.jobs.definitions)
+    return TrackNames(video=names.video, audio=names.audio, subtitles=names.subtitles)
 
 
 def _invalid(issues: list[ValidationIssue]) -> ProblemError:

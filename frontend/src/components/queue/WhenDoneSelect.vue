@@ -9,25 +9,29 @@ import Field from '@/components/base/Field.vue'
 import { useQueueStore } from '@/stores/queue'
 import { useSystemStore } from '@/stores/system'
 
+import { whenDoneChoices, whenDoneHost } from './whenDone'
+
 const { t } = useI18n()
 const queue = useQueueStore()
 const system = useSystemStore()
 
-const web = computed(() => system.info?.mode !== 'desktop')
+const host = computed(() => whenDoneHost(system.info))
 const saving = ref(false)
 
-const options = computed(() => [
-  { value: 'nothing', label: t('queue.whenDone.nothing'), disabled: false },
-  { value: 'notify', label: t('queue.whenDone.notify'), disabled: false },
-  // A server for browsers keeps running: quitting is the desktop app's.
-  {
-    value: 'quit',
-    label: web.value ? t('queue.whenDone.quitDesktopOnly') : t('queue.whenDone.quit'),
-    disabled: web.value,
-  },
-  { value: 'sleep', label: t('queue.whenDone.sleep'), disabled: false },
-  { value: 'shutdown', label: t('queue.whenDone.shutdown'), disabled: false },
-])
+const options = computed(() =>
+  whenDoneChoices(host.value, queue.whenDone).map((choice) => ({
+    value: choice.value,
+    disabled: choice.disabled,
+    label:
+      choice.value === 'quit' && host.value !== 'desktop'
+        ? t('queue.whenDone.quitDesktopOnly')
+        : t(`queue.whenDone.${choice.value}`),
+  })),
+)
+const help = computed(() => {
+  if (host.value === 'container') return t('queue.whenDone.helpContainer')
+  return host.value === 'desktop' ? t('queue.whenDone.helpDesktop') : t('queue.whenDone.helpWeb')
+})
 
 /**
  * What the select shows: the choice on its way, then the queue's. PrimeVue's select keeps what
@@ -56,11 +60,7 @@ async function choose(value: WhenDone): Promise<void> {
 </script>
 
 <template>
-  <Field
-    class="when-done"
-    :label="t('queue.whenDone.label')"
-    :help="web ? t('queue.whenDone.helpWeb') : t('queue.whenDone.helpDesktop')"
-  >
+  <Field class="when-done" :label="t('queue.whenDone.label')" :help="help">
     <template #default="{ id, labelId }">
       <!-- Named by its label: without it, a combobox is named by its value. -->
       <Select

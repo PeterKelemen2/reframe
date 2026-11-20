@@ -76,11 +76,25 @@ function layoutOf(stream: AudioStream | undefined): string | null {
   return stream.channel_layout ?? (stream.channels > 0 ? String(stream.channels) : null)
 }
 
+/**
+ * The names the job writes when the server filled in their templates and they are for these
+ * tracks; else the job's own names.
+ */
+function namesOf(
+  tracks: readonly { metadata?: { name?: string | null } }[],
+  written: readonly (string | null)[] | undefined,
+): (string | null | undefined)[] {
+  if (written !== undefined && written.length === tracks.length) return [...written]
+  return tracks.map((track) => track.metadata?.name)
+}
+
 export function audioChips(
   job: JobSettings,
   source: MediaSource | null,
   definitions: Definitions | null,
+  written?: readonly (string | null)[],
 ): AudioChip[] {
+  const names = namesOf(job.audio ?? [], written)
   return (job.audio ?? []).map((track, index) => {
     const stream = source?.audio?.find((candidate) => candidate.index === track.source_stream)
     const passthru = track.action === 'passthru'
@@ -90,7 +104,7 @@ export function audioChips(
     return {
       path: `audio[${index}]`,
       language: track.metadata?.language ?? stream?.language ?? null,
-      name: track.metadata?.name ?? stream?.title ?? null,
+      name: names[index] ?? stream?.title ?? null,
       roles: stream?.roles ?? [],
       flags: flagsOf(track.metadata, stream?.roles ?? []),
       stream,
@@ -104,7 +118,12 @@ export function audioChips(
   })
 }
 
-export function subtitleChips(job: JobSettings, source: MediaSource | null): SubtitleChip[] {
+export function subtitleChips(
+  job: JobSettings,
+  source: MediaSource | null,
+  written?: readonly (string | null)[],
+): SubtitleChip[] {
+  const names = namesOf(job.subtitles ?? [], written)
   return (job.subtitles ?? []).map((track, index) => {
     const external = typeof track.source === 'object' ? track.source : null
     const stream =
@@ -114,7 +133,7 @@ export function subtitleChips(job: JobSettings, source: MediaSource | null): Sub
     return {
       path: `subtitles[${index}]`,
       language: track.metadata?.language ?? stream?.language ?? external?.language ?? null,
-      name: track.metadata?.name ?? stream?.title ?? external?.name ?? null,
+      name: names[index] ?? stream?.title ?? external?.name ?? null,
       roles: stream?.roles ?? [],
       flags: flagsOf(track.metadata, stream?.roles ?? []),
       stream,

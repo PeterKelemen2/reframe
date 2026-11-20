@@ -19,7 +19,7 @@ min = 0
 max = 4
 step = 1
 unit = "frames"
-help = "Number of B-frames. 3 improves compression on Turing and newer GPUs. A GeForce 10 series (Pascal) GPU has no B-frames in H.265."
+help = "Number of B-frames (0–4). 3 improves compression on Turing and newer GPUs. A GeForce 10 series (Pascal) GPU has no B-frames in H.265."
 mapping = { kind = "ffmpeg_arg", arg = "-bf" }
 default = { kind = "encoder", note = "from the preset" }
 
@@ -46,7 +46,7 @@ min = 0
 max = 16
 step = 1
 unit = "frames"
-help = "Number of reference frames; 0 = the driver decides. A GeForce 10 series (Pascal) GPU refuses more than 1."
+help = "Number of reference frames (0–16); 0 = the driver decides. A GeForce 10 series (Pascal) GPU refuses more than 1."
 mapping = { kind = "ffmpeg_arg", arg = "-refs" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -59,7 +59,7 @@ min = 1
 max = 1000
 step = 1
 unit = "frames"
-help = "Maximum distance between keyframes (seek points). With B-frames, NVENC needs it larger than the number of B-frames plus 1."
+help = "Maximum distance between keyframes (seek points). 250 is about 10 s at 25 fps; smaller values help seeking and cost size. With B-frames, NVENC needs it larger than the number of B-frames plus 1."
 mapping = { kind = "ffmpeg_arg", arg = "-g" }
 default = { kind = "encoder", note = "the encoder decides" }
 
@@ -80,7 +80,7 @@ type = "int"
 min = 1
 max = 15
 step = 1
-help = "Spatial AQ strength from 1 (low) to 15 (aggressive)."
+help = "Spatial AQ strength from 1 (low) to 15 (aggressive); 8 is the default. Higher moves more bits to flat areas."
 mapping = { kind = "private_opt", name = "aq-strength" }
 requires = [{ field = "option:spatial-aq", value = true }]
 default = { kind = "fixed", value = 8 }
@@ -131,7 +131,7 @@ min = 0
 max = 16
 step = 1
 unit = "frames"
-help = "Number of B-frames."
+help = "Number of B-frames (0–16). More B-frames compress better; not set, the driver decides (an Intel UHD 620 uses 2 for H.264 and 3 for H.265)."
 mapping = { kind = "ffmpeg_arg", arg = "-bf" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -144,7 +144,7 @@ min = 0
 max = 16
 step = 1
 unit = "frames"
-help = "Number of reference frames; 0 = the driver decides."
+help = "Number of reference frames (0–16); 0 = the driver decides (an Intel UHD 620 uses 2 for H.264 and 3 for H.265, and takes at most 15 for H.265)."
 mapping = { kind = "ffmpeg_arg", arg = "-refs" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -157,7 +157,7 @@ min = 1
 max = 1000
 step = 1
 unit = "frames"
-help = "Maximum distance between keyframes (seek points)."
+help = "Maximum distance between keyframes (seek points). 250 is about 10 s at 25 fps; smaller values help seeking and cost size."
 mapping = { kind = "ffmpeg_arg", arg = "-g" }
 default = { kind = "encoder", note = "the encoder decides" }
 
@@ -197,7 +197,7 @@ min = 0
 max = 100
 step = 1
 unit = "frames"
-help = "Frames analysed ahead when look-ahead is on."
+help = "Frames analysed ahead when look-ahead is on (0–100; 0 leaves it to the driver, 10 on an Intel UHD 620). More gives a better bit distribution and adds latency."
 mapping = { kind = "private_opt", name = "look_ahead_depth" }
 requires = [{ field = "option:look_ahead", value = true }]
 default = { kind = "encoder", note = "the driver decides" }
@@ -221,7 +221,7 @@ min = 0
 max = 100
 step = 1
 unit = "frames"
-help = "Frames analysed ahead (needs extended rate control, at a bitrate). An Intel UHD 620 ignores it on Linux."
+help = "Frames analysed ahead (0–100; needs extended rate control, at a bitrate). An Intel UHD 620 ignores it on Linux."
 mapping = { kind = "private_opt", name = "look_ahead_depth" }
 requires = [{ field = "rate_control", value = "bitrate" }, { field = "option:extbrc", value = true }]
 default = { kind = "encoder", note = "the driver decides" }
@@ -235,7 +235,7 @@ min = 0
 max = 16
 step = 1
 unit = "frames"
-help = "Maximum number of reference frames."
+help = "Maximum number of reference frames (0–16). More can help compression; not set, the driver decides."
 mapping = { kind = "ffmpeg_arg", arg = "-refs" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -248,7 +248,7 @@ min = 1
 max = 1000
 step = 1
 unit = "frames"
-help = "Maximum distance between keyframes (seek points)."
+help = "Maximum distance between keyframes (seek points). 250 is about 10 s at 25 fps; smaller values help seeking and cost size. Not set, an AMD RX 7600 places one every 240 frames."
 mapping = { kind = "ffmpeg_arg", arg = "-g" }
 default = { kind = "encoder", note = "the encoder decides" }
 
@@ -280,7 +280,7 @@ min = 0
 max = 41
 step = 1
 unit = "frames"
-help = "Frames analysed ahead by pre-analysis."
+help = "Frames analysed ahead by pre-analysis (0–41). More helps the rate control and adds latency."
 mapping = { kind = "private_opt", name = "pa_lookahead_buffer_depth" }
 requires = [{ field = "option:preanalysis", value = true }]
 default = { kind = "encoder", note = "the driver decides" }
@@ -307,7 +307,7 @@ min = 0
 max = 3
 step = 1
 unit = "frames"
-help = "Number of B-frames (H.264 and AV1; AV1 B-frames need a GPU that supports them)."
+help = "Number of B-frames (0–3): more B-frames compress better. H.264 and AV1 only, and AV1 B-frames need a GPU that supports them; not set, an AMD RX 7600 uses none."
 mapping = { kind = "ffmpeg_arg", arg = "-bf" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -320,7 +320,7 @@ min = 0
 max = 16
 step = 1
 unit = "frames"
-help = "Number of B-frames, if the driver supports them for this codec."
+help = "Number of B-frames (0–16), if the driver supports them for this codec. More B-frames compress better; not set, H.264 on an AMD RX 7600 uses 2."
 mapping = { kind = "ffmpeg_arg", arg = "-bf" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -333,7 +333,7 @@ min = 0
 max = 16
 step = 1
 unit = "frames"
-help = "Number of reference frames; 0 = the driver decides."
+help = "Number of reference frames (0–16); 0 = the driver decides."
 mapping = { kind = "ffmpeg_arg", arg = "-refs" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -346,7 +346,7 @@ min = 1
 max = 1000
 step = 1
 unit = "frames"
-help = "Maximum distance between keyframes (seek points)."
+help = "Maximum distance between keyframes (seek points). 250 is about 10 s at 25 fps; smaller values help seeking and cost size. Not set, a keyframe comes every 120 frames."
 mapping = { kind = "ffmpeg_arg", arg = "-g" }
 default = { kind = "encoder", note = "the encoder decides" }
 
@@ -461,7 +461,7 @@ type = "int"
 min = -12
 max = 12
 step = 1
-help = "Quantiser offset of the blue-difference plane. Negative values spend more bits on colour."
+help = "Quantiser offset of the blue-difference plane (-12 … 12, 0 by default). Negative values spend more bits on colour."
 mapping = { kind = "private_opt", name = "qp_cb_offset" }
 default = { kind = "fixed", value = 0 }
 
@@ -473,7 +473,7 @@ type = "int"
 min = -12
 max = 12
 step = 1
-help = "Quantiser offset of the red-difference plane."
+help = "Quantiser offset of the red-difference plane (-12 … 12, 0 by default). Negative values spend more bits on colour; usually set together with the Cb offset."
 mapping = { kind = "private_opt", name = "qp_cr_offset" }
 default = { kind = "fixed", value = 0 }
 
@@ -497,7 +497,7 @@ type = "int"
 min = 0
 max = 51
 step = 1
-help = "The lowest QP the rate control may use."
+help = "The lowest QP the rate control may use (0–51). Raising it keeps easy scenes from taking many bits; not set, there is no limit."
 mapping = { kind = "private_opt", name = "qmin" }
 default = { kind = "encoder", note = "no limit" }
 
@@ -509,7 +509,7 @@ type = "int"
 min = 0
 max = 51
 step = 1
-help = "The highest QP the rate control may use: avoids very blocky frames at low bitrates."
+help = "The highest QP the rate control may use (0–51): avoids very blocky frames at low bitrates. Not set, there is no limit."
 mapping = { kind = "private_opt", name = "qmax" }
 default = { kind = "encoder", note = "no limit" }
 
@@ -521,7 +521,7 @@ type = "int"
 min = 0
 max = 255
 step = 1
-help = "The lowest quantiser index (0–255) the rate control may use."
+help = "The lowest quantiser index (0–255) the rate control may use. Raising it keeps easy scenes from taking many bits; not set, there is no limit."
 mapping = { kind = "private_opt", name = "qmin" }
 default = { kind = "encoder", note = "no limit" }
 
@@ -533,7 +533,7 @@ type = "int"
 min = 0
 max = 255
 step = 1
-help = "The highest quantiser index (0–255) the rate control may use."
+help = "The highest quantiser index (0–255) the rate control may use: avoids very blocky frames at low bitrates. Not set, there is no limit."
 mapping = { kind = "private_opt", name = "qmax" }
 default = { kind = "encoder", note = "no limit" }
 
@@ -545,7 +545,7 @@ type = "int"
 min = 1
 max = 64
 step = 1
-help = "Number of tile rows. Not set, the driver picks it from the resolution."
+help = "Number of tile rows (1–64). Tiles help decoders that use several threads and cost a little compression; not set, the driver picks it from the resolution."
 mapping = { kind = "private_opt", name = "tile-rows" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -557,7 +557,7 @@ type = "int"
 min = 1
 max = 64
 step = 1
-help = "Number of tile columns. Not set, the driver picks it from the resolution."
+help = "Number of tile columns (1–64). Tiles help decoders that use several threads and cost a little compression; not set, the driver picks it from the resolution."
 mapping = { kind = "private_opt", name = "tile-columns" }
 default = { kind = "encoder", note = "the driver decides" }
 
@@ -657,7 +657,7 @@ type = "int"
 min = 1
 max = 64
 step = 1
-help = "Frames in flight in the encoder. More can be faster and uses more GPU memory."
+help = "Frames in flight in the encoder (1–64, 4 by default). More can be faster and uses more GPU memory."
 mapping = { kind = "private_opt", name = "async_depth" }
 default = { kind = "fixed", value = 4 }
 
@@ -831,7 +831,7 @@ type = "int"
 min = 1
 max = 42
 step = 1
-help = "Frames in flight in the encoder. More can be faster and adds latency."
+help = "Frames in flight in the encoder (1–42, 16 by default). More can be faster and adds latency."
 mapping = { kind = "private_opt", name = "async_depth" }
 default = { kind = "fixed", value = 16 }
 
@@ -965,7 +965,7 @@ type = "int"
 min = 0
 max = 51
 step = 1
-help = "The QP used right after a detected scene change. Needs pre-analysis."
+help = "The QP used right after a detected scene change (0–51). Lower gives the first frames of a scene more quality and more bits. Needs pre-analysis."
 mapping = { kind = "private_opt", name = "pa_initial_qp_after_scene_change" }
 requires = [{ field = "option:preanalysis", value = true }]
 default = { kind = "encoder", note = "the driver decides" }
@@ -978,7 +978,7 @@ type = "int"
 min = 0
 max = 51
 step = 1
-help = "Above this QP the encoder may skip a frame. Needs pre-analysis."
+help = "Above this QP (0–51) the encoder may skip a frame; a higher value skips fewer frames. Needs pre-analysis."
 mapping = { kind = "private_opt", name = "pa_max_qp_before_force_skip" }
 requires = [{ field = "option:preanalysis", value = true }]
 default = { kind = "encoder", note = "the driver decides" }
@@ -1064,7 +1064,7 @@ type = "int"
 min = 1
 max = 64
 step = 1
-help = "Frames in flight in the driver. More can be faster and uses more GPU memory."
+help = "Frames in flight in the driver (1–64, 2 by default). More can be faster and uses more GPU memory."
 mapping = { kind = "private_opt", name = "async_depth" }
 default = { kind = "fixed", value = 2 }
 

@@ -152,6 +152,7 @@ time, each with its own notices.
 | `REFRAME_OUTPUT_ROOTS` | `["/output"]` | The only folder the client may write; another output path is refused (`path.outside_roots`) |
 | `REFRAME_CONFIG_DIR`, `REFRAME_DATA_DIR`, `REFRAME_CACHE_DIR` | `/config`, `/data`, `/data/cache` | |
 | `REFRAME_STATIC_DIR` | `/opt/reframe/frontend` | The web UI |
+| `REFRAME_CONTAINER` | `1` | The server runs in a container: see below |
 | `PUID`, `PGID` | `1000` | The user the server runs as |
 
 The `HEALTHCHECK` calls the port of `REFRAME_PORT`. To change the port in the container, set
@@ -162,6 +163,15 @@ List values are JSON, because pydantic-settings reads lists from the environment
 `REFRAME_MEDIA_ROOTS='["/media", "/mnt/archive"]'`. A second media folder must also be
 mounted. `auth: token` also works (`REFRAME_AUTH=token`, `REFRAME_TOKEN=<secret>`); without
 `REFRAME_TOKEN` the token is new at each start.
+
+**When done.** A container cannot put its computer to sleep or shut it down. With
+`REFRAME_CONTAINER=1`, `GET /api/system` reports `container: true`, the web UI offers no
+*Sleep* and no *Shut down* when the queue is done, and the API refuses them
+(`PUT /api/queue/when-done` and `PUT /api/settings` answer 403 `queue.when_done_unavailable`).
+A settings file that still has one of them (from a server outside a container) does nothing
+when the queue is done and shows a warning. *Quit Reframe* is for the desktop app only and is
+refused the same way by every web server. A server you start in a container of your own
+should set `REFRAME_CONTAINER=1` too.
 
 **Host names.** Without `REFRAME_ALLOWED_HOSTS` the server accepts any IP address in the
 browser's address bar (`http://192.168.1.10:8765/`) but no host name, against DNS rebinding.

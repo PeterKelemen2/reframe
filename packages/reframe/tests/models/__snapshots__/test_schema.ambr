@@ -67,7 +67,7 @@
         '$ref': '#/$defs/QueueSettings',
       }),
       'schema_version': dict({
-        'default': 2,
+        'default': 3,
         'minimum': 1,
         'title': 'Schema Version',
         'type': 'integer',
@@ -6388,16 +6388,6 @@
           'overwrite',
         ]),
         'title': 'Collision',
-        'type': 'string',
-      }),
-      'default_container': dict({
-        'default': 'mkv',
-        'enum': list([
-          'mkv',
-          'mp4',
-          'webm',
-        ]),
-        'title': 'Default Container',
         'type': 'string',
       }),
       'naming': dict({

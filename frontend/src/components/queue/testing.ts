@@ -11,7 +11,15 @@ import { createMemoryHistory } from 'vue-router'
 import { createAppI18n } from '@/i18n'
 import { createAppRouter } from '@/router'
 
-import type { EventOf, JobLogChunk, JobSettings, JobState, QueueJob, WhenDone } from '@/api/types'
+import type {
+  EventOf,
+  Fix,
+  JobLogChunk,
+  JobSettings,
+  JobState,
+  QueueJob,
+  WhenDone,
+} from '@/api/types'
 
 /** A queue job as the server sends it; `extra` overrides. */
 export function job(
@@ -68,6 +76,7 @@ export function queueDouble() {
     resume: vi.fn<(id: string) => Promise<void>>(async () => {}),
     cancel: vi.fn<(id: string) => Promise<void>>(async () => {}),
     retry: vi.fn<(id: string) => Promise<void>>(async () => {}),
+    retryWith: vi.fn<(id: string, fix: Fix) => Promise<void>>(async () => {}),
     duplicate: vi.fn<(id: string) => Promise<void>>(async () => {}),
     remove: vi.fn<(id: string) => Promise<void>>(async () => {}),
     reorder: vi.fn<(ids: string[]) => Promise<void>>(async () => {}),

@@ -5,6 +5,7 @@ import { reactive } from 'vue'
 
 import { ApiError } from '@/api/client'
 import type { SystemInfo, WhenDone } from '@/api/types'
+import Field from '@/components/base/Field.vue'
 
 import PowerBanner from './PowerBanner.vue'
 import QueueControls from './QueueControls.vue'
@@ -180,6 +181,19 @@ describe('the when-done selector', () => {
       'Sleep',
       'Shut down',
     ])
+  })
+
+  it('offers no Sleep and no Shut down when the server runs in a container', async () => {
+    system.info = { mode: 'web', container: true }
+    const { wrapper } = await mountIt(WhenDoneSelect)
+    expect(await options()).toEqual([
+      'Do nothing',
+      'Notify',
+      'Quit Reframe (desktop app only) (off)',
+    ])
+    expect(wrapper.findComponent(Field).props('help')).toBe(
+      'The server runs in a container: it cannot put its computer to sleep or shut it down.',
+    )
   })
 
   it('can choose Quit in the desktop app', async () => {

@@ -82,7 +82,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         if app_log is not None:
             app_log.set_level(level)
 
-    reframe = await Reframe.create(config.config_dir, config.data_dir, on_log_level=follow)
+    reframe = await Reframe.create(
+        config.config_dir,
+        config.data_dir,
+        on_log_level=follow,
+        unavailable_when_done=config.unavailable_when_done,
+    )
     try:
         hub = EventHub(reframe.events, config, hide=functools.partial(hide_server_folders, reframe))
         app.state.reframe, app.state.hub = reframe, hub

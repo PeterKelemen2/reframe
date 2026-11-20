@@ -113,6 +113,24 @@ def test_current_files_need_no_migration() -> None:
     assert migrate("settings", data) == data
 
 
+def test_a_v2_file_with_a_default_container_loads_and_is_saved_without_it(
+    tmp_path: Path,
+) -> None:
+    write_json(
+        tmp_path / "settings.json",
+        {"schema_version": 2, "output": {"default_container": "webm", "partial_file": "keep"}},
+    )
+    store = SettingsStore(tmp_path)
+    settings = store.load()
+    assert store.problems == []
+    assert settings.output.partial_file == "keep"
+    store.write(settings)
+    saved = json.loads((tmp_path / "settings.json").read_text("utf-8"))
+    assert saved["schema_version"] == 3
+    assert "default_container" not in saved["output"]
+    assert saved["output"]["partial_file"] == "keep"
+
+
 def test_corrupt_file_is_backed_up_and_replaced_with_defaults(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
     path.write_text('{"queue": {"parallel_jobs": 2,', encoding="utf-8")

@@ -37,15 +37,19 @@ import { useQueueStore } from '@/stores/queue'
 import { SourceOpenError } from '@/stores/sources'
 import { useSystemStore } from '@/stores/system'
 import { TaskLostError } from '@/stores/tasks'
+import { useUiStore } from '@/stores/ui'
 
+import EncoderFixes from './EncoderFixes.vue'
 import {
+  encoderUnavailable,
+  isHeld,
   type JobAction,
   jobActions,
+  jobStateLabel,
   liveColumns,
   outputPath,
   sourceName,
   STATE_TONE,
-  stateLabel,
 } from './format'
 
 const emit = defineEmits<{ openLog: [jobId: string, opener: HTMLElement] }>()
@@ -55,6 +59,7 @@ const severityLabel = useSeverityLabel()
 const queue = useQueueStore()
 const editor = useEditorStore()
 const system = useSystemStore()
+const ui = useUiStore()
 const router = useRouter()
 const root = useTemplateRef<HTMLElement>('root')
 
@@ -67,7 +72,7 @@ const rows = computed(() =>
   queue.jobs.map((job, index) => ({
     job,
     index,
-    actions: jobActions(job, canReveal),
+    actions: jobActions(job, canReveal, isHeld(job, queue.processing, queue.only)),
     live: liveColumns(job, t, n),
   })),
 )
@@ -124,7 +129,8 @@ async function run(action: () => Promise<unknown>): Promise<void> {
   }
 }
 
-async function edit(job: QueueJob): Promise<void> {
+/** Loads the job into the editor; `path`: the field to show there (its tab opens). */
+async function edit(job: QueueJob, path?: string): Promise<void> {
   if (editing.value !== null) return
   editing.value = job.id
   try {
@@ -132,6 +138,7 @@ async function edit(job: QueueJob): Promise<void> {
     await router.push({ name: 'workspace' })
     await nextTick()
     focusWorkspace()
+    if (path !== undefined) ui.reveal(path)
   } catch (error) {
     // The source could not be opened; the reason is a toast already.
     const shown =
@@ -146,6 +153,9 @@ async function edit(job: QueueJob): Promise<void> {
 
 function act(action: JobAction, job: QueueJob, event: Event): void {
   switch (action) {
+    case 'start':
+      void run(() => queue.start([job.id]))
+      return
     case 'pause':
       void run(() => queue.pause(job.id))
       return
@@ -180,6 +190,8 @@ function act(action: JobAction, job: QueueJob, event: Event): void {
 
 function actionLabel(action: JobAction, name: string): string {
   switch (action) {
+    case 'start':
+      return t('queue.actions.start', { job: name })
     case 'pause':
       return t('queue.actions.pause', { job: name })
     case 'resume':
@@ -203,6 +215,8 @@ function actionLabel(action: JobAction, name: string): string {
 
 function actionTip(action: JobAction): string {
   switch (action) {
+    case 'start':
+      return t('queue.actionTips.start')
     case 'pause':
       return t('queue.actionTips.pause')
     case 'resume':
@@ -225,6 +239,7 @@ function actionTip(action: JobAction): string {
 }
 
 const ICONS = {
+  start: Play,
   pause: Pause,
   resume: Play,
   cancel: Square,
@@ -353,7 +368,7 @@ async function move(index: number, to: number): Promise<void> {
         <template #body="{ data }">
           <StatusDot
             :tone="STATE_TONE[data.job.state as QueueJob['state']]"
-            :label="stateLabel(data.job.state, t)"
+            :label="jobStateLabel(data.job, t)"
             show-label
           />
         </template>
@@ -516,6 +531,12 @@ async function move(index: number, to: number): Promise<void> {
               <span>{{ issue.message }}</span>
             </li>
           </ul>
+          <EncoderFixes
+            v-if="encoderUnavailable(data.job)"
+            :job="data.job"
+            :issue="encoderUnavailable(data.job)!"
+            @choose="(path: string) => edit(data.job, path)"
+          />
         </div>
       </template>
     </DataTable>

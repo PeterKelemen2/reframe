@@ -46,6 +46,21 @@ describe('the audio track chips', () => {
   })
 })
 
+describe('the names of the track chips', () => {
+  it('are the names the server filled in, when they are for these tracks', () => {
+    const job = sampleJob()
+    job.audio![0]!.metadata!.name = '{lang_name} {codec}'
+    const source = multitrackSource()
+    const written = ['Japanese AC-3', null, "Director's Commentary"]
+    expect(audioChips(job, source, DEFINITIONS, written).map((chip) => chip.name)).toEqual([
+      'Japanese AC-3',
+      'English Stereo',
+      "Director's Commentary",
+    ])
+    expect(audioChips(job, source, DEFINITIONS, ['stale'])[0]?.name).toBe('{lang_name} {codec}')
+  })
+})
+
 describe('the subtitle track chips', () => {
   it('show a converted format, a burned-in track and an external file', () => {
     const job = sampleJob()

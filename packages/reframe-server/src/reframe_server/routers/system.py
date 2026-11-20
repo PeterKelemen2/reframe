@@ -33,6 +33,9 @@ class SystemInfo(BaseModel):
     auth: AuthMode
     platform: str
     """The server's ``sys.platform``: ``linux``, ``win32``, ``darwin``."""
+    container: bool
+    """The server runs in a container (the Docker image): it offers no *Sleep* and no *Shut
+    down* when the queue is done."""
     tools: ToolSet
     """Each tool's status, path and version, after discovery."""
     problems: list[AppWarningEvent]
@@ -102,6 +105,7 @@ async def info(request: Request, reframe: ReframeDep, config: ConfigDep) -> Syst
         mode=config.mode,
         auth=config.auth_mode,
         platform=sys.platform,
+        container=config.container,
         tools=tools,
         problems=problems,
         settings_read_only=settings.read_only,

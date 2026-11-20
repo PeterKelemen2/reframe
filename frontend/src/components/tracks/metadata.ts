@@ -141,6 +141,18 @@ export type NameVariable =
   | 'title'
   | 'source_codec'
 
+/** The variables of a track name template, which the server fills in for the job. */
+export const NAME_VARIABLES: readonly string[] = [
+  'lang',
+  'lang_name',
+  'lang_native',
+  'channels',
+  'codec',
+  'bitrate',
+  'title',
+  'source_codec',
+]
+
 /** The templates offered for a track name, as the codec rules write them. */
 export const NAME_TEMPLATES: Record<'audio' | 'other', readonly NameVariable[][]> = {
   audio: [

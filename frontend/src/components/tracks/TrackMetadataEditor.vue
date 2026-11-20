@@ -35,6 +35,7 @@ import {
   metadataPaths,
   metadataPlace,
   NAME_TEMPLATES,
+  NAME_VARIABLES,
   nameSuggestions,
   otherNameValues,
 } from './metadata'
@@ -113,6 +114,16 @@ const noneLabel = computed(() => {
     ? t('tracks.metadata.keepLanguageOf', { language: name })
     : t('tracks.metadata.keepLanguage')
 })
+
+const nameHelp = computed(() =>
+  t('tracks.metadata.nameHelp', {
+    example: '{lang_name} {channels} {codec}',
+    result: 'Japanese 5.1 Opus',
+    variables: NAME_VARIABLES.map((variable) => `{${variable}}`).join(' '),
+    open: '{{',
+    close: '}}',
+  }),
+)
 
 const namePlaceholder = computed(() => {
   if (metadata.value?.name === '') return t('tracks.metadata.nameNone')
@@ -290,7 +301,12 @@ const summary = computed(() => {
             />
           </template>
         </Field>
-        <Field :label="t('tracks.metadata.name')" :path="`${place.path}.name`" stacked>
+        <Field
+          :label="t('tracks.metadata.name')"
+          :path="`${place.path}.name`"
+          :help="nameHelp"
+          stacked
+        >
           <template #default="{ id: inputId, invalid, labelId }">
             <div class="track-metadata__name">
               <InputText

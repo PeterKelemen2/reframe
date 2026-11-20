@@ -13,7 +13,7 @@ import contextlib
 import logging
 import os
 import uuid
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,7 +34,7 @@ from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.naming import NamingOptions
 from reframe.models.queue import JobProgress, JobState, QueueJob
-from reframe.models.settings import AppSettings
+from reframe.models.settings import AppSettings, WhenDone
 from reframe.platform.power import PowerService
 from reframe.platform.sleep import SleepInhibitor, create_sleep_inhibitor
 from reframe.queue import files
@@ -167,6 +167,8 @@ class QueueService:
         Settings → Output.
     :param power: the when-done power actions; ``None``: they are reported as not available
         (``queue.when_done_unavailable``).
+    :param unavailable_when_done: when-done actions that this process cannot carry out, each
+        with the reason: they are reported as not available too.
     :param clock: the clocks (tests replace them).
     :param fs: the file-system view of validation and of the collision rename.
     :param stall_after: seconds without progress, output or CPU use before an FFmpeg step is
@@ -187,6 +189,7 @@ class QueueService:
         naming: Callable[[JobSettings], NamingOptions | None] | None = None,
         inhibitor: SleepInhibitor | None = None,
         power: PowerService | None = None,
+        unavailable_when_done: Mapping[WhenDone, str] | None = None,
         definitions: Definitions | None = None,
         clock: Clock | None = None,
         fs: FileSystemView | None = None,
@@ -240,7 +243,7 @@ class QueueService:
         self._lock = asyncio.Lock()
         self._changed = asyncio.Condition()
         self._background: set[asyncio.Task[None]] = set()
-        self._when = WhenDoneActions(events, power)
+        self._when = WhenDoneActions(events, power, unavailable_when_done)
         """The batch counts, the job notifications and the when-done action."""
 
     @property

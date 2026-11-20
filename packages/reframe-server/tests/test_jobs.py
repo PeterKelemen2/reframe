@@ -88,6 +88,31 @@ async def test_plan_gives_the_command(api: Api) -> None:
     assert any(arg.startswith(str(api.output / "Show S01E01")) for arg in argv)
 
 
+async def test_a_track_name_template_is_filled_in_for_the_names_and_the_command(
+    api: Api,
+) -> None:
+    _, path = await add_source(api)
+    job = await job_of(api, path)
+    assert job["audio"], "the fixture has audio"
+    job["audio"][0]["metadata"]["name"] = "{lang_name} {channels} {codec}"
+    job["audio"][0]["metadata"]["language"] = "ja"
+    job["video"]["metadata"]["name"] = "Main {{video}}"
+    names = await api.client.post("/api/jobs/track-names", json={"job": job})
+    assert names.status_code == 200
+    body = names.json()
+    written = body["audio"][0]
+    assert written.startswith("Japanese ")
+    assert "{" not in written
+    assert body["video"] == "Main {video}"
+    assert len(body["subtitles"]) == len(job["subtitles"])
+    plan = await api.client.post("/api/jobs/plan", json={"job": job})
+    assert plan.status_code == 200
+    argv = plan.json()["steps"][0]["argv"]
+    assert f"title={written}" in argv
+    assert "title=Main {video}" in argv
+    assert not any("{lang_name}" in arg for arg in argv)
+
+
 async def test_a_job_with_errors_has_no_plan(api: Api) -> None:
     _, path = await add_source(api)
     job = await job_of(api, path)

@@ -37,6 +37,8 @@ __all__ = ["lint_definitions"]
 CONDITION_FIELDS = ("rate_control", "two_pass", "bit_depth", "preset", "tune")
 _PLACEHOLDER = re.compile(r"\{([a-z_]+)\}")
 _FILTER_NAME = re.compile(r"^([A-Za-z0-9_]+)")
+#: A number in help text; the digits of names such as x264, H.265 and AV1 do not count.
+_NUMBER = re.compile(r"(?<![\w.])\d")
 #: Filters a chain may use besides its implementation's (pixel format conversion).
 _HELPER_FILTERS = frozenset({"format"})
 #: Placeholders of ``HardwareSetup`` (filled in by the command builder).
@@ -332,6 +334,8 @@ def _lint_options(where: str, enc: VideoEncoderDef) -> list[str]:
             out.append(f"{w}: unknown category {opt.category!r}")
         if len(opt.help.strip()) < 10:
             out.append(f"{w}: needs help text")
+        elif opt.type in ("int", "float") and not _NUMBER.search(opt.help):
+            out.append(f"{w}: the help of a number needs its range or a typical value")
         out += _lint_mapping(w, enc, opt.mapping)
         if opt.mapping.kind == "x26x_param":
             parts.setdefault(opt.mapping.name, []).append(opt.mapping.part)
@@ -698,8 +702,8 @@ def _lint_filter(w: str, f: FilterDef) -> list[str]:
 
 
 def _lint_implementation(w: str, impl: FilterImplementation) -> list[str]:
-    """Presets are complete: a default, a chain per preset (and per tune, when there are tunes),
-    and chains that use only the implementation's filters."""
+    """Presets are complete: a default, help for each preset and tune, a chain per preset (and
+    per tune, when there are tunes), and chains that use only the implementation's filters."""
     out: list[str] = []
     if not impl.label:
         out.append(f"{w}: needs a label")
@@ -713,10 +717,15 @@ def _lint_implementation(w: str, impl: FilterImplementation) -> list[str]:
     tune_ids = {t.id for t in impl.tunes}
     if len(tune_ids) != len(impl.tunes):
         out.append(f"{w}: duplicate tune ids")
+    for tune in impl.tunes:
+        if not tune.help.strip():
+            out.append(f"{w}.tunes.{tune.id}: needs help text")
     for preset in impl.presets:
         pw = f"{w}.presets.{preset.id}"
         if not preset.label:
             out.append(f"{pw}: needs a label")
+        if not preset.help.strip():
+            out.append(f"{pw}: needs help text")
         if preset.chain is None:
             out.append(f"{pw}: has no chain")
         if set(preset.tune_chains) - tune_ids:

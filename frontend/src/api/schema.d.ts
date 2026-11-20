@@ -1028,6 +1028,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/track-names": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Track Names
+         * @description Each track's name as it will be written: a name with a track name variable
+         *     (``{lang_name} {channels} {codec}``) is filled in for its track.
+         */
+        post: operations["jobs_track_names"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chapters/import": {
         parameters: {
             query?: never;
@@ -1509,7 +1530,9 @@ export interface paths {
         /**
          * Set When Done
          * @description Set what happens when the queue is finished (the ``queue.when_done`` setting). A power
-         *     countdown that is running for another action is cancelled.
+         *     countdown that is running for another action is cancelled. An action this server cannot
+         *     carry out (``quit`` in web mode, ``sleep`` and ``shutdown`` in a container) is a 403
+         *     problem.
          */
         put: operations["queue_set_when_done"];
         post?: never;
@@ -1767,7 +1790,7 @@ export interface components {
         AppSettings: {
             /**
              * Schema Version
-             * @default 2
+             * @default 3
              */
             schema_version: number;
             tools?: components["schemas"]["ToolPaths"];
@@ -5504,12 +5527,6 @@ export interface components {
         OutputDefaults: {
             naming?: components["schemas"]["NamingOptions"];
             /**
-             * Default Container
-             * @default mkv
-             * @enum {string}
-             */
-            default_container: "mkv" | "mp4" | "webm";
-            /**
              * Collision
              * @description ``ask`` needs a UI: the CLI and the queue treat it as an error with fixes. The default
              *     never overwrites and never blocks.
@@ -6887,6 +6904,12 @@ export interface components {
              * @description The server's ``sys.platform``: ``linux``, ``win32``, ``darwin``.
              */
             platform: string;
+            /**
+             * Container
+             * @description The server runs in a container (the Docker image): it offers no *Sleep* and no *Shut
+             *     down* when the queue is done.
+             */
+            container: boolean;
             /** @description Each tool's status, path and version, after discovery. */
             tools: components["schemas"]["ToolSet"];
             /**
@@ -7626,6 +7649,27 @@ export interface components {
             visual_impaired?: boolean | null;
             /** Original */
             original?: boolean | null;
+        };
+        /**
+         * TrackNames
+         * @description The name each track of a job is written with: a name template filled in.
+         */
+        TrackNames: {
+            /**
+             * Video
+             * @description ``null`` keeps the source title; ``""`` writes no title.
+             */
+            video: string | null;
+            /**
+             * Audio
+             * @description In the order of the job's audio tracks.
+             */
+            audio: (string | null)[];
+            /**
+             * Subtitles
+             * @description In the order of the job's subtitle tracks.
+             */
+            subtitles: (string | null)[];
         };
         /**
          * TrackRole
@@ -9820,6 +9864,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RenderedTags"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    jobs_track_names: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SingleJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackNames"];
                 };
             };
             /** @description An expected failure */

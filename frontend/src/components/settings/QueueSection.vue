@@ -12,6 +12,8 @@ import Section from '@/components/base/Section.vue'
 import { useQueueStore } from '@/stores/queue'
 import { useSystemStore } from '@/stores/system'
 
+import { whenDoneChoices, whenDoneHost } from '@/components/queue/whenDone'
+
 import { refusalIssues, useSetting, useSettingsLocked } from './useSetting'
 
 const { t, locale } = useI18n()
@@ -23,22 +25,24 @@ const parallelJobs = useSetting<number>('/queue/parallel_jobs')
 const sleepInhibit = useSetting<boolean>('/queue/sleep_inhibit')
 const notifications = useSetting<boolean>('/queue/notifications')
 
-const web = computed(() => system.info?.mode !== 'desktop')
+const host = computed(() => whenDoneHost(system.info))
 
-const whenDoneOptions = computed(() => [
-  { value: 'nothing', label: t('settings.queue.whenDone.nothing'), disabled: false },
-  { value: 'notify', label: t('settings.queue.whenDone.notify'), disabled: false },
-  // Quitting is the desktop app's: a server for browsers keeps running.
-  {
-    value: 'quit',
-    label: web.value
-      ? t('settings.queue.whenDone.quitDesktopOnly')
-      : t('settings.queue.whenDone.quit'),
-    disabled: web.value,
-  },
-  { value: 'sleep', label: t('settings.queue.whenDone.sleep'), disabled: false },
-  { value: 'shutdown', label: t('settings.queue.whenDone.shutdown'), disabled: false },
-])
+const whenDoneOptions = computed(() =>
+  whenDoneChoices(host.value, queue.whenDone).map((choice) => ({
+    value: choice.value,
+    disabled: choice.disabled,
+    label:
+      choice.value === 'quit' && host.value !== 'desktop'
+        ? t('settings.queue.whenDone.quitDesktopOnly')
+        : t(`settings.queue.whenDone.${choice.value}`),
+  })),
+)
+const whenDoneHelp = computed(() => {
+  if (host.value === 'container') return t('settings.queue.whenDoneHelpContainer')
+  return host.value === 'desktop'
+    ? t('settings.queue.whenDoneHelpDesktop')
+    : t('settings.queue.whenDoneHelpWeb')
+})
 const whenDoneIssues = shallowRef<ValidationIssue[]>([])
 const settingWhenDone = ref(false)
 
@@ -88,7 +92,7 @@ function saveParallel(value: number | null): void {
       </Field>
       <Field
         :label="t('settings.queue.whenDoneLabel')"
-        :help="web ? t('settings.queue.whenDoneHelpWeb') : t('settings.queue.whenDoneHelpDesktop')"
+        :help="whenDoneHelp"
         :issues="whenDoneIssues"
       >
         <template #default="{ id, labelId, invalid }">

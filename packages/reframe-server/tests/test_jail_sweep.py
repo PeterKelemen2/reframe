@@ -115,6 +115,7 @@ INPUTS = [
     single_job("jobs_type", "/api/jobs/type"),
     single_job("jobs_chapters", "/api/jobs/chapters"),
     single_job("jobs_tags", "/api/jobs/tags"),
+    single_job("jobs_track_names", "/api/jobs/track-names"),
     PathInput(
         "jobs_export_chapters",
         "job",

@@ -41,6 +41,7 @@ from reframe.models.plan import EncodePlan, HeaderEdit, PlanStep, resolve_argv
 from reframe.models.queue import JobProgress, JobState, QueueJob
 from reframe.models.settings import AppSettings, CollisionPolicy
 from reframe.models.tools import ToolInfo, ToolSet
+from reframe.naming.track_names import expand_track_names
 from reframe.probe import ProbeError, matroska
 from reframe.queue import files, loudnorm
 from reframe.queue.clock import Clock
@@ -304,7 +305,7 @@ class JobRunner:
             )
         try:
             plan = build_plan(
-                settings,
+                expand_track_names(settings, source, self._defs),
                 source,
                 caps,
                 tools,

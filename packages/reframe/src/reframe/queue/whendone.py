@@ -15,6 +15,7 @@ only when the queue empties. The queue cancels only its own countdown, by its id
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
@@ -54,9 +55,16 @@ class WhenDoneActions:
     ``app.warning`` (and a log entry).
     """
 
-    def __init__(self, events: EventBus, power: PowerService | None) -> None:
+    def __init__(
+        self,
+        events: EventBus,
+        power: PowerService | None,
+        unavailable: Mapping[WhenDone, str] | None = None,
+    ) -> None:
         self._events = events
         self._power = power
+        self._unavailable = dict(unavailable or {})
+        """Power actions that this process cannot carry out, each with the reason."""
         self._done = 0
         self._failed = 0
         self._notified = 0
@@ -136,12 +144,13 @@ class WhenDoneActions:
             log.warning("when done: unknown action %r, nothing was done", action)
             return
         power_action, label = POWER_LABELS[action]
-        if self._power is None:
+        reason = self._unavailable.get(action)
+        if self._power is None or reason is not None:
             self._warn(
                 "queue.when_done_unavailable",
                 f"The queue is finished ({text}). When done: “{label}” is not available here, "
                 "so nothing was done.",
-                f"when_done={action}: this Reframe has no power service",
+                f"when_done={action}: {reason or 'this Reframe has no power service'}",
             )
             return
         try:

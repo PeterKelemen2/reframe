@@ -10,7 +10,7 @@ import StatusDot from '@/components/base/StatusDot.vue'
 import { useQueueStore } from '@/stores/queue'
 import { useToastStore } from '@/stores/toasts'
 
-import { sourceName, STATE_TONE, stateLabel } from './format'
+import { jobStateLabel, sourceName, STATE_TONE } from './format'
 import { useJobLog } from './useJobLog'
 
 /** A job's whole log in a drawer, following the job while it writes. */
@@ -113,7 +113,7 @@ function onVisible(value: boolean): void {
         <StatusDot
           v-if="job"
           :tone="STATE_TONE[job.state]"
-          :label="stateLabel(job.state, t)"
+          :label="jobStateLabel(job, t)"
           show-label
         />
       </div>
