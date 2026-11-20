@@ -1,9 +1,10 @@
-"""Encoder rules for levels (x265 and NVENC), and for the advanced options and custom
-parameters.
+"""Encoder rules for levels (x265 and NVENC), the picture size of AMF's pre-analysis, and for
+the advanced options and custom parameters.
 
-Without the level rules, a level too small for the picture or the bitrate would validate, and
-the encoder would then refuse to start. The bitrate, option and custom-parameter rules also run
-for templates, since they need only the video settings.
+Without the level and picture-size rules, a level too small for the picture or the bitrate, or
+a picture too small for the pre-analysis, would validate, and the encoder would then refuse to
+start. The bitrate, option and custom-parameter rules also run for templates, since they need
+only the video settings.
 """
 
 from __future__ import annotations
@@ -12,7 +13,9 @@ import math
 from collections.abc import Collection, Iterator
 from fractions import Fraction
 
+from reframe.command.video import sets_rate_buffer
 from reframe.definitions import VideoEncoderDef, effective_option
+from reframe.definitions.custom_params import CustomParam, split_custom_params
 from reframe.definitions.options import effective_preset
 from reframe.models.issues import Fix, ValidationIssue
 from reframe.models.job import VideoSettings
@@ -24,12 +27,14 @@ from reframe.validation.video import (
     OPTION_RULE_CODES,
     OVERRIDE_CODE,
     option_int,
+    remove_param_fix,
     video_custom_param_issues,
     video_custom_param_override_issues,
     video_option_rule_issues,
 )
 
 __all__ = [
+    "AMF_PREANALYSIS_MIN_SIZE",
     "H264_LEVELS",
     "X265_LEVELS",
     "h264_level_fits",
@@ -273,7 +278,7 @@ def nvenc_level_bitrate(ctx: JobContext | TemplateContext) -> list[ValidationIss
     encoder = ctx.definitions.video_encoders.get(video.encoder)
     if video.passthrough or encoder is None or video.level is None or rc.mode != "bitrate":
         return []
-    if "maxrate" in video.custom_params or "bufsize" in video.custom_params:
+    if sets_rate_buffer(video.custom_params):
         return []  # the user's own rate buffer: NVENC checks that instead
     profile = video.profile
     if profile is None and encoder.profiles is not None:
@@ -294,6 +299,61 @@ def nvenc_level_bitrate(ctx: JobContext | TemplateContext) -> list[ValidationIss
             fix("Let the encoder choose the level", replace("video.level", None)),
         )
     ]
+
+
+#: The smallest picture (width, height) that AMF's pre-analysis takes, the same for the three
+#: AMF encoders. Below it the encoder does not start (exit 190).
+AMF_PREANALYSIS_MIN_SIZE = (320, 200)
+#: AMF rate controls that start the pre-analysis without the ``preanalysis`` option.
+_AMF_PREANALYSIS_RATE_CONTROLS = frozenset({"qvbr", "hqvbr", "hqcbr", "4", "5", "6"})
+#: FFmpeg's words for a false boolean; ``auto`` and ``-1`` leave it to the driver.
+_OFF = frozenset({"0", "false", "no", "n", "off", "disable", "auto", "-1"})
+
+
+def _preanalysis_params(custom_params: str) -> tuple[list[CustomParam], list[CustomParam]]:
+    """All custom parameters, and those that turn AMF's pre-analysis on."""
+    params = split_custom_params(custom_params)
+    on: list[CustomParam] = []
+    for param in params:
+        name = param.name.lstrip("-").casefold()
+        value = param.value.strip().casefold()
+        if (name == "preanalysis" and value not in _OFF) or (
+            name == "rc" and value in _AMF_PREANALYSIS_RATE_CONTROLS
+        ):
+            on.append(param)
+    return params, on
+
+
+@job_rule("encoder", "encoder.preanalysis_picture_too_small")
+def amf_preanalysis_size(ctx: JobContext) -> Iterator[ValidationIssue]:
+    video = ctx.job.video
+    size = ctx.output_size
+    encoder = ctx.definitions.video_encoders.get(video.encoder)
+    if video.passthrough or encoder is None or encoder.family != "amf" or size is None:
+        return
+    width, height = size
+    min_width, min_height = AMF_PREANALYSIS_MIN_SIZE
+    if width >= min_width and height >= min_height:
+        return
+    why = (
+        f"AMF's pre-analysis needs a picture of at least {min_width}x{min_height}, and the "
+        f"output is {width}x{height}: {encoder.label} would not start."
+    )
+    if video.advanced.get("preanalysis") is True:
+        yield error(
+            "encoder.preanalysis_picture_too_small",
+            "video.advanced.preanalysis",
+            why,
+            fix("Turn pre-analysis off", replace("video.advanced.preanalysis", False)),
+        )
+    params, on = _preanalysis_params(video.custom_params)
+    if on:
+        yield error(
+            "encoder.preanalysis_picture_too_small",
+            "video.custom_params",
+            f"The custom parameter {on[0].raw.strip()} turns the pre-analysis on. {why}",
+            remove_param_fix(params, on[0]),
+        )
 
 
 @shared_rule("encoder", *OPTION_RULE_CODES)

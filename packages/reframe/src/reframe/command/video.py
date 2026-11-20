@@ -38,13 +38,16 @@ from reframe.models import (
 )
 
 __all__ = [
+    "NVENC_QUALITY_RATE_LIMITS",
     "PassMode",
     "VideoArgs",
     "encoder_and_pix_fmt",
     "format_number",
     "frame_rate_args",
     "hdr_params",
+    "nvenc_quality_rate_limit",
     "pass_log_files",
+    "sets_rate_buffer",
     "spec",
     "split_params",
     "video_encoder_args",
@@ -104,6 +107,37 @@ def split_params(text: str) -> list[tuple[str, str]]:
         name, sep, value = entry.partition("=")
         result.append((name.strip().lstrip("-"), value.strip() if sep else "1"))
     return result
+
+
+def sets_rate_buffer(custom_params: str) -> bool:
+    """Whether the custom parameters set ``maxrate`` or ``bufsize``."""
+    return any(name.casefold() in ("maxrate", "bufsize") for name, _ in split_params(custom_params))
+
+
+#: ``-maxrate`` and ``-bufsize`` of an NVENC constant quality without a level. Without them NVENC
+#: picks the lowest level that fits the picture and holds the bitrate under that level's limit,
+#: in CQ mode too. These are the highest values at which it still picks H.265 level 5.1 and
+#: H.264 level 5.0 (5.1 and 5.2 where the picture needs it).
+NVENC_QUALITY_RATE_LIMITS: dict[str, tuple[str, str]] = {
+    "h264_nvenc": ("200M", "400M"),
+    "hevc_nvenc": ("160M", "320M"),
+}
+
+
+def nvenc_quality_rate_limit(encoder_id: str, video: VideoSettings) -> list[str]:
+    """``["-maxrate", …, "-bufsize", …]`` for a constant quality of an encoder of
+    :data:`NVENC_QUALITY_RATE_LIMITS` with no level and no rate buffer in the custom parameters;
+    ``[]`` otherwise."""
+    limits = NVENC_QUALITY_RATE_LIMITS.get(encoder_id)
+    if (
+        limits is None
+        or not isinstance(video.rate_control, ConstantQuality)
+        or video.level is not None
+        or sets_rate_buffer(video.custom_params)
+    ):
+        return []
+    maxrate, bufsize = limits
+    return ["-maxrate", maxrate, "-bufsize", bufsize]
 
 
 @dataclass(slots=True)
@@ -389,6 +423,7 @@ def video_encoder_args(
             values[name] = format_number(derived.compute(rc.value), integer=derived.integer)
         out.add(mode.args, values)
         out.add_params(mode.params, values)
+        out.add(nvenc_quality_rate_limit(encoder.id, video), {})
     else:
         bitrate = encoder.rate_control.bitrate
         if bitrate is None:

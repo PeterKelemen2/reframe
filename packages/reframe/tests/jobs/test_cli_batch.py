@@ -15,7 +15,7 @@ import pytest
 
 from reframe import cli
 from reframe.cli import EXIT_FAILED, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE
-from reframe.models import MediaSource
+from reframe.models import CropRect, CropSettings, MediaSource
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
@@ -39,8 +39,25 @@ A = _load_anime()
 Media = Callable[[str], Path]
 
 
+#: The fake ffmpeg's ``cropdetect`` answer: black bars of 22 and 24 lines in the 320x180 frame.
+CROPDETECT = ft.Rule(
+    tool="ffmpeg",
+    argv_contains=["cropdetect="],
+    actions=[
+        ft.stderr(
+            "[Parsed_cropdetect_0 @ 0x55d1] x1:0 x2:319 y1:22 y2:155 w:320 h:134 x:0 y:22 "
+            "pts:0 t:0.000000 limit:0.094118 crop=320:134:0:22\n"
+        )
+    ],
+)
+
+
 def season_files(
-    cli_env: ft.FakeTools, tmp_path: Path, number: int, *, extra: tuple[ft.Rule, ...] = ()
+    cli_env: ft.FakeTools,
+    tmp_path: Path,
+    number: int,
+    *,
+    extra: tuple[ft.Rule, ...] = (CROPDETECT,),
 ) -> Path:
     """Placeholder files of season ``number``; the fake ffprobe replays each one's recording
     (``extra`` rules first)."""
@@ -248,6 +265,11 @@ def test_the_season_is_queued_in_episode_order(s01: Path, queues: Queues) -> Non
     assert names[10] == "Anime Show - S01E11 - Static.mkv"
     assert [len(job.settings.audio) for job in jobs][10] == 1  # E11: no dub
     assert queue.calls[-1] == "start " + " ".join(f"job-{n}" for n in range(1, 13))
+    # The preset crops automatically: each file's crop is detected before it is queued.
+    assert f"Detecting the crop of {media.anime_file_name(1, 1)} (1 of 12)…" in out
+    assert {job.settings.dimensions.crop.model_dump_json() for job in jobs} == {
+        CropSettings(mode="auto", rect=CropRect(top=22, bottom=24)).model_dump_json()
+    }
 
 
 def test_a_file_with_errors_is_not_queued(s01: Path, queues: Queues, tmp_path: Path) -> None:
@@ -334,3 +356,31 @@ def test_a_season_encoded_end_to_end(
         ("Signs & Songs", True, False),
         ("Full", False, True),
     ]
+
+
+@pytest.mark.needs_ffmpeg
+@pytest.mark.slow
+def test_letterboxed_episodes_are_encoded_cropped(
+    fixture_media: Media, tmp_path: Path, dirs: dict[str, Path]
+) -> None:
+    """The default preset crops automatically: each episode's bars are detected and cut."""
+    folder = tmp_path / "media"
+    folder.mkdir()
+    sources = []
+    for n in (1, 2):
+        sources.append(folder / f"Letterbox.S01E{n:02d}.mkv")
+        shutil.copy2(fixture_media("letterbox"), sources[-1])
+    result = invoke("batch", str(folder))
+    assert result.exit_code == EXIT_OK, result.output
+    out = result.stdout.splitlines()
+    assert "Detecting the crop of Letterbox.S01E02.mkv (2 of 2)…" in out
+    assert out[-1] == "Summary: 2 done, 0 failed, 0 cancelled, 0 not queued."
+    outputs = sorted(p for p in folder.iterdir() if p not in sources)
+    assert len(outputs) == 2
+
+    async def sizes() -> list[tuple[int, int]]:
+        async with await Reframe.create() as app:
+            found = [await app.sources.probe(path) for path in outputs]
+        return [(s.video[0].width, s.video[0].height) for s in found if isinstance(s, MediaSource)]
+
+    assert asyncio.run(sizes()) == [(320, 134), (320, 134)]

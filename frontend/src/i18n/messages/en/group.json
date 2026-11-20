@@ -57,6 +57,11 @@
     "apply": "Apply",
     "applied": "Applied to “{name}”: {sections}"
   },
+  "chapterNames": {
+    "label": "Chapter names",
+    "source": "From each file",
+    "generated": "Chapter 1, Chapter 2, …"
+  },
   "preset": {
     "title": "Save the group as a preset",
     "save": "Save preset",

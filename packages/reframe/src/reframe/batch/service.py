@@ -1,9 +1,9 @@
 """``Reframe.batch``: group files, derive templates, resolve a template in every file,
 and save a group template as a preset.
 
-The rest of :mod:`reframe.batch` is pure. This module is the one place that probes, names and
-validates, through the other services of the facade, so the pure engine never depends on the
-facade.
+The rest of :mod:`reframe.batch` is pure. This module is the one place that probes, detects
+crops, names and validates, through the other services of the facade, so the pure engine never
+depends on the facade.
 
 The batch-level name checks run over the files of every group, so a job never writes a file of
 another group. A file that is the planned output of another file of the batch is left out: an
@@ -26,6 +26,7 @@ from reframe.batch.derive import derive_template
 from reframe.batch.grouping import episode_key, episode_labels, group_sources
 from reframe.batch.resolve import matrix_columns, resolve, row_status
 from reframe.jobs import file_key, probe_issue
+from reframe.mediatask import MediaTaskContext, TaskFailed
 from reframe.models.batch import (
     BatchGrouping,
     BatchResolution,
@@ -33,21 +34,31 @@ from reframe.models.batch import (
     Resolution,
 )
 from reframe.models.batch import TemplateSection as Section
+from reframe.models.geometry import CropRect, CropSettings
 from reframe.models.issues import JsonPatchOp, Severity, ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.media import MediaSource
 from reframe.models.naming import NameResult, NamingOptions
 from reframe.models.preset import Preset
+from reframe.models.preview import CropDetection
 from reframe.models.settings import AppSettings
 from reframe.models.template import JobTemplate
+from reframe.preview.crop import detect_crop
 from reframe.probe import ProbeError
+from reframe.tools import CancelToken
 
-__all__ = ["PROBE_CONCURRENCY", "BatchService"]
+__all__ = ["PROBE_CONCURRENCY", "BatchService", "CropProgress"]
 
 #: Files probed at the same time by :meth:`BatchService.group` and
 #: :meth:`BatchService.resolve` (each probe is one ffprobe; the probe cache makes a second
 #: one cheap).
 PROBE_CONCURRENCY = 4
+#: Crop detections kept by :class:`BatchService`, so that a group queued again does not
+#: measure its files again.
+CROP_CACHE_SIZE = 256
+
+type CropProgress = Callable[[Path, int, int], None]
+"""Called before a file's crop is detected: the file, its number and the number of files."""
 
 
 class _Sources(Protocol):
@@ -122,10 +133,119 @@ def _keyed(probed: Sequence[tuple[Path, _Probed]]) -> list[tuple[str, Path, _Pro
     return [(file_key(path), path, found) for path, found in probed]
 
 
+class _CropTask:
+    """The task of one crop detection in a batch: the batch reports per file, not per frame."""
+
+    def __init__(self, cancel: CancelToken) -> None:
+        self._cancel = cancel
+
+    @property
+    def cancel(self) -> CancelToken:
+        return self._cancel
+
+    def progress(
+        self,
+        percent: float | None = None,
+        message: str | None = None,
+        *,
+        done: int | None = None,
+        total: int | None = None,
+    ) -> None:
+        del percent, message, done, total
+
+
+def _needs_crop(job: JobSettings, source: MediaSource) -> bool:
+    """The job's crop is automatic or conservative without a rectangle, and it encodes video."""
+    crop = job.dimensions.crop
+    return (
+        crop.mode in ("auto", "conservative")
+        and crop.rect is None
+        and not job.video.passthrough
+        and bool(source.video)
+    )
+
+
+def _measured(row: Resolution, source: MediaSource) -> bool:
+    """The crop of the row's file is detected: its job needs one and can be queued."""
+    return row.status != "error" and row.job is not None and _needs_crop(row.job, source)
+
+
+def _edges(rect: CropRect) -> str:
+    return f"top {rect.top}, bottom {rect.bottom}, left {rect.left}, right {rect.right}"
+
+
+class _CropRun:
+    """Crop detection for the files of one resolution: each job with an automatic or
+    conservative crop and no rectangle (the template's per-file policy) gets its file's."""
+
+    def __init__(
+        self,
+        media: MediaTaskContext,
+        cache: dict[str, CropDetection],
+        *,
+        files: int,
+        cancel: CancelToken | None,
+        progress: CropProgress | None,
+    ) -> None:
+        self._media = media
+        self._cache = cache
+        self._files = files
+        self._cancel = cancel if cancel is not None else CancelToken()
+        self._progress = progress
+
+    def _key(self, source: MediaSource) -> str | None:
+        fingerprint = source.ref.fingerprint
+        if fingerprint is None:
+            return None
+        count = self._media.settings().preview.sample_frames
+        return f"{source.ref.path}\0{fingerprint.model_dump_json()}\0{count}"
+
+    async def apply(
+        self, job: JobSettings, source: MediaSource, number: int
+    ) -> tuple[list[str], list[ValidationIssue]]:
+        """Fill in the crop of ``job`` (made from ``source``, file ``number`` of the run); the
+        notes and the issues of the row. Raises :class:`asyncio.CancelledError` when the run is
+        cancelled."""
+        if not _needs_crop(job, source):
+            return [], []
+        mode = job.dimensions.crop.mode
+        if self._progress is not None:
+            self._progress(source.ref.path, number, self._files)
+        key = self._key(source)
+        detection = self._cache.get(key) if key is not None else None
+        if detection is None:
+            try:
+                detection = await detect_crop(
+                    _CropTask(self._cancel), self._media, source.ref.path, count=None
+                )
+            except TaskFailed as failure:
+                if self._cancel.cancelled:  # a cancelled probe or run fails the task
+                    raise asyncio.CancelledError from None
+                return [], [_crop_failed(str(failure))]
+            if key is not None:
+                self._cache[key] = detection
+                while len(self._cache) > CROP_CACHE_SIZE:
+                    del self._cache[next(iter(self._cache))]
+        rect = detection.auto if mode == "auto" else detection.conservative
+        job.dimensions.crop = CropSettings(mode=mode, rect=rect)
+        name = "automatic" if mode == "auto" else "conservative"
+        return [f"Crop: detected in this file ({name}): {_edges(rect)}."], []
+
+
+def _crop_failed(reason: str) -> ValidationIssue:
+    return ValidationIssue(
+        severity=Severity.WARNING,
+        code="batch.crop_not_detected",
+        path="dimensions.crop",
+        message=f"The crop of this file could not be detected, so it is not cropped: {reason}",
+    )
+
+
 class BatchService:
     """Batch / season mode.
 
-    :param sources: probes the files (``Reframe.sources``; probes are cached).
+    :param sources: probes the files (``Reframe.sources``; probes are cached), and its
+        ``media`` runs crop detection.
     :param presets: finds templates by preset name or id and saves group templates
         (``Reframe.presets``).
     :param jobs: names and validates the resolved jobs (``Reframe.jobs``).
@@ -144,6 +264,21 @@ class BatchService:
         self._presets = presets
         self._jobs = cast(_Jobs, jobs)
         self._settings = settings
+        self._crops: dict[str, CropDetection] = {}
+
+    def _crop_run(
+        self,
+        detect: bool,
+        files: int,
+        cancel: CancelToken | None,
+        progress: CropProgress | None,
+    ) -> _CropRun | None:
+        if not detect:
+            return None
+        media: MediaTaskContext | None = getattr(self._sources, "media", None)
+        if media is None:
+            raise RuntimeError("crop detection needs the sources' media context (the facade's)")
+        return _CropRun(media, self._crops, files=files, cancel=cancel, progress=progress)
 
     async def _probe_all(
         self, sources: Sequence[str | os.PathLike[str] | MediaSource]
@@ -239,6 +374,9 @@ class BatchService:
         *,
         overrides: Mapping[str, Sequence[JsonPatchOp]] | None = None,
         check: Callable[[JobSettings], None] | None = None,
+        detect_crop: bool = False,
+        cancel: CancelToken | None = None,
+        progress: CropProgress | None = None,
     ) -> BatchResolution:
         """The resolution matrix of ``template`` (a template, a preset name or id; ``None``:
         the default preset) in every file: one :class:`~reframe.models.Resolution` per file
@@ -249,7 +387,13 @@ class BatchService:
         ``check(job)`` runs on each file's job as resolved (overrides applied), in a worker
         thread, before the job is named or validated: an exception from it propagates and the
         resolution stops. The server jails the paths a patch brings in with it, on the template
-        this resolution uses."""
+        this resolution uses.
+
+        ``detect_crop``: a job with an automatic or conservative crop and no rectangle, in a row
+        without errors, gets the crop that detection finds in its file, and is named and
+        validated again (for queueing; a detection is kept for the next run while the file is
+        unchanged). ``progress`` is told of each file measured; cancelling ``cancel`` (or this
+        task) stops the detection with :class:`asyncio.CancelledError`."""
         chosen, template_issues = self._template(template)
         settings = self._settings()
         naming = chosen.naming if chosen.naming is not None else settings.output.naming
@@ -268,6 +412,14 @@ class BatchService:
                 chosen, found, patches.get(key), naming, template_issues, check
             )
             rows.append(row)
+        crops = self._crop_run(detect_crop, len(ordered), cancel, progress)
+        if crops is not None:
+            for index, (key, _path, found) in enumerate(ordered):
+                if isinstance(found, MediaSource) and _measured(rows[index], found):
+                    rows[index], _ = await self._row(
+                        chosen, found, patches.get(key), naming, template_issues, check,
+                        crops=crops, number=index + 1,
+                    )  # fmt: skip
         rows, batch_issues = await asyncio.to_thread(_collisions, rows)
         columns = await asyncio.to_thread(matrix_columns, chosen, languages=settings.languages)
         return BatchResolution(
@@ -284,10 +436,14 @@ class BatchService:
         level: MatchLevel = "standard",
         overrides: Mapping[str, Sequence[JsonPatchOp]] | None = None,
         check: Callable[[JobSettings], None] | None = None,
+        detect_crop: bool = False,
+        cancel: CancelToken | None = None,
+        progress: CropProgress | None = None,
     ) -> tuple[BatchGrouping, list[BatchResolution]]:
         """A whole batch (``reframe batch``): every file resolved with ``template`` (as
         :meth:`resolve`), the files grouped at ``level`` (as :meth:`group`), and one resolution
-        matrix per group, in the grouping's order. ``check``: as in :meth:`resolve`.
+        matrix per group, in the grouping's order. ``check``, ``detect_crop``, ``cancel`` and
+        ``progress``: as in :meth:`resolve` (the files are numbered in the given order).
 
         A file that is the planned output of another file of the batch is left out: an earlier
         run's output is not grouped, resolved or queued. The batch-level name checks run over the
@@ -322,6 +478,21 @@ class BatchService:
         kept = [
             found for key, _, found in keyed if isinstance(found, MediaSource) and key not in owners
         ]
+        # Measured once the left-out files are known, so that they are not measured.
+        crops = self._crop_run(detect_crop, len(kept), cancel, progress)
+        if crops is not None:
+            measured = [
+                (key, found)
+                for key, _, found in keyed
+                if isinstance(found, MediaSource) and key not in owners
+            ]
+            for number, (key, found) in enumerate(measured, start=1):
+                if not _measured(rows[key], found):
+                    continue
+                rows[key], _ = await self._row(
+                    chosen, found, patches.get(key), naming, template_issues, check,
+                    crops=crops, number=number,
+                )  # fmt: skip
         groups = await asyncio.to_thread(group_sources, kept, level)
         issues = [probe_issue(found) for _, found in probed if isinstance(found, ProbeError)]
         issues += [
@@ -373,10 +544,13 @@ class BatchService:
         naming: NamingOptions,
         template_issues: Sequence[ValidationIssue],
         check: Callable[[JobSettings], None] | None = None,
+        *,
+        crops: _CropRun | None = None,
+        number: int = 0,
     ) -> tuple[Resolution, bool]:
-        """One file: the pure resolution, ``check`` on its job, then its name and validation;
-        and whether its override chose the output path (naming then gives only the name
-        fields)."""
+        """One file: the pure resolution, ``check`` on its job, its crop when ``crops`` (file
+        ``number``), then its name and validation; and whether its override chose the output
+        path (naming then gives only the name fields)."""
         languages = self._settings().languages
 
         def resolved() -> tuple[Resolution, JobSettings]:
@@ -387,6 +561,10 @@ class BatchService:
             return resolution, resolution.job
 
         resolution, resolved_job = await asyncio.to_thread(resolved)
+        crop_notes: list[str] = []
+        crop_issues: list[ValidationIssue] = []
+        if crops is not None:
+            crop_notes, crop_issues = await crops.apply(resolved_job, source, number)
         job, name, notes = await self._jobs.name_job(resolved_job, source, naming=naming)
         # A resolved job has no output path, so one here is the override's.
         chosen = resolved_job.output.path
@@ -394,13 +572,13 @@ class BatchService:
             job.output.path = chosen
             notes = []  # they are about the path that naming gave
         checks = await self._jobs.validate(job, source, naming=naming)
-        issues = [*template_issues, *resolution.issues, *checks]
+        issues = [*template_issues, *resolution.issues, *crop_issues, *checks]
         row = resolution.model_copy(
             update={
                 "job": job,
                 "naming": name,
                 "issues": issues,
-                "notes": [*resolution.notes, *notes],
+                "notes": [*resolution.notes, *crop_notes, *notes],
                 "status": row_status(resolution.matches, issues),
             }
         )

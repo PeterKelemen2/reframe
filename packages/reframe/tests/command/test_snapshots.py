@@ -410,6 +410,32 @@ def external_srt_into_mp4_with_range() -> Case:
 
 
 @case
+def align_av_start_passthru_loudnorm_and_range() -> Case:
+    src = recorded("multitrack.mkv")
+    job = draft(src, output_settings={"align_av_start": True}, video={"encoder": "libx264"})
+    job.audio[0].action = "passthru"
+    job.audio[1].loudness = "ebu_r128"
+    job.range = TimeRange(start=0.5, end=3.5)
+    return plain(job, src)
+
+
+@case
+def align_av_start_bitmap_burn_vaapi() -> Case:
+    src = recorded("vobsub.mkv")
+    video = {"encoder": "hevc_vaapi", "rate_control": AverageBitrate(kbps=2000)}
+    job = draft(src, output_settings={"align_av_start": True}, video=video)
+    job.subtitles[1].action = "burn"
+    return plain(job, src)
+
+
+@case
+def align_av_start_video_passthrough() -> Case:
+    src = recorded("multitrack.mkv")
+    job = draft(src, output_settings={"align_av_start": True}, video={"passthrough": True})
+    return plain(job, src)
+
+
+@case
 def time_range_copies_chapters() -> Case:
     src = recorded("chapters.mkv")
     job = draft(src, video={"encoder": "libx264"})

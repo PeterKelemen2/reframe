@@ -1,4 +1,5 @@
-"""Container rules: a codec the container cannot hold, and track flags it cannot write.
+"""Container rules: a codec the container cannot hold, track flags it cannot write, and a copied
+track that Align A/V start cannot pad.
 
 A passthru audio track that the container cannot hold is encoded with the fallback encoder, so
 only that encoder's codec is checked here (``audio.passthru_fallback``, info).
@@ -20,6 +21,7 @@ from reframe.validation.common import (
     drop_track,
     error,
     fix,
+    info,
     replace,
     switch_container_fixes,
     usable_encoder,
@@ -30,6 +32,7 @@ from reframe.validation.encoder import template_audio_encoder_ids
 from reframe.validation.metadata import metadata_blocks
 from reframe.validation.registry import job_rule, template_rule
 from reframe.validation.tracks import (
+    passthru_copies,
     subtitle_input,
     switch_audio_encoder,
     switch_container,
@@ -206,6 +209,43 @@ def track_flags(ctx: JobContext) -> Iterator[ValidationIssue]:
                 f"{container.label} cannot store the {label} flag: it will be lost.",
                 clear,
                 *switch_container(ctx, others),
+            )
+
+
+#: Seconds a copied stream may start after the others before Align A/V start says it stays so.
+ALIGN_TOLERANCE = 0.05
+
+
+@job_rule("container", "container.align_copied_track")
+def align_copied_tracks(ctx: JobContext) -> Iterator[ValidationIssue]:
+    """Align A/V start pads the start of what is encoded; a copied track keeps its own. Without
+    a range only: after ``-ss`` the source's start times no longer apply."""
+    job = ctx.job
+    video = ctx.video_stream
+    if not job.output.align_av_start or job.range.kind != "full" or video is None:
+        return
+    starts: list[float] = [] if video.start_time is None else [video.start_time]
+    copied: list[tuple[str, str, float]] = []
+    if job.video.passthrough and video.start_time is not None:
+        copied.append(("video.passthrough", "The copied video", video.start_time))
+    for index, track in enumerate(job.audio):
+        stream = track_stream(ctx, track)
+        if stream is None or stream.start_time is None:
+            continue
+        starts.append(stream.start_time)
+        if passthru_copies(ctx, track):
+            copied.append((f"audio[{index}].action", f"Audio track {index + 1}", stream.start_time))
+    if not starts:
+        return
+    first = min(starts)
+    for path, what, start in copied:
+        late = start - first
+        if late > ALIGN_TOLERANCE:
+            yield info(
+                "container.align_copied_track",
+                path,
+                f"{what} starts {late:.2f} s after the others and is copied: Align A/V start "
+                "cannot pad a copied track, so it keeps that start.",
             )
 
 

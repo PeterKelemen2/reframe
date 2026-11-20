@@ -250,6 +250,21 @@ def tall_source(s: Any) -> None:
     s.source.video[0].height = 1160
 
 
+def aligned_with_late_copy(late: float) -> Mod:
+    def mod(s: Any) -> None:
+        s.job.output.align_av_start = True
+        s.source.video[0].start_time = 0.0
+        s.source.audio[0].start_time = 0.0
+        s.source.audio[1].start_time = late  # the passthru AAC track
+
+    return mod
+
+
+def narrow_source(s: Any) -> None:
+    s.source.video[0].width = 318
+    s.source.video[0].height = 720
+
+
 def x265_level(level: str, **video_changes: Any) -> Mod:
     def mod(s: Any) -> None:
         s.job.video.level = level
@@ -707,6 +722,50 @@ CASES: list[Case] = [
         ERR,
         x265_level("4.0", framerate=Rational(num=60, den=1), framerate_mode="constant"),
         x265_level("4.1", framerate=Rational(num=60, den=1), framerate_mode="constant"),
+    ),
+    Case(
+        "Align A/V start with a copied track that starts late",
+        "container.align_copied_track",
+        "audio[1].action",
+        INFO,
+        aligned_with_late_copy(0.5),
+        aligned_with_late_copy(0.03),
+    ),
+    Case(
+        "AMF pre-analysis on a picture below 200 lines",
+        "encoder.preanalysis_picture_too_small",
+        "video.advanced.preanalysis",
+        ERR,
+        both(
+            video(encoder="hevc_amf", advanced={"preanalysis": True}),
+            dims(size=FitWithin(width=320, height=180)),
+        ),
+        both(
+            video(encoder="hevc_amf", advanced={"preanalysis": True}),
+            dims(size=FitWithin(width=356, height=200)),
+        ),
+    ),
+    Case(
+        "AMF pre-analysis on a picture below 320 columns",
+        "encoder.preanalysis_picture_too_small",
+        "video.advanced.preanalysis",
+        ERR,
+        both(video(encoder="av1_amf", advanced={"preanalysis": True}), narrow_source),
+        both(video(encoder="av1_amf", advanced={"preanalysis": False}), narrow_source),
+    ),
+    Case(
+        "AMF pre-analysis started by a custom rate control on a small picture",
+        "encoder.preanalysis_picture_too_small",
+        "video.custom_params",
+        ERR,
+        both(
+            video(encoder="h264_amf", custom_params="rc=qvbr"),
+            dims(size=FitWithin(width=320, height=180)),
+        ),
+        both(
+            video(encoder="h264_amf", custom_params="rc=vbr_peak:preanalysis=0"),
+            dims(size=FitWithin(width=320, height=180)),
+        ),
     ),
     Case(
         "NVENC H.264 level too low for 1080p",

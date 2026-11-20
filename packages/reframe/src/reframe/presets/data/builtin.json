@@ -1336,7 +1336,7 @@
       "id": "h265-nvenc-2160p-4k",
       "name": "H.265 NVENC 2160p 4K",
       "category": "Hardware",
-      "description": "NVIDIA NVENC hardware H.265 video (up to 2160p) and AAC stereo audio, in an MP4 container.",
+      "description": "NVIDIA NVENC hardware 10-bit H.265 video (up to 2160p) and AAC stereo audio, in an MP4 container.",
       "output": {
         "container": "mp4"
       },
@@ -1358,6 +1358,7 @@
           "value": 30
         },
         "preset": "p4",
+        "bit_depth": 10,
         "advanced": {
           "rc-lookahead": 10
         },

@@ -18,6 +18,7 @@ from typing import Any, cast
 import pytest
 
 from reframe.capabilities.parse import parse_encoder_help
+from reframe.command.video import nvenc_quality_rate_limit
 from reframe.definitions import (
     ChoiceSetting,
     CodecSupport,
@@ -30,9 +31,9 @@ from reframe.definitions import (
 )
 from reframe.definitions.models import TRACK_FLAGS
 from reframe.models.capabilities import EncoderStatus
-from reframe.models.job import Container, OptionValue
+from reframe.models.job import ConstantQuality, Container, OptionValue, VideoSettings
 from reframe.tools.versions import parse_ffmpeg_version
-from reframe.validation.levels import h264_level_fits, x265_level_fits
+from reframe.validation.levels import AMF_PREANALYSIS_MIN_SIZE, h264_level_fits, x265_level_fits
 from reframe_testing.encoders import (
     LAVFI_VIDEO,
     encode_args,
@@ -1991,22 +1992,59 @@ def _fits(enc: VideoEncoderDef, label: str) -> bool:
     sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi", "qsv", "nvenc")),
 )
 def test_hardware_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Path) -> None:
-    """As ``test_quality_range_ends_are_honoured``, on the GPU."""
+    """As ``test_quality_range_ends_are_honoured``, on the GPU. NVENC gets the rate buffer of
+    the command builder, and a grainy picture: on the plain one CQ 1 and 2 give the same file
+    even at level 6.2, and without the buffer they do on the grainy one too."""
     enc = VIDEO[encoder_id]
     if not _hw_usable(enc):
         pytest.skip(f"{encoder_id} does not work on this machine")
     q = enc.rate_control.quality
     assert q is not None
+    quality = VideoSettings(encoder=enc.id, rate_control=ConstantQuality(value=q.default))
+    limit = nvenc_quality_rate_limit(enc.id, quality)
+    grain = ["-vf", "noise=alls=8:allf=t"] if enc.family == "nvenc" else []
     results: dict[str, tuple[int, str]] = {}
     for label, value in _quality_points(q).items():  # one at a time: GPU sessions are limited
         args, _ = _quality_args(q, value)
-        got = _encode_digest([*_hw_args(enc, 8), *args], tmp_path / f"{label}.mkv", timeout=60)
+        out = tmp_path / f"{label}.mkv"
+        got = _encode_digest([*_hw_args(enc, 8), *grain, *args, *limit], out, timeout=60)
         assert not isinstance(got, str), f"{label}: {got}"
         results[label] = got
-    problems = _check_quality_points(results)
-    if enc.family == "nvenc" and problems == ["min gives the same file as min+1"]:
-        pytest.xfail("NVENC caps a constant quality at the bitrate of the level it picks")
-    assert problems == []
+    assert _check_quality_points(results) == []
+
+
+@pytest.mark.needs_gpu
+@pytest.mark.parametrize("encoder_id", ["h264_amf", "hevc_amf", "av1_amf"])
+def test_amf_preanalysis_needs_the_smallest_picture_of_the_rule(encoder_id: str) -> None:
+    """``encoder.preanalysis_picture_too_small``: below the size the encoder does not start;
+    the QVBR rate controls start the pre-analysis themselves."""
+    enc = VIDEO[encoder_id]
+    if not _hw_usable(enc):
+        pytest.skip(f"{encoder_id} does not work on this machine")
+    min_width, min_height = AMF_PREANALYSIS_MIN_SIZE
+
+    def encode(width: int, height: int, *args: str) -> subprocess.CompletedProcess[str]:
+        size = f"testsrc2=size={width}x{height}:rate=25"
+        return run_ffmpeg_capture(
+            ["-f", "lavfi", "-i", size, "-frames:v", "2", "-pix_fmt", "nv12", "-c:v", enc.id,
+             *args, "-f", "null", "-"],
+            timeout=60,
+        )  # fmt: skip
+
+    works = encode(min_width, min_height, "-preanalysis", "1")
+    assert works.returncode == 0, _fail_text(works)
+    low = encode(min_width, min_height - 2, "-preanalysis", "1")
+    assert low.returncode != 0
+    assert f"height ({min_height - 2}) not in [{min_height}," in low.stderr
+    narrow = encode(min_width - 2, 240, "-preanalysis", "1")
+    assert narrow.returncode != 0
+    assert f"width ({min_width - 2}) not in [{min_width}," in narrow.stderr
+    plain = encode(min_width, 180)
+    assert plain.returncode == 0, _fail_text(plain)
+    if enc.codec != "av1":
+        qvbr = encode(min_width, 180, "-rc", "qvbr")
+        assert qvbr.returncode != 0
+        assert "height (180) not in" in qvbr.stderr
 
 
 @pytest.mark.needs_gpu

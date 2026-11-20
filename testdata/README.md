@@ -53,6 +53,7 @@ uv run python scripts/make-testdata.py --list          # names and descriptions
 | `hdr10` | `hdr10.mkv` | HEVC Main 10, BT.2020 / PQ, mastering display (G 0.265,0.69 … L 0.0001–1000 cd/m²), MaxCLL 1000 / MaxFALL 400, as stream **and** frame side data |
 | `hdr10-4k` | `hdr10-4k.mkv` | 3840×2160 HEVC Main 10, BT.2020 / PQ, HDR10 metadata as SEI only (one libx265 pass), 5 s at 23.976 fps, keyint 48 (2 s). The 4K source of the C-10 frame budget (Q-3; the one fixture that is not low resolution, decision 0030); about 6 MB and 4 s to generate |
 | `chapters` | `chapters.mkv` | 5 s, 4 chapters (Opening, Part One, Part Two, Credits) and a title, from an FFMETADATA file |
+| `av-offset` | `av-offset.mkv` | Streams that start at different times (`-itsoffset`): H.264 320×180 25 fps from **0.6 s**, `eng` AAC stereo from 0, `eng` AC-3 stereo from **1.0 s**, all to 4.6 s. A white frame (frame 35 of the video) and a beep in each audio track (1 kHz / 500 Hz, 0.1 s) at **2.0 s**. Align A/V start |
 | `season` | `season/Show.S01E01.Title.mkv` … `E12` | 12 copies of the multi-track layout (title `Show - S01Enn`). **E05** has an extra `eng` AC-3 2.0 "Commentary" (comment) as the 4th audio track. **E09** has no second audio track ("English Stereo") |
 | `dts-hd-ma` | `dts-hd-ma.mkv` | H.264 320×180, 4 s. Audio: `hun` **DTS-HD MA** 5.1(side) 24-bit 48 kHz "DTS-HD MA 5.1" **default**, a real lossless (XLL) stream written by `reframe_testing/dts.py` with **no bit rate in the file** (ffprobe: `profile` `DTS-HD MA`, no `bit_rate`; 375 frames, 1 069 764 bytes = 2 139 528 b/s); `eng` AC-3 5.1 224 kb/s "English AC-3 5.1"; `eng` AC-3 stereo 192 kb/s "English Stereo". M6 demo 1 (Measure) and the audio-defaults demo |
 | `pgs` | `pgs.mkv` | H.264 720×480, 4 s. Two PGS (`hdmv_pgs_subtitle`) tracks written by `reframe_testing/pgs.py`: `eng` "English" **default**, 6 events (2 with the forced flag, at 0.2 s and 2.1 s), 12 display sets; `eng` "English (forced)" **forced**, 2 forced events, 4 display sets |
@@ -953,8 +954,65 @@ source (testsrc2 with `noise=alls=20:allf=t`, 50 frames): H.265 CQ 5 to 21 give 
 (3.1 MB, level 4.0); with `-level 4.1` 5.1 MB, `-level 5.1` 9.4 MB, `-level 6.2` 26 MB at CQ 10
 and 13 MB at CQ 20; `-maxrate 100M -bufsize 200M` lets NVENC pick level 5.0 (21 MB). H.264: about
 24 Mbit/s at its automatic level 4.0, 38 MB at CQ 10 with level 5.1. On the 320x240 test picture
-CQ 1 and 2 give the same file, so `test_hardware_quality_range_ends_are_honoured` expects that
-failure for NVENC.
+CQ 1 and 2 gave the same file.
+
+**The rate buffer of a CQ encode** (2026-11-20, same GPU, driver and build, decision 0103 item 1).
+With `-maxrate` set and no `-level`, NVENC picks the level from the maxrate (and the picture):
+the lowest level whose High-tier MaxBR (H.265) or MaxBR × 1.5 (H.264 High) is at least the
+maxrate; `-bufsize` does not change it. H.265 30M → 4.0, 40M → 4.1, 60M and 100M → 5.0, 150M
+and 160M → 5.1, 176M and 240M → 5.2, 300M and 480M → 6.1, 800M → 6.2; H.264 50M → 4.1, 80M and
+202M → 5.0, 203M and 300M → 5.1, 480M → 6.1, 800M → 6.2 (ffprobe `level`: 150 = 5.0, 51 = 5.1). The sources are testsrc2 with
+temporal noise ("grainy": `noise=alls=8:allf=t`; "heavy": `alls=20`), 250 frames, the CQ
+arguments of the definitions plus the profile, bufsize = 2 × maxrate:
+
+```sh
+ffmpeg -f lavfi -i testsrc2=size=1920x1080:rate=25 -vf noise=alls=8:allf=t -frames:v 250 \
+  -pix_fmt yuv420p -c:v hevc_nvenc -rc vbr -cq 10 -b:v 0 -init_qpI 8 -init_qpP 10 -init_qpB 12 \
+  -profile:v main -maxrate 160M -bufsize 320M out.mkv
+ffprobe -v error -select_streams v:0 -show_entries stream=profile,level -of csv=p=0 out.mkv
+```
+
+| Codec, picture | maxrate (level) | grainy CQ 10 / 20 / 27 (MB) | heavy CQ 10 / 20 / 27 (MB) |
+|----------------|-----------------|------------------------------|-----------------------------|
+| H.265 1080p25 | none (4.0) | 12.9 / 12.9 / 11.0 | 12.9 / 12.9 / 12.9 |
+| H.265 1080p25 | 100M (5.0) | 125.5 / 32.0 / 11.1 | 98.4 / 61.1 / 18.7 |
+| H.265 1080p25 | **160M (5.1)** | 141.2 / 32.0 / 11.1 | 149.1 / 61.1 / 18.5 |
+| H.265 1080p25 | 200M (5.2) | 141.3 / 32.0 / 11.1 | 189.0 / 61.0 / 18.6 |
+| H.265 1080p25 | 300M (6.1) | 130.2 / 31.8 / 11.1 | 205.8 / 61.0 / 18.8 |
+| H.265 1080p60 | **160M (5.1)** | 86.9 / 32.0 / 11.1 | 63.0 / 63.2 / 18.7 |
+| H.265 2160p25 | none (5.0) | 25.8 / 25.8 / 25.8 | 26.9 / 26.9 / 26.9 |
+| H.265 2160p25 | **160M (5.1)** | 201.2 / 126.3 / 43.7 | 201.3 / 201.1 / 74.5 |
+| H.265 2160p25 | 240M (5.2) | 301.8 / 126.1 / 43.7 | 280.4 / 285.0 / 74.2 |
+| H.265 2160p25 | 480M (6.1) | 558.9 / 126.1 / 43.8 | 497.6 / 236.2 / 74.3 |
+| H.265 2160p60 | **160M (5.1)** | 85.2 / 85.5 / 42.0 | 86.4 / 86.4 / 73.8 |
+| H.264 1080p25 | none (4.0) | 21.9 / 21.9 / 9.2 | 22.0 / 22.0 / 16.9 |
+| H.264 1080p25 | 100M (5.0) | 121.6 / 29.3 / 9.2 | 136.3 / 83.2 / 16.8 |
+| H.264 1080p25 | **200M (5.0)** | 121.6 / 29.2 / 9.2 | 225.1 / 83.2 / 16.8 |
+| H.264 1080p25 | 800M (6.2) | 121.0 / 29.4 / 9.2 | 226.1 / 83.2 / 16.9 |
+| H.264 1080p60 | **200M (5.0)** | 112.2 / 28.9 / 8.8 | 114.8 / 82.6 / 17.1 |
+| H.264 2160p25 | none (5.1) | 160.8 / 115.4 / 36.1 | 160.9 / 160.7 / 66.9 |
+| H.264 2160p25 | **200M (5.1)** | 260.4 / 115.4 / 36.2 | 260.1 / 259.9 / 67.3 |
+| H.264 2160p25 | 480M (6.1) | 481.6 / 114.9 / 36.1 | 606.7 / 328.2 / 66.8 |
+| H.264 2160p60 | **200M (5.2)** | 115.0 / 112.2 / 35.1 | 115.3 / 115.2 / 68.0 |
+
+(60 fps rows are 250 frames, 4.2 s.) The command builder gives a CQ encode without a level and
+without `maxrate` / `bufsize` in the custom parameters `-maxrate 160M -bufsize 320M` (H.265) and
+`-maxrate 200M -bufsize 400M` (H.264): the highest values that keep H.265 at level 5.1 (the
+usual level of 4K players) and H.264 at 5.0 (5.1 and 5.2 where the picture needs them). With them, CQ 10 and CQ 20 give clearly different files on
+the grainy source at 1080p and 2160p (25 fps), CQ 20 and 27 are not capped, and at 1080p the cap
+does not bind at CQ 10 either. It still binds at 2160p CQ 10 (201 MB of 559 MB), on the heavy
+source at 2160p25 and 1080p60 (H.265), and at 2160p60: the grainy 2160p CQ 10 needs about
+480M, which makes every output level 6.1. Larger buffers are not monotonic: H.265 1080p25 at CQ
+10 is 141 MB at 160M–200M, 130 MB at 300M and 108 MB at 800M. NVENC AV1 was not measured (no
+AV1 encoder on Pascal) and gets no buffer.
+
+The range end: on the plain 320x240 test picture (5 frames) H.265 CQ 1 and 2 give the same file
+with the buffer and even with `-level 6.2` (CQ 3 differs; H.264: CQ 1 to 4 alike), so that is
+the picture, not the level. With `-vf noise=alls=8:allf=t` (the noise filter's fixed seed gives
+the same file each run) H.265 CQ 1 and 2 give the same file without the buffer (68 483 bytes,
+level 2.0) and differ with it (305 582 and 280 116 bytes); H.264 likewise.
+`test_hardware_quality_range_ends_are_honoured` runs NVENC on that grainy picture with the
+buffer.
 
 **Docker.** With the NVIDIA Container Toolkit 1.20.2 in CDI mode, `--gpus all`, `--device
 nvidia.com/gpu=all`, `--runtime nvidia` and the compose `deploy` reservation all mount the same 63
@@ -1058,6 +1116,28 @@ goes up to a multiple of 64, a height that is not a multiple of 16 gets 2 more l
 extra lines repeat the picture's edge. 1280x720 and 3840x2160 stay as they are. `av1_vaapi` on
 the same GPU writes 1920x1080; `hevc_amf` keeps the display size and pads only the coded size
 (`coded_height` 1088). `test_av1_amf_pads_the_picture` records it.
+
+**AMF pre-analysis needs a picture of at least 320x200** (RX 7600, `/usr/bin/ffmpeg` n9.0.2,
+2026-11-20). `h264_amf`, `hevc_amf` and `av1_amf` alike, with `-preanalysis 1` on the picture
+the encoder gets (the output size: 318x240 fails, 320x200 works; `av1_amf` checks before it
+pads). Below it the encoder does not start, exit 190:
+
+```
+[AMFPreAnalysisImpl]   Error: …/AMFPreAnalysisImpl.cpp(1376):Assertion failed:Init() - height (180) not in [200, 4352]
+[AMFPreAnalysisImpl]   Error: …/AMFPreAnalysisImpl.cpp(1375):Assertion failed:Init() - width (318) not in [320, 8192]
+```
+
+These lines come from the AMF runtime without FFmpeg's tag. Before them `h264_amf` and
+`hevc_amf` log `[warning] VBAQ is not supported by cqp Rate Control Method, automatically
+disabled` in CQP mode (with or without `-vbaq`), and FFmpeg ends with "Error while opening
+encoder - maybe incorrect parameters such as bit_rate, rate, width or height". Without
+`-preanalysis` (and with `-preanalysis 0`, every `-quality`, or `-pa_lookahead_buffer_depth`
+alone) 320x180 encodes. The rate controls `qvbr`, `hqvbr` and `hqcbr` (H.264, H.265) start the
+pre-analysis themselves and fail the same way; `cqp`, `cbr`, `vbr_peak` and `vbr_latency` do
+not. The upper ends (8192, 4352) are above what the encoders take anyway (`h264_amf` refuses
+1920x4352 with `AMF_OUT_OF_RANGE: SetPropertyInternal() FrameSize`). Validation:
+`encoder.preanalysis_picture_too_small`; `test_amf_preanalysis_needs_the_smallest_picture_of_the_rule`
+checks it on the GPU.
 
 **Hardware rate control (AMF, VAAPI on radeonsi).** Every preset, profile, level, the quality
 mode at min / default / max, average bitrate and every option encode:
@@ -1624,6 +1704,35 @@ refuses some values and silently changes others, so the builder snaps them itsel
 | stereo → `aresample=matrix_encoding=dplii:out_chlayout=stereo` | the same PCM (MD5 of the decoded `s16le`) as without the filter: nothing to matrix-encode, so the builder keeps the source layout |
 
 E-AC-3 at 44.1 kHz with `-b:a 1536k` reads back as 1 535 231 b/s (whole frames).
+
+**Align A/V start** (2026-11-20, `/usr/bin/ffmpeg` n9.0.2; decision 0103 item 4). The
+`av-offset` fixture: video from 0.6 s, AAC from 0, AC-3 from 1.0 s, a white frame at 2.0 s and
+a beep in each audio track at 2.0 s. Without options FFmpeg keeps each stream's start (shifted
+by the input's start time): `ffprobe -show_entries stream=start_time` says 0.6 / 0 / 1.0 in
+MKV, 0.6 / 0 / 0.979 in MP4 (an edit list). The builder adds, when the option is on:
+
+- video: `setpts='if(eq(N,0),0,PTS)'` at the end of the chain, before the format or hardware
+  tail (in the overlay graph of a bitmap burn-in too): the first frame moves to 0 and is
+  shown until the second; with a constant frame rate FFmpeg repeats it (frames at 0, 0.04, …).
+- each encoded audio track: `aresample=async=1:first_pts=0` first in its chain (before the
+  layout, the gain and `loudnorm`, also in the loudness analysis): silence from 0 to the first
+  sample (FFmpeg's documented use of `first_pts`). `async=1` fills and trims, it does not
+  stretch (`ffmpeg -h filter=aresample`: "1(filling and trimming), >1(maximum stretch/squeeze
+  in samples per second)"). It also fills a gap of more than 0.1 s (`min_hard_comp`) inside a
+  track with silence: a sine with a 0.5 s timestamp gap at 1 s stays 3.5 s long either way, but
+  without the filter the gap has no samples (141 packets), with it 0.5 s of silence (147).
+
+Checked with `ffprobe` and, in the file's own timestamps (`ffmpeg -copyts`), the first frame
+with `signalstats` YAVG > 200 and the first `silencedetect` end of each track: every stream
+starts at 0.000 in MKV and MP4, the white frame and both beeps stay at 2.00. With a range
+(`-ss 0.3 -i … -ss 0`) the streams start at 0 and the marks are where the same range puts them
+without the option: the beeps at 1.70 and the white frame at 1.72, because FFmpeg puts the
+video on its 1/25 s frame grid after a seek that is not on it (0.3 s → the first frame at 0.32,
+also without the option). A copied track cannot be filtered: an AC-3 track passed through keeps
+its start (1.0 s) while the others start at 0, and validation says so
+(`container.align_copied_track`, info, without a range). A copied video keeps its start too.
+Subtitle tracks keep their times (nothing is moved, only the start is filled); a burned-in
+subtitle is drawn before the video filter. `test_align_av_start_*` in `test_integration.py`.
 
 ### Validation (C-8)
 

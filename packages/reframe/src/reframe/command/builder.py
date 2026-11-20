@@ -194,6 +194,7 @@ def _video_plan(
         available=filter_available(caps, defs),
         text_burn=subs.text_burn,
         bitmap_burn=subs.bitmap_burn,
+        align_start=job.output.align_av_start,
     )
     hdr = keeps_hdr(video, job.filters.root, settings.bit_depth) and not graph.hdr_removed
     rc = settings.rate_control
@@ -246,7 +247,9 @@ def _audio_plan(
         if track.source_stream is None or track.source_stream not in streams:
             raise PlanError(f"audio track {i + 1}: the source has no audio stream "
                             f"{track.source_stream} (validation reports it)")  # fmt: skip
-        outs.append(audio_output(i, track, streams[track.source_stream], container, defs))
+        stream = streams[track.source_stream]
+        align = job.output.align_av_start
+        outs.append(audio_output(i, track, stream, container, defs, align_start=align))
     return outs
 
 

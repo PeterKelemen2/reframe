@@ -214,7 +214,7 @@ describe('the Dimensions tab', () => {
     expect(wrapper.find('[data-detection]').exists()).toBe(false)
   })
 
-  it("says that a group's files are queued without a crop, and shows the shown file's detection", async () => {
+  it("says that a group's files get their own crop when queued, and shows the shown file's detection", async () => {
     const { wrapper, editor } = await mountTab()
     editor.target = {
       kind: 'group',
@@ -228,7 +228,7 @@ describe('the Dimensions tab', () => {
     }
     await flushPromises()
     expect(wrapper.find('[data-line="group"]').text()).toBe(
-      'In a group, Automatic and Conservative queue the files without a crop: their black bars are not detected. Choose Manual to crop every file the same way.',
+      'In a group, Automatic and Conservative detect the black bars of each file when the group is queued. Choose Manual to crop every file the same way.',
     )
     expect(wrapper.find('[data-line="detection"]').text()).toBe(
       'This file: Detected 22 / 24 / 0 / 0 on 5 of 10 frames',

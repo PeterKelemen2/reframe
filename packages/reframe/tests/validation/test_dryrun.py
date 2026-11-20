@@ -269,6 +269,40 @@ def test_exit_code_zero_without_output_is_a_failure() -> None:
     assert "Resolution incorrect for alignment mode" in issues[0].message
 
 
+#: hevc_amf on the RX 7600 with ``-preanalysis 1`` at 320x180 (exit 190).
+AMF_PREANALYSIS_TOO_SMALL = (
+    "[hevc_amf @ 0x55] [warning] VBAQ is not supported by cqp Rate Control Method, "
+    "automatically disabled\n"
+    "0126-10-20 16:27:28 577F26C0 [AMFEncoderCorePAImpl] Warning: PA has already been created!\n"
+    "0126-10-20 16:27:38 FC93B6C0 [AMFPreAnalysisImpl]   Error: ../../../../../runtime/src/"
+    "components/EncodeSDK/AMFPreAnalysisImpl.cpp(1376):Assertion failed:Init() - height (180) "
+    "not in [200, 4352]\n"
+    "0126-10-20 16:27:38 FC93B6C0 [AMFEncoderCorePAImpl]   Error: ../../../../../runtime/src/"
+    "components/EncoderCore/EncoderCorePAImpl.cpp(669):AMF_ERROR 4 : AMF_INVALID_ARG: "
+    "m_spPreAnalysis->Init failed\n"
+    "[hevc_amf @ 0x55] [error] encoder->Init() failed with error 4\n"
+    "[vost#0:0/hevc_amf @ 0x56] [enc:hevc_amf @ 0x57] [error] Error while opening encoder - "
+    "maybe incorrect parameters such as bit_rate, rate, width or height.\n"
+    "[info] Conversion failed!\n"
+)
+
+
+def test_an_amf_start_failure_names_the_runtimes_error_not_a_warning() -> None:
+    assert failure_detail(AMF_PREANALYSIS_TOO_SMALL, "hevc_amf") == (
+        "AMFPreAnalysisImpl: Assertion failed:Init() - height (180) not in [200, 4352]"
+    )
+    job = _job(encoder="hevc_amf", custom_params="preanalysis=1")
+    issues = parse_dry_run(job, AMF_PREANALYSIS_TOO_SMALL, 190)
+    assert _codes(issues) == [("encoder.dry_run_failed", "video.custom_params", Severity.ERROR)]
+    assert "height (180) not in [200, 4352]" in issues[0].message
+    assert "VBAQ" not in issues[0].message
+    # Without the runtime's line, the encoder's error line, not its warning.
+    ffmpeg_only = "\n".join(
+        line for line in AMF_PREANALYSIS_TOO_SMALL.splitlines() if "[AMF" not in line
+    )
+    assert failure_detail(ffmpeg_only, "hevc_amf") == "encoder->Init() failed with error 4"
+
+
 def test_libvpx_failure_detail_has_the_additional_information() -> None:
     stderr = (
         "[libvpx-vp9 @ 0x1] v1.17.0\n"
