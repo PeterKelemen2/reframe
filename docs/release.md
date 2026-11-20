@@ -39,8 +39,9 @@ the workflow's signing step.
 
 ### The updater's key
 
-The committed `plugins.updater.pubkey` in `desktop/src-tauri/tauri.conf.json` is the **test key**
-(key id `80B98CB268A32743`). Before the first release, replace it with the release key:
+The committed `plugins.updater.pubkey` in `desktop/src-tauri/tauri.conf.json` is the **release
+key** (key id `F2212B5119791A8F`, made 2026-11-20); the test key of decision 0072
+(`80B98CB268A32743`) is no longer trusted. It was made as follows:
 
 ```sh
 cd desktop
@@ -93,10 +94,19 @@ The workflow reads the first public key block of this file: its first job signs 
 with the secret and checks the signature with that block, and the release job does the same with
 the real `SHA256SUMS`. Until the block holds a key, no release can be made.
 
-The release key (fingerprint: not generated yet):
+The release key (fingerprint: `72D5 8F6B A476 19BF 9E1C  91A5 DE34 47FC 73F7 8AB9`, made
+2026-11-20):
 
 ```text
-(not generated yet: the output of gpg --armor --export FINGERPRINT goes here)
+-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEawBhWBYJKwYBBAHaRw8BAQdAQFcPdNNxMBOemQPCnC1Daud9GU24jeJ+DrsQ
+U7IM4+i0EFJlZnJhbWUgcmVsZWFzZXOIkAQTFgoAOBYhBHLVj2ukdhm/nhyRpd40
+R/xz94q5BQJrAGFYAhsDBQsJCAcCBhUKCQgLAgQWAgMBAh4BAheAAAoJEN40R/xz
+94q56+kA/1F6hbA8pM1EIBzubI5yyTFSLvaemX56Gqk85gfoshZYAP9v5g2+Agym
+GjI57qBMnKSI1mGTKoal/aocH2wrIg9LCg==
+=VCKE
+-----END PGP PUBLIC KEY BLOCK-----
 ```
 
 ### Visibility

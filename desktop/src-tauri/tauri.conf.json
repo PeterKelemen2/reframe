@@ -64,7 +64,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgwQjk4Q0IyNjhBMzI3NDMKUldSREo2Tm9zb3k1Z0szM2sxQVVKcWNhOEZrYzZkWlQ0WGNhRTJ3eW9pWHhZSnV0andkYXV6ZWMK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEYyMjEyQjUxMTk3OTFBOEYKUldTUEdua1pVU3NoOGh4VnAzM2tmTG1QaUtTL3FQNkpzY3FyZEtJOE5QVVRtS0lwZjRrbjRHQlMK",
       "endpoints": ["https://github.com/PeterKelemen2/reframe/releases/latest/download/latest.json"],
       "requireSignedVersion": true,
       "windows": { "installMode": "passive" }
