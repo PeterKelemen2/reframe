@@ -10,6 +10,7 @@ mod comfort;
 mod desktop_settings;
 mod external;
 mod media;
+mod menu_entry;
 mod open_paths;
 mod progress;
 mod quit;
@@ -56,12 +57,15 @@ fn main() {
             desktop_settings::set_desktop_settings,
             external::open_external,
             media::webview_plays_video,
+            menu_entry::menu_entry,
+            menu_entry::set_menu_entry,
         ])
         .on_window_event(quit::on_window_event)
         .setup(|app| {
             app.state::<backend::Backend>().attach(app.handle().clone());
             comfort::create_main_window(app.handle())?;
             tray::setup(app.handle())?;
+            menu_entry::follow_at_start(app.handle());
             Ok(())
         })
         .build(context)

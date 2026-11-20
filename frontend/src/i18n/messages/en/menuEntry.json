@@ -1,0 +1,18 @@
+{
+  "offer": {
+    "title": "Add Reframe to the application menu?",
+    "text": "Reframe runs from the AppImage file {file}. An entry in the application menu starts it from there, shows the queue's progress on its taskbar button and lets the file manager open video files with it.",
+    "later": "You can add or remove it later in Settings → Application menu.",
+    "add": "Add to the menu",
+    "skip": "Not now",
+    "close": "Close",
+    "failed": "The entry could not be added: {reason}"
+  },
+  "settings": {
+    "title": "Application menu",
+    "entry": "Reframe in the application menu",
+    "help": "An entry for the AppImage file {file}: it gives taskbar progress and Open with in the file manager. If you move the file, start it once from its new folder and the entry follows it.",
+    "other": "The application menu already has an entry for Reframe ({path}), so this AppImage adds none.",
+    "failed": "The entry could not be changed: {reason}"
+  }
+}
