@@ -148,6 +148,29 @@ describe('the queue table', () => {
     expect(queue[method]).toHaveBeenCalledWith('a')
   })
 
+  it('starts one waiting job by its Start, while the queue is stopped', async () => {
+    queue.jobs = [job('a'), job('b')]
+    await mountTable()
+    const start = button('b', '[data-action="start"]')
+    expect(start.getAttribute('aria-label')).toBe('Start b.mkv')
+    start.click()
+    await flushPromises()
+    expect(queue.start).toHaveBeenCalledWith(['b'])
+  })
+
+  it('offers Start only on waiting jobs that the runner does not take', async () => {
+    queue.jobs = [job('a'), job('b'), job('c', 'failed')]
+    queue.processing = true
+    queue.only = ['a']
+    await mountTable()
+    expect(actions('a')).not.toContain('start')
+    expect(actions('b')[0]).toBe('start')
+    expect(actions('c')).not.toContain('start')
+    queue.only = null
+    await flushPromises()
+    expect(actions('b')).not.toContain('start')
+  })
+
   it('offers only the actions that fit the state', async () => {
     queue.jobs = [job('a', 'running'), job('b', 'done')]
     await mountTable()
@@ -237,7 +260,7 @@ describe('the queue table', () => {
   it.each([
     ['running', 'pause', 'paused', 'resume'],
     ['paused', 'resume', 'running', 'pause'],
-    ['failed', 'retry', 'waiting', 'cancel'],
+    ['failed', 'retry', 'waiting', 'start'],
     ['waiting', 'cancel', 'cancelled', 'retry'],
     ['running', 'cancel', 'cancelled', 'retry'],
   ] as const)(

@@ -118,6 +118,7 @@ export function outputPath(job: QueueJob): string | null {
 }
 
 export type JobAction =
+  | 'start'
   | 'pause'
   | 'resume'
   | 'cancel'
@@ -128,8 +129,11 @@ export type JobAction =
   | 'log'
   | 'reveal'
 
-/** The actions that fit the job's state, in the row's order. */
-export function jobActions(job: QueueJob, canReveal: boolean): JobAction[] {
+/**
+ * The actions that fit the job's state, in the row's order. `held`: the job is waiting and the
+ * runner does not take it now, so a Start of this job alone would run it.
+ */
+export function jobActions(job: QueueJob, canReveal: boolean, held = false): JobAction[] {
   const actions: JobAction[] = []
   switch (job.state) {
     case 'running':
@@ -139,6 +143,7 @@ export function jobActions(job: QueueJob, canReveal: boolean): JobAction[] {
       actions.push('resume', 'cancel')
       break
     case 'waiting':
+      if (held) actions.push('start')
       actions.push('cancel')
       break
     case 'failed':
@@ -165,6 +170,16 @@ export interface RunState {
   onlyCount: number
   /** Waiting jobs the runner does not take now: a Start would run them. */
   held: number
+}
+
+/** Whether the runner leaves this waiting job alone: stopped, or taking only other jobs. */
+export function isHeld(
+  job: QueueJob,
+  processing: boolean,
+  only: readonly string[] | null,
+): boolean {
+  if (job.state !== 'waiting') return false
+  return !processing || (only !== null && !only.includes(job.id))
 }
 
 export function runState(

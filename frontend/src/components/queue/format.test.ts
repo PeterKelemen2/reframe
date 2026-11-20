@@ -4,7 +4,7 @@ import { createI18n } from 'vue-i18n'
 import type { JobProgress } from '@/api/types'
 import { createAppI18n, en } from '@/i18n'
 
-import { jobActions, liveColumns, runState, stepText } from './format'
+import { isHeld, jobActions, liveColumns, runState, stepText } from './format'
 import { job } from './testing'
 
 const { t, n } = createAppI18n().global
@@ -120,6 +120,34 @@ describe('the actions of a job', () => {
   it('offers reveal in folder only on the desktop, for a done job', () => {
     expect(jobActions(job('a', 'done'), true)).toContain('reveal')
     expect(jobActions(job('a', 'failed'), true)).not.toContain('reveal')
+  })
+
+  it('offers Start first on a waiting job that the runner does not take now', () => {
+    expect(jobActions(job('a', 'waiting'), false, true)).toEqual([
+      'start',
+      'cancel',
+      'log',
+      'edit',
+      'duplicate',
+      'remove',
+    ])
+    expect(jobActions(job('a', 'failed'), false, true)).not.toContain('start')
+  })
+})
+
+describe('a held job', () => {
+  it('is a waiting job while the queue is stopped', () => {
+    expect(isHeld(job('a', 'waiting'), false, null)).toBe(true)
+    expect(isHeld(job('a', 'failed'), false, null)).toBe(false)
+  })
+
+  it('is a waiting job the runner does not take: not one of the started jobs', () => {
+    expect(isHeld(job('a', 'waiting'), true, ['b'])).toBe(true)
+    expect(isHeld(job('b', 'waiting'), true, ['b'])).toBe(false)
+  })
+
+  it('is no job while the queue takes every waiting job', () => {
+    expect(isHeld(job('a', 'waiting'), true, null)).toBe(false)
   })
 })
 

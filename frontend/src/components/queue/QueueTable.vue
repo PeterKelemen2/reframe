@@ -39,6 +39,7 @@ import { useSystemStore } from '@/stores/system'
 import { TaskLostError } from '@/stores/tasks'
 
 import {
+  isHeld,
   type JobAction,
   jobActions,
   liveColumns,
@@ -67,7 +68,7 @@ const rows = computed(() =>
   queue.jobs.map((job, index) => ({
     job,
     index,
-    actions: jobActions(job, canReveal),
+    actions: jobActions(job, canReveal, isHeld(job, queue.processing, queue.only)),
     live: liveColumns(job, t, n),
   })),
 )
@@ -146,6 +147,9 @@ async function edit(job: QueueJob): Promise<void> {
 
 function act(action: JobAction, job: QueueJob, event: Event): void {
   switch (action) {
+    case 'start':
+      void run(() => queue.start([job.id]))
+      return
     case 'pause':
       void run(() => queue.pause(job.id))
       return
@@ -180,6 +184,8 @@ function act(action: JobAction, job: QueueJob, event: Event): void {
 
 function actionLabel(action: JobAction, name: string): string {
   switch (action) {
+    case 'start':
+      return t('queue.actions.start', { job: name })
     case 'pause':
       return t('queue.actions.pause', { job: name })
     case 'resume':
@@ -203,6 +209,8 @@ function actionLabel(action: JobAction, name: string): string {
 
 function actionTip(action: JobAction): string {
   switch (action) {
+    case 'start':
+      return t('queue.actionTips.start')
     case 'pause':
       return t('queue.actionTips.pause')
     case 'resume':
@@ -225,6 +233,7 @@ function actionTip(action: JobAction): string {
 }
 
 const ICONS = {
+  start: Play,
   pause: Pause,
   resume: Play,
   cancel: Square,
