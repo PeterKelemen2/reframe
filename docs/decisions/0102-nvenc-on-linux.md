@@ -42,7 +42,15 @@ Three parts ran: the lead (detection, the option matrix, levels, the GPU tests),
    (10-bit) available, AV1 not (Pascal). H.264 8-bit and H.265 Main 10 4K HDR10 encoded with
    the metadata kept. Image 522 MB, built in 72 s. With CDI the toolkit mounts all driver
    libraries whatever `NVIDIA_DRIVER_CAPABILITIES` says.
-4. **Defects found:**
+4. **Web UI** (lead, headless Chromium through an SSH tunnel to `scripts/dev-server.py` on the
+   host, a fresh home without FFmpeg, hardware tests on): the first-run screen offers
+   `default` and `compat` (with the 570–609 text); `default` installs in 10 s, every NVENC
+   encoder is unavailable with the build mismatch; with the "H.265 NVENC 1080p" preset the
+   Summary issue names other builds, the Video banner says "NVIDIA driver too old", its
+   **Use another FFmpeg…** opens Settings → Tools with the notice; installing `compat` there
+   makes H.264 and H.265 NVENC available (AV1 not), the notice and the job's issue go away,
+   and the queued job ends `done` (H.265 NVENC, PQ kept).
+5. **Defects found:**
    - a. **NVENC refuses an explicit level at run time** ("InitializeEncoder failed: invalid
      param (8): Invalid Level."): (i) when the picture size or frame rate exceeds the level
      (as x265, which validation already checked), (ii) in bitrate mode when the bitrate is
@@ -105,9 +113,9 @@ Three parts ran: the lead (detection, the option matrix, levels, the GPU tests),
    `hevc_nvenc` (Pascal refusals accepted only with FFmpeg's "not supported" text, levels too
    low for the test picture expected to fail), the quality range ends, every entry of the
    bitrate table (the limit passes, one more kb/s fails) and the picture-size limits.
-8. **Not changed, the owner decides:** the CQ cap (h; options: leave it, give CQ a generous
+8. **Not changed, the owner decides:** the CQ cap (5h; options: leave it, give CQ a generous
    `-maxrate`/`-bufsize`, or set a level; each changes the level a player sees), the 8-bit 4K
-   NVENC preset (i). The GPU test marks the CQ range end of NVENC as an expected failure
+   NVENC preset (5i). The GPU test marks the CQ range end of NVENC as an expected failure
    until then.
 
 ## Consequences
@@ -117,8 +125,8 @@ Three parts ran: the lead (detection, the option matrix, levels, the GPU tests),
   limits (they are the codec's), but that is not checked.
 - H.264 NVENC outputs are High profile with the `compat` build as with `default`.
 - Not verified: AV1 NVENC (Pascal has none), H.264 10-bit, Turing and newer GPUs, the `default`
-  build with a driver ≥ 610, the toolkit's legacy (non-CDI) mode, the web UI on this host
-  (checked below if done), Windows (the session limit text of 0101).
+  build with a driver ≥ 610, the toolkit's legacy (non-CDI) mode, Windows (the session limit
+  text of 0101).
 - Agent E also found that a hard-linked second source is dropped from a CLI run without a
   message (by design, `file_key`), and the job header names the output before the collision
   rename. Not NVENC; listed in status.md.
