@@ -314,6 +314,51 @@ async def test_post_mux_fixup_writes_bcp47_and_is_checked_before_the_rename(env:
         await app.close()
 
 
+async def test_an_encode_with_a_track_name_template_passes_the_fixup_check(env: Env) -> None:
+    app = await env.app()
+    try:
+        draft = await app.jobs.draft_remux(env.source, edit_in_place=False)
+        assert isinstance(draft, JobDraft)
+        job = draft.job
+        job.output.path = env.tmp / "out" / "Named.mkv"
+        japanese = job.audio[0]
+        japanese.action, japanese.encoder, japanese.mixdown = "encode", "aac", "5.1"
+        japanese.metadata.language = "pt-BR"
+        japanese.metadata.name = "{lang_name} {channels} {codec}"
+        job.subtitles[0].metadata.name = "{lang_native} {codec}"
+        plan = await app.jobs.plan(job)
+        assert not isinstance(plan, list), plan
+        assert [s.kind for s in plan.steps] == ["encode", "header_edit", "finalize"]
+        ended = await run(app, job)
+        assert ended.state is JobState.DONE, ended.error
+        out = await reprobe(app, env.tmp / "out" / "Named.mkv")
+        assert (out.audio[0].language_ietf, out.audio[0].title) == (
+            "pt-BR",
+            "Portuguese (Brazil) 5.1 AAC",
+        )
+        assert out.subtitles[0].title == "English SRT"
+    finally:
+        await app.close()
+
+
+async def test_an_in_place_edit_with_a_track_name_template_passes_the_check(env: Env) -> None:
+    app = await env.app()
+    try:
+        job = await draft_remux(app, env.source)
+        job.audio[1].metadata.language = "es-419"
+        job.audio[1].metadata.name = "{lang_name} {channels} {codec}"
+        job.video.metadata.name = "{codec}"
+        kind, reason = await job_type(app, job)
+        assert kind == "metadata_edit", reason
+        ended = await run(app, job)
+        assert ended.state is JobState.DONE, ended.error
+        out = await reprobe(app, env.source)
+        assert out.audio[1].title == "Spanish (Latin America) 2.0 AAC-LC"
+        assert out.video[0].title == "H.264 Constrained Baseline"
+    finally:
+        await app.close()
+
+
 @pytest.mark.needs_mkvtoolnix
 async def test_the_fixup_reads_back_as_mkvpropedits(env: Env) -> None:
     """The plan's encode step makes the muxed file; mkvpropedit and the writer each make the

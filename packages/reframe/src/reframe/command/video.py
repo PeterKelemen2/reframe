@@ -109,9 +109,13 @@ def split_params(text: str) -> list[tuple[str, str]]:
     return result
 
 
+def _sets(custom_params: str, *names: str) -> bool:
+    return any(name.casefold() in names for name, _ in split_params(custom_params))
+
+
 def sets_rate_buffer(custom_params: str) -> bool:
     """Whether the custom parameters set ``maxrate`` or ``bufsize``."""
-    return any(name.casefold() in ("maxrate", "bufsize") for name, _ in split_params(custom_params))
+    return _sets(custom_params, "maxrate", "bufsize")
 
 
 #: ``-maxrate`` and ``-bufsize`` of an NVENC constant quality without a level. Without them NVENC
@@ -126,14 +130,14 @@ NVENC_QUALITY_RATE_LIMITS: dict[str, tuple[str, str]] = {
 
 def nvenc_quality_rate_limit(encoder_id: str, video: VideoSettings) -> list[str]:
     """``["-maxrate", …, "-bufsize", …]`` for a constant quality of an encoder of
-    :data:`NVENC_QUALITY_RATE_LIMITS` with no level and no rate buffer in the custom parameters;
-    ``[]`` otherwise."""
+    :data:`NVENC_QUALITY_RATE_LIMITS` with no level (in the settings or the custom parameters)
+    and no rate buffer in the custom parameters; ``[]`` otherwise."""
     limits = NVENC_QUALITY_RATE_LIMITS.get(encoder_id)
     if (
         limits is None
         or not isinstance(video.rate_control, ConstantQuality)
         or video.level is not None
-        or sets_rate_buffer(video.custom_params)
+        or _sets(video.custom_params, "maxrate", "bufsize", "level")
     ):
         return []
     maxrate, bufsize = limits

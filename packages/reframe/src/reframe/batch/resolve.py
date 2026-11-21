@@ -72,6 +72,8 @@ def output_size(job: JobSettings, source: MediaSource) -> tuple[int, int] | None
 
 def _dimensions(template: JobTemplate, notes: list[str]) -> DimensionSettings:
     dims = template.dimensions.model_copy(deep=True)
+    if dims.crop.detection_error is not None:  # a failure in another file
+        dims.crop = dims.crop.model_copy(update={"detection_error": None})
     crop = dims.crop
     if crop.rect is None or crop.mode not in ("auto", "conservative"):
         return dims

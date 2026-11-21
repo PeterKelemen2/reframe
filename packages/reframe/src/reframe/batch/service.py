@@ -34,7 +34,7 @@ from reframe.models.batch import (
     Resolution,
 )
 from reframe.models.batch import TemplateSection as Section
-from reframe.models.geometry import CropRect, CropSettings
+from reframe.models.geometry import CropRect
 from reframe.models.issues import JsonPatchOp, Severity, ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.media import MediaSource
@@ -221,13 +221,16 @@ class _CropRun:
             except TaskFailed as failure:
                 if self._cancel.cancelled:  # a cancelled probe or run fails the task
                     raise asyncio.CancelledError from None
-                return [], [_crop_failed(str(failure))]
+                reason = str(failure)
+                crop = job.dimensions.crop.model_copy(update={"detection_error": reason})
+                job.dimensions.crop = crop
+                return [], [_crop_failed(reason)]
             if key is not None:
                 self._cache[key] = detection
                 while len(self._cache) > CROP_CACHE_SIZE:
                     del self._cache[next(iter(self._cache))]
         rect = detection.auto if mode == "auto" else detection.conservative
-        job.dimensions.crop = CropSettings(mode=mode, rect=rect)
+        job.dimensions.crop = job.dimensions.crop.model_copy(update={"rect": rect})
         name = "automatic" if mode == "auto" else "conservative"
         return [f"Crop: detected in this file ({name}): {_edges(rect)}."], []
 
@@ -445,8 +448,9 @@ class BatchService:
         matrix per group, in the grouping's order. ``check``, ``detect_crop``, ``cancel`` and
         ``progress``: as in :meth:`resolve` (the files are numbered in the given order).
 
-        A file that is the planned output of another file of the batch is left out: an earlier
-        run's output is not grouped, resolved or queued. The batch-level name checks run over the
+        A file that is the planned output of another file of the batch, named before or after
+        that file's crop is detected, is left out: an earlier run's output is not grouped, resolved
+        or queued. The batch-level name checks run over the
         files of every group, so a job never writes a file of another group. A batch issue for a
         shared name is in the resolution of the first group concerned.
         """
@@ -471,28 +475,38 @@ class BatchService:
         outputs = await asyncio.to_thread(_output_keys, planned_rows)
         owners: dict[str, Path] = {}
         planned: dict[str, Path] = {}
-        for key, (output, out_key) in outputs.items():
+
+        def leave_out(key: str, output: Path, out_key: str) -> None:
             if out_key in rows and out_key != key and out_key not in owners:
                 owners[out_key] = rows[key].path
                 planned[out_key] = output
-        kept = [
-            found for key, _, found in keyed if isinstance(found, MediaSource) and key not in owners
-        ]
+
+        for key, (output, out_key) in outputs.items():
+            leave_out(key, output, out_key)
         # Measured once the left-out files are known, so that they are not measured.
-        crops = self._crop_run(detect_crop, len(kept), cancel, progress)
+        measured = [
+            (key, found)
+            for key, _, found in keyed
+            if isinstance(found, MediaSource) and key not in owners
+        ]
+        crops = self._crop_run(detect_crop, len(measured), cancel, progress)
         if crops is not None:
-            measured = [
-                (key, found)
-                for key, _, found in keyed
-                if isinstance(found, MediaSource) and key not in owners
-            ]
             for number, (key, found) in enumerate(measured, start=1):
-                if not _measured(rows[key], found):
+                if key in owners or not _measured(rows[key], found):
                     continue
-                rows[key], _ = await self._row(
+                rows[key], own_path = await self._row(
                     chosen, found, patches.get(key), naming, template_issues, check,
                     crops=crops, number=number,
                 )  # fmt: skip
+                # The crop can change the name ({height}): the earlier output may show only now.
+                if not own_path:
+                    for output, out_key in (
+                        await asyncio.to_thread(_output_keys, {key: rows[key]})
+                    ).values():
+                        leave_out(key, output, out_key)
+        kept = [
+            found for key, _, found in keyed if isinstance(found, MediaSource) and key not in owners
+        ]
         groups = await asyncio.to_thread(group_sources, kept, level)
         issues = [probe_issue(found) for _, found in probed if isinstance(found, ProbeError)]
         issues += [
@@ -572,6 +586,8 @@ class BatchService:
             job.output.path = chosen
             notes = []  # they are about the path that naming gave
         checks = await self._jobs.validate(job, source, naming=naming)
+        if crop_issues:  # the job's own issue repeats the batch's
+            checks = [c for c in checks if c.code != "dimensions.crop_detection_failed"]
         issues = [*template_issues, *resolution.issues, *crop_issues, *checks]
         row = resolution.model_copy(
             update={

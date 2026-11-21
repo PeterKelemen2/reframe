@@ -10,6 +10,7 @@ only the video settings.
 from __future__ import annotations
 
 import math
+import re
 from collections.abc import Collection, Iterator
 from fractions import Fraction
 
@@ -304,21 +305,43 @@ def nvenc_level_bitrate(ctx: JobContext | TemplateContext) -> list[ValidationIss
 #: The smallest picture (width, height) that AMF's pre-analysis takes, the same for the three
 #: AMF encoders. Below it the encoder does not start (exit 190).
 AMF_PREANALYSIS_MIN_SIZE = (320, 200)
-#: AMF rate controls that start the pre-analysis without the ``preanalysis`` option.
-_AMF_PREANALYSIS_RATE_CONTROLS = frozenset({"qvbr", "hqvbr", "hqcbr", "4", "5", "6"})
-#: FFmpeg's words for a false boolean; ``auto`` and ``-1`` leave it to the driver.
-_OFF = frozenset({"0", "false", "no", "n", "off", "disable", "auto", "-1"})
+#: AMF rate controls that start the pre-analysis without the ``preanalysis`` option, by name
+#: and by number.
+_AMF_PREANALYSIS_RATE_CONTROLS: dict[str, int] = {"qvbr": 4, "hqvbr": 5, "hqcbr": 6}
+#: FFmpeg's boolean words (any case); ``auto`` (this case only) and ``-1`` leave it to the
+#: driver.
+_TRUE = frozenset({"true", "y", "yes", "enable", "enabled", "on"})
+_FALSE = frozenset({"false", "n", "no", "disable", "disabled", "off"})
+_INTEGER = re.compile(r"[+-]?\d+")
+
+
+def _ffmpeg_int(value: str) -> int | None:
+    return int(value) if _INTEGER.fullmatch(value) else None
+
+
+def _ffmpeg_bool(value: str) -> int | None:
+    """An option value as FFmpeg reads a boolean: 1, 0, -1 (auto); ``None`` when it refuses it."""
+    if value == "auto":
+        return -1
+    if value.casefold() in _TRUE:
+        return 1
+    if value.casefold() in _FALSE:
+        return 0
+    number = _ffmpeg_int(value)
+    return number if number is not None and -1 <= number <= 1 else None
 
 
 def _preanalysis_params(custom_params: str) -> tuple[list[CustomParam], list[CustomParam]]:
     """All custom parameters, and those that turn AMF's pre-analysis on."""
     params = split_custom_params(custom_params)
     on: list[CustomParam] = []
+    rate_controls = set(_AMF_PREANALYSIS_RATE_CONTROLS.values())
     for param in params:
         name = param.name.lstrip("-").casefold()
-        value = param.value.strip().casefold()
-        if (name == "preanalysis" and value not in _OFF) or (
-            name == "rc" and value in _AMF_PREANALYSIS_RATE_CONTROLS
+        value = param.value.strip()
+        rc = _AMF_PREANALYSIS_RATE_CONTROLS.get(value, _ffmpeg_int(value))
+        if (name == "preanalysis" and _ffmpeg_bool(value) == 1) or (
+            name == "rc" and rc in rate_controls
         ):
             on.append(param)
     return params, on

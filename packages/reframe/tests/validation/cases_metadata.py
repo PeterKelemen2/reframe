@@ -115,6 +115,16 @@ def cases(h: Any) -> list[Any]:
             external_name("Hu\0n"), external_name("Hun"),
         ),
         case(
+            "track_name_variable_typo", "metadata.name_variable_unknown",
+            "audio[0].metadata.name", h.WARN,
+            track_name("{lang_nmae} {channels}"), track_name("Signs {Karaoke}"),
+        ),
+        case(
+            "track_name_with_another_variable", "metadata.name_variable_unknown",
+            "audio[0].metadata.name", h.WARN,
+            track_name("{lang_name} {episode}"), track_name("{lang_name} {{episode}}"),
+        ),
+        case(
             "tag_too_long", "metadata.tag_too_long", "tags.plot", err,
             tags(plot="x" * 3001), tags(plot="x" * 3000),
         ),

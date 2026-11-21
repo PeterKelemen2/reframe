@@ -66,8 +66,8 @@ from reframe.models.template import (
     TrackMetadataTemplate,
     TrackSelector,
 )
-from reframe.naming.context import audio_channels_label
 from reframe.naming.template import Value
+from reframe.naming.track_names import written_audio_values
 from reframe.probe.names import codec_name
 
 __all__ = [
@@ -356,28 +356,17 @@ def _how(pick: RulePick, label: str) -> str:
 
 
 def _audio_values(
-    track: Track, output: AudioOutputTrack, language: str | None, defs: Definitions
+    track: Track,
+    output: AudioOutputTrack,
+    language: str | None,
+    container: Container,
+    defs: Definitions,
 ) -> dict[str, Value]:
     stream = track.stream
     assert isinstance(stream, AudioStream)
-    if output.action == "passthru":
-        channels = audio_channels_label(stream.channels, stream.channel_layout)
-        codec = codec_label(stream)
-        bitrate: int | None = None
-    else:
-        channels = (
-            layout_label(output.mixdown, defs)
-            if output.mixdown is not None
-            else audio_channels_label(stream.channels, stream.channel_layout)
-        )
-        encoder = defs.audio_encoders.get(output.encoder or "")
-        codec = encoder.label if encoder is not None else str(output.encoder)
-        bitrate = output.bitrate
     return {
         **language_values(language),
-        "channels": channels,
-        "codec": codec,
-        "bitrate": bitrate,
+        **written_audio_values(output, stream, defs.containers[container], defs),
         "title": stream.title,
         "source_codec": codec_label(stream),
     }
@@ -532,7 +521,7 @@ def _explicit_audio(
             for position, output in enumerate(outputs):
                 extra = position > 0
                 language_out = rule.metadata.language or output.metadata.language
-                values = _audio_values(track, output, language_out, defs)
+                values = _audio_values(track, output, language_out, container, defs)
                 meta = _metadata(output.metadata, rule.metadata, values, extra=extra)
                 produced.append(
                     _Output(

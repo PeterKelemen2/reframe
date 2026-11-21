@@ -2441,6 +2441,22 @@
       - ``manual``: ``rect`` as the user set it.
     ''',
     'properties': dict({
+      'detection_error': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Why crop detection failed in this job's file (``auto`` and ``conservative`` without
+          ``rect``): the picture is not cropped. ``None``: detection did not fail.
+        ''',
+        'title': 'Detection Error',
+      }),
       'mode': dict({
         'default': 'auto',
         'enum': list([

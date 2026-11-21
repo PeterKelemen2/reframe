@@ -150,6 +150,15 @@ def test_fixed_settings_and_metadata() -> None:
     assert result.draft.issues == []
 
 
+def test_fixed_settings_are_named_with_what_is_written() -> None:
+    """A stereo source is not upmixed, and the bit rate is snapped to the encoder's."""
+    upmix = AudioOutputSettings(encoder="aac", mixdown="5.1", bitrate=900)
+    meta = TrackMetadataTemplate(name_template="{channels} {codec} {bitrate}")
+    rules = [audio_rule(upmix, meta, languages=["en"], roles=[TrackRole.COMMENTARY])]
+    (track,) = resolve_tracks(template(audio=rules), example(), definitions=DEFS).draft.audio
+    assert track.metadata.name == "2.0 AAC 512"
+
+
 def test_codec_rules_are_evaluated_for_each_matched_track() -> None:
     english = AudioCodecRule(
         languages=["en"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=320

@@ -2048,6 +2048,33 @@ def test_amf_preanalysis_needs_the_smallest_picture_of_the_rule(encoder_id: str)
 
 
 @pytest.mark.needs_gpu
+def test_amf_reads_the_preanalysis_spellings_of_the_rule() -> None:
+    """The spellings of ``test_amf_preanalysis_custom_params_are_read_as_ffmpeg_reads_them``:
+    FFmpeg's boolean words in any case but ``auto``, and any integer; only 1 is on."""
+    enc = VIDEO["h264_amf"]
+    if not _hw_usable(enc):
+        pytest.skip("h264_amf does not work on this machine")
+    spellings = {
+        **dict.fromkeys(("disabled", "DISABLE", "N", "00", "-1", "auto"), False),
+        **dict.fromkeys(("enabled", "Yes", "01", "+1"), True),
+    }
+    for value, on in spellings.items():
+        result = run_ffmpeg_capture(
+            ["-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25", "-frames:v", "2",
+             "-pix_fmt", "nv12", "-c:v", enc.id, "-preanalysis", value, "-f", "null", "-"],
+            timeout=60,
+        )  # fmt: skip
+        assert (result.returncode != 0) is on, (value, _fail_text(result))
+        assert ("height (180) not in" in result.stderr) is on, value
+    refused = run_ffmpeg_capture(
+        ["-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25", "-frames:v", "2",
+         "-c:v", enc.id, "-preanalysis", "AUTO", "-f", "null", "-"],
+        timeout=60,
+    )  # fmt: skip
+    assert 'Unable to parse "preanalysis" option value "AUTO" as boolean' in refused.stderr
+
+
+@pytest.mark.needs_gpu
 def test_av1_amf_pads_the_picture(tmp_path: Path) -> None:
     enc = VIDEO["av1_amf"]
     if not _hw_usable(enc):

@@ -295,6 +295,55 @@ async def test_a_job_added_to_an_idle_queue_leaves_the_countdown_alone(
     assert [s[0] for s in power.scheduled] == ["countdown-1", "countdown-2"]
 
 
+@pytest.mark.parametrize("action", ["quit", "sleep", "shutdown"])
+async def test_a_power_action_waits_for_the_jobs_that_a_row_start_left_waiting(
+    harness: Harness, power: FakePower, action: PowerAction
+) -> None:
+    """A queue row's Start (``own_batch=False``): the queue has not emptied while other jobs
+    wait; their end counts the started job too."""
+    h = harness
+    h.settings.queue.when_done = action
+    first, second = [await h.queue.add(h.job(name)) for name in ("First", "Second")]
+    h.queue.start(job_ids=[first.id], own_batch=False)
+    [ended] = await h.queue.wait([first.id])
+    assert ended.state is JobState.DONE
+    assert not h.queue.processing
+    assert power.scheduled == []
+    assert notifications(h, job=False) == []
+    h.queue.start(job_ids=[second.id], own_batch=False)
+    await h.queue.wait([second.id])
+    assert power.scheduled == [("countdown-1", action, "2 jobs done")]
+
+
+async def test_notify_reports_the_jobs_of_a_row_start_with_others_waiting(
+    harness: Harness, power: FakePower
+) -> None:
+    h = harness
+    h.settings.queue.when_done = "notify"
+    h.settings.queue.notifications = False
+    ids = [(await h.queue.add(h.job(name))).id for name in ("A", "B", "C")]
+    h.queue.start(job_ids=ids[:2], own_batch=False)
+    await h.queue.wait(ids[:2])
+    [note] = notifications(h)
+    assert (note.title, note.message) == ("Queue finished", "2 jobs done.")
+    assert h.queue.get(ids[2]).state is JobState.WAITING  # type: ignore[union-attr]
+
+
+async def test_a_command_s_jobs_are_a_batch_of_their_own(
+    harness: Harness, power: FakePower
+) -> None:
+    """``reframe encode`` (``own_batch``, the default): the action runs when its jobs end,
+    although another front end's job waits."""
+    h = harness
+    h.settings.queue.when_done = "shutdown"
+    others = await h.queue.add(h.job("Other"))
+    mine = await h.queue.add(h.job("Mine"))
+    h.queue.start(job_ids=[mine.id])
+    await h.queue.wait([mine.id])
+    assert power.scheduled == [("countdown-1", "shutdown", "1 job done")]
+    assert h.queue.get(others.id).state is JobState.WAITING  # type: ignore[union-attr]
+
+
 async def test_a_settings_change_does_not_cancel_the_countdown(
     harness: Harness, power: FakePower
 ) -> None:

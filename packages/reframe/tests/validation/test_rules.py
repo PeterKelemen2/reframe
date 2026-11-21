@@ -116,9 +116,13 @@ def sub(index: int, **changes: Any) -> Mod:
     return mod
 
 
-def crop(mode: str, rect: CropRect | None = None) -> Mod:
+def crop(mode: str, rect: CropRect | None = None, detection_error: str | None = None) -> Mod:
     def mod(s: Any) -> None:
-        s.job.dimensions.crop = CropSettings(mode=mode, rect=rect)  # type: ignore[arg-type]
+        s.job.dimensions.crop = CropSettings(
+            mode=mode,  # type: ignore[arg-type]
+            rect=rect,
+            detection_error=detection_error,
+        )
 
     return mod
 
@@ -946,6 +950,14 @@ CASES: list[Case] = [
         crop("conservative", CropRect(top=140, bottom=140)),
     ),
     Case(
+        "crop detection failed",
+        "dimensions.crop_detection_failed",
+        "dimensions.crop",
+        WARN,
+        crop("auto", detection_error="Crop detection failed on every frame."),
+        crop("auto", CropRect(top=140), detection_error="Crop detection failed on every frame."),
+    ),
+    Case(
         "manual crop without values",
         "dimensions.crop_missing",
         "dimensions.crop.rect",
@@ -1658,6 +1670,49 @@ NEGATIVE_CASES = [c for c in CASES if c.negative is not nothing]
 def test_negative(case: Case) -> None:
     issues = sc.check(build(case.negative))
     assert not sc.found(issues, case.code, case.path), issues
+
+
+@pytest.mark.parametrize(
+    ("params", "on"),
+    [
+        *((f"preanalysis={off}", False) for off in ("disabled", "DISABLE", "N", "00", "-1")),
+        ("preanalysis=auto", False),
+        *((f"preanalysis={on}", True) for on in ("enabled", "Yes", "01", "+1")),
+        ("preanalysis", True),
+        ("rc=04", True),
+        ("rc=hqcbr", True),
+        ("rc=3", False),
+        ("rc=QVBR", False),  # FFmpeg refuses it: no pre-analysis
+    ],
+)
+def test_amf_preanalysis_custom_params_are_read_as_ffmpeg_reads_them(params: str, on: bool) -> None:
+    small = dims(size=FitWithin(width=320, height=180))
+    issues = build(both(video(encoder="h264_amf", custom_params=params), small)).validate()
+    assert sc.found(issues, "encoder.preanalysis_picture_too_small", "video.custom_params") is on
+
+
+def test_a_track_name_variable_typo_has_a_fix() -> None:
+    def issue_of(name: str) -> Any:
+        found = build(cases_metadata.track_name(name)).validate()
+        return next(i for i in found if i.code == "metadata.name_variable_unknown")
+
+    typo = issue_of("{lang_nmae:upper} {chanels}")
+    assert typo.message == (
+        "{lang_nmae} and {chanels} are not track name variables, so the track name is written "
+        "as typed, braces and all. Did you mean {lang_name} and {channels}?"
+    )
+    (repair,) = typo.fixes
+    assert repair.label == "Use {lang_name} and {channels}"
+    assert [op.model_dump() for op in repair.patch] == [
+        {"op": "replace", "path": "/audio/0/metadata/name", "value": "{lang_name:upper} {channels}"}
+    ]
+    other = issue_of("{lang_name} {episode}")
+    assert other.fixes == []
+    assert other.message.startswith("{episode} is not a track name variable")
+    assert other.message.endswith(
+        "The variables of a track name are {bitrate}, {channels}, {codec}, {lang}, {lang_name}, "
+        "{lang_native}, {source_codec}, {title}."
+    )
 
 
 def test_every_code_has_a_case() -> None:
