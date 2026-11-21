@@ -46,7 +46,7 @@ from reframe.queue.process import resume_tree, suspend_tree
 from reframe.queue.runner import ActiveJob, JobRunner, Outcome
 from reframe.queue.store import STORE_FILE, QueueStore, row_of
 from reframe.queue.watchdog import STALL_AFTER, STEP_TIME_LIMIT, TICK
-from reframe.queue.whendone import WhenDoneActions
+from reframe.queue.whendone import POWER_LABELS, WhenDoneActions
 from reframe.validation import FileSystemView, LocalFileSystem
 
 __all__ = ["ACTIVE", "ENDED", "OUTPUT_CLAIMED", "QueueService"]
@@ -237,6 +237,8 @@ class QueueService:
         self._only: dict[str, None] | None = None
         """``start(job_ids=…)``: only these jobs are taken, in the order named (``None``: every
         waiting job). ``None`` whenever the runner is not processing."""
+        self._own_batch = True
+        """``start(job_ids=…, own_batch=…)`` of the jobs in :attr:`_only`."""
         self._closed = False
         self._opened = False
         self._store_busy = False
@@ -423,7 +425,7 @@ class QueueService:
         self._schedule()
         return job.model_copy(deep=True)
 
-    def start(self, *, job_ids: Sequence[str] | None = None) -> None:
+    def start(self, *, job_ids: Sequence[str] | None = None, own_batch: bool = True) -> None:
         """Start taking waiting jobs, in queue order, ``parallel_jobs`` at a time.
 
         ``job_ids`` takes only these jobs while they are waiting, so other waiting jobs stay as
@@ -431,6 +433,11 @@ class QueueService:
         When none of them is waiting or running any more, the runner goes idle, as after
         :meth:`stop`. A call while the runner is already taking jobs never narrows what it takes.
         Running state only: it is not saved, so a restored queue is idle.
+
+        ``own_batch`` (with ``job_ids``): the named jobs are a batch of their own, as a CLI
+        command's are, and the when-done action runs when they end. ``False`` (a queue row's
+        Start): while other jobs wait, Sleep, Shut down and Quit wait for them; Notify still
+        reports the named jobs.
         """
         self._check_open()
         self._ensure_open()
@@ -441,8 +448,10 @@ class QueueService:
                 self._job(job_id)
             if not self._processing:
                 only = named
+                self._own_batch = own_batch
             elif self._only is not None:
                 only = self._only | named
+                self._own_batch = self._own_batch and own_batch
         self._set_processing(True, only, "start")
         self._schedule()
 
@@ -933,15 +942,20 @@ class QueueService:
         user cancelled the last job or Reframe closed). See :mod:`reframe.queue.whendone`.
 
         "Emptied": nothing runs, and nothing is left that the runner would take: no waiting
-        job at all, or (``drained``) none of the jobs of ``start(job_ids=…)``."""
+        job at all, or (``drained``) none of the jobs of ``start(job_ids=…)``. A power action
+        after ``start(…, own_batch=False)`` needs no waiting job at all."""
         if self._closed or self._active:
             return
+        waiting = any(job.state is JobState.WAITING for job in self._jobs.values())
         if self._processing:
             if any(self._eligible(job) for job in self._jobs.values()):
                 return
-        elif not drained and any(job.state is JobState.WAITING for job in self._jobs.values()):
+        elif not drained and waiting:
             return  # stopped with jobs left: the queue did not empty
-        self._when.emptied(last, self._settings().queue.when_done)
+        action = self._settings().queue.when_done
+        if drained and waiting and not self._own_batch and action in POWER_LABELS:
+            return  # the batch goes on with the jobs that wait
+        self._when.emptied(last, action)
 
     async def _hold_inhibit(self, active: ActiveJob, job: QueueJob) -> None:
         """Take one count for the job (called with ``active.control`` held). The job holds it
