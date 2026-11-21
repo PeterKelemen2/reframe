@@ -67,6 +67,7 @@ const FAILED_LINES = 3
 // second click during a queueing does not queue the group twice.
 const busy = ref(false)
 const detectionTask = ref<string | null>(null)
+let detectionCancelled = false
 const question = shallowRef<GroupQuestion | null>(null)
 let reply: ((choice: GroupAnswer) => void) | null = null
 
@@ -187,6 +188,7 @@ export function useQueueGroup(): QueueGroup {
     // The dialog gives the focus back to what had it when it opened, which may be the page.
     const opener = document.activeElement
     let choice: GroupAnswer | null = null
+    detectionCancelled = false
     try {
       commitFocusedField()
       const target = editor.target
@@ -206,6 +208,8 @@ export function useQueueGroup(): QueueGroup {
       } finally {
         detectionTask.value = null
       }
+      // A Cancel that came as the task ended (the server had nothing left to cancel).
+      if (detectionCancelled) return
       let rows = resolution.rows ?? []
       const failed = rows.filter((row) => row.status === 'error')
       if (failed.length > 0) {
@@ -250,6 +254,7 @@ export function useQueueGroup(): QueueGroup {
   async function cancelDetection(): Promise<void> {
     const taskId = detectionTask.value
     if (taskId === null) return
+    detectionCancelled = true
     try {
       await tasks.cancel(taskId)
     } catch (error) {

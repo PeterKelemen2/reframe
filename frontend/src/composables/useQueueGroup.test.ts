@@ -372,6 +372,22 @@ describe('the crop detection before queueing', () => {
     expect(group.busy.value).toBe(false)
   })
 
+  it('queues nothing when Cancel comes as the detection ends', async () => {
+    server.on('POST /api/tasks/t-crop/cancel', { cancelled: false })
+    const answer = detecting()
+    const group = setup()
+    const running = group.queueGroup('g1')
+    await flushPromises()
+    const cancelled = group.cancelDetection()
+    answer.resolve(withRow(animeResolution(), fixedE11()))
+    await cancelled
+    await running
+    expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([])
+    await group.queueGroup('g1')
+    expect(queueBodies()).toHaveLength(1)
+  })
+
   it('a failed detection queues nothing and says why', async () => {
     const answer = detecting()
     const group = setup()
