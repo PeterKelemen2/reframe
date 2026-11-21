@@ -26,7 +26,7 @@ from reframe.models.job import (
 )
 from reframe.models.media import AudioStream, MediaSource, SubtitleStream, VideoStream
 from reframe.naming.context import audio_channels_label
-from reframe.naming.template import Value, parse_template, render, template_variables
+from reframe.naming.template import Template, Value, parse_template, render, template_variables
 from reframe.probe.names import codec_name, subtitle_display_name
 
 if TYPE_CHECKING:
@@ -37,6 +37,7 @@ __all__ = [
     "TrackNames",
     "expand_track_name",
     "expand_track_names",
+    "is_track_name_template",
     "track_names",
     "written_audio_values",
 ]
@@ -67,15 +68,26 @@ class TrackNames:
     subtitles: list[str | None]
 
 
-def expand_track_name(name: str | None, values: Mapping[str, Value]) -> str | None:
-    """``name`` rendered with ``values`` when it is a template; else ``name`` as it is."""
-    if not _has_brace(name):
-        return name
-    assert name is not None
+def _template(name: str | None) -> Template | None:
+    if name is None or not _has_brace(name):
+        return None
     template = parse_template(name)
     if template.errors or any(
         var.name not in TRACK_NAME_VARIABLES for var in template_variables(template.nodes)
     ):
+        return None
+    return template
+
+
+def is_track_name_template(name: str | None) -> bool:
+    """Whether ``name`` is rendered for its track rather than written as it is."""
+    return _template(name) is not None
+
+
+def expand_track_name(name: str | None, values: Mapping[str, Value]) -> str | None:
+    """``name`` rendered with ``values`` when it is a template; else ``name`` as it is."""
+    template = _template(name)
+    if template is None:
         return name
     segments = render(template, values)
     return "/".join("".join(piece.text for piece in segment) for segment in segments).strip()

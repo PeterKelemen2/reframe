@@ -34,6 +34,7 @@ from reframe.models.template import (
     TrackMetadataTemplate,
     TrackSelector,
 )
+from reframe.naming.track_names import is_track_name_template
 
 __all__ = [
     "as_template",
@@ -78,10 +79,12 @@ def derive_selector(
     return selector.model_copy(update={"nth": nth})
 
 
-def _escape(text: str) -> str:
-    """A literal name as a name template: braces doubled (``<`` and ``>`` are template groups
-    and cannot be written)."""
-    return text.replace("{", "{{").replace("}", "}}")
+def _name_template(name: str) -> str:
+    """A job track's name as a name template: a track name template as it is, else the literal
+    name with its braces doubled (``<`` and ``>`` are template groups and cannot be written)."""
+    if is_track_name_template(name):
+        return name
+    return name.replace("{", "{{").replace("}", "}}")
 
 
 def _metadata(meta: TrackMetadata, stream: AudioStream | SubtitleStream) -> TrackMetadataTemplate:
@@ -90,7 +93,7 @@ def _metadata(meta: TrackMetadata, stream: AudioStream | SubtitleStream) -> Trac
     name = meta.name
     return TrackMetadataTemplate(
         language=meta.language,
-        name_template=None if name is None or name == stream.title else _escape(name),
+        name_template=None if name is None or name == stream.title else _name_template(name),
         **{flag: getattr(meta, flag) for flag in _FLAGS},
     )
 

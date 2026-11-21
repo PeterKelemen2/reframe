@@ -31,6 +31,7 @@ from reframe.models import (
     TrackRole,
     TrackSelector,
 )
+from reframe.naming.track_names import track_names
 
 from . import anime as A
 
@@ -208,6 +209,17 @@ def test_a_name_with_braces_is_a_literal() -> None:
         resolve_tracks(derive_template(job, e01, {"audio"}), e01).draft.audio[0].metadata.name
         == "Japanese {5.1}"
     )
+
+
+def test_a_track_name_template_stays_a_template() -> None:
+    e01 = A.recorded(1, 1)
+    job = A.example_job(e01)
+    job.audio[0].metadata.name = "{lang_name} {channels}< ({title})>"
+    (rule, _) = derive_template(job, e01, {"audio"}).audio_rules
+    assert rule.metadata.name_template == "{lang_name} {channels}< ({title})>"
+    expected = track_names(job, e01).audio[0]
+    resolved = resolve_tracks(derive_template(job, e01, {"audio"}), e01).draft.audio[0]
+    assert resolved.metadata.name == expected
 
 
 def test_as_template_leaves_out_the_preset_only_fields() -> None:
