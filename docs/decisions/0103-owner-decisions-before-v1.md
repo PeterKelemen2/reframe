@@ -219,3 +219,32 @@ ranks below `av1dec`, and AV1 from hardware encoders is decoded in software too.
 decodes at about 19 fps on the Ryzen 5 5600, so its preview may stutter. Hardware AV1 decoding
 in the window needs a newer GStreamer than Ubuntu 22.04 has.
 
+## Follow-up (2026-11-21): the review fixes
+
+Two reviews of the round found one blocker, two majors and minors; all are fixed and each has a
+test that failed before.
+
+- **Item 6:** the output check after a header edit expands the track names as `build_plan`
+  does (a job with a template and a `pt-BR` track failed after a good encode). `{channels}`,
+  `{codec}` and `{bitrate}` are the values the builder writes (`planned_audio`); a subtitle's
+  `{codec}` is the written codec (`mov_text` in MP4). A variable track names do not have gets
+  the warning `metadata.name_variable_unknown`, with a fix when each one is close to a variable
+  (`{lang_nmae}` gives `{lang_name}`); a name with no track variable and nothing close to one
+  (`Signs {Karaoke}`) stays a title. Apply to group keeps a template.
+- **Item 5:** in the web UI the detection is a task (`POST /api/batch/detect-crops`, kind
+  `batch_cropdetect`) with progress per file and cancel; `batch/resolve` and `resolve-run` never
+  detect, so a request never waits for FFmpeg. A failed detection is kept in the job
+  (`CropSettings.detection_error`, an optional field, no schema bump), is the warning
+  `dimensions.crop_detection_failed`, and is named in the *Queued* toast. A second
+  `reframe batch` run leaves out earlier outputs named after the detected crop.
+- **Item 1:** a `level` in the custom parameters gets no rate buffer (NVENC refuses the pair
+  with "Invalid Level"; checked on the GTX 1050 Ti).
+- **Item 9:** `preanalysis` and `rc` custom values are read as FFmpeg reads them
+  (`testdata/README.md`).
+- **The when-done answer:** `start(job_ids, own_batch=False)`, which a queue row's Start sends,
+  keeps Sleep, Shut down and Quit until no job waits, and the batch counts go on.
+  `own_batch=True` (the default: `reframe encode`, `reframe batch`, `reframe queue retry`) keeps
+  a command's jobs a batch of their own.
+- **Item 10:** after Start or Retry the keyboard focus never lands on Cancel.
+- **Settings:** the Output naming preview uses the default preset's container.
+
