@@ -101,6 +101,18 @@ async def test_each_file_gets_the_crop_detected_in_it(
     assert crops(careful.rows) == [CropSettings(mode="conservative", rect=CropRect())]
 
 
+async def test_the_detected_crop_keeps_the_unknown_fields_of_the_crop(
+    app: Reframe, fixture_media: Media, tmp_path: Path
+) -> None:
+    newer = template().model_copy(deep=True)
+    newer.dimensions.crop = CropSettings.model_validate({"mode": "auto", "newer_field": 1})
+    files = episodes(fixture_media, tmp_path, 1)
+    (row,) = (await app.batch.resolve(newer, files, detect_crop=True)).rows
+    assert row.job is not None
+    crop = row.job.dimensions.crop
+    assert (crop.rect, crop.model_extra) == (LETTERBOX, {"newer_field": 1})
+
+
 async def test_a_detection_is_kept_and_a_manual_or_no_crop_is_not_measured(
     app: Reframe, fixture_media: Media, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

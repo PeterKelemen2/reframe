@@ -34,7 +34,7 @@ from reframe.models.batch import (
     Resolution,
 )
 from reframe.models.batch import TemplateSection as Section
-from reframe.models.geometry import CropRect, CropSettings
+from reframe.models.geometry import CropRect
 from reframe.models.issues import JsonPatchOp, Severity, ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.media import MediaSource
@@ -227,7 +227,7 @@ class _CropRun:
                 while len(self._cache) > CROP_CACHE_SIZE:
                     del self._cache[next(iter(self._cache))]
         rect = detection.auto if mode == "auto" else detection.conservative
-        job.dimensions.crop = CropSettings(mode=mode, rect=rect)
+        job.dimensions.crop = job.dimensions.crop.model_copy(update={"rect": rect})
         name = "automatic" if mode == "auto" else "conservative"
         return [f"Crop: detected in this file ({name}): {_edges(rect)}."], []
 
