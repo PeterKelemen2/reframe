@@ -206,7 +206,7 @@ async def test_the_task_result_is_the_run_with_the_crop_detected_in_each_file(
     assert [Path(row["path"]).name for row in rows] == ["Box S01E01.mkv", "Box S01E02.mkv"]
     bars = {"top": 22, "bottom": 24, "left": 0, "right": 0}
     assert [row["job"]["dimensions"]["crop"] for row in rows] == [
-        {"mode": "auto", "rect": bars}
+        {"mode": "auto", "rect": bars, "detection_error": None}
     ] * 2
 
 
