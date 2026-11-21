@@ -4,9 +4,10 @@
 # REFRAME_FFMPEG), then appimage-video.py plays each one through WebKitWebDriver.
 # Usage: desktop/packaging/linux/appimage-video-test.sh FILE.AppImage [yes|no] [gpu]
 # The second argument is whether the shell must say that the window plays video (default yes).
-# Without a GPU only VP9 must play; every other clip must end in the preview's frame compare.
-# With `gpu` the container gets /dev/dri and Debian's libva with its VA-API drivers (Mesa, Intel
-# iHD), and H.264, HEVC and the AV1 of this machine's VA-API encoder must play too.
+# Without a GPU VP9 and AV1 (SVT-AV1, 8 and 10 bit) must play; H.264 and HEVC must end in the
+# preview's frame compare. With `gpu` the container gets /dev/dri and Debian's libva with its
+# VA-API drivers (Mesa, Intel iHD), and H.264, HEVC and the AV1 of this machine's VA-API encoder
+# must play too.
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -14,6 +15,8 @@ appimage=$(realpath "${1:?usage: appimage-video-test.sh FILE.AppImage [yes|no] [
 expect=${2:-yes}
 gpu=${3:-}
 ffmpeg=${REFRAME_FFMPEG:-ffmpeg}
+# SVT-AV1 prints its banner whatever its log-level parameter says.
+export SVT_LOG=1
 clips=$(mktemp -d)
 trap 'rm -rf "$clips"' EXIT
 
@@ -46,15 +49,13 @@ clip vp9-ac3.mkv $vp9 -c:a ac3
 clip vp9-eac3.mkv $vp9 -c:a eac3
 clip vp9.mkv $vp9 -an
 
-must_play=vp9
+must_play=vp9,av1
 device=
 va_packages=
 if [ "$gpu" = gpu ]; then
-    must_play=vp9,h264,hevc
+    must_play=$must_play,h264,hevc
     device=--device=/dev/dri
     va_packages="libva2 libva-drm2 mesa-va-drivers intel-media-va-driver vainfo"
-    # GStreamer 1.20's AV1 decoder base fails on the hidden frames that software encoders write
-    # (av1-*: frame compare); a hardware encoder's AV1 has none and must play.
     if "$ffmpeg" -hide_banner -loglevel error -y -vaapi_device /dev/dri/renderD128 \
         -f lavfi -i testsrc2=size=320x180:rate=25:duration=3 -f lavfi -i sine=frequency=440:duration=3 \
         -vf format=nv12,hwupload -c:v av1_vaapi -c:a libopus "$clips/av1hw-opus.mkv" 2> /dev/null; then

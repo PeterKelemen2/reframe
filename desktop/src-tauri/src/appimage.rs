@@ -47,10 +47,12 @@ const GST_REGISTRY: &str = "GST_REGISTRY_1_0";
 #[cfg(unix)]
 const GST_RANKS: &str = "GST_PLUGIN_FEATURE_RANK";
 
-/// The image's VA-API decoders one above GStreamer's primary rank: GStreamer 1.20 ranks them
-/// none, so its player never picks them, and a GPU decoder goes before a software one.
+/// The ranks of the image's VA-API decoders, which GStreamer 1.20 ranks none, so its player never
+/// picks them. H.264 and HEVC go one above primary: before any software decoder. The AV1 one goes
+/// one below primary, after libaom's `av1dec`: it fails on the hidden frames that software
+/// encoders write, and the player tries no other decoder after a decode error.
 #[cfg(unix)]
-const VA_DECODER_RANKS: &str = "vah264dec:257,vah265dec:257,vaav1dec:257";
+const VA_DECODER_RANKS: &str = "vah264dec:257,vah265dec:257,vaav1dec:255";
 
 /// Whether AppRun points GStreamer at the plugins inside the image.
 #[cfg(unix)]
@@ -299,6 +301,19 @@ mod tests {
                 gstreamer_ranks(vars(&own)),
                 Some(OsString::from(format!("{VA_DECODER_RANKS},vah264dec:NONE")))
             );
+        }
+
+        #[test]
+        fn the_va_av1_decoder_ranks_below_libaom_and_the_others_above_it() {
+            // av1dec (libaom) has GStreamer's primary rank.
+            const PRIMARY: u32 = 256;
+            let ranks: HashMap<&str, u32> = VA_DECODER_RANKS
+                .split(',')
+                .map(|pair| pair.split_once(':').unwrap())
+                .map(|(name, rank)| (name, rank.parse().unwrap()))
+                .collect();
+            assert!(ranks["vaav1dec"] < PRIMARY);
+            assert!(ranks["vah264dec"] > PRIMARY && ranks["vah265dec"] > PRIMARY);
         }
 
         #[test]

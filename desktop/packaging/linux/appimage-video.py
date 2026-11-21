@@ -2,7 +2,8 @@
 can play video (``webview_plays_video``), then for each clip whether a ``<video>`` plays it
 (``currentTime`` advances, with a picture or without one: no decoder for its video), reports a
 media error, or neither; and that the web process is still there after each one. Prints one JSON
-line per clip, the VA-API libraries that the web processes loaded, and a summary.
+line per clip, the VA-API and AV1 decoder libraries that the web processes loaded, and a
+summary.
 
 A clip's codec is its file name up to the first ``-`` or ``.``. Exits 1 when the shell's answer
 is not ``--expect-player``, a clip ends in neither state, the web process is gone, a clip of a
@@ -104,8 +105,9 @@ def as_expected(result: dict[str, Any], must_play: bool) -> bool:
     return bool(result["state"] == "error" or loaded == 0)
 
 
-def web_process_va_libraries() -> list[str]:
-    """The libva, VA-API driver and GStreamer VA files that WebKit's web processes have mapped."""
+def web_process_decoder_libraries() -> list[str]:
+    """The libva, VA-API driver, GStreamer VA and libaom files that WebKit's web processes have
+    mapped."""
     found: set[str] = set()
     for proc in Path("/proc").iterdir():
         try:
@@ -117,9 +119,9 @@ def web_process_va_libraries() -> list[str]:
         for line in maps.splitlines():
             fields = line.split(maxsplit=5)
             name = fields[-1].rsplit("/", 1)[-1] if len(fields) == 6 else ""
-            if name.startswith(("libva.so", "libva-drm.so", "libgstva")) or name.endswith(
-                "_drv_video.so"
-            ):
+            if name.startswith(
+                ("libva.so", "libva-drm.so", "libgstva", "libaom.so", "libgstaom")
+            ) or name.endswith("_drv_video.so"):
                 found.add(fields[-1])
     return sorted(found)
 
@@ -190,7 +192,7 @@ def main() -> int:
             summary.setdefault(result["state"] if alive else "crashed", []).append(clip.name)
             if result["state"] == "stuck" or not alive or not expected:
                 failed = True
-        print(json.dumps({"web_process_va": web_process_va_libraries()}), flush=True)
+        print(json.dumps({"web_process_decoders": web_process_decoder_libraries()}), flush=True)
         print(json.dumps({"summary": summary}), flush=True)
     finally:
         if driver.session:
