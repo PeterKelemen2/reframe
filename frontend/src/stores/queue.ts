@@ -46,9 +46,12 @@ interface Awaited {
   answeredAt: number
 }
 
-/** Start taking waiting jobs; `jobIds`: only these. */
+/**
+ * Start taking waiting jobs; `jobIds`: only these. Jobs started from the queue are not a batch
+ * of their own: Sleep, Shut down and Quit wait for the jobs that still wait.
+ */
 async function start(jobIds?: string[]): Promise<void> {
-  const body = jobIds === undefined ? undefined : { job_ids: jobIds }
+  const body = jobIds === undefined ? undefined : { job_ids: jobIds, own_batch: false }
   unwrap(await api.POST('/api/queue/start', { body }))
 }
 

@@ -371,3 +371,24 @@ async def test_a_jobs_own_paths_come_back_as_sent(make_api: ApiFactory) -> None:
         response = await api.client.post("/api/queue", json={"jobs": [job]})
         [added] = response.json()
         assert added["settings"]["output"]["path"] == job["output"]["path"]
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (None, {}),
+        ({"job_ids": ["a"]}, {"job_ids": ["a"], "own_batch": True}),
+        ({"job_ids": ["a"], "own_batch": False}, {"job_ids": ["a"], "own_batch": False}),
+    ],
+)
+async def test_start_says_whether_the_jobs_are_a_batch_of_their_own(
+    api: Api,
+    monkeypatch: pytest.MonkeyPatch,
+    body: dict[str, object] | None,
+    expected: dict[str, object],
+) -> None:
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(api.reframe.queue, "start", lambda **kwargs: calls.append(kwargs))
+    response = await api.client.post("/api/queue/start", json=body)
+    assert response.status_code == 204
+    assert calls == [expected]

@@ -417,7 +417,12 @@ describe('the queue store', () => {
 
   it.each([
     ['start', (q: Q) => q.start(), 'POST /api/queue/start', undefined],
-    ['start some', (q: Q) => q.start(['a']), 'POST /api/queue/start', { job_ids: ['a'] }],
+    [
+      'start some',
+      (q: Q) => q.start(['a']),
+      'POST /api/queue/start',
+      { job_ids: ['a'], own_batch: false },
+    ],
     ['stop', (q: Q) => q.stop(), 'POST /api/queue/stop', undefined],
     ['pause all', (q: Q) => q.pauseAll(), 'POST /api/queue/pause', undefined],
     ['resume all', (q: Q) => q.resumeAll(), 'POST /api/queue/resume', undefined],

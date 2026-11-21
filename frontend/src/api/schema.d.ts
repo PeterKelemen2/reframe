@@ -3243,6 +3243,12 @@ export interface components {
              */
             mode: "auto" | "conservative" | "none" | "manual";
             rect?: components["schemas"]["CropRect"] | null;
+            /**
+             * Detection Error
+             * @description Why crop detection failed in this job's file (``auto`` and ``conservative`` without
+             *     ``rect``): the picture is not cropped. ``None``: detection did not fail.
+             */
+            detection_error?: string | null;
         };
         /**
          * DataStream
@@ -6669,6 +6675,14 @@ export interface components {
              * @description Only these jobs start; other waiting jobs stay waiting. ``null``: every waiting job.
              */
             job_ids?: string[] | null;
+            /**
+             * Own Batch
+             * @description With ``job_ids``: ``true`` makes the jobs a batch of their own (a CLI command's), so the
+             *     when-done action runs when they end; ``false`` (a queue row's Start) leaves Sleep, Shut down
+             *     and Quit to the end of the jobs that still wait.
+             * @default true
+             */
+            own_batch: boolean;
         };
         /**
          * SubtitleDefaults

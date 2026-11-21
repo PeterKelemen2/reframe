@@ -62,6 +62,10 @@ class StartQueue(BaseModel):
 
     job_ids: list[str] | None = None
     """Only these jobs start; other waiting jobs stay waiting. ``null``: every waiting job."""
+    own_batch: bool = True
+    """With ``job_ids``: ``true`` makes the jobs a batch of their own (a CLI command's), so the
+    when-done action runs when they end; ``false`` (a queue row's Start) leaves Sleep, Shut down
+    and Quit to the end of the jobs that still wait."""
 
 
 class QueueOrder(BaseModel):
@@ -154,7 +158,10 @@ async def add(
 @router.post("/queue/start", status_code=204)
 async def start(reframe: ReframeDep, body: Annotated[StartQueue | None, Body()] = None) -> None:
     """Start taking waiting jobs in queue order, ``parallel_jobs`` at a time."""
-    reframe.queue.start(job_ids=None if body is None else body.job_ids)
+    if body is None:
+        reframe.queue.start()
+    else:
+        reframe.queue.start(job_ids=body.job_ids, own_batch=body.own_batch)
 
 
 @router.post("/queue/stop", status_code=204)
