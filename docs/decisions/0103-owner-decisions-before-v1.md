@@ -199,3 +199,12 @@ SVT-AV1, libaom and rav1e output ("Already have picture for current frame"): suc
 the frame compare, with or without a GPU. gst-plugins-bad's `aom` plugin (`av1dec`, libaom
 3.3.0, BSD-2, no FFmpeg; about 5.4 MB) played every AV1 clip in a test without a GPU.
 
+
+## Follow-up (2026-11-21): the owner's answers after the review
+
+- **Software AV1 in the AppImage:** bundle gst-plugins-bad's `aom` plugin (`av1dec`, libaom
+  3.3.0, BSD-2, no FFmpeg). `vaav1dec` must not rank above `av1dec`, or AV1 from software
+  encoders fails on a GPU host before the software decoder is tried.
+- **The when-done action after Start on one job:** Sleep, Shut down and Quit run only when no
+  waiting job is left; Notify still says that the started jobs finished. `reframe encode` keeps
+  its behaviour.
