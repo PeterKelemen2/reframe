@@ -253,6 +253,52 @@ def test_a_missing_package_list_stops_the_build_before_docker(tmp_path: Path) ->
     assert calls == []
 
 
+def _bundle_calls(tmp_path: Path, version: str) -> list[str]:
+    """Run build-in-container.sh's bundling step with a node that answers ``version`` and an npx
+    that only logs its arguments, one line per call."""
+    lines = (BUILD / "build-in-container.sh").read_text().splitlines()
+    start = next(i for i, line in enumerate(lines) if line.startswith("version=$(node"))
+    end = lines.index("esac", start)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "node").write_text(f"#!/bin/sh\necho {version}\n")
+    (bin_dir / "npx").write_text('#!/bin/sh\necho "$*" >> "$NPX_LOG"\n')
+    for tool in ("node", "npx"):
+        (bin_dir / tool).chmod(0o755)
+    (tmp_path / "desktop").mkdir()
+    log = tmp_path / "npx.log"
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", NPX_LOG=str(log))
+    script = "set -eu\n" + "\n".join(lines[start : end + 1])
+    subprocess.run(["sh", "-c", script], cwd=tmp_path, env=env, check=True)
+    return log.read_text().splitlines()
+
+
+@skip_windows
+def test_a_release_version_is_bundled_by_one_tauri_build(tmp_path: Path) -> None:
+    assert _bundle_calls(tmp_path, "1.2.0") == ["tauri build --verbose"]
+
+
+@skip_windows
+@pytest.mark.parametrize(
+    ("version", "rpm_version", "rpm_release"),
+    [("0.1.0-dev.0", "0.1.0", "0.dev.0"), ("1.0.0-rc.1", "1.0.0", "0.rc.1")],
+)
+def test_the_rpm_of_a_pre_release_takes_the_pre_release_into_its_release(
+    tmp_path: Path, version: str, rpm_version: str, rpm_release: str
+) -> None:
+    build, bundle = _bundle_calls(tmp_path, version)
+
+    assert build == "tauri build --verbose --bundles deb,appimage"
+    prefix = "tauri bundle --verbose --bundles rpm --config "
+    assert bundle.startswith(prefix)
+    config = json.loads(bundle.removeprefix(prefix))
+    # rpm refuses a `-` in the version; release 0.x sorts before the final version's release 1.
+    assert config == {
+        "version": rpm_version,
+        "bundle": {"linux": {"rpm": {"release": rpm_release}}},
+    }
+
+
 def test_the_bundler_gets_the_pinned_runtime_and_the_appimage_is_checked_against_it() -> None:
     lines = (BUILD / "build-in-container.sh").read_text().splitlines()
 
