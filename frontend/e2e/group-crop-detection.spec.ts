@@ -65,7 +65,7 @@ test('Add group to queue detects the crop of each file before it queues them', a
   await expect(banner.locator('[data-state="detecting-crop"]')).toHaveCount(0)
   const jobs = await jobsOf(request, folder)
   expect(jobs.map((job) => job.settings.dimensions?.crop)).toEqual(
-    Array.from({ length: 3 }, () => ({ mode: 'auto', rect: BARS })),
+    Array.from({ length: 3 }, () => ({ mode: 'auto', rect: BARS, detection_error: null })),
   )
   const [task] = (await readTasks(request, 'batch_cropdetect')).slice(-1)
   expect(task?.state).toBe('done')
