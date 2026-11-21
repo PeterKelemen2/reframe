@@ -3900,3 +3900,14 @@ Checked for the help texts of the advanced options (FFmpeg n9.0.2, RX 7600 with 
 - SVT-AV1's `max-qp` also works with CRF (36 KB against 408 KB), although the app's help names
   VBR and CBR only.
 - VP9's under/overshoot default of 25 is from the libvpx source; test encodes could not show it.
+
+### GStreamer's VA-API decoders in the AppImage (D-8, decision 0103)
+
+- GStreamer 1.20's `va` decoders (`vah264dec`, `vah265dec`, `vaav1dec`) have rank none, so
+  playbin does not pick them without `GST_PLUGIN_FEATURE_RANK`.
+- libva 2.14 (Ubuntu 22.04) tries `__vaDriverInit_1_14` down to `__vaDriverInit_1_0` only;
+  Mesa 26.2's radeonsi exports only `__vaDriverInit_1_24`, so 2.14 cannot load it.
+- `vaav1dec` 1.20 fails on AV1 with hidden frames (SVT-AV1, libaom, rav1e output): "Already have
+  picture for current frame". AV1 from `av1_vaapi` and `av1_amf` plays.
+- Ubuntu 22.04 has no GStreamer dav1d plugin.
+

@@ -186,3 +186,16 @@ owner's choice (open). Item 13 works as written; the dialog is mounted in `App.v
 - **Item 5** in the web UI: *Add group to queue* asks `batch/resolve-run` with `detect_crop`;
   the matrix shown while editing does not detect.
 
+## Follow-up (2026-11-20): the AppImage's decoders, built
+
+The AppImage carries gst-plugins-bad 1.20.3's `va` and `videoparsersbad` plugins (+0.5 MB).
+GStreamer 1.20 ranks the `va` decoders none, so the shell sets `GST_PLUGIN_FEATURE_RANK` (257;
+the user's own ranks come after it) inside the AppImage. The plugin loads the host's libva,
+because no libva is in the image's `usr/lib`: Ubuntu 22.04's libva 2.14 cannot load a driver
+that exports only `__vaDriverInit_1_24` (Mesa 26.2). With the RX 7600, H.264, HEVC and AV1
+from hardware encoders play. **Deviation:** Ubuntu 22.04 has no GStreamer dav1d plugin, so AV1
+has no software decoder, and GStreamer 1.20's AV1 decoder fails on the hidden frames of
+SVT-AV1, libaom and rav1e output ("Already have picture for current frame"): such clips end in
+the frame compare, with or without a GPU. gst-plugins-bad's `aom` plugin (`av1dec`, libaom
+3.3.0, BSD-2, no FFmpeg; about 5.4 MB) played every AV1 clip in a test without a GPU.
+
