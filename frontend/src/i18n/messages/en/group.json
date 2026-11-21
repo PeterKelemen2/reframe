@@ -47,7 +47,10 @@
     "scopeFile": "This file only ({label})",
     "inGroup": "In group “{name}”",
     "matrixError": "The group could not be checked: {reason}",
-    "retry": "Try again"
+    "retry": "Try again",
+    "detecting": "Detecting the crop…",
+    "cancelDetection": "Cancel",
+    "cancelDetectionLabel": "Cancel the crop detection: nothing is queued"
   },
   "apply": {
     "title": "Apply to group “{name}”",

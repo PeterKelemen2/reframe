@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import SelectButton from 'primevue/selectbutton'
-import { computed, useId } from 'vue'
+import { computed, onMounted, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { Schemas } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import Section from '@/components/base/Section.vue'
 import NamingOptionsEditor from '@/components/naming/NamingOptionsEditor.vue'
+import { usePresetsStore } from '@/stores/presets'
 import { useSourcesStore } from '@/stores/sources'
 
 import RefusalList from './RefusalList.vue'
@@ -17,7 +18,16 @@ type OutputDefaults = Schemas['OutputDefaults']
 
 const { t } = useI18n()
 const sources = useSourcesStore()
+const presets = usePresetsStore()
 const locked = useSettingsLocked()
+
+onMounted(() => void presets.ensureLoaded().catch(() => undefined))
+
+/** The preset decides the container: the preview names as the default preset would. */
+const container = computed(() => {
+  const id = presets.defaultId
+  return (id === null ? undefined : presets.byId(id)?.output?.container) ?? 'mkv'
+})
 
 const naming = useNamingSetting()
 const namingTitle = useId()
@@ -91,6 +101,7 @@ const partialOptions = computed(() => [
         v-if="naming.naming.value"
         :model-value="naming.naming.value"
         :source-ids="sourceIds"
+        :container="container"
         :disabled="locked"
         @update:model-value="naming.edit"
       />

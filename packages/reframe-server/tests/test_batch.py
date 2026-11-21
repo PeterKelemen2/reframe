@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
+import shutil
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from reframe.models import JobDraft, JobSettings, JobTemplate, Preset, VideoSettings
+from reframe.models import JobDraft, JobSettings, JobTemplate, Preset, TaskInfo, VideoSettings
 from reframe_testing.server import Api
 
 pytestmark = pytest.mark.anyio
 
 QUALITY = {"op": "replace", "path": "/video/rate_control/value", "value": 30}
+DETECT = "detect-crops"
 
 
 async def add_sources(api: Api, count: int = 2) -> list[str]:
@@ -114,24 +117,97 @@ async def test_resolve_run_groups_and_resolves(api: Api) -> None:
 @pytest.mark.parametrize(
     ("route", "method"), [("resolve", "resolve"), ("resolve-run", "resolve_batch")]
 )
-@pytest.mark.parametrize("detect", [True, False])
-async def test_the_crop_is_detected_only_when_asked(
-    api: Api, monkeypatch: pytest.MonkeyPatch, route: str, method: str, detect: bool
+async def test_the_answered_resolves_never_detect_the_crop(
+    api: Api, monkeypatch: pytest.MonkeyPatch, route: str, method: str
 ) -> None:
     asked: list[bool] = []
     real = getattr(api.reframe.batch, method)
 
     async def spy(*args: Any, **kwargs: Any) -> Any:
-        asked.append(kwargs["detect_crop"])
+        asked.append(kwargs.get("detect_crop", False))
         return await real(*args, **kwargs)
 
     monkeypatch.setattr(api.reframe.batch, method, spy)
     body: dict[str, Any] = {"source_ids": await add_sources(api, 1)}
-    if detect:
-        body["detect_crop"] = True
     response = await api.client.post(f"/api/batch/{route}", json=body)
     assert response.status_code == 200
-    assert asked == [detect]
+    assert asked == [False]
+    response = await api.client.post(f"/api/batch/{route}", json={**body, "detect_crop": True})
+    assert response.status_code == 422
+
+
+async def ended(api: Api, response: Any) -> TaskInfo:
+    """The task of a ``202`` answer, once it has ended."""
+    assert response.status_code == 202, response.text
+    task_id = response.json()["task_id"]
+    assert response.headers["location"] == f"/api/tasks/{task_id}"
+    await asyncio.wait_for(api.reframe.tasks.wait(task_id), 60)
+    return TaskInfo.model_validate((await api.client.get(f"/api/tasks/{task_id}")).json())
+
+
+async def test_detecting_the_crops_is_a_task_with_progress_per_file_that_cancel_stops(
+    api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ids = await add_sources(api)
+    measuring = asyncio.Event()
+    given: dict[str, Any] = {}
+    real = api.reframe.batch.resolve_batch
+
+    async def measure(*args: Any, **kwargs: Any) -> Any:
+        if not kwargs.get("detect_crop"):
+            return await real(*args, **kwargs)
+        given.update(kwargs)
+        kwargs["progress"](api.media / "Show S01E02.mkv", 2, 2)
+        measuring.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(api.reframe.batch, "resolve_batch", measure)
+    response = await api.client.post(f"/api/batch/{DETECT}", json={"source_ids": ids})
+    assert response.status_code == 202, response.text
+    task_id = response.json()["task_id"]
+    await asyncio.wait_for(measuring.wait(), 10)
+    running = (await api.client.get(f"/api/tasks/{task_id}")).json()
+    assert (running["kind"], running["state"], running["progress"], running["message"]) == (
+        "batch_cropdetect",
+        "running",
+        50.0,
+        "Detecting the crop: file 2 of 2",
+    )
+    cancelled = await api.client.post(f"/api/tasks/{task_id}/cancel")
+    assert cancelled.json() == {"cancelled": True}
+    task = await asyncio.wait_for(api.reframe.tasks.wait(task_id), 10)
+    assert (task.state, task.result) == ("cancelled", None)
+    assert given["cancel"].cancelled
+
+
+@pytest.mark.needs_ffmpeg
+async def test_the_task_result_is_the_run_with_the_crop_detected_in_each_file(
+    api: Api, fixture_media: Callable[[str], Path]
+) -> None:
+    letterbox = api.add_fixture("letterbox", fixture_media)
+    ids = []
+    for number in (1, 2):
+        copy = api.media / f"Box S01E0{number}.mkv"
+        shutil.copyfile(letterbox, copy)
+        await api.reframe.sources.probe(copy)
+        ids.append(api.app.state.sources.add(copy))
+    body = {"template": {"dimensions": {"crop": {"mode": "auto"}}}, "source_ids": ids}
+    answered = (await api.client.post("/api/batch/resolve-run", json=body)).json()
+    [plain] = answered["resolutions"]
+    assert [row["job"]["dimensions"]["crop"]["rect"] for row in plain["rows"]] == [None, None]
+
+    task = await ended(api, await api.client.post(f"/api/batch/{DETECT}", json=body))
+    assert task.state == "done", task.error
+    run: Any = task.result
+    [group] = run["grouping"]["groups"]
+    [resolution] = run["resolutions"]
+    assert resolution["group"]["id"] == group["id"]
+    rows = resolution["rows"]
+    assert [Path(row["path"]).name for row in rows] == ["Box S01E01.mkv", "Box S01E02.mkv"]
+    bars = {"top": 22, "bottom": 24, "left": 0, "right": 0}
+    assert [row["job"]["dimensions"]["crop"] for row in rows] == [
+        {"mode": "auto", "rect": bars}
+    ] * 2
 
 
 async def test_save_preset(api: Api) -> None:
@@ -150,12 +226,15 @@ async def test_save_preset(api: Api) -> None:
     )
 
 
-@pytest.mark.parametrize("route", ["resolve", "resolve-run"])
+@pytest.mark.parametrize("route", ["resolve", "resolve-run", DETECT])
 async def test_a_row_saved_outside_the_output_roots_is_an_error(api: Api, route: str) -> None:
     ids = await add_sources(api)
     response = await api.client.post(f"/api/batch/{route}", json={"source_ids": ids})
-    assert response.status_code == 200
-    body = response.json()
+    if route == DETECT:
+        body: Any = (await ended(api, response)).result
+    else:
+        assert response.status_code == 200
+        body = response.json()
     rows = body["rows"] if route == "resolve" else body["resolutions"][0]["rows"]
     assert len(rows) == 2
     for row in rows:
@@ -259,7 +338,7 @@ async def test_an_override_is_jailed_as_the_template_applies_it(
     template the batch service uses: the file never reaches the service's validation."""
     [sid] = await add_sources(api, 1)
     seen = validated(api, monkeypatch)
-    for route in ("resolve", "resolve-run"):
+    for route in ("resolve", "resolve-run", DETECT):
         response = await api.client.post(
             f"/api/batch/{route}",
             json={
@@ -271,9 +350,10 @@ async def test_an_override_is_jailed_as_the_template_applies_it(
         assert response.status_code == 403, response.text
         assert response.json()["code"] == "path.outside_roots"
     assert seen == []
+    assert api.reframe.tasks.list("batch_cropdetect") == []
 
 
-@pytest.mark.parametrize("route", ["resolve", "resolve-run"])
+@pytest.mark.parametrize("route", ["resolve", "resolve-run", DETECT])
 async def test_an_override_that_a_changed_preset_lets_out_is_refused(
     api: Api, monkeypatch: pytest.MonkeyPatch, route: str
 ) -> None:
@@ -300,6 +380,44 @@ async def test_an_override_that_a_changed_preset_lets_out_is_refused(
     assert response.status_code == 403, response.text
     assert response.json()["code"] == "path.outside_roots"
     assert seen == []
+
+
+async def test_an_override_that_a_preset_changed_since_the_request_lets_out_fails_the_task(
+    api: Api, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The request passes the jail and the preset changes before the task resolves: the task's
+    own resolution refuses the outside file."""
+    [sid] = await add_sources(api, 1)
+    preset = await api.reframe.presets.create(
+        JobTemplate(video=VideoSettings(encoder="libx264")), "Mine"
+    )
+    assert isinstance(preset, Preset)
+    changed = preset.model_copy(
+        update={"video": preset.video.model_copy(update={"encoder": "libx265"})}
+    )
+    resolves: list[bool] = []
+    real = api.reframe.batch.resolve_batch
+
+    async def change_before_the_task(*args: Any, **kwargs: Any) -> Any:
+        resolves.append(kwargs.get("detect_crop", False))
+        if kwargs.get("detect_crop"):
+            await api.reframe.presets.save(changed)
+        return await real(*args, **kwargs)
+
+    monkeypatch.setattr(api.reframe.batch, "resolve_batch", change_before_the_task)
+    seen = validated(api, monkeypatch)
+    response = await api.client.post(
+        f"/api/batch/{DETECT}",
+        json={
+            "template": "Mine",
+            "source_ids": [sid],
+            "overrides": {sid: outside_subtitle_if(api, "libx265")},
+        },
+    )
+    task = await ended(api, response)
+    assert (task.state, task.error_code) == ("failed", "path.outside_roots")
+    assert resolves == [False, True]
+    assert [job.video.encoder for job in seen] == ["libx264"]
 
 
 async def test_derive_takes_a_job_saved_outside_the_output_roots(api: Api) -> None:

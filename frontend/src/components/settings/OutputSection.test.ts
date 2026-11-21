@@ -3,7 +3,9 @@ import SelectButton from 'primevue/selectbutton'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 
-import type { NamingOptions, SourceEntry } from '@/api/types'
+import type { NamingOptions, Preset, SourceEntry } from '@/api/types'
+import { samplePreset } from '@/editor/testing/samples'
+import { usePresetsStore } from '@/stores/presets'
 import { useSourcesStore } from '@/stores/sources'
 
 import OutputSection from './OutputSection.vue'
@@ -131,6 +133,27 @@ describe('the Output section', () => {
       ] as SourceEntry[]
     })
     expect(editor().props('sourceIds')).toEqual(['a'])
+  })
+
+  it('previews the names with the default preset’s container', async () => {
+    const preset = samplePreset()
+    const mp4 = { ...preset, id: 'mine', output: { ...preset.output, container: 'mp4' } }
+    const { editor } = await mountOutput(() => {
+      const presets = usePresetsStore()
+      presets.presets = [preset, mp4 as Preset]
+      presets.defaultId = 'mine'
+      presets.loaded = true
+    })
+    expect(editor().props('container')).toBe('mp4')
+    usePresetsStore().defaultId = preset.id
+    await flushPromises()
+    expect(editor().props('container')).toBe(preset.output?.container)
+  })
+
+  it('reads the presets for the preview, and names with Matroska without them', async () => {
+    const { editor, server } = await mountOutput()
+    expect(server.count('GET /api/presets')).toBe(1)
+    expect(editor().props('container')).toBe('mkv')
   })
 
   it('offers no default container: the preset decides', async () => {

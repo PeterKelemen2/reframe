@@ -361,8 +361,9 @@ Run `reframe-server` from a terminal. A Windows service wrapper comes later.
   `Connection`. The server sends a heartbeat every 15 s, so the proxy's idle timeout must be
   longer than that (nginx's default of 60 s is enough).
 - **Timeouts.** Long work is a background task (`202` and a task id), so no request waits
-  for an encode. Preview frames of a 4K source can take some seconds on a slow
-  machine: allow a few minutes (`proxy_read_timeout 300s`).
+  for an encode or for the crop detection of a group that is queued. Preview frames of a 4K
+  source can take some seconds on a slow machine: allow a few minutes
+  (`proxy_read_timeout 300s`).
 - **Body size.** A job is about 3–4 KB of JSON, so adding a whole batch to the queue can
   pass nginx's default limit of 1 MB. Allow more, for example `client_max_body_size 16m`.
 - **Client address and HTTPS.** The login limit (5 wrong passwords per minute) counts each

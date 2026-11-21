@@ -5,6 +5,12 @@ import { TOKEN } from './servers'
 
 const AUTH = { Authorization: `Bearer ${TOKEN}` }
 
+/**
+ * How long *Add group to queue* may take: it detects the crop of each file first, one FFmpeg
+ * run per sample frame, and the servers of the three browsers share the machine.
+ */
+export const CROP_DETECTION = 120_000
+
 /** Opens the app with the run's token in the address fragment and waits for the workspace. */
 export async function openApp(page: Page): Promise<void> {
   await page.goto(`/#token=${TOKEN}`)
@@ -70,6 +76,23 @@ export async function readQueue(request: APIRequestContext): Promise<QueueSnapsh
   const answer = await request.get('/api/queue', { headers: AUTH })
   expect(answer.ok()).toBe(true)
   return (await answer.json()) as QueueSnapshot
+}
+
+/** The server's first media root: the folder the fixtures were copied into. */
+export async function mediaRoot(request: APIRequestContext): Promise<string> {
+  const answer = await request.get('/api/fs/roots', { headers: AUTH })
+  expect(answer.ok()).toBe(true)
+  const { roots } = (await answer.json()) as { roots: { path: string; kind: string }[] }
+  const media = roots.find((root) => root.kind === 'media')
+  expect(media, 'a media root').toBeDefined()
+  return media!.path
+}
+
+/** The server's background tasks of one kind, read with the run's token. */
+export async function readTasks(request: APIRequestContext, kind: string): Promise<TaskInfo[]> {
+  const answer = await request.get('/api/tasks', { headers: AUTH, params: { kind } })
+  expect(answer.ok()).toBe(true)
+  return (await answer.json()) as TaskInfo[]
 }
 
 /** The server's settings, read with the run's token. */

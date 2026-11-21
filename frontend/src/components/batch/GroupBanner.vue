@@ -32,7 +32,7 @@ const sources = useSourcesStore()
 const presets = usePresetsStore()
 const toasts = useToastStore()
 const ui = useUiStore()
-const { busy: queueing, queueGroup } = useQueueGroup()
+const { busy: queueing, queueGroup, detection, cancelDetection } = useQueueGroup()
 const id = useId()
 
 const root = useTemplateRef<HTMLElement>('root')
@@ -142,6 +142,16 @@ watch(
   },
 )
 
+// *Cancel* leaves with the detection.
+watch(
+  () => detection.value === null,
+  async (ended) => {
+    if (!ended) return
+    await nextTick()
+    focusIn('[data-action=queue-group]')
+  },
+)
+
 // The control that was used may leave with its banner (*Close group*, *Edit group*).
 const mode = computed(() => (edited.value ? 'group' : memberOf.value ? 'member' : null))
 watch(mode, async () => {
@@ -244,6 +254,19 @@ watch(mode, async () => {
           @click="closeGroup"
         />
       </div>
+      <div v-if="detection" class="group-banner__detection" data-state="detecting-crop">
+        <LoaderCircle class="group-banner__spin" :size="16" aria-hidden="true" />
+        <span role="status" data-field="detection">{{ detection.message }}</span>
+        <Button
+          size="small"
+          severity="secondary"
+          text
+          :label="t('group.banner.cancelDetection')"
+          :aria-label="t('group.banner.cancelDetectionLabel')"
+          data-action="cancel-detection"
+          @click="cancelDetection"
+        />
+      </div>
     </div>
     <div v-else-if="memberOf" class="group-banner group-banner--slim" data-state="member">
       <span class="group-banner__title" data-field="title">{{
@@ -332,6 +355,14 @@ watch(mode, async () => {
 
 .group-banner__actions {
   margin-inline-start: auto;
+}
+
+.group-banner__detection {
+  display: flex;
+  flex-basis: 100%;
+  align-items: center;
+  gap: var(--rf-space-2);
+  color: var(--rf-color-text-muted);
 }
 
 .group-banner__error {

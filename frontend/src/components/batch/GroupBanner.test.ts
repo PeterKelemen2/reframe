@@ -22,13 +22,21 @@ import GroupBanner from './GroupBanner.vue'
 
 const queue = vi.hoisted(() => ({
   queueGroup: vi.fn<(id: string) => Promise<void>>(),
+  cancelDetection: vi.fn<() => Promise<void>>(),
   busy: { value: false } as Ref<boolean>,
+  detection: { value: null } as Ref<{ message: string } | null>,
 }))
 vi.mock('@/composables/useQueueGroup', async () => {
   const { computed, ref } = await import('vue')
   queue.busy = ref(false)
+  queue.detection = ref(null)
   return {
-    useQueueGroup: () => ({ busy: computed(() => queue.busy.value), queueGroup: queue.queueGroup }),
+    useQueueGroup: () => ({
+      busy: computed(() => queue.busy.value),
+      queueGroup: queue.queueGroup,
+      detection: computed(() => queue.detection.value),
+      cancelDetection: queue.cancelDetection,
+    }),
   }
 })
 
@@ -66,7 +74,9 @@ beforeEach(() => {
   server = new FakeServer()
   configureClient({ baseUrl: 'http://server', token: 't', fetch: server.fetch })
   queue.queueGroup.mockReset().mockResolvedValue()
+  queue.cancelDetection.mockReset().mockResolvedValue()
   queue.busy.value = false
+  queue.detection.value = null
 })
 
 afterEach(() => {
@@ -214,6 +224,27 @@ describe('the group banner', () => {
     await flushPromises()
     expect(button.getAttribute('aria-busy')).toBeNull()
     expect(document.activeElement).toBe(button)
+  })
+
+  it('shows the crop detection while the group is queued, and Cancel stops it', async () => {
+    await mountBanner('group')
+    expect($('[data-state="detecting-crop"]')).toBeNull()
+    queue.busy.value = true
+    queue.detection.value = { message: 'Detecting the crop: file 2 of 8' }
+    await flushPromises()
+    expect(text($('[data-state="detecting-crop"] [role="status"]'))).toBe(
+      'Detecting the crop: file 2 of 8',
+    )
+    const cancel = $('[data-action="cancel-detection"]') as HTMLButtonElement
+    expect(cancel.getAttribute('aria-label')).toBe('Cancel the crop detection: nothing is queued')
+    cancel.focus()
+    await click('[data-action="cancel-detection"]')
+    expect(queue.cancelDetection).toHaveBeenCalledOnce()
+    queue.busy.value = false
+    queue.detection.value = null
+    await flushPromises()
+    expect($('[data-state="detecting-crop"]')).toBeNull()
+    expect(document.activeElement).toBe($('[data-action="queue-group"]'))
   })
 
   it('says that the group could not be checked, and asks again with Try again', async () => {

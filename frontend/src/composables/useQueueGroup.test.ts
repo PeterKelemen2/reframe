@@ -23,21 +23,27 @@ import {
   withRow,
 } from '@/components/matrix/testing'
 import { createAppI18n } from '@/i18n'
-import type { EditorTarget } from '@/stores/editor'
+import type { EditorTarget, MatrixOptions } from '@/stores/editor'
+import { useTasksStore } from '@/stores/tasks'
 import { useToastStore } from '@/stores/toasts'
 import { useUiStore } from '@/stores/ui'
 
 import { type QueueGroup, useQueueGroup } from './useQueueGroup'
+
+const DETECTION_CANCELLED = 'batch.detection_cancelled'
 
 // Test doubles of the editor and sources stores: the members their contracts give.
 const editor = reactive({
   target: null as EditorTarget | null,
   group: null as BatchGroup | null,
   editGroup: vi.fn<(groupId: string) => Promise<void>>(async () => {}),
-  resolveNow: vi.fn<(options?: { detectCrop?: boolean }) => Promise<BatchResolution>>(),
+  resolveNow: vi.fn<(options?: MatrixOptions) => Promise<BatchResolution>>(),
 })
 const sources = reactive({ entries: [] as SourceEntry[] })
-vi.mock('@/stores/editor', () => ({ useEditorStore: () => editor }))
+vi.mock('@/stores/editor', () => ({
+  useEditorStore: () => editor,
+  DETECTION_CANCELLED: 'batch.detection_cancelled',
+}))
 vi.mock('@/stores/sources', () => ({ useSourcesStore: () => sources }))
 
 function editing(groupId: string): EditorTarget {
@@ -138,7 +144,10 @@ describe('queueGroup without errors', () => {
     await group.queueGroup('g1')
     expect(editor.editGroup).not.toHaveBeenCalled()
     expect(editor.resolveNow).toHaveBeenCalledOnce()
-    expect(editor.resolveNow).toHaveBeenCalledWith({ detectCrop: true })
+    expect(editor.resolveNow).toHaveBeenCalledWith({
+      detectCrop: true,
+      onTask: expect.any(Function),
+    })
     const bodies = queueBodies()
     expect(bodies).toHaveLength(1)
     expect(outputs(bodies[0])).toEqual([
@@ -307,6 +316,171 @@ describe('queueGroup without errors', () => {
     ])
   })
 })
+
+/** A detection that started task `t-crop` and waits for the test to end it. */
+function detecting() {
+  const answer = deferred<BatchResolution>()
+  editor.resolveNow.mockImplementation((options) => {
+    options?.onTask?.('t-crop')
+    return answer.promise
+  })
+  return answer
+}
+
+function measuring(message: string, progress: number): void {
+  useTasksStore().onTaskProgress({
+    type: 'task.progress',
+    task: { id: 't-crop', kind: 'batch_cropdetect', state: 'running', progress, message },
+  })
+}
+
+describe('the crop detection before queueing', () => {
+  it('says which file it measures while it runs, then queues', async () => {
+    const answer = detecting()
+    const group = setup()
+    expect(group.detection.value).toBeNull()
+    const running = group.queueGroup('g1')
+    await flushPromises()
+    expect(group.detection.value).toEqual({ message: 'Detecting the crop…' })
+    measuring('Detecting the crop: file 3 of 12', 100 * (2 / 12))
+    expect(group.detection.value).toEqual({ message: 'Detecting the crop: file 3 of 12' })
+    expect(queueBodies()).toEqual([])
+    answer.resolve(withRow(animeResolution(), fixedE11()))
+    await running
+    expect(group.detection.value).toBeNull()
+    expect(queueBodies()).toHaveLength(1)
+  })
+
+  it('Cancel cancels the task, and a cancelled detection queues nothing and says nothing', async () => {
+    server.on('POST /api/tasks/t-crop/cancel', { cancelled: true })
+    const answer = detecting()
+    const group = setup()
+    const running = group.queueGroup('g1')
+    await flushPromises()
+    measuring('Detecting the crop: file 1 of 12', 0)
+    await group.cancelDetection()
+    expect(
+      server.requests.filter((request) => request.path === '/api/tasks/t-crop/cancel'),
+    ).toHaveLength(1)
+    answer.reject(
+      new ApiError(0, { title: 'Cancelled', status: 0, code: DETECTION_CANCELLED } as never),
+    )
+    await running
+    expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([])
+    expect(group.detection.value).toBeNull()
+    expect(group.busy.value).toBe(false)
+  })
+
+  it('queues nothing when Cancel comes as the detection ends', async () => {
+    server.on('POST /api/tasks/t-crop/cancel', { cancelled: false })
+    const answer = detecting()
+    const group = setup()
+    const running = group.queueGroup('g1')
+    await flushPromises()
+    const cancelled = group.cancelDetection()
+    answer.resolve(withRow(animeResolution(), fixedE11()))
+    await cancelled
+    await running
+    expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([])
+    await group.queueGroup('g1')
+    expect(queueBodies()).toHaveLength(1)
+  })
+
+  it('a failed detection queues nothing and says why', async () => {
+    const answer = detecting()
+    const group = setup()
+    const running = group.queueGroup('g1')
+    await flushPromises()
+    answer.reject(
+      new ApiError(0, {
+        title: 'The crop of the group’s files could not be detected',
+        detail: 'ffmpeg stopped',
+        status: 0,
+        code: 'batch.detection_failed',
+      } as never),
+    )
+    await running
+    expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([
+      {
+        severity: 'error',
+        summary: 'The crop of the group’s files could not be detected',
+        detail: 'ffmpeg stopped',
+      },
+    ])
+    expect(group.detection.value).toBeNull()
+  })
+})
+
+/** The group resolved with the crop of `episodes` not detected. */
+function uncropped(...episodes: number[]): BatchResolution {
+  let resolution = withRow(animeResolution(), fixedE11())
+  for (const episode of episodes) resolution = withRow(resolution, uncroppedRow(episode))
+  return resolution
+}
+
+describe('a crop that could not be detected', () => {
+  it('is named in a warning with the reason, and the job is queued', async () => {
+    editor.resolveNow.mockImplementation(async () => uncropped(2))
+    await setup().queueGroup('g1')
+    expect(queueBodies()[0]).toHaveLength(12)
+    expect(toasts()).toEqual([
+      {
+        severity: 'warn',
+        summary: 'Queued 12 jobs; the crop of 1 could not be detected',
+        detail:
+          'Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv: The crop of this file could not be detected, so it is not cropped: ffmpeg stopped',
+      },
+    ])
+  })
+
+  it('keeps the toast short when many crops could not be detected', async () => {
+    editor.resolveNow.mockImplementation(async () => uncropped(1, 2, 3, 4, 5))
+    await setup().queueGroup('g1')
+    const [toast] = toasts()
+    expect(toast?.summary).toBe('Queued 12 jobs; the crop of 5 could not be detected')
+    expect(toast?.detail?.split('\n').map((line) => line.split(':')[0])).toEqual([
+      'Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv',
+      'Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv',
+      'Anime.Show.S01E03.Storm.BluRay.x264-GRP.mkv',
+      '… and 2 more files are not cropped.',
+    ])
+  })
+
+  it('is named next to the jobs the queue added as failed', async () => {
+    editor.resolveNow.mockImplementation(async () => uncropped(4))
+    server.on('POST /api/queue', (request) =>
+      (request.body as { jobs: JobSettings[] }).jobs.map((job, index) =>
+        queued(job, index === 0 ? { state: 'failed', error: 'Planned already' } : {}),
+      ),
+    )
+    await setup().queueGroup('g1')
+    const [toast] = toasts()
+    expect(toast?.summary).toBe('12 jobs added to the queue; 1 of them failed')
+    expect(toast?.detail?.split('\n').map((line) => line.split(':')[0])).toEqual([
+      'Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv',
+      'Anime.Show.S01E04.Signal.BluRay.x264-GRP.mkv',
+    ])
+  })
+})
+
+/** Episode `episode`'s row whose crop could not be detected. */
+function uncroppedRow(episode: number): Resolution {
+  const row = animeResolution().rows?.[episode - 1] as Resolution
+  row.status = 'warning'
+  row.issues = [
+    ...(row.issues ?? []),
+    {
+      severity: 'warning',
+      code: 'batch.crop_not_detected',
+      path: 'dimensions.crop',
+      message: 'The crop of this file could not be detected, so it is not cropped: ffmpeg stopped',
+    },
+  ]
+  return row
+}
 
 /** Episode `episode`'s row with a stale override's warning. */
 function staleRow(episode: number): Resolution {
