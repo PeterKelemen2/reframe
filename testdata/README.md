@@ -3910,4 +3910,13 @@ Checked for the help texts of the advanced options (FFmpeg n9.0.2, RX 7600 with 
 - `vaav1dec` 1.20 fails on AV1 with hidden frames (SVT-AV1, libaom, rav1e output): "Already have
   picture for current frame". AV1 from `av1_vaapi` and `av1_amf` plays.
 - Ubuntu 22.04 has no GStreamer dav1d plugin.
+- GStreamer 1.20.3's `av1dec` (aom) has rank primary (256) and decodes on one thread.
+- decodebin/playbin in WebKitGTK 2.50 does not try the next decoder after a decode error: with
+  `vaav1dec` at 258 above `av1dec`, SVT-AV1 8-bit clips end in error 3 and 10-bit in error 4
+  (RX 7600, Mesa 22.3.6).
+- GLib (`gio launch`) does not load an entry whose `Exec=` program path has `%` written as `%%`,
+  although `desktop-file-validate` accepts it; quotes, `$`, backquote, backslash, space and
+  non-ASCII paths load.
+- Tauri 2.12.4's `tauri bundle --bundles rpm --config …` reuses the built binary. The rpm crate
+  refuses `-` in Version; Release `0.dev.0` sorts before `1`.
 

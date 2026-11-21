@@ -300,11 +300,11 @@ installer only:
 npx tauri build --bundles nsis
 ```
 
-On Linux, `desktop/packaging/linux/build.sh` builds the .deb, the .rpm and the AppImage, and
-Tauri's rpm bundler refuses a `-` in the version ("invalid version \"0.1.0-dev.0\": contains
-invalid character"), so a full Linux build from a development tree fails at the rpm.
+On Linux, `desktop/packaging/linux/build.sh` builds the .deb, the .rpm and the AppImage. rpm
+refuses a `-` in a version, so the rpm of a pre-release is `X.Y.Z-0.<pre>` (`0.1.0-0.dev.0`,
+`1.0.0-0.rc.1`, which sort before `X.Y.Z-1`, as Fedora names pre-releases).
 
-For an MSI, a Linux build (or an update test that needs two versions), stamp a final version
+For an MSI (or an update test that needs two versions), stamp a final version
 into the working tree first and do not commit it:
 
 ```sh

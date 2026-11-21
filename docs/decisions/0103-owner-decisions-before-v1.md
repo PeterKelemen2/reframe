@@ -208,3 +208,14 @@ the frame compare, with or without a GPU. gst-plugins-bad's `aom` plugin (`av1de
 - **The when-done action after Start on one job:** Sleep, Shut down and Quit run only when no
   waiting job is left; Notify still says that the started jobs finished. `reframe encode` keeps
   its behaviour.
+
+## Follow-up (2026-11-21): software AV1, built
+
+The AppImage carries the `aom` plugin and libaom3 (BSD-2-Clause and the AOM patent licence; no
+FFmpeg); its source package is in the sources release and its copyright in the notices.
+GStreamer 1.20's playbin does not fall back to another decoder after a decode error: with
+`vaav1dec` above `av1dec`, SVT-AV1 clips end in a media error on the RX 7600. So `vaav1dec`
+ranks below `av1dec`, and AV1 from hardware encoders is decoded in software too. 4K 10-bit AV1
+decodes at about 19 fps on the Ryzen 5 5600, so its preview may stutter. Hardware AV1 decoding
+in the window needs a newer GStreamer than Ubuntu 22.04 has.
+
