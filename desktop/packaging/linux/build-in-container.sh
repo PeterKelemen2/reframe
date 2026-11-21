@@ -51,7 +51,18 @@ cp /usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner "$GST
 export GSTREAMER_PLUGINS_DIR GSTREAMER_HELPERS_DIR
 
 rm -rf "$CARGO_TARGET_DIR/release/bundle"
-(cd desktop && npx tauri build --verbose)
+version=$(node -p 'require("./desktop/src-tauri/tauri.conf.json").version')
+case $version in
+    *-*)
+        # rpm refuses a `-` in a version: the rpm of a pre-release is X.Y.Z with the pre-release
+        # in a release below 1 (0.1.0-dev.0 → 0.1.0-0.dev.0), which sorts before X.Y.Z-1.
+        release=0.$(printf %s "${version#*-}" | tr - .)
+        rpm_config="{\"version\": \"${version%%-*}\", \"bundle\": {\"linux\": {\"rpm\": {\"release\": \"$release\"}}}}"
+        (cd desktop && npx tauri build --verbose --bundles deb,appimage \
+            && npx tauri bundle --verbose --bundles rpm --config "$rpm_config")
+        ;;
+    *) (cd desktop && npx tauri build --verbose) ;;
+esac
 
 bundle="$CARGO_TARGET_DIR/release/bundle"
 uv run --no-project python scripts/appimage-libs.py check-runtime "$bundle"/appimage/*.AppImage \

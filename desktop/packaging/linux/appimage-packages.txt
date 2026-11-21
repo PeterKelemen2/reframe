@@ -25,6 +25,7 @@ gsettings-desktop-schemas
 gstreamer1.0-plugins-bad
 gstreamer1.0-plugins-base
 gstreamer1.0-plugins-good
+libaom3
 libapparmor1
 libasyncns0
 libatk-bridge2.0-0

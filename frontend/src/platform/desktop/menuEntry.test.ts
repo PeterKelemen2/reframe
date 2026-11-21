@@ -8,7 +8,12 @@ afterEach(() => clearMocks())
 describe('the AppImage’s menu entry in the shell', () => {
   it('reads and changes the entry through the shell’s commands', async () => {
     const calls: unknown[] = []
-    const entry = { appimage: '/a/Reframe.AppImage', added: true, other: null }
+    const entry = {
+      appimage: '/a/Reframe.AppImage',
+      added: true,
+      other: null,
+      percentInPath: false,
+    }
     mockIPC((cmd, args) => {
       calls.push({ cmd, args })
       return entry

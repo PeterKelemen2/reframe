@@ -34,7 +34,13 @@ function tools(): SystemInfo {
 /** The shell's menu entry; `refuse` makes the next change fail with that reason. */
 function fakeShell(entry: Partial<DesktopMenuEntry> = {}) {
   const state = {
-    entry: { appimage: APPIMAGE, added: false, other: null, ...entry } as DesktopMenuEntry,
+    entry: {
+      appimage: APPIMAGE,
+      added: false,
+      other: null,
+      percentInPath: false,
+      ...entry,
+    } as DesktopMenuEntry,
     sent: [] as boolean[],
     refuse: null as string | null,
   }
@@ -108,6 +114,24 @@ describe('the AppImage’s menu entry offer', () => {
     button('menu-entry-skip')?.click()
     await flushPromises()
     await vi.waitFor(() => expect(dialog()).toBeNull())
+  })
+
+  it('says why it adds no entry for a path with a %, and offers only Close', async () => {
+    const { shell, state } = fakeShell({
+      appimage: '/a/100%/Reframe.AppImage',
+      percentInPath: true,
+    })
+    await mountOffer(shell)
+    expect(dialog()?.querySelector('[data-field="percent"]')?.textContent).toContain(
+      '/a/100%/Reframe.AppImage',
+    )
+    expect(button('menu-entry-add')).toBeNull()
+    expect(button('menu-entry-skip')?.textContent).toContain('Close')
+    button('menu-entry-skip')?.click()
+    await flushPromises()
+    await vi.waitFor(() => expect(dialog()).toBeNull())
+    expect(state.sent).toEqual([])
+    expect(localStorage.getItem(OFFERED_KEY)).toBe('true')
   })
 
   it.each([

@@ -2,12 +2,19 @@
 # Checks an AppImage on this machine without a window on its displays: in a private virtual KWin
 # session (with FUSE: the AppImage mounts itself), then in a Debian 12 container without FUSE
 # (--appimage-extract-and-run) under Xvfb.
-# Usage: desktop/packaging/linux/appimage-test.sh FILE.AppImage [SOCKET]
+# Usage: desktop/packaging/linux/appimage-test.sh [--screenshot PNG] FILE.AppImage [SOCKET]
+# --screenshot saves a picture of the virtual session's screen to PNG; without it none is taken.
 # REFRAME_FFMPEG_ARCHIVE (the default build's archive) adds a file install to both checks.
 set -eu
 
+usage="usage: appimage-test.sh [--screenshot PNG] FILE.AppImage [SOCKET]"
 here=$(cd "$(dirname "$0")" && pwd)
-appimage=$(realpath "${1:?usage: appimage-test.sh FILE.AppImage [SOCKET]}")
+screenshot=
+if [ "${1:-}" = --screenshot ]; then
+    screenshot=$(realpath -m "${2:?$usage}")
+    shift 2
+fi
+appimage=$(realpath "${1:?$usage}")
 socket=${2:-reframe-appimage}
 archive=/dev/null
 if [ -n "${REFRAME_FFMPEG_ARCHIVE:-}" ]; then
@@ -20,7 +27,7 @@ trap 'rm -rf "$work"' EXIT
 echo "== $(basename "$appimage") in a virtual KWin session ($socket)"
 cat > "$work/session.sh" << EOF
 #!/bin/sh
-sh "$here/appimage-check.sh" "$appimage" "$work/kwin" "$work/screenshot.png" > "$work/kwin.log" 2>&1
+sh "$here/appimage-check.sh" "$appimage" "$work/kwin" "$screenshot" > "$work/kwin.log" 2>&1
 echo \$? > "$work/kwin.status"
 EOF
 chmod +x "$work/session.sh"
@@ -29,9 +36,6 @@ env -u DISPLAY -u WAYLAND_DISPLAY dbus-run-session -- kwin_wayland --virtual --n
     > "$work/kwin-compositor.log" 2>&1 || true
 cat "$work/kwin.log"
 [ "$(cat "$work/kwin.status" 2> /dev/null)" = 0 ] || { echo "FAIL: the virtual session check" >&2; exit 1; }
-if [ -s "$work/screenshot.png" ] && [ -n "${SCREENSHOT_OUT:-}" ]; then
-    cp "$work/screenshot.png" "$SCREENSHOT_OUT"
-fi
 
 echo "== $(basename "$appimage") in debian:12 without FUSE"
 docker run --rm \

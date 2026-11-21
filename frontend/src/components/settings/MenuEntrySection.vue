@@ -59,8 +59,17 @@ async function setAdded(add: boolean): Promise<void> {
     >
       {{ t('menuEntry.settings.other', { path: current.other }) }}
     </Message>
+    <Message
+      v-if="current.other === null && current.percentInPath"
+      severity="info"
+      :closable="false"
+      data-field="menu-entry-percent"
+    >
+      {{ t('menuEntry.settings.percent', { file: current.appimage ?? '' }) }}
+    </Message>
+    <!-- An entry written before the path had its % can still be removed. -->
     <Field
-      v-else
+      v-if="current.other === null && (!current.percentInPath || current.added)"
       :label="t('menuEntry.settings.entry')"
       :help="t('menuEntry.settings.help', { file: current.appimage ?? '' })"
       :issues
