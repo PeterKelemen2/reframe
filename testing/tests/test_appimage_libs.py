@@ -245,10 +245,25 @@ def test_the_committed_list_is_one_package_name_per_line() -> None:
     assert {"libwebkit2gtk-4.1-0", "libgtk-3-0", "libayatana-appindicator3-1"} <= set(names)
     # The frozen sidecar's system library, in the .deb and .rpm too.
     assert "libgcc-s1" in names
-    # WebKitGTK's player, without FFmpeg.
-    assert {"gstreamer1.0-plugins-base", "gstreamer1.0-plugins-good"} <= set(names)
-    ffmpeg = re.compile(r"ffmpeg|gstreamer1\.0-libav|libav(codec|device|filter|format|util)\d")
-    assert not [name for name in names if ffmpeg.match(name)]
+    # WebKitGTK's player and the VA-API decoders, without FFmpeg, openh264, x264 or x265.
+    assert {
+        "gstreamer1.0-plugins-base",
+        "gstreamer1.0-plugins-good",
+        "gstreamer1.0-plugins-bad",
+    } <= set(names)
+    forbidden = re.compile(
+        r"ffmpeg|gstreamer1\.0-libav|libav(codec|device|filter|format|util)\d|libopenh264|libx26[45]"
+    )
+    assert not [name for name in names if forbidden.match(name)]
+
+
+def test_the_appimages_gstreamer_plugins_have_va_but_no_ffmpeg_openh264_or_x26x() -> None:
+    plugins = set(
+        al.read_package_list(al.DEFAULT_PACKAGES.with_name("appimage-gstreamer-plugins.txt"))
+    )
+
+    assert {"playback", "vpx", "va", "videoparsersbad"} <= plugins
+    assert not plugins & {"libav", "openh264", "x264", "x265"}
 
 
 SIDECAR_INDEX = {

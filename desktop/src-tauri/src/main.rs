@@ -30,6 +30,11 @@ fn main() {
         // SAFETY: no other thread runs yet; the web processes inherit it.
         unsafe { std::env::set_var("GST_REGISTRY_1_0", registry) };
     }
+    #[cfg(unix)]
+    if let Some(ranks) = appimage::gstreamer_ranks(|name| std::env::var_os(name)) {
+        // SAFETY: as above.
+        unsafe { std::env::set_var("GST_PLUGIN_FEATURE_RANK", ranks) };
+    }
     // Before the builder: the owner is looked for, and the sidecar started, while GTK and
     // WebKitGTK load.
     let backend = backend::Backend::start(&context);
