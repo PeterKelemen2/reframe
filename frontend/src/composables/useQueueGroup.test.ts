@@ -398,6 +398,74 @@ describe('the crop detection before queueing', () => {
   })
 })
 
+/** The group resolved with the crop of `episodes` not detected. */
+function uncropped(...episodes: number[]): BatchResolution {
+  let resolution = withRow(animeResolution(), fixedE11())
+  for (const episode of episodes) resolution = withRow(resolution, uncroppedRow(episode))
+  return resolution
+}
+
+describe('a crop that could not be detected', () => {
+  it('is named in a warning with the reason, and the job is queued', async () => {
+    editor.resolveNow.mockImplementation(async () => uncropped(2))
+    await setup().queueGroup('g1')
+    expect(queueBodies()[0]).toHaveLength(12)
+    expect(toasts()).toEqual([
+      {
+        severity: 'warn',
+        summary: 'Queued 12 jobs; the crop of 1 could not be detected',
+        detail:
+          'Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv: The crop of this file could not be detected, so it is not cropped: ffmpeg stopped',
+      },
+    ])
+  })
+
+  it('keeps the toast short when many crops could not be detected', async () => {
+    editor.resolveNow.mockImplementation(async () => uncropped(1, 2, 3, 4, 5))
+    await setup().queueGroup('g1')
+    const [toast] = toasts()
+    expect(toast?.summary).toBe('Queued 12 jobs; the crop of 5 could not be detected')
+    expect(toast?.detail?.split('\n').map((line) => line.split(':')[0])).toEqual([
+      'Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv',
+      'Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv',
+      'Anime.Show.S01E03.Storm.BluRay.x264-GRP.mkv',
+      '… and 2 more files are not cropped.',
+    ])
+  })
+
+  it('is named next to the jobs the queue added as failed', async () => {
+    editor.resolveNow.mockImplementation(async () => uncropped(4))
+    server.on('POST /api/queue', (request) =>
+      (request.body as { jobs: JobSettings[] }).jobs.map((job, index) =>
+        queued(job, index === 0 ? { state: 'failed', error: 'Planned already' } : {}),
+      ),
+    )
+    await setup().queueGroup('g1')
+    const [toast] = toasts()
+    expect(toast?.summary).toBe('12 jobs added to the queue; 1 of them failed')
+    expect(toast?.detail?.split('\n').map((line) => line.split(':')[0])).toEqual([
+      'Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv',
+      'Anime.Show.S01E04.Signal.BluRay.x264-GRP.mkv',
+    ])
+  })
+})
+
+/** Episode `episode`'s row whose crop could not be detected. */
+function uncroppedRow(episode: number): Resolution {
+  const row = animeResolution().rows?.[episode - 1] as Resolution
+  row.status = 'warning'
+  row.issues = [
+    ...(row.issues ?? []),
+    {
+      severity: 'warning',
+      code: 'batch.crop_not_detected',
+      path: 'dimensions.crop',
+      message: 'The crop of this file could not be detected, so it is not cropped: ffmpeg stopped',
+    },
+  ]
+  return row
+}
+
 /** Episode `episode`'s row with a stale override's warning. */
 function staleRow(episode: number): Resolution {
   const row = animeResolution().rows?.[episode - 1] as Resolution

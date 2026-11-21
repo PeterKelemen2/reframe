@@ -87,6 +87,14 @@ function staleCount(rows: Resolution[]): number {
     .length
 }
 
+/** Each row whose crop could not be detected, with the issue that says why. */
+function uncropped(rows: Resolution[]): { row: Resolution; message: string }[] {
+  return rows.flatMap((row) => {
+    const issue = row.issues?.find((found) => found.code === 'batch.crop_not_detected')
+    return issue ? [{ row, message: issue.message }] : []
+  })
+}
+
 /** Uses stores only, so a click handler may call it outside a component's setup. */
 export function useQueueGroup(): QueueGroup {
   const editor = useEditorStore()
@@ -135,6 +143,7 @@ export function useQueueGroup(): QueueGroup {
   function reportAdded(rows: Resolution[], added: QueueJob[]): void {
     const failed = added.filter((job) => job.state === 'failed')
     const stale = staleCount(rows)
+    const notCropped = uncropped(rows)
     const lines = [
       ...(stale > 0 ? [text('matrix.queue.stale', { n: stale })] : []),
       ...failed.slice(0, FAILED_LINES).map((job) =>
@@ -146,13 +155,27 @@ export function useQueueGroup(): QueueGroup {
       ...(failed.length > FAILED_LINES
         ? [text('matrix.queue.moreFailed', { n: failed.length - FAILED_LINES })]
         : []),
+      ...notCropped
+        .slice(0, FAILED_LINES)
+        .map(({ row, message }) =>
+          text('matrix.queue.failedLine', { name: fileName(row.path), reason: message }),
+        ),
+      ...(notCropped.length > FAILED_LINES
+        ? [text('matrix.queue.moreUncropped', { n: notCropped.length - FAILED_LINES })]
+        : []),
     ]
+    let summary = text('matrix.queue.queued', { n: added.length })
+    if (failed.length > 0) {
+      summary = text('matrix.queue.addedFailed', { n: added.length, failed: failed.length })
+    } else if (notCropped.length > 0) {
+      summary = text('matrix.queue.queuedUncropped', {
+        n: added.length,
+        uncropped: notCropped.length,
+      })
+    }
     toasts.push({
       severity: lines.length > 0 ? 'warn' : 'success',
-      summary:
-        failed.length > 0
-          ? text('matrix.queue.addedFailed', { n: added.length, failed: failed.length })
-          : text('matrix.queue.queued', { n: added.length }),
+      summary,
       detail: lines.length > 0 ? lines.join('\n') : undefined,
       life: lines.length > 0 ? NOT_ADDED_LIFE : ADDED_LIFE,
     })
