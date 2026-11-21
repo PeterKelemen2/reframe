@@ -19,6 +19,7 @@ from reframe.definitions.models import TRACK_FLAGS, TrackFlag
 from reframe.models.job import ExternalSubtitle, JobSettings, TrackMetadata
 from reframe.models.media import AudioStream, MediaSource, SubtitleStream, VideoStream
 from reframe.models.plan import EncodePlan
+from reframe.naming.track_names import expand_track_names
 
 __all__ = [
     "ExpectedStream",
@@ -188,7 +189,9 @@ def check_output(
     plan: EncodePlan | None = None,
 ) -> list[str]:
     """What differs between the plan and the re-probed ``output`` (empty: it matches). With a
-    ``plan`` that has a ``header_edit`` step, the metadata is checked too."""
+    ``plan`` that has a ``header_edit`` step, the metadata is checked too. ``job`` is the job
+    as queued: its track name templates are expanded here, as the plan's are."""
+    job = expand_track_names(job, source, definitions)
     container = definitions.containers[job.output.container]
     expected = expected_streams(job, source, container)
     found = _streams(output)
