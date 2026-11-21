@@ -115,6 +115,9 @@ def test_an_nvenc_constant_quality_without_a_level_gets_a_high_rate_buffer() -> 
         {"encoder": "hevc_nvenc", "level": "5.1"},
         {"encoder": "hevc_nvenc", "custom_params": "maxrate=50M"},
         {"encoder": "h264_nvenc", "custom_params": "rc-lookahead=20:bufsize=100M"},
+        # NVENC refuses a level below the one the rate buffer needs ("Invalid Level").
+        {"encoder": "h264_nvenc", "custom_params": "level=4.1"},
+        {"encoder": "hevc_nvenc", "custom_params": "-level=5"},
         {"encoder": "hevc_nvenc", "rate_control": AverageBitrate(kbps=5000)},
         {"encoder": "av1_nvenc"},  # not measured: no NVENC AV1 on the GPU at hand
         {"encoder": "hevc_qsv"},
