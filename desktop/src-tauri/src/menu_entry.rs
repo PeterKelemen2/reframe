@@ -220,8 +220,11 @@ fn write_file(path: &Path, bytes: &[u8]) -> io::Result<()> {
         fs::create_dir_all(folder)?;
     }
     let partial = path.with_extension("part");
-    fs::write(&partial, bytes)?;
-    fs::rename(&partial, path)
+    let written = fs::write(&partial, bytes).and_then(|()| fs::rename(&partial, path));
+    if written.is_err() {
+        let _ = fs::remove_file(&partial);
+    }
+    written
 }
 
 fn remove_file(path: &Path) -> io::Result<()> {
@@ -231,7 +234,8 @@ fn remove_file(path: &Path) -> io::Result<()> {
     }
 }
 
-/// Writes the entry and its icons; refused while another entry of the name exists.
+/// Writes the entry and its icons, or leaves neither when one cannot be written; refused while
+/// another entry of the name exists.
 pub fn add(places: &Places, info: &AppInfo) -> io::Result<()> {
     if let Some(other) = state(places).other {
         return Err(io::Error::other(format!(
@@ -239,10 +243,14 @@ pub fn add(places: &Places, info: &AppInfo) -> io::Result<()> {
             other.display()
         )));
     }
-    for (path, png) in places.icons(info) {
-        write_file(&path, png)?;
+    write_file(&places.entry(), contents(&places.appimage, info).as_bytes())?;
+    let icons = places
+        .icons(info)
+        .try_for_each(|(path, png)| write_file(&path, png));
+    if icons.is_err() {
+        let _ = remove_entry_and_icons(places, info);
     }
-    write_file(&places.entry(), contents(&places.appimage, info).as_bytes())
+    icons
 }
 
 /// Removes this app's entry and icons; another entry stays.
@@ -250,6 +258,10 @@ pub fn remove(places: &Places, info: &AppInfo) -> io::Result<()> {
     if !state(places).added {
         return Ok(());
     }
+    remove_entry_and_icons(places, info)
+}
+
+fn remove_entry_and_icons(places: &Places, info: &AppInfo) -> io::Result<()> {
     remove_file(&places.entry())?;
     for (path, _) in places.icons(info) {
         remove_file(&path)?;
@@ -521,6 +533,29 @@ mod tests {
         assert_eq!(
             fs::read_to_string(&users).unwrap(),
             "[Desktop Entry]\nExec=/opt/my-reframe %F\n"
+        );
+    }
+
+    #[test]
+    fn a_failed_add_leaves_no_entry_and_no_icons() {
+        let temp = Temp::new("blocked-entry");
+        let places = temp.places("/a/Reframe.AppImage");
+        // A file where the applications folder goes: the entry cannot be written.
+        write_file(&places.applications(), b"").unwrap();
+        assert!(add(&places, &info()).is_err());
+        assert!(!temp.0.join("home/icons").exists());
+
+        let temp = Temp::new("blocked-icons");
+        let places = temp.places("/a/Reframe.AppImage");
+        write_file(&temp.0.join("home/icons/hicolor/256x256"), b"").unwrap();
+        assert!(add(&places, &info()).is_err());
+        assert!(!places.entry().exists());
+        let icons: Vec<_> = places.icons(&info()).map(|(path, _)| path).collect();
+        assert!(icons.iter().all(|icon| !icon.exists()), "{icons:?}");
+        assert_eq!(
+            fs::read_dir(places.applications()).unwrap().count(),
+            0,
+            "no partial file is left"
         );
     }
 
