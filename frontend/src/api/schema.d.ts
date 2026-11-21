@@ -1199,6 +1199,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/batch/detect-crops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Detect Crops
+         * @description *Add group to queue*: the run of ``resolve-run`` with the crop detected in each file
+         *     whose job crops automatically or conservatively without a rectangle, as a task whose result
+         *     is a :class:`BatchRun`. One FFmpeg run per sample frame and file: the task reports each
+         *     file it measures (``file n of N``), and a cancel stops it. A path out of the roots is
+         *     refused (403) before the task starts.
+         */
+        post: operations["batch_detect_crops"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/batch/save-preset": {
         parameters: {
             query?: never;
@@ -2511,14 +2535,6 @@ export interface components {
             source_ids: string[];
             /** @description Per-file JSON patches on the job, by ``source_id``. */
             overrides?: components["schemas"]["Overrides"];
-            /**
-             * Detect Crop
-             * @description Detect the crop of each file whose job crops automatically or conservatively without a
-             *     rectangle, as for queueing: one FFmpeg run per sample frame and file, so ask for it only
-             *     when the group is queued.
-             * @default false
-             */
-            detect_crop: boolean;
         };
         /**
          * BatchRun
@@ -2540,14 +2556,6 @@ export interface components {
             source_ids: string[];
             /** @description Per-file JSON patches on the job, by ``source_id``. */
             overrides?: components["schemas"]["Overrides"];
-            /**
-             * Detect Crop
-             * @description Detect the crop of each file whose job crops automatically or conservatively without a
-             *     rectangle, as for queueing: one FFmpeg run per sample frame and file, so ask for it only
-             *     when the group is queued.
-             * @default false
-             */
-            detect_crop: boolean;
             /**
              * Level
              * @default standard
@@ -10144,6 +10152,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BatchRun"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    batch_detect_crops: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAccepted"];
                 };
             };
             /** @description An expected failure */

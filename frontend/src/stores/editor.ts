@@ -6,6 +6,8 @@ import { text } from '@/api/text'
 import type {
   BatchGroup,
   BatchResolution,
+  BatchRun,
+  BatchRunRequest,
   FieldChange,
   Fix,
   JobDraft,
@@ -14,6 +16,7 @@ import type {
   JsonPatchOp,
   Preset,
   Resolution,
+  TaskInfo,
   TemplateSection,
 } from '@/api/types'
 import { FULL, type Range } from '@/components/range/range'
@@ -48,6 +51,7 @@ import { outputOptionsOf, templateOf } from '@/editor/template'
 import { templateOfPreset, usePresetsStore } from './presets'
 import { hasPointer, useSettingsStore } from './settings'
 import type { useSourcesStore } from './sources'
+import { TaskLostError, useTasksStore } from './tasks'
 import { useToastStore } from './toasts'
 
 export { pathOf, pointerOf } from '@/editor/pointer'
@@ -155,6 +159,16 @@ export interface PendingEdit {
 /** Milliseconds from the last edit to `presets/diff` and `jobs/validate`. */
 export const EDIT_DEBOUNCE = 250
 
+/** The problem code of a `resolveNow` whose crop detection was cancelled. */
+export const DETECTION_CANCELLED = 'batch.detection_cancelled'
+
+export interface MatrixOptions {
+  /** Detect each file's crop, as for queueing: a task on the server. */
+  detectCrop?: boolean
+  /** Gets the id of the detection's task once it has started. */
+  onTask?: (taskId: string) => void
+}
+
 const TOAST_LIFE = 10_000
 
 /** A group file's range, in its override. */
@@ -175,6 +189,11 @@ function toast(summary: string, detail: string): void {
 /** An edit the group cannot take: nothing changed. */
 function refuse(summary: string, detail: string): void {
   useToastStore().push({ severity: 'warn', summary, detail, life: TOAST_LIFE })
+}
+
+/** A failure found by the client, as the problem of a request. */
+function clientProblem(code: string, title: string, detail?: string | null): ApiError {
+  return new ApiError(0, { type: 'about:blank', title, detail, status: 0, code })
 }
 
 /** A matrix row has the fields of a draft: the tabs show its track decisions and notes. */
@@ -199,7 +218,6 @@ async function resolved(
     template: document.template,
     source_ids: [sourceId],
     overrides: override.length > 0 ? { [sourceId]: override } : {},
-    detect_crop: false,
   }
   const answer = unwrap(await client.POST('/api/batch/resolve', { body, signal }))
   return deepFreeze(cloneJson(answer.rows?.[0] as Resolution))
@@ -286,6 +304,7 @@ function memberIdsOf(found: BatchGroup, sources: SourcesStore): string[] {
 export const useEditorStore = defineStore('editor', () => {
   const presets = usePresetsStore()
   const settings = useSettingsStore()
+  const tasks = useTasksStore()
 
   const target = shallowRef<EditorTarget | null>(null)
   /** The last `jobs/draft` answer for the open source: track decisions, naming, notes. */
@@ -825,8 +844,33 @@ export const useEditorStore = defineStore('editor', () => {
   let matrixAsks = 0
   let matrixTimer: ReturnType<typeof setTimeout> | undefined
 
+  /** The run with each file's crop detected: a task, whose id goes to `onTask` once it starts. */
+  async function detectedRun(
+    body: BatchRunRequest,
+    onTask?: (taskId: string) => void,
+  ): Promise<BatchRun> {
+    const { task_id: taskId } = unwrap(await apiQuiet.POST('/api/batch/detect-crops', { body }))
+    onTask?.(taskId)
+    let task: TaskInfo
+    try {
+      task = await tasks.wait(taskId)
+    } catch (error) {
+      if (!(error instanceof TaskLostError)) throw error
+      throw clientProblem('tasks.unknown', error.message)
+    }
+    if (task.state === 'done') return task.result as unknown as BatchRun
+    if (task.state === 'cancelled') {
+      throw clientProblem(DETECTION_CANCELLED, text('editor.group.detectionCancelled'))
+    }
+    throw clientProblem(
+      task.error_code ?? 'batch.detection_failed',
+      text('editor.group.detectionFailed'),
+      task.error,
+    )
+  }
+
   /** Rejects with the `ApiError` of a failed request, without a toast. */
-  async function askMatrix(detectCrop = false): Promise<BatchResolution> {
+  async function askMatrix(options: MatrixOptions = {}): Promise<BatchResolution> {
     clearTimeout(matrixTimer)
     matrixTimer = undefined
     const state = requireGroup('resolve')
@@ -842,21 +886,22 @@ export const useEditorStore = defineStore('editor', () => {
       source_ids: ids,
       level: (group.value as BatchGroup).level,
       overrides,
-      detect_crop: detectCrop,
     }
     const mine = ++matrixAsks
     resolving.value = true
     try {
-      const answer = deepFreeze(
-        mergedResolutions(unwrap(await apiQuiet.POST('/api/batch/resolve-run', { body }))),
-      )
+      const run = options.detectCrop
+        ? await detectedRun(body, options.onTask)
+        : unwrap(await apiQuiet.POST('/api/batch/resolve-run', { body }))
+      const answer = deepFreeze(mergedResolutions(run))
       if (mine === matrixAsks) {
         resolution.value = answer
         matrixError.value = null
       }
       return answer
     } catch (error) {
-      if (error instanceof ApiError && mine === matrixAsks) {
+      const cancelled = error instanceof ApiError && error.problem.code === DETECTION_CANCELLED
+      if (error instanceof ApiError && mine === matrixAsks && !cancelled) {
         // The server's detail of a stale source is meant for a developer.
         matrixError.value =
           error.problem.code === 'source.stale'
@@ -1478,9 +1523,10 @@ export const useEditorStore = defineStore('editor', () => {
   /**
    * The group resolved now, after every edit on its way (a field's pending edit too): what
    * *Add group to queue* queues. Rejects with an `ApiError` and shows no toast: a failed
-   * resolve (also `matrixError`), or an edit that could not reach the group.
+   * resolve (also `matrixError`), an edit that could not reach the group, or a cancelled
+   * detection (code `DETECTION_CANCELLED`).
    */
-  async function resolveNow(options: { detectCrop?: boolean } = {}): Promise<BatchResolution> {
+  async function resolveNow(options: MatrixOptions = {}): Promise<BatchResolution> {
     requireGroup('resolveNow')
     flushEdits()
     if (editing.value) {
@@ -1498,17 +1544,9 @@ export const useEditorStore = defineStore('editor', () => {
     }
     await settled()
     const failure = editFailure.value
-    if (failure !== null) {
-      const title = text('editor.group.editFailed')
-      throw new ApiError(0, {
-        type: 'about:blank',
-        title,
-        detail: failure,
-        status: 0,
-        code: 'edit.failed',
-      })
-    }
-    return askMatrix(options.detectCrop ?? false)
+    if (failure !== null)
+      throw clientProblem('edit.failed', text('editor.group.editFailed'), failure)
+    return askMatrix(options)
   }
 
   /** The group that holds a state's representative now, else the most of its members. */

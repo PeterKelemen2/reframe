@@ -6,9 +6,10 @@ import type { BatchResolution, JobSettings, QueueJob, Resolution } from '@/api/t
 import { rowLabels } from '@/components/matrix/matrix'
 import { fileName } from '@/components/shell/format'
 import { commitFocusedField } from '@/editor/focus'
-import { useEditorStore } from '@/stores/editor'
+import { DETECTION_CANCELLED, useEditorStore } from '@/stores/editor'
 import { useQueueStore } from '@/stores/queue'
 import { useSourcesStore } from '@/stores/sources'
+import { useTasksStore } from '@/stores/tasks'
 import { useToastStore } from '@/stores/toasts'
 import { useUiStore } from '@/stores/ui'
 
@@ -32,15 +33,25 @@ export interface GroupQuestion {
 
 export type GroupAnswer = 'valid' | 'matrix' | 'cancel'
 
+/** The crop detection that runs before a group is queued. */
+export interface GroupDetection {
+  /** What it does now: the file it measures, once it measures one. */
+  message: string
+}
+
 export interface QueueGroup {
   /** A group is being resolved or queued. */
   busy: ComputedRef<boolean>
   /**
-   * *Add group to queue*: edits the group `groupId` when it is not the edited one, resolves it,
-   * and queues one job per file in episode order; when files have errors, asks first (queue the
-   * valid files, open the matrix, or cancel).
+   * *Add group to queue*: edits the group `groupId` when it is not the edited one, resolves it
+   * with each file's crop detected, and queues one job per file in episode order; when files
+   * have errors, asks first (queue the valid files, open the matrix, or cancel).
    */
   queueGroup(groupId: string): Promise<void>
+  /** The crop detection of the group being queued; `null` when none runs. */
+  detection: ComputedRef<GroupDetection | null>
+  /** Stops the crop detection: the group is not queued. */
+  cancelDetection(): Promise<void>
   /** The question that waits for an answer. */
   question: ComputedRef<GroupQuestion | null>
   answer(choice: GroupAnswer): void
@@ -55,6 +66,7 @@ const FAILED_LINES = 3
 // Shared by every caller (the group row, the banner, the status bar, the shortcut), so that a
 // second click during a queueing does not queue the group twice.
 const busy = ref(false)
+const detectionTask = ref<string | null>(null)
 const question = shallowRef<GroupQuestion | null>(null)
 let reply: ((choice: GroupAnswer) => void) | null = null
 
@@ -80,6 +92,7 @@ export function useQueueGroup(): QueueGroup {
   const editor = useEditorStore()
   const queue = useQueueStore()
   const sources = useSourcesStore()
+  const tasks = useTasksStore()
   const toasts = useToastStore()
   const ui = useUiStore()
 
@@ -158,12 +171,17 @@ export function useQueueGroup(): QueueGroup {
       let resolution: BatchResolution
       try {
         // Queueing detects each file's crop: the matrix shown while editing does not.
-        resolution = await editor.resolveNow({ detectCrop: true })
+        resolution = await editor.resolveNow({
+          detectCrop: true,
+          onTask: (taskId) => (detectionTask.value = taskId),
+        })
       } catch (error) {
         // `resolveNow` shows no toast of its own.
         if (!(error instanceof ApiError)) throw error
-        await showProblem(error)
+        if (error.problem.code !== DETECTION_CANCELLED) await showProblem(error)
         return
+      } finally {
+        detectionTask.value = null
       }
       let rows = resolution.rows ?? []
       const failed = rows.filter((row) => row.status === 'error')
@@ -197,9 +215,31 @@ export function useQueueGroup(): QueueGroup {
     }
   }
 
+  const detection = computed<GroupDetection | null>(() => {
+    const taskId = detectionTask.value
+    if (taskId === null) return null
+    const task = tasks.tasks[taskId]
+    // Before its first file the task's message names no file.
+    const measuring = task?.progress != null ? task.message : null
+    return { message: measuring || text('group.banner.detecting') }
+  })
+
+  async function cancelDetection(): Promise<void> {
+    const taskId = detectionTask.value
+    if (taskId === null) return
+    try {
+      await tasks.cancel(taskId)
+    } catch (error) {
+      // The API client has shown the problem as a toast.
+      if (!(error instanceof ApiError)) throw error
+    }
+  }
+
   return {
     busy: computed(() => busy.value),
     queueGroup,
+    detection,
+    cancelDetection,
     question: computed(() => question.value),
     answer,
   }

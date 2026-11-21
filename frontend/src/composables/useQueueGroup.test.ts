@@ -23,21 +23,27 @@ import {
   withRow,
 } from '@/components/matrix/testing'
 import { createAppI18n } from '@/i18n'
-import type { EditorTarget } from '@/stores/editor'
+import type { EditorTarget, MatrixOptions } from '@/stores/editor'
+import { useTasksStore } from '@/stores/tasks'
 import { useToastStore } from '@/stores/toasts'
 import { useUiStore } from '@/stores/ui'
 
 import { type QueueGroup, useQueueGroup } from './useQueueGroup'
+
+const DETECTION_CANCELLED = 'batch.detection_cancelled'
 
 // Test doubles of the editor and sources stores: the members their contracts give.
 const editor = reactive({
   target: null as EditorTarget | null,
   group: null as BatchGroup | null,
   editGroup: vi.fn<(groupId: string) => Promise<void>>(async () => {}),
-  resolveNow: vi.fn<(options?: { detectCrop?: boolean }) => Promise<BatchResolution>>(),
+  resolveNow: vi.fn<(options?: MatrixOptions) => Promise<BatchResolution>>(),
 })
 const sources = reactive({ entries: [] as SourceEntry[] })
-vi.mock('@/stores/editor', () => ({ useEditorStore: () => editor }))
+vi.mock('@/stores/editor', () => ({
+  useEditorStore: () => editor,
+  DETECTION_CANCELLED: 'batch.detection_cancelled',
+}))
 vi.mock('@/stores/sources', () => ({ useSourcesStore: () => sources }))
 
 function editing(groupId: string): EditorTarget {
@@ -138,7 +144,10 @@ describe('queueGroup without errors', () => {
     await group.queueGroup('g1')
     expect(editor.editGroup).not.toHaveBeenCalled()
     expect(editor.resolveNow).toHaveBeenCalledOnce()
-    expect(editor.resolveNow).toHaveBeenCalledWith({ detectCrop: true })
+    expect(editor.resolveNow).toHaveBeenCalledWith({
+      detectCrop: true,
+      onTask: expect.any(Function),
+    })
     const bodies = queueBodies()
     expect(bodies).toHaveLength(1)
     expect(outputs(bodies[0])).toEqual([
@@ -305,6 +314,87 @@ describe('queueGroup without errors', () => {
         detail: expect.stringMatching(/^1 file is queued without part of its per-file changes/),
       },
     ])
+  })
+})
+
+/** A detection that started task `t-crop` and waits for the test to end it. */
+function detecting() {
+  const answer = deferred<BatchResolution>()
+  editor.resolveNow.mockImplementation((options) => {
+    options?.onTask?.('t-crop')
+    return answer.promise
+  })
+  return answer
+}
+
+function measuring(message: string, progress: number): void {
+  useTasksStore().onTaskProgress({
+    type: 'task.progress',
+    task: { id: 't-crop', kind: 'batch_cropdetect', state: 'running', progress, message },
+  })
+}
+
+describe('the crop detection before queueing', () => {
+  it('says which file it measures while it runs, then queues', async () => {
+    const answer = detecting()
+    const group = setup()
+    expect(group.detection.value).toBeNull()
+    const running = group.queueGroup('g1')
+    await flushPromises()
+    expect(group.detection.value).toEqual({ message: 'Detecting the crop…' })
+    measuring('Detecting the crop: file 3 of 12', 100 * (2 / 12))
+    expect(group.detection.value).toEqual({ message: 'Detecting the crop: file 3 of 12' })
+    expect(queueBodies()).toEqual([])
+    answer.resolve(withRow(animeResolution(), fixedE11()))
+    await running
+    expect(group.detection.value).toBeNull()
+    expect(queueBodies()).toHaveLength(1)
+  })
+
+  it('Cancel cancels the task, and a cancelled detection queues nothing and says nothing', async () => {
+    server.on('POST /api/tasks/t-crop/cancel', { cancelled: true })
+    const answer = detecting()
+    const group = setup()
+    const running = group.queueGroup('g1')
+    await flushPromises()
+    measuring('Detecting the crop: file 1 of 12', 0)
+    await group.cancelDetection()
+    expect(
+      server.requests.filter((request) => request.path === '/api/tasks/t-crop/cancel'),
+    ).toHaveLength(1)
+    answer.reject(
+      new ApiError(0, { title: 'Cancelled', status: 0, code: DETECTION_CANCELLED } as never),
+    )
+    await running
+    expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([])
+    expect(group.detection.value).toBeNull()
+    expect(group.busy.value).toBe(false)
+  })
+
+  it('a failed detection queues nothing and says why', async () => {
+    const answer = detecting()
+    const group = setup()
+    const running = group.queueGroup('g1')
+    await flushPromises()
+    answer.reject(
+      new ApiError(0, {
+        title: 'The crop of the group’s files could not be detected',
+        detail: 'ffmpeg stopped',
+        status: 0,
+        code: 'batch.detection_failed',
+      } as never),
+    )
+    await running
+    expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([
+      {
+        severity: 'error',
+        summary: 'The crop of the group’s files could not be detected',
+        detail: 'ffmpeg stopped',
+      },
+    ])
+    expect(group.detection.value).toBeNull()
   })
 })
 

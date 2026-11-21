@@ -158,7 +158,7 @@ export async function pasteIntoFile(sourceId: string, copied: Copied): Promise<v
       : withSection(base ?? copied.template, copied.template, copied.section)
   const answer = unwrap(
     await api.POST('/api/batch/resolve', {
-      body: { template, source_ids: [sourceId], detect_crop: false },
+      body: { template, source_ids: [sourceId] },
     }),
   )
   const target = editor.target

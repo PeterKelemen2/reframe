@@ -13,15 +13,17 @@ import type {
   MediaSource,
   Preset,
   Resolution,
+  TaskInfo,
 } from '@/api/types'
 import { applyOps } from '@/editor/patch'
 import { sampleJob, samplePreset } from '@/editor/testing/samples'
 
 import { useValidation } from '@/composables/useValidation'
 
-import { EDIT_DEBOUNCE, useEditorStore } from './editor'
+import { DETECTION_CANCELLED, EDIT_DEBOUNCE, useEditorStore } from './editor'
 import { templateOfPreset } from './presets'
 import { useSourcesStore } from './sources'
+import { useTasksStore } from './tasks'
 import { useToastStore } from './toasts'
 import { useValidationStore } from './validation'
 
@@ -106,6 +108,14 @@ function resolveRun(request: Recorded): BatchRun {
       },
     ],
   }
+}
+
+/** Ends the crop detection task `t-crop` (`done` unless `task` says otherwise). */
+function endDetection(task: Partial<TaskInfo>): void {
+  useTasksStore().onTaskDone({
+    type: 'task.done',
+    task: { id: 't-crop', kind: 'batch_cropdetect', state: 'done', ...task },
+  })
 }
 
 async function edited() {
@@ -216,7 +226,6 @@ describe('the editor store, group target', () => {
         template: templateOfPreset(preset),
         source_ids: ['e1'],
         overrides: {},
-        detect_crop: false,
       })
       expect(body<ResolveBody>(requests('POST /api/batch/resolve-run')[0])).toMatchObject({
         source_ids: IDS,
@@ -867,16 +876,68 @@ describe('the editor store, group target', () => {
       expect(requests('POST /api/batch/derive')).toHaveLength(1)
       expect(answer.rows?.[0]?.job?.video?.encoder).toBe('libx264')
       expect(editor.resolution).toEqual(answer)
-      expect(body<ResolveBody>(requests('POST /api/batch/resolve-run').at(-1))).toMatchObject({
-        detect_crop: false,
-      })
+      expect(requests('POST /api/batch/detect-crops')).toHaveLength(0)
     })
 
-    it('resolveNow asks for the crop of each file when queueing needs it', async () => {
-      const editor = await edited()
-      await editor.resolveNow({ detectCrop: true })
-      expect(body<ResolveBody>(requests('POST /api/batch/resolve-run').at(-1))).toMatchObject({
-        detect_crop: true,
+    describe('resolveNow with the crop of each file', () => {
+      /** The detection task's run: the fake server's `resolve-run` answer for the request. */
+      let run: BatchRun | null = null
+
+      beforeEach(() => {
+        run = null
+        server.on('POST /api/batch/detect-crops', (request) => {
+          run = resolveRun(request)
+          return { task_id: 't-crop' }
+        })
+      })
+
+      it('runs it as a task, tells its id, and resolves with its result', async () => {
+        const editor = await edited()
+        const asked = requests('POST /api/batch/resolve-run').length
+        const started: string[] = []
+        const answer = editor.resolveNow({
+          detectCrop: true,
+          onTask: (taskId) => started.push(taskId),
+        })
+        await flush()
+        expect(started).toEqual(['t-crop'])
+        expect(editor.resolving).toBe(true)
+        const sent = body<ResolveBody>(requests('POST /api/batch/detect-crops')[0])
+        expect(sent).toMatchObject({ source_ids: IDS, level: 'standard' })
+        endDetection({ result: run as never })
+        const resolution = await answer
+        expect(resolution.rows?.map((one) => one.path)).toEqual(IDS.map(pathOf))
+        expect(editor.resolution).toEqual(resolution)
+        expect(editor.resolving).toBe(false)
+        expect(requests('POST /api/batch/resolve-run')).toHaveLength(asked)
+      })
+
+      it('a cancelled task rejects with its own code and is no matrix error', async () => {
+        const editor = await edited()
+        const last = editor.resolution
+        const answer = editor.resolveNow({ detectCrop: true })
+        await flush()
+        endDetection({ state: 'cancelled' })
+        await expect(answer).rejects.toMatchObject({ problem: { code: DETECTION_CANCELLED } })
+        expect(editor.matrixError).toBeNull()
+        expect(editor.resolution).toBe(last)
+        expect(useToastStore().items).toEqual([])
+      })
+
+      it('a failed task rejects with its error, which the matrix shows', async () => {
+        const editor = await edited()
+        const answer = editor.resolveNow({ detectCrop: true })
+        await flush()
+        endDetection({
+          state: 'failed',
+          error: 'A path is outside the roots',
+          error_code: 'path.x',
+        })
+        await expect(answer).rejects.toMatchObject({
+          problem: { code: 'path.x', detail: 'A path is outside the roots' },
+        })
+        expect(editor.matrixError).toBe('A path is outside the roots')
+        expect(useToastStore().items).toEqual([])
       })
     })
 

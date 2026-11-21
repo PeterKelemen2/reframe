@@ -1,10 +1,11 @@
 """Batch mode: group sources, derive a template from a job, resolve a template in every file,
-save a group template as a preset."""
+detect each file's crop for queueing, save a group template as a preset."""
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable, Sequence
+from pathlib import Path
 
 from fastapi import Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,10 +23,12 @@ from reframe.models import (
     TemplateSection,
 )
 from reframe.service import Reframe
+from reframe.tasks import TaskContext, TaskFailed
 from reframe_server import security
-from reframe_server.api import api_router
+from reframe_server.api import JsonTextResponse, TaskAccepted, accepted, api_router
 from reframe_server.config import ServerConfig
 from reframe_server.deps import ConfigDep, ReframeDep, SourcesDep
+from reframe_server.errors import ProblemError
 from reframe_server.routers.jobs import (
     folder_issue,
     jail_job,
@@ -67,10 +70,6 @@ class BatchResolveRequest(BaseModel):
     source_ids: list[str]
     overrides: Overrides = Field(default_factory=dict)
     """Per-file JSON patches on the job, by ``source_id``."""
-    detect_crop: bool = False
-    """Detect the crop of each file whose job crops automatically or conservatively without a
-    rectangle, as for queueing: one FFmpeg run per sample frame and file, so ask for it only
-    when the group is queued."""
 
 
 class BatchRunRequest(BatchResolveRequest):
@@ -157,13 +156,39 @@ async def resolve(
     collisions."""
     sources, overrides = await _inputs(reframe, registry, config, body)
     resolution = await reframe.batch.resolve(
-        body.template,
-        sources,
-        overrides=overrides,
-        check=_jail(config),
-        detect_crop=body.detect_crop,
+        body.template, sources, overrides=overrides, check=_jail(config)
     )
     return await asyncio.to_thread(_checked, config, resolution)
+
+
+async def _run(
+    reframe: Reframe,
+    config: ServerConfig,
+    body: BatchRunRequest,
+    sources: list[MediaSource],
+    overrides: dict[str, Sequence[JsonPatchOp]],
+    task: TaskContext | None = None,
+) -> BatchRun:
+    """The run of ``body``; in a ``task``, each file's crop is detected, and each file measured
+    is its progress."""
+
+    def measuring(_path: Path, number: int, total: int) -> None:
+        assert task is not None
+        message = f"Detecting the crop: file {number} of {total}"
+        task.progress(done=number - 1, total=total, message=message)
+
+    grouping, resolutions = await reframe.batch.resolve_batch(
+        body.template,
+        sources,
+        level=body.level,
+        overrides=overrides,
+        check=_jail(config),
+        detect_crop=task is not None,
+        cancel=None if task is None else task.cancel,
+        progress=None if task is None else measuring,
+    )
+    checked = await asyncio.to_thread(lambda: [_checked(config, one) for one in resolutions])
+    return BatchRun(grouping=grouping, resolutions=checked)
 
 
 @router.post("/batch/resolve-run")
@@ -173,16 +198,32 @@ async def resolve_run(
     """A whole batch: the sources grouped at ``level`` and resolved per group, with the name
     checks over every group. A source that is the planned output of another is left out."""
     sources, overrides = await _inputs(reframe, registry, config, body)
-    grouping, resolutions = await reframe.batch.resolve_batch(
-        body.template,
-        sources,
-        level=body.level,
-        overrides=overrides,
-        check=_jail(config),
-        detect_crop=body.detect_crop,
-    )
-    checked = await asyncio.to_thread(lambda: [_checked(config, one) for one in resolutions])
-    return BatchRun(grouping=grouping, resolutions=checked)
+    return await _run(reframe, config, body, sources, overrides)
+
+
+@router.post("/batch/detect-crops", status_code=202, response_model=TaskAccepted)
+async def detect_crops(
+    body: BatchRunRequest, reframe: ReframeDep, registry: SourcesDep, config: ConfigDep
+) -> JsonTextResponse:
+    """*Add group to queue*: the run of ``resolve-run`` with the crop detected in each file
+    whose job crops automatically or conservatively without a rectangle, as a task whose result
+    is a :class:`BatchRun`. One FFmpeg run per sample frame and file: the task reports each
+    file it measures (``file n of N``), and a cancel stops it. A path out of the roots is
+    refused (403) before the task starts."""
+    sources, overrides = await _inputs(reframe, registry, config, body)
+    # The jail of the overrides runs as they are resolved: one without detection refuses a path
+    # before a task starts. The task resolves again, so a preset changed meanwhile is jailed too.
+    await _run(reframe, config, body, sources, overrides)
+
+    async def work(task: TaskContext) -> BatchRun:
+        try:
+            return await _run(reframe, config, body, sources, overrides, task)
+        except ProblemError as error:
+            problem = error.problem
+            text = problem.title if problem.detail is None else f"{problem.title}: {problem.detail}"
+            raise TaskFailed(text, code=problem.code) from None
+
+    return accepted(reframe.tasks.start("batch_cropdetect", work, message="Detecting the crop"))
 
 
 @router.post("/batch/save-preset", status_code=201)

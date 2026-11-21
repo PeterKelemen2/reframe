@@ -210,6 +210,15 @@ INPUTS = [
     ),
     override("batch_resolve_run", "/api/batch/resolve-run"),
     PathInput(
+        "batch_detect_crops",
+        "template",
+        "output",
+        lambda _, p, __: Request(
+            "post", "/api/batch/detect-crops", {"template": {"naming": naming(p)}, "source_ids": []}
+        ),
+    ),
+    override("batch_detect_crops", "/api/batch/detect-crops"),
+    PathInput(
         "batch_save_preset",
         "template",
         "output",

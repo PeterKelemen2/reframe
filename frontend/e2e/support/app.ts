@@ -72,6 +72,23 @@ export async function readQueue(request: APIRequestContext): Promise<QueueSnapsh
   return (await answer.json()) as QueueSnapshot
 }
 
+/** The server's first media root: the folder the fixtures were copied into. */
+export async function mediaRoot(request: APIRequestContext): Promise<string> {
+  const answer = await request.get('/api/fs/roots', { headers: AUTH })
+  expect(answer.ok()).toBe(true)
+  const { roots } = (await answer.json()) as { roots: { path: string; kind: string }[] }
+  const media = roots.find((root) => root.kind === 'media')
+  expect(media, 'a media root').toBeDefined()
+  return media!.path
+}
+
+/** The server's background tasks of one kind, read with the run's token. */
+export async function readTasks(request: APIRequestContext, kind: string): Promise<TaskInfo[]> {
+  const answer = await request.get('/api/tasks', { headers: AUTH, params: { kind } })
+  expect(answer.ok()).toBe(true)
+  return (await answer.json()) as TaskInfo[]
+}
+
 /** The server's settings, read with the run's token. */
 export async function readSettings(request: APIRequestContext): Promise<AppSettings> {
   const answer = await request.get('/api/settings', { headers: AUTH })
