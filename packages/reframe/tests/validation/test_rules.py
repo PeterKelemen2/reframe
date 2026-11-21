@@ -1691,6 +1691,30 @@ def test_amf_preanalysis_custom_params_are_read_as_ffmpeg_reads_them(params: str
     assert sc.found(issues, "encoder.preanalysis_picture_too_small", "video.custom_params") is on
 
 
+def test_a_track_name_variable_typo_has_a_fix() -> None:
+    def issue_of(name: str) -> Any:
+        found = build(cases_metadata.track_name(name)).validate()
+        return next(i for i in found if i.code == "metadata.name_variable_unknown")
+
+    typo = issue_of("{lang_nmae:upper} {chanels}")
+    assert typo.message == (
+        "{lang_nmae} and {chanels} are not track name variables, so the track name is written "
+        "as typed, braces and all. Did you mean {lang_name} and {channels}?"
+    )
+    (repair,) = typo.fixes
+    assert repair.label == "Use {lang_name} and {channels}"
+    assert [op.model_dump() for op in repair.patch] == [
+        {"op": "replace", "path": "/audio/0/metadata/name", "value": "{lang_name:upper} {channels}"}
+    ]
+    other = issue_of("{lang_name} {episode}")
+    assert other.fixes == []
+    assert other.message.startswith("{episode} is not a track name variable")
+    assert other.message.endswith(
+        "The variables of a track name are {bitrate}, {channels}, {codec}, {lang}, {lang_name}, "
+        "{lang_native}, {source_codec}, {title}."
+    )
+
+
 def test_every_code_has_a_case() -> None:
     declared = {code for rule in JOB_RULES for code in rule.codes}
     covered = {case.code for case in CASES}
