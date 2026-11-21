@@ -270,6 +270,12 @@ function usable(button: HTMLButtonElement | undefined): button is HTMLButtonElem
   return button !== undefined && !button.disabled
 }
 
+/** Cancel and Remove ask for no confirmation: a second Enter must not land on them. */
+function harmless(button: HTMLButtonElement): boolean {
+  const action = button.dataset.action
+  return action !== undefined && action !== 'cancel' && action !== 'remove'
+}
+
 // A state change swaps a row's buttons (Pause for Resume) and a removal drops the row: the
 // focused button goes away, and the focus goes to the button that took its place.
 watch(
@@ -304,7 +310,7 @@ watch(
       // The job's new state brought its own action first (Resume for Pause, Retry for Cancel).
       (same === undefined
         ? undefined
-        : buttons.find((button) => usable(button) && button.dataset.action)) ??
+        : buttons.find((button) => usable(button) && harmless(button))) ??
       buttons.slice(before.index).find(usable) ??
       buttons.slice(0, before.index).findLast(usable)
     if (target !== undefined) target.focus()

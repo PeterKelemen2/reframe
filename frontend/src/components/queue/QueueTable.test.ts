@@ -312,6 +312,29 @@ describe('the queue table', () => {
     },
   )
 
+  it.each([
+    ['waiting', 'start', 'waiting', 'log'],
+    ['waiting', 'start', 'running', 'pause'],
+    ['failed', 'retry', 'waiting', 'log'],
+  ] as const)(
+    'after a %s job’s %s, the %s job’s focus goes to %s, never to Cancel',
+    async (state, action, next, replacement) => {
+      queue.jobs = [job('x', 'done'), job('a', state)]
+      await mountTable()
+      queue[action].mockImplementationOnce(async () => {
+        queue.processing = true
+        queue.only = ['a']
+        queue.jobs = [job('x', 'done'), job('a', next)]
+      })
+      const pressed = button('a', `[data-action="${action}"]`)
+      pressed.focus()
+      pressed.click()
+      await flushPromises()
+      expect(actions('a')).toContain('cancel')
+      expect(document.activeElement).toBe(button('a', `[data-action="${replacement}"]`))
+    },
+  )
+
   it('after a removal, the focus goes to the same button of the next job, else of the last one', async () => {
     queue.jobs = [job('a', 'done'), job('b', 'done'), job('c', 'failed')]
     queue.remove.mockImplementation(async (id) => {
