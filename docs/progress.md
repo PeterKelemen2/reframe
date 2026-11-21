@@ -4,10 +4,11 @@ A short summary of [status.md](status.md) and the M10 release checklist in
 [plan/08-roadmap.md](plan/08-roadmap.md#release-checklist). Read this file for "where are
 we" and "what is next"; read `status.md` for the details of a step.
 
-Snapshot: 2026-11-20, branch `m10-hardening` (about 465 commits ahead of `main`, not merged,
-nothing pushed). Update this file when a checklist item or a step below changes.
+Snapshot: 2026-11-21, branch `m10-hardening` (about 530 commits ahead of `main`, not merged,
+nothing pushed). The repository lives in `/mnt/Data/Programming/reframe`;
+`~/Programming/reframe` is a link to it. Update this file when a checklist item or a step below changes.
 
-## Overall: about 95 % done
+## Overall: about 96 % done
 
 The product is built. What is left is mostly the release itself: push, run CI and the
 release pipeline on GitHub for the first time, write the user docs, and the checks that need
@@ -22,7 +23,7 @@ hardware the owner does not have.
 | M4 Web frontend MVP | 100 % | Merged |
 | M5 Desktop shell | 100 % | Merged |
 | M6–M9 Tracks, batch, picture, advanced options | 100 % | Merged |
-| **M10 Hardening and v1.0** | **about 80–85 %** | On `m10-hardening`, not merged |
+| **M10 Hardening and v1.0** | **about 85 %** | On `m10-hardening`, not merged |
 
 ## Steps
 
@@ -70,22 +71,26 @@ with `actionlint`. Expect a round of fixes on the first run.
 
 ## Recommended order of work
 
-1. **The changes of [decision 0103](decisions/0103-owner-decisions-before-v1.md)** (items 1–13):
-   batch crop per file (audit C-18), Align A/V start (A-76), track name templates (B-39), no
-   power actions in Docker (D-17), the queue's fix actions (A-27), AMF pre-analysis (A-35),
-   Start for one job (B-53), help texts (A-12, B-28), NVENC constant quality with a high
-   `-maxrate`, the 4K NVENC preset in 10-bit, `default_container` removed, the AppImage's
-   GStreamer plugins and its desktop entry offer.
-2. **Push, then the first CI run** and its fix round; a `v1.0.0-rc.1` tag tries the release
-   pipeline (the secrets: [release.md](release.md) "Once, before the first release").
-3. **User docs**, so they describe what ships (with the Windows Detelecine crash as a known
-   issue).
-4. **The four open licence-text groups**, and the GStreamer plugins' LGPL notices.
+Done: the changes of [decision 0103](decisions/0103-owner-decisions-before-v1.md) (items 1–13,
+the AppImage's decoders, software AV1), two reviews and their fix round (2026-11-21). The
+release secrets are set and the public keys committed ([release.md](release.md)).
+
+1. **Push `m10-hardening` (the owner), then the first CI run** and its fix round. No tag: the
+   owner makes more changes before a release.
+2. **User docs**, so they describe what ships (with the Windows Detelecine crash and the
+   AppImage's preview codecs as known limits).
+3. **The four open licence-text groups.**
+4. **A pre-release tag** when the owner decides, to try the release pipeline.
 5. **Merge `m10-hardening` into `main`** when the checklist is done.
 
 ## Open owner decisions
 
-None: decision [0103](decisions/0103-owner-decisions-before-v1.md) settled them on 2026-11-20.
+None: decision [0103](decisions/0103-owner-decisions-before-v1.md) and its follow-ups settled them
+(2026-11-20, 2026-11-21).
+
+Known flaky under the full parallel suite (they pass alone): `test_subtitles.py`
+`test_a_sup_file_is_a_bitmap_counted_in_display_sets` and `…_broken_blocks_the_job[cp1250]`,
+`test_tasks.py::test_only_the_server_folders_are_hidden`.
 
 ## After v1 (does not block the release)
 
