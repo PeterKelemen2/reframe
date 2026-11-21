@@ -1660,6 +1660,25 @@ def test_negative(case: Case) -> None:
     assert not sc.found(issues, case.code, case.path), issues
 
 
+@pytest.mark.parametrize(
+    ("params", "on"),
+    [
+        *((f"preanalysis={off}", False) for off in ("disabled", "DISABLE", "N", "00", "-1")),
+        ("preanalysis=auto", False),
+        *((f"preanalysis={on}", True) for on in ("enabled", "Yes", "01", "+1")),
+        ("preanalysis", True),
+        ("rc=04", True),
+        ("rc=hqcbr", True),
+        ("rc=3", False),
+        ("rc=QVBR", False),  # FFmpeg refuses it: no pre-analysis
+    ],
+)
+def test_amf_preanalysis_custom_params_are_read_as_ffmpeg_reads_them(params: str, on: bool) -> None:
+    small = dims(size=FitWithin(width=320, height=180))
+    issues = build(both(video(encoder="h264_amf", custom_params=params), small)).validate()
+    assert sc.found(issues, "encoder.preanalysis_picture_too_small", "video.custom_params") is on
+
+
 def test_every_code_has_a_case() -> None:
     declared = {code for rule in JOB_RULES for code in rule.codes}
     covered = {case.code for case in CASES}

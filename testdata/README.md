@@ -1139,6 +1139,14 @@ not. The upper ends (8192, 4352) are above what the encoders take anyway (`h264_
 `encoder.preanalysis_picture_too_small`; `test_amf_preanalysis_needs_the_smallest_picture_of_the_rule`
 checks it on the GPU.
 
+FFmpeg reads `-preanalysis` as a boolean (2026-11-21, same machine): `true`, `y`, `yes`,
+`enable`, `enabled`, `on` and `false`, `n`, `no`, `disable`, `disabled`, `off` in any case,
+`auto` in lower case only, and any integer (`00`, `01`, `+1`). Only 1 starts the pre-analysis
+(320x180 fails); 0 and -1 (`auto`) encode. `2` and `AUTO` are refused: `Unable to parse
+"preanalysis" option value "2" as boolean`, exit 234. `-rc` takes its names in lower case
+only (`QVBR` is refused) or a number (`04` and ` 4` are `qvbr`).
+`test_amf_reads_the_preanalysis_spellings_of_the_rule` checks it on the GPU.
+
 **Hardware rate control (AMF, VAAPI on radeonsi).** Every preset, profile, level, the quality
 mode at min / default / max, average bitrate and every option encode:
 
