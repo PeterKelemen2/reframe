@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { APIRequestContext, Page } from '@playwright/test'
 
 import {
+  CROP_DETECTION,
   changeSettings,
   mediaRoot,
   openApp,
@@ -60,7 +61,7 @@ test('Add group to queue detects the crop of each file before it queues them', a
   const banner = await editSeason(page, 'Wide Show', 3)
 
   await banner.getByRole('button', { name: 'Add group to queue' }).click()
-  await expect(page.getByText('Queued 3 jobs')).toBeVisible()
+  await expect(page.getByText('Queued 3 jobs')).toBeVisible({ timeout: CROP_DETECTION })
   await expect(banner.locator('[data-state="detecting-crop"]')).toHaveCount(0)
   const jobs = await jobsOf(request, folder)
   expect(jobs.map((job) => job.settings.dimensions?.crop)).toEqual(

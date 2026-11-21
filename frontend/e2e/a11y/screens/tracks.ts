@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 
-import { openApp, openFile, waitForStore } from '../../support/app'
+import { CROP_DETECTION, openApp, openFile, waitForStore } from '../../support/app'
 import { expect } from '../../support/test'
 import { editSeason, openSeason, openTab, showTab } from '../steps'
 import type { Screen } from '../types'
@@ -156,7 +156,7 @@ export const screens: Screen[] = [
     async setup(page) {
       await seasonWithError(page)
       await page.locator('.group-banner [data-action="queue-group"]').click()
-      await expect(page.locator('.queue-group-dialog')).toBeVisible()
+      await expect(page.locator('.queue-group-dialog')).toBeVisible({ timeout: CROP_DETECTION })
     },
   },
   {

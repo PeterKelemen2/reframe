@@ -5,6 +5,12 @@ import { TOKEN } from './servers'
 
 const AUTH = { Authorization: `Bearer ${TOKEN}` }
 
+/**
+ * How long *Add group to queue* may take: it detects the crop of each file first, one FFmpeg
+ * run per sample frame, and the servers of the three browsers share the machine.
+ */
+export const CROP_DETECTION = 120_000
+
 /** Opens the app with the run's token in the address fragment and waits for the workspace. */
 export async function openApp(page: Page): Promise<void> {
   await page.goto(`/#token=${TOKEN}`)

@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 
-import { changeSettings, openApp, readQueue, readSettings } from './support/app'
+import { CROP_DETECTION, changeSettings, openApp, readQueue, readSettings } from './support/app'
 import { expect, test } from './support/test'
 
 const FOLDER = 'Anime.Show.S01.BluRay.x264-GRP'
@@ -146,7 +146,7 @@ test('a season folder: edit the group, check the matrix, queue the group', async
   await expect(output.getByTestId('naming-result')).toHaveText('Anime Show - S01E01 - Pilot.mkv')
 
   await banner.getByRole('button', { name: 'Add group to queue' }).click()
-  await expect(page.getByText('Queued 12 jobs')).toBeVisible()
+  await expect(page.getByText('Queued 12 jobs')).toBeVisible({ timeout: CROP_DETECTION })
   const jobs = (await readQueue(request)).jobs
     .filter((job) => !known.has(job.id))
     .toSorted((a, b) => a.position - b.position)
