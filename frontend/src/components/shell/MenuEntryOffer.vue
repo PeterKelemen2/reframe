@@ -28,6 +28,7 @@ const adding = ref(false)
 
 /** After the first-run screen: one first-start question at a time. */
 const visible = computed(() => open.value && !firstRun.shown.value)
+const addable = computed(() => failure.value === null && entry.value?.percentInPath !== true)
 
 onMounted(async () => {
   if (offered.value) return
@@ -76,7 +77,10 @@ function afterHide(): void {
     @update:visible="(shown) => shown || close()"
     @after-hide="afterHide"
   >
-    <div :id="textId" class="menu-entry-offer__text">
+    <div v-if="entry?.percentInPath" :id="textId" class="menu-entry-offer__text">
+      <p data-field="percent">{{ t('menuEntry.offer.percent', { file: entry.appimage }) }}</p>
+    </div>
+    <div v-else :id="textId" class="menu-entry-offer__text">
       <p>{{ t('menuEntry.offer.text', { file: entry?.appimage ?? '' }) }}</p>
       <p>{{ t('menuEntry.offer.later') }}</p>
     </div>
@@ -87,12 +91,12 @@ function afterHide(): void {
       <Button
         severity="secondary"
         text
-        :label="failure === null ? t('menuEntry.offer.skip') : t('menuEntry.offer.close')"
+        :label="addable ? t('menuEntry.offer.skip') : t('menuEntry.offer.close')"
         data-action="menu-entry-skip"
         @click="close"
       />
       <Button
-        v-if="failure === null"
+        v-if="addable"
         :label="t('menuEntry.offer.add')"
         :loading="adding"
         data-action="menu-entry-add"

@@ -73,6 +73,8 @@ export interface DesktopMenuEntry {
   added: boolean
   /** Another entry of the name (an installed package's): the app adds none. */
   other: string | null
+  /** The AppImage's path has a `%`, which GNOME, Xfce and Cinnamon cannot start: no entry. */
+  percentInPath: boolean
 }
 
 export interface DesktopShell {

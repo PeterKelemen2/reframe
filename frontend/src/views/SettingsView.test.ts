@@ -88,7 +88,12 @@ describe('the Settings view', () => {
   ])('shows the application menu entry in the AppImage only ($appimage)', async (row) => {
     platform.desktop = {
       settings: async () => ({ tray: false }),
-      menuEntry: async () => ({ appimage: row.appimage, added: true, other: null }),
+      menuEntry: async () => ({
+        appimage: row.appimage,
+        added: true,
+        other: null,
+        percentInPath: false,
+      }),
     } as Partial<DesktopShell> as DesktopShell
     try {
       const { wrapper } = await mountView()

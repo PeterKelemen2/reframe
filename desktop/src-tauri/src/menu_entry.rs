@@ -29,6 +29,9 @@ pub struct MenuEntry {
     /// Another entry of the same name (an installed package's, or the user's own): this app
     /// adds none, since one would hide the other.
     pub other: Option<PathBuf>,
+    /// The AppImage's path has a `%`, which GLib's desktops (GNOME, Xfce, Cinnamon) cannot start
+    /// from an entry: this app adds none.
+    pub percent_in_path: bool,
 }
 
 /// What the entry says about the app.
@@ -166,7 +169,14 @@ pub fn state(places: &Places) -> MenuEntry {
         appimage: Some(places.appimage.clone()),
         added,
         other,
+        percent_in_path: has_percent(&places.appimage),
     }
+}
+
+/// GLib looks for `Exec=`'s program before it turns the spec's `%%` into `%`, so it never finds
+/// a program whose path has a `%` and skips the entry.
+fn has_percent(appimage: &str) -> bool {
+    appimage.contains('%')
 }
 
 /// `path` as one argument of `Exec=`: quoted when it has a reserved character, with `%` doubled,
@@ -235,13 +245,18 @@ fn remove_file(path: &Path) -> io::Result<()> {
 }
 
 /// Writes the entry and its icons, or leaves neither when one cannot be written; refused while
-/// another entry of the name exists.
+/// another entry of the name exists or the AppImage's path has a `%`.
 pub fn add(places: &Places, info: &AppInfo) -> io::Result<()> {
     if let Some(other) = state(places).other {
         return Err(io::Error::other(format!(
             "the application menu already has {}",
             other.display()
         )));
+    }
+    if has_percent(&places.appimage) {
+        return Err(io::Error::other(
+            "the AppImage's path has a %, which the desktop cannot start from a menu entry",
+        ));
     }
     write_file(&places.entry(), contents(&places.appimage, info).as_bytes())?;
     let icons = places
@@ -270,8 +285,12 @@ fn remove_entry_and_icons(places: &Places, info: &AppInfo) -> io::Result<()> {
 }
 
 /// Points this app's entry at the AppImage the app runs from, when it pointed at another (the
-/// file was moved, or another copy wrote it). `true` when it was rewritten.
+/// file was moved, or another copy wrote it). `true` when it was rewritten; never to a path
+/// with a `%`.
 pub fn follow(places: &Places, info: &AppInfo) -> io::Result<bool> {
+    if has_percent(&places.appimage) {
+        return Ok(false);
+    }
     let wanted = contents(&places.appimage, info);
     match fs::read_to_string(places.entry()) {
         Ok(text) if is_ours(&text) && text != wanted => {
@@ -494,7 +513,8 @@ mod tests {
             MenuEntry {
                 appimage: Some("/a/Reframe.AppImage".into()),
                 added: false,
-                other: None
+                other: None,
+                percent_in_path: false,
             }
         );
         add(&places, &info()).unwrap();
@@ -557,6 +577,27 @@ mod tests {
             0,
             "no partial file is left"
         );
+    }
+
+    #[test]
+    fn an_appimage_path_with_a_percent_gets_no_entry() {
+        let temp = Temp::new("percent");
+        let places = temp.places("/a/100%/Reframe.AppImage");
+        assert!(state(&places).percent_in_path);
+        assert!(add(&places, &info()).is_err());
+        assert!(!places.entry().exists());
+        assert!(!temp.0.join("home/icons").exists());
+
+        add(&temp.places("/a/Reframe.AppImage"), &info()).unwrap();
+        assert!(!follow(&places, &info()).unwrap());
+        assert_eq!(
+            fs::read_to_string(places.entry()).unwrap(),
+            contents("/a/Reframe.AppImage", &info())
+        );
+        let state = state(&places);
+        assert!(state.added && state.percent_in_path);
+        remove(&places, &info()).unwrap();
+        assert!(!places.entry().exists());
     }
 
     #[test]

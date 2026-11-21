@@ -29,7 +29,13 @@ function fakeShell(entry: DesktopMenuEntry) {
 }
 
 async function mountSection(entry: Partial<DesktopMenuEntry> = {}) {
-  const initial = { appimage: '/a/Reframe.AppImage', added: false, other: null, ...entry }
+  const initial = {
+    appimage: '/a/Reframe.AppImage',
+    added: false,
+    other: null,
+    percentInPath: false,
+    ...entry,
+  }
   const { shell, state } = fakeShell(initial)
   const { wrapper } = await mountShell(MenuEntrySection, { props: { shell, entry: initial } })
   mounted.push(wrapper as VueWrapper)
@@ -58,6 +64,19 @@ describe('the Settings control of the AppImage’s menu entry', () => {
     await flushPromises()
     expect(toggle().element.checked).toBe(true)
     expect(wrapper.text()).toContain('Permission denied (os error 13)')
+  })
+
+  it('says why a path with a % gets no entry, and still removes an old one', async () => {
+    const path = '/a/100%/Reframe.AppImage'
+    const { wrapper, toggle } = await mountSection({ appimage: path, percentInPath: true })
+    expect(toggle().exists()).toBe(false)
+    expect(wrapper.find('[data-field="menu-entry-percent"]').text()).toContain(path)
+
+    const old = await mountSection({ appimage: path, percentInPath: true, added: true })
+    expect(old.wrapper.find('[data-field="menu-entry-percent"]').exists()).toBe(true)
+    await old.toggle().setValue(false)
+    await flushPromises()
+    expect(old.state.sent).toEqual([false])
   })
 
   it('names another entry instead of offering one', async () => {
