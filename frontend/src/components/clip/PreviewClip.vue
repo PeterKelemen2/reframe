@@ -20,6 +20,8 @@ import { TaskLostError, useTasksStore } from '@/stores/tasks'
 import ClipCompare from './ClipCompare.vue'
 import { absoluteUrl, CLIP_LENGTHS, reason } from './clip'
 
+// `MediaError.MEDIA_ERR_DECODE`: the decoder failed, which a new link cannot fix.
+const DECODE = 3
 // `MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED`: the browser cannot decode the format.
 const SRC_NOT_SUPPORTED = 4
 
@@ -204,13 +206,18 @@ function unplayable(): void {
 }
 
 function playFailed(event: Event): void {
+  const error = (event.target as HTMLVideoElement).error
+  // A webview without a working decoder for the codec can fail after it showed a picture.
+  if (error?.code === DECODE) {
+    unplayable()
+    return
+  }
   if (!linkRetried) {
     linkRetried = true
     link.value = null
     void loadLink()
     return
   }
-  const error = (event.target as HTMLVideoElement).error
   if (error?.code === SRC_NOT_SUPPORTED) {
     unplayable()
     return

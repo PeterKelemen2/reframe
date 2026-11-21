@@ -91,9 +91,13 @@ async function videoLoaded(wrapper: VueWrapper, width: number): Promise<void> {
   await flushPromises()
 }
 
-async function videoError(wrapper: VueWrapper, code: number): Promise<void> {
+async function videoError(
+  wrapper: VueWrapper,
+  code: number,
+  message = 'Decoder gone',
+): Promise<void> {
   const element = video(wrapper).element
-  Object.defineProperty(element, 'error', { value: { code, message: 'Decoder gone' } })
+  Object.defineProperty(element, 'error', { value: { code, message } })
   await video(wrapper).trigger('error')
   await flushPromises()
 }
@@ -291,13 +295,32 @@ describe('the preview clip', () => {
   })
 
   it('names another player error by its message', async () => {
-    const { wrapper } = await encoded()
-    await videoError(wrapper, 3)
-    await videoError(wrapper, 3)
+    const { wrapper, server } = await encoded()
+    await videoError(wrapper, 2, 'Network gone')
+    await videoError(wrapper, 2, 'Network gone')
+    expect(server.count('GET /api/preview/clips/clip-1/link')).toBe(2)
     expect(wrapper.find('[data-field="clip-play-error"]').text()).toContain(
-      'the player stopped with an error (Decoder gone)',
+      'the player stopped with an error (Network gone)',
     )
   })
+
+  it.each([
+    ['before', null],
+    ['after', 320],
+  ])(
+    'shows the frame compare at a decode error %s the clip loads, without a new link',
+    async (_when, width) => {
+      const { wrapper, server } = await encoded()
+      if (width !== null) await videoLoaded(wrapper, width)
+      await videoError(wrapper, 3)
+      expect(server.count('GET /api/preview/clips/clip-1/link')).toBe(1)
+      expect(video(wrapper).exists()).toBe(false)
+      expect(wrapper.find('[data-field="clip-play-error"]').text()).toContain(
+        'this browser cannot play hevc video',
+      )
+      expect(wrapper.find('[data-field="clip-compare"]').exists()).toBe(true)
+    },
+  )
 
   it('asks for a new link again after the clip has played', async () => {
     const { wrapper, server } = await encoded()
