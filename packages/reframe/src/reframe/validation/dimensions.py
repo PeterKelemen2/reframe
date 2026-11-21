@@ -57,6 +57,7 @@ def _invalid_axes(rect: CropRect, geometry: Geometry, src: SourceGeometry) -> li
     "dimensions.crop_invalid",
     "dimensions.crop_snapped",
     "dimensions.crop_not_detected",
+    "dimensions.crop_detection_failed",
     "dimensions.crop_missing",
 )
 def crop(ctx: JobContext) -> Iterator[ValidationIssue]:
@@ -74,6 +75,15 @@ def crop(ctx: JobContext) -> Iterator[ValidationIssue]:
                 "dimensions.crop_missing",
                 "dimensions.crop.rect",
                 "Manual crop has no values: no crop is applied.",
+                no_crop,
+            )
+        elif settings.detection_error is not None:
+            name = "automatic" if settings.mode == "auto" else "conservative"
+            yield warning(
+                "dimensions.crop_detection_failed",
+                "dimensions.crop",
+                f"Crop detection failed in this file, so {name} crop has no values: the "
+                f"picture is not cropped. {settings.detection_error}".rstrip(),
                 no_crop,
             )
         else:

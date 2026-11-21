@@ -221,7 +221,10 @@ class _CropRun:
             except TaskFailed as failure:
                 if self._cancel.cancelled:  # a cancelled probe or run fails the task
                     raise asyncio.CancelledError from None
-                return [], [_crop_failed(str(failure))]
+                reason = str(failure)
+                crop = job.dimensions.crop.model_copy(update={"detection_error": reason})
+                job.dimensions.crop = crop
+                return [], [_crop_failed(reason)]
             if key is not None:
                 self._cache[key] = detection
                 while len(self._cache) > CROP_CACHE_SIZE:
@@ -583,6 +586,8 @@ class BatchService:
             job.output.path = chosen
             notes = []  # they are about the path that naming gave
         checks = await self._jobs.validate(job, source, naming=naming)
+        if crop_issues:  # the job's own issue repeats the batch's
+            checks = [c for c in checks if c.code != "dimensions.crop_detection_failed"]
         issues = [*template_issues, *resolution.issues, *crop_issues, *checks]
         row = resolution.model_copy(
             update={

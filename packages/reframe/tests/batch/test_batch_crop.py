@@ -148,11 +148,21 @@ async def test_a_failed_detection_is_a_warning_and_the_file_stays_uncropped(
     (row,) = (await app.batch.resolve(template(), files, detect_crop=True)).rows
     assert row.status == "warning"
     assert row.job is not None
-    assert row.job.dimensions.crop == CropSettings(mode="auto")
+    reason = "Crop detection failed on every frame: 0.200 s: exit code 1."
+    assert row.job.dimensions.crop == CropSettings(mode="auto", detection_error=reason)
+    # One warning in the matrix: the batch's says it all.
+    assert [i.code for i in row.issues if "crop" in i.code] == ["batch.crop_not_detected"]
     (issue,) = [i for i in row.issues if i.code == "batch.crop_not_detected"]
     assert issue.message == (
-        "The crop of this file could not be detected, so it is not cropped: Crop detection "
-        "failed on every frame: 0.200 s: exit code 1."
+        f"The crop of this file could not be detected, so it is not cropped: {reason}"
+    )
+    queued = await app.queue.add(row.job)
+    assert [(i.code, i.severity.value) for i in queued.issues if "crop" in i.code] == [
+        ("dimensions.crop_detection_failed", "warning")
+    ]
+    assert queued.issues[0].message == (
+        f"Crop detection failed in this file, so automatic crop has no values: the picture is "
+        f"not cropped. {reason}"
     )
 
 

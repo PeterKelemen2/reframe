@@ -34,7 +34,7 @@ def diff(template: JobTemplate, preset: JobTemplate) -> list[FieldChange]:
         _walk(name, before.get(name), after.get(name), name in before, name in after, changes)
     if _crop_mode(after) in DETECTED_CROP_MODES and _crop_mode(after) == _crop_mode(before):
         changes = [c for c in changes if not c.path.startswith("dimensions.crop.rect")]
-    return changes
+    return [c for c in changes if c.path != "dimensions.crop.detection_error"]
 
 
 def _crop_mode(template: Mapping[str, Any]) -> Any:

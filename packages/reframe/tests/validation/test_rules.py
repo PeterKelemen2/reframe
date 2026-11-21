@@ -116,9 +116,13 @@ def sub(index: int, **changes: Any) -> Mod:
     return mod
 
 
-def crop(mode: str, rect: CropRect | None = None) -> Mod:
+def crop(mode: str, rect: CropRect | None = None, detection_error: str | None = None) -> Mod:
     def mod(s: Any) -> None:
-        s.job.dimensions.crop = CropSettings(mode=mode, rect=rect)  # type: ignore[arg-type]
+        s.job.dimensions.crop = CropSettings(
+            mode=mode,  # type: ignore[arg-type]
+            rect=rect,
+            detection_error=detection_error,
+        )
 
     return mod
 
@@ -944,6 +948,14 @@ CASES: list[Case] = [
         INFO,
         crop("conservative"),
         crop("conservative", CropRect(top=140, bottom=140)),
+    ),
+    Case(
+        "crop detection failed",
+        "dimensions.crop_detection_failed",
+        "dimensions.crop",
+        WARN,
+        crop("auto", detection_error="Crop detection failed on every frame."),
+        crop("auto", CropRect(top=140), detection_error="Crop detection failed on every frame."),
     ),
     Case(
         "manual crop without values",

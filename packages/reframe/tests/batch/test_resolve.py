@@ -61,6 +61,11 @@ def test_the_crop_policy() -> None:
     assert build_job(manual, e01, TrackDraft())[0].dimensions.crop.rect == rect
     none = JobTemplate.model_validate({"dimensions": {"crop": {"mode": "none"}}})
     assert build_job(none, e01, TrackDraft())[0].dimensions.crop == CropSettings(mode="none")
+    # A failed detection belongs to the file it failed in.
+    failed = JobTemplate.model_validate(
+        {"dimensions": {"crop": {"mode": "auto", "detection_error": "Crop detection failed."}}}
+    )
+    assert build_job(failed, e01, TrackDraft())[0].dimensions.crop == CropSettings(mode="auto")
 
 
 def test_chapter_names() -> None:

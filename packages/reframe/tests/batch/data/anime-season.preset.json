@@ -14,7 +14,8 @@
         "flip_horizontal": false,
         "crop": {
           "mode": "auto",
-          "rect": null
+          "rect": null,
+          "detection_error": null
         },
         "size": {
           "mode": "fit",
