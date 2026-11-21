@@ -943,7 +943,7 @@ class QueueService:
 
         "Emptied": nothing runs, and nothing is left that the runner would take: no waiting
         job at all, or (``drained``) none of the jobs of ``start(job_ids=…)``. A power action
-        after ``start(…, own_batch=False)`` needs no waiting job at all."""
+        after ``start(…, own_batch=False)`` runs only when no job waits."""
         if self._closed or self._active:
             return
         waiting = any(job.state is JobState.WAITING for job in self._jobs.values())
