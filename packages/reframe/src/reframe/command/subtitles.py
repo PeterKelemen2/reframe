@@ -28,6 +28,7 @@ __all__ = [
     "SubtitleOut",
     "SubtitlePlan",
     "plan_subtitles",
+    "written_subtitle_codec",
 ]
 
 #: External subtitle files by extension: (ffprobe codec name, kind). Validation reads these
@@ -130,6 +131,18 @@ def _output_codec(
     if not bitmap and container.text_subtitle_target is not None:
         return container.text_subtitle_target
     raise PlanError(f"{codec} subtitles cannot go into {container.label} (validation reports it)")
+
+
+def written_subtitle_codec(
+    track: SubtitleOutputTrack, codec: str, container: ContainerDef
+) -> str | None:
+    """The codec that the builder writes for ``track`` from a ``codec`` input; ``None`` when it
+    cannot be written (validation reports it)."""
+    try:
+        written = _output_codec(track, codec, container, recode=False)
+    except PlanError:
+        return None
+    return codec if written == "copy" else written
 
 
 def _source_stream(source: MediaSource, index: int) -> SubtitleStream:

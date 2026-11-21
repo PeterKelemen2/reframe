@@ -148,3 +148,43 @@ def test_a_job_with_templates_is_expanded_in_a_copy(source: MediaSource) -> None
 def test_an_empty_value_drops_its_optional_group() -> None:
     assert expand_track_name("{lang_name}< - {title}>", {"lang_name": "English"}) == "English"
     assert expand_track_name("{title}", {}) == ""
+
+
+@pytest.mark.parametrize(
+    ("track", "expected"),
+    [
+        # A stereo source is not upmixed.
+        (AudioOutputTrack(source_stream=2, encoder="aac", mixdown="5.1"), "2.0 AAC 160"),
+        # AC-3 takes at most 640 kb/s.
+        (AudioOutputTrack(source_stream=1, encoder="ac3", bitrate=700), "5.1 AC-3 640"),
+        # No bit rate: the encoder's default for the layout written.
+        (AudioOutputTrack(source_stream=2, encoder="aac"), "2.0 AAC 160"),
+        # MP3 has no 5.1.
+        (AudioOutputTrack(source_stream=1, encoder="libmp3lame", mixdown="5.1"), "2.0 MP3 160"),
+        # A copy has no bit rate of its own.
+        (AudioOutputTrack(source_stream=1, action="passthru"), "5.1 AC-3"),
+    ],
+)
+def test_an_audio_name_has_the_values_that_are_written(
+    source: MediaSource, track: AudioOutputTrack, expected: str
+) -> None:
+    track.metadata = named("{channels} {codec} {bitrate}")
+    assert track_names(job(audio=[track]), source).audio == [expected]
+
+
+def test_a_passthru_without_a_fallback_encoder_names_the_default_one(source: MediaSource) -> None:
+    vorbis = source.audio[0].model_copy(update={"codec": "vorbis", "display_codec": "Vorbis"})
+    changed = source.model_copy(update={"audio": [vorbis, *source.audio[1:]]})
+    template = named("{codec} {channels} {bitrate}")
+    copied = AudioOutputTrack(source_stream=1, action="passthru", encoder=None, metadata=template)
+    settings = job(audio=[copied])
+    settings.output.container = "mp4"
+    assert track_names(settings, changed).audio == ["AAC 5.1 384"]
+
+
+def test_a_subtitle_name_has_the_codec_that_is_written(source: MediaSource) -> None:
+    template = named("{codec} from {source_codec}")
+    settings = job(subtitles=[SubtitleOutputTrack(source=4, metadata=template)])
+    assert track_names(settings, source).subtitles == ["SRT from SRT"]
+    settings.output.container = "mp4"
+    assert track_names(settings, source).subtitles == ["mov_text from SRT"]
