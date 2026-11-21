@@ -1004,7 +1004,10 @@ does not bind at CQ 10 either. It still binds at 2160p CQ 10 (201 MB of 559 MB),
 source at 2160p25 and 1080p60 (H.265), and at 2160p60: the grainy 2160p CQ 10 needs about
 480M, which makes every output level 6.1. Larger buffers are not monotonic: H.265 1080p25 at CQ
 10 is 141 MB at 160M–200M, 130 MB at 300M and 108 MB at 800M. NVENC AV1 was not measured (no
-AV1 encoder on Pascal) and gets no buffer.
+AV1 encoder on Pascal) and gets no buffer. A level in the custom parameters gets no buffer
+either: `-maxrate 200M -bufsize 400M -level 4.1` (H.264 CQ 20, 1080p25) and `-maxrate 160M
+-bufsize 320M -level 4` (H.265) end in `Invalid Level.` (exit 234); without the buffer the
+output has level 4.1 and 4.0 (GTX 1050 Ti, compat build n8.1.3, 2026-11-21).
 
 The range end: on the plain 320x240 test picture (5 frames) H.265 CQ 1 and 2 give the same file
 with the buffer and even with `-level 6.2` (CQ 3 differs; H.264: CQ 1 to 4 alike), so that is
