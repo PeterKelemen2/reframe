@@ -18,7 +18,9 @@ from reframe.models import (
     CropSettings,
     EncodePlan,
     JobSettings,
+    JobState,
     JobTemplate,
+    NamingOptions,
     Resolution,
 )
 from reframe.preview.crop import detect_crop
@@ -150,6 +152,43 @@ async def test_a_cancelled_detection_stops_the_resolution(
     token.cancel()
     with pytest.raises(asyncio.CancelledError):
         await app.batch.resolve(template(), files, detect_crop=True, cancel=token)
+
+
+async def test_an_earlier_run_named_after_the_detected_crop_is_left_out(
+    app: Reframe, fixture_media: Media, tmp_path: Path
+) -> None:
+    """The crop changes ``{height}``: the earlier outputs are found by the names that the
+    detected crop gives, in a whole batch and in a group's run (the web's *Add group to
+    queue*)."""
+    files = episodes(fixture_media, tmp_path)
+    named = template().model_copy(deep=True)
+    named.naming = NamingOptions(episode_template="{main_title} {height}p")
+    _, (first,) = await app.batch.resolve_batch(named, files, detect_crop=True)
+    jobs = [row.job for row in first.rows if row.job is not None]
+    outputs = [job.output.path for job in jobs]
+    assert [path.name for path in outputs if path is not None] == [
+        f"Show.S01E0{n} 134p.mkv" for n in (1, 2, 3)
+    ]
+    ids = [(await app.queue.add(job)).id for job in jobs]
+    app.queue.start(job_ids=ids)
+    assert [job.state for job in await app.queue.wait(ids)] == [JobState.DONE] * 3
+
+    def already_encoded(rows: list[Resolution]) -> None:
+        assert [row.path for row in rows] == files
+        for row in rows:
+            (issue,) = [i for i in row.issues if i.code == "batch.output_is_source"]
+            assert "left out as already encoded" in issue.message
+
+    every = sorted(files[0].parent.iterdir())
+    grouping, resolutions = await app.batch.resolve_batch(named, every, detect_crop=True)
+    left_out = [issue for issue in grouping.issues if issue.code == "batch.already_encoded"]
+    assert len(left_out) == 3
+    already_encoded([row for resolution in resolutions for row in resolution.rows])
+
+    (group,) = (await app.batch.group(every)).groups
+    members = [member.path for member in group.members]
+    _, runs = await app.batch.resolve_batch(named, members, detect_crop=True)
+    already_encoded([row for run in runs for row in run.rows])
 
 
 async def test_a_whole_batch_is_measured_and_queued_cropped(
