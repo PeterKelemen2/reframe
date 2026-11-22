@@ -41,7 +41,7 @@ __all__ = [
 
 log = logging.getLogger(__name__)
 
-CACHE_FORMAT = 1
+CACHE_FORMAT = 3
 #: Switching between a few ffmpeg builds keeps their results.
 MAX_ENTRIES = 8
 #: The modules whose source decides what a detection produces.
@@ -123,7 +123,6 @@ def cache_key(
         "os": options.os or current_os(),
         "vaapi_device": options.vaapi_device,
         "render_nodes": list(options.render_nodes) if options.render_nodes is not None else None,
-        "filter_tests": list(options.filter_tests),
     }
     return CacheKey(
         ffmpeg=str(path),
@@ -139,8 +138,7 @@ def cache_key(
 
 
 class CapabilityCache:
-    """Detection results by :class:`CacheKey`, as JSON files in one folder. Blocking file I/O:
-    call it off the event loop."""
+    """Detection results by :class:`CacheKey`, as JSON files in one folder. Blocking file I/O."""
 
     def __init__(self, folder: Path, *, max_entries: int = MAX_ENTRIES) -> None:
         self.folder = Path(folder)

@@ -14,11 +14,13 @@ import json
 import os
 import shlex
 import sys
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from reframe.fsretry import replace_file
 from reframe_testing import fake_ffmpeg
 
 SCENARIO_ENV = fake_ffmpeg.SCENARIO_ENV
@@ -305,9 +307,28 @@ class Invocation:
 
 
 #: A logged process that started more than this many seconds after its log entry was written
-#: is not ours: the OS gave its pid to a new process. (psutil's ``create_time`` on Linux is
-#: computed from the boot time in whole seconds, so it can be up to 1 s off.)
-_PID_REUSE_TOLERANCE = 2.0
+#: is not ours: the OS gave its pid to a new process. psutil's ``create_time`` on Linux is
+#: computed from the boot time in whole seconds, so it can be up to 1 s off; on Windows it is
+#: exact, and Windows hands a pid out again within milliseconds, so a 2 s margin there kills
+#: other tests' processes (another xdist worker's ffmpeg, exit code 15).
+_PID_REUSE_TOLERANCE = 0.01 if sys.platform == "win32" else 2.0
+
+
+def _read_entry(path: Path) -> dict[str, Any] | None:
+    """A call-log entry, or ``None`` once it is gone. Windows refuses to open a file for a moment
+    while it is being deleted or scanned (``PermissionError``)."""
+    for _ in range(100):
+        try:
+            entry: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except PermissionError:
+            if os.name != "nt":
+                raise
+            time.sleep(0.01)
+        else:
+            return entry
+    return None if not path.exists() else json.loads(path.read_text(encoding="utf-8"))
 
 
 @dataclass
@@ -325,7 +346,7 @@ class FakeTools:
         data = scenario.to_json() if isinstance(scenario, Scenario) else dict(scenario)
         tmp = self.scenario_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        os.replace(tmp, self.scenario_path)
+        replace_file(tmp, self.scenario_path)  # a fake still reading the old one blocks Windows
 
     def env(self, base: Mapping[str, str] | None = None) -> dict[str, str]:
         """An environment for a child process that selects this scenario and log explicitly."""
@@ -351,9 +372,8 @@ class FakeTools:
             return []
         result: list[Invocation] = []
         for path in self.log_dir.glob("*.json"):
-            try:
-                entry = json.loads(path.read_text(encoding="utf-8"))
-            except FileNotFoundError:  # removed by clear_log() in the meantime
+            entry = _read_entry(path)
+            if entry is None:  # removed by clear_log() in the meantime
                 continue
             result.append(
                 Invocation(
@@ -417,10 +437,12 @@ class FakeTools:
 def posix_launcher(tool: Tool, *, python: str, script: Path, scenario: Path, log: Path) -> str:
     """Text of the POSIX launcher for ``tool``."""
     body = (
-        "import os, runpy, sys\n"
+        "import os, sys\n"
         f"os.environ.setdefault({SCENARIO_ENV!r}, {str(scenario)!r})\n"
         f"os.environ.setdefault({LOG_ENV!r}, {str(log)!r})\n"
-        f"sys.exit(runpy.run_path({str(script)!r})['main']({tool!r}, sys.argv[1:]))\n"
+        f"sys.path.append({str(script.parent)!r})\n"
+        f"import {script.stem}\n"
+        f"sys.exit({script.stem}.main({tool!r}, sys.argv[1:]))\n"
     )
     if len(python) <= _MAX_SHEBANG and not any(c.isspace() for c in python):
         return (
@@ -453,13 +475,22 @@ def _cmd_encoding() -> str:
 
 def windows_launcher(tool: Tool, *, python: str, script: Path, scenario: Path, log: Path) -> str:
     """Text of the Windows ``.cmd`` launcher for ``tool`` (CRLF line ends)."""
+    # One line (a .cmd line cannot hold a newline): the same import as the POSIX launcher, so
+    # the interpreter loads the cached bytecode of the fake and does not compile it per call.
+    # A literal with no double quote, which a quoted .cmd argument cannot hold: ``repr`` would
+    # use one for a path with an apostrophe.
+    folder = "'" + str(script.parent).replace("\\", "\\\\").replace("'", "\\x27") + "'"
+    code = (
+        f"import sys; sys.path.append({folder}); import {script.stem}; "
+        f"sys.exit({script.stem}.main({tool!r}, sys.argv[1:]))"
+    )
     lines = [
         "@echo off",
         f"rem Reframe fake {tool} (reframe_testing.fake_tools). Generated.",
         "setlocal",
         f'if not defined {SCENARIO_ENV} set "{SCENARIO_ENV}={str(scenario).replace("%", "%%")}"',
         f'if not defined {LOG_ENV} set "{LOG_ENV}={str(log).replace("%", "%%")}"',
-        f"{_cmd_quote(python)} -I {_cmd_quote(str(script))} --fake-tool {tool} %*",
+        f"{_cmd_quote(python)} -I -c {_cmd_quote(code)} %*",
         "exit /b %ERRORLEVEL%",
     ]
     return "\r\n".join(lines) + "\r\n"

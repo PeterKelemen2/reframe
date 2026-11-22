@@ -1,7 +1,7 @@
 """The one way Reframe runs a subprocess.
 
 - :func:`run` collects the output; :func:`run_streaming` passes each line to callbacks.
-- Both have a timeout (``run``: required) and a :class:`CancelToken`. On timeout, cancel, or
+- Both take a :class:`CancelToken`; ``run`` also has a timeout. On timeout, cancel, or
   when the calling task is cancelled, the **whole process tree** is killed (children first,
   then the process itself) and the pipes are drained, so nothing is left behind and nothing
   deadlocks.
@@ -67,18 +67,16 @@ class CancelToken:
         self._event = threading.Event()
         self._lock = threading.Lock()
         self._waiters: list[tuple[asyncio.AbstractEventLoop, asyncio.Future[None]]] = []
-        self.reason: str | None = None
 
     @property
     def cancelled(self) -> bool:
         return self._event.is_set()
 
-    def cancel(self, reason: str | None = None) -> None:
-        """Set the flag (idempotent; the first reason is kept). Thread-safe."""
+    def cancel(self) -> None:
+        """Set the flag (idempotent). Thread-safe."""
         with self._lock:
             if self._event.is_set():
                 return
-            self.reason = reason
             self._event.set()
             waiters, self._waiters = self._waiters, []
         for loop, future in waiters:
@@ -111,7 +109,7 @@ class RunResult:
     """What happened to one process.
 
     ``stdout`` / ``stderr`` are bytes: ``run`` keeps the first ``max_output`` bytes of each
-    stream, ``run_streaming`` the last ``max_output`` bytes (the end of an FFmpeg log is
+    stream, ``run_streaming`` the last ``DEFAULT_STREAMING_TAIL`` bytes (the end of an FFmpeg log is
     where the error is). ``truncated`` is true if anything was not stored.
     """
 
@@ -390,11 +388,9 @@ def _check_args(argv: Sequence[str], timeout: float | None, max_output: int) -> 
     return args
 
 
-def _child_env(extra_env: Mapping[str, str] | None) -> dict[str, str] | None:
-    if not extra_env:
-        return None
-    env = dict(os.environ)
-    env.update(extra_env)
+def _child_env(extra_env: Mapping[str, str] | None) -> dict[str, str]:
+    env = childproc.user_environ()
+    env.update(extra_env or {})
     return env
 
 
@@ -405,7 +401,6 @@ async def _execute(
     cancel: CancelToken | None,
     cwd: Path | None,
     extra_env: Mapping[str, str] | None,
-    stdin: bytes | None,
     out_sink: _Sink,
     err_sink: _Sink,
     on_start: Callable[[int], None] | None = None,
@@ -416,7 +411,7 @@ async def _execute(
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,
-            stdin=asyncio.subprocess.PIPE if stdin is not None else asyncio.subprocess.DEVNULL,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
@@ -439,8 +434,6 @@ async def _execute(
         asyncio.ensure_future(_pump(proc.stdout, out_sink)),
         asyncio.ensure_future(_pump(proc.stderr, err_sink)),
     ]
-    if stdin is not None and proc.stdin is not None:
-        readers.append(asyncio.ensure_future(_feed_stdin(proc.stdin, stdin)))
     waiter = asyncio.ensure_future(proc.wait())
     cancel_waiter = asyncio.ensure_future(cancel.wait()) if cancel is not None else None
 
@@ -506,14 +499,6 @@ async def _execute(
     )
 
 
-async def _feed_stdin(writer: asyncio.StreamWriter, data: bytes) -> None:
-    with contextlib.suppress(ConnectionError, OSError):
-        writer.write(data)
-        await writer.drain()
-    with contextlib.suppress(ConnectionError, OSError):
-        writer.close()
-
-
 async def _kill_and_reap(proc: asyncio.subprocess.Process) -> None:
     # Not proc.kill(): on POSIX, Popen.send_signal() first polls with waitpid(), which can
     # reap the child before asyncio's child watcher sees it (exit code 255 and a warning).
@@ -542,7 +527,6 @@ async def run(
     max_output: int = DEFAULT_MAX_OUTPUT,
     cwd: Path | None = None,
     extra_env: Mapping[str, str] | None = None,
-    stdin: bytes | None = None,
 ) -> RunResult:
     """Run ``argv`` and collect its output.
 
@@ -553,7 +537,7 @@ async def run(
         ``truncated`` is set).
     :param cwd: working directory of the process.
     :param extra_env: variables added to (or replacing ones in) the current environment.
-    :param stdin: bytes written to the process's stdin (default: stdin is the null device).
+    The process's stdin is the null device.
     """
     args = _check_args(argv, timeout, max_output)
     return await _execute(
@@ -562,7 +546,6 @@ async def run(
         cancel=cancel,
         cwd=cwd,
         extra_env=extra_env,
-        stdin=stdin,
         out_sink=_HeadBuffer(max_output),
         err_sink=_HeadBuffer(max_output),
     )
@@ -574,9 +557,6 @@ async def run_streaming(
     on_stdout_line: LineCallback | None,
     on_stderr_line: LineCallback | None,
     cancel: CancelToken | None,
-    timeout: float | None = None,  # noqa: ASYNC109
-    max_output: int = DEFAULT_STREAMING_TAIL,
-    cwd: Path | None = None,
     extra_env: Mapping[str, str] | None = None,
     on_start: Callable[[int], None] | None = None,
 ) -> RunResult:
@@ -585,22 +565,19 @@ async def run_streaming(
     Lines end at ``\\n``, ``\\r\\n`` or ``\\r``; the callback gets the text without the line
     end. A callback may be a coroutine function; it is awaited before the next line of that
     stream is read. If a callback raises, the process tree is killed and the exception
-    propagates.
+    propagates. There is no time limit: use ``cancel`` to stop it.
 
-    :param timeout: ``None`` (the default) means no time limit: use ``cancel`` to stop it.
-    :param max_output: the result keeps the **last** ``max_output`` bytes of each stream.
     :param on_start: called once with the pid of the started process, before any output is
         read. If it raises, the process tree is killed and the exception propagates.
     """
-    args = _check_args(argv, timeout, max_output)
+    args = _check_args(argv, None, DEFAULT_STREAMING_TAIL)
     return await _execute(
         args,
-        timeout=timeout,
+        timeout=None,
         cancel=cancel,
-        cwd=cwd,
+        cwd=None,
         extra_env=extra_env,
-        stdin=None,
-        out_sink=_LineSink(on_stdout_line, max_output),
-        err_sink=_LineSink(on_stderr_line, max_output),
+        out_sink=_LineSink(on_stdout_line, DEFAULT_STREAMING_TAIL),
+        err_sink=_LineSink(on_stderr_line, DEFAULT_STREAMING_TAIL),
         on_start=on_start,
     )

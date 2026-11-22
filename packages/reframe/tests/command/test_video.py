@@ -50,13 +50,16 @@ def video_stream(**kwargs: Any) -> VideoStream:
     return VideoStream.model_validate({"index": 0, "width": 1920, "height": 1080, **kwargs})
 
 
+PASSLOG = Path("/out/x.part.passlog")
+
+
 def args(encoder: str, *, run: int | None = None, hdr: bool = False, **settings: Any) -> list[str]:
     stream = settings.pop("stream", None) or video_stream()
     status = settings.pop("status", None)
     video = VideoSettings.model_validate({"encoder": encoder, **settings})
     return video_encoder_args(
         DEFS.video_encoders[encoder], video, stream, status=status, run=run,
-        passlog=Path("/out/x.part.passlog") if run else None, hdr=hdr,
+        passlog=PASSLOG if run else None, hdr=hdr,
     )  # fmt: skip
 
 
@@ -86,6 +89,57 @@ def test_choices_written_values() -> None:
     assert vp9[vp9.index("-profile:v:0") + 1] == "2"
     unknown = args("libx264", preset="superslow")
     assert unknown[unknown.index("-preset:v:0") + 1] == "superslow"
+
+
+def _rate_buffer(out: list[str]) -> tuple[str, str] | None:
+    if "-maxrate:v:0" not in out:
+        assert "-bufsize:v:0" not in out
+        return None
+    return out[out.index("-maxrate:v:0") + 1], out[out.index("-bufsize:v:0") + 1]
+
+
+def test_an_nvenc_constant_quality_without_a_level_gets_a_high_rate_buffer() -> None:
+    hevc = args("hevc_nvenc", rate_control=ConstantQuality(value=20))
+    assert _rate_buffer(hevc) == ("160M", "320M")
+    # Right after the quality arguments, before the speed preset.
+    assert hevc.index("-maxrate:v:0") == hevc.index("-init_qpB:v:0") + 2
+    assert _rate_buffer(args("h264_nvenc", rate_control=ConstantQuality(value=20))) == (
+        "200M",
+        "400M",
+    )
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"encoder": "hevc_nvenc", "level": "5.1"},
+        {"encoder": "hevc_nvenc", "custom_params": "maxrate=50M"},
+        {"encoder": "h264_nvenc", "custom_params": "rc-lookahead=20:bufsize=100M"},
+        # NVENC refuses a level below the one the rate buffer needs ("Invalid Level").
+        {"encoder": "h264_nvenc", "custom_params": "level=4.1"},
+        {"encoder": "hevc_nvenc", "custom_params": "-level=5"},
+        {"encoder": "hevc_nvenc", "rate_control": AverageBitrate(kbps=5000)},
+        {"encoder": "av1_nvenc"},  # not measured: no NVENC AV1 on the GPU at hand
+        {"encoder": "hevc_qsv"},
+        {"encoder": "libx265"},
+    ],
+)
+def test_no_rate_buffer_is_added(settings: dict[str, Any]) -> None:
+    out = args(**settings)
+    custom = settings.get("custom_params", "")
+    assert out.count("-maxrate:v:0") == custom.count("maxrate")
+    assert out.count("-bufsize:v:0") == custom.count("bufsize")
+    assert not {"160M", "200M"} & set(out)
+
+
+def test_an_unset_h264_nvenc_profile_writes_the_shown_default() -> None:
+    def profile(out: list[str]) -> str | None:
+        return out[out.index("-profile:v:0") + 1] if "-profile:v:0" in out else None
+
+    assert profile(args("h264_nvenc")) == "high"
+    assert profile(args("h264_nvenc", bit_depth=10)) == "high10"
+    assert profile(args("h264_nvenc", profile="main")) == "main"
+    assert profile(args("hevc_nvenc")) is None  # FFmpeg picks Main or Main 10 from the input
 
 
 def test_a_choice_the_encoder_does_not_have() -> None:
@@ -124,9 +178,9 @@ def test_two_pass_runs() -> None:
     first = args("libx264", rate_control=rc, run=1)
     second = args("libx264", rate_control=rc, run=2)
     assert first[-6:] == [
-        "-pass:v:0", "1", "-passlogfile:v:0", "/out/x.part.passlog", "-fastfirstpass:v:0", "1",
+        "-pass:v:0", "1", "-passlogfile:v:0", str(PASSLOG), "-fastfirstpass:v:0", "1",
     ]  # fmt: skip
-    assert second[-4:] == ["-pass:v:0", "2", "-passlogfile:v:0", "/out/x.part.passlog"]
+    assert second[-4:] == ["-pass:v:0", "2", "-passlogfile:v:0", str(PASSLOG)]
     x265 = args("libx265", rate_control=AverageBitrate(two_pass=True), run=1)
     assert x265[-1] == "pass=1:stats=/out/x.part.passlog:slow-firstpass=1"
     nvenc = args("hevc_nvenc", rate_control=AverageBitrate(two_pass=True))

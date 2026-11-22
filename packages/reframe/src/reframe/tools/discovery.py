@@ -4,10 +4,6 @@ An override (an environment variable or a Settings path) that is missing, broken
 reported, never replaced: discovery never falls back to the bundled build or to ``PATH``
 behind the user's back. A bundled FFmpeg folder without ffprobe leaves ffprobe missing.
 
-The bundled build is per tool family: FFmpeg (ffmpeg and ffprobe), mkvpropedit and MediaInfo.
-On Linux, FFmpeg is bundled but mkvpropedit comes from the distro, so a bundled FFmpeg does not
-stop the ``PATH`` search for mkvpropedit.
-
 On Windows only ``.exe`` programs run: a ``.cmd`` or ``.bat`` file goes through ``cmd.exe``,
 which interprets ``& | % ^ < >`` in the arguments.
 """
@@ -18,7 +14,7 @@ import asyncio
 import os
 import sys
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -26,6 +22,7 @@ from pydantic import BaseModel
 from reframe import paths
 from reframe.models.issues import Fix, RemoveOp
 from reframe.models.tools import ToolInfo, ToolName, ToolOrigin, ToolSet, ToolStatus
+from reframe.platform.longpath import missing_text
 from reframe.tools import versions
 from reframe.tools.runner import run
 
@@ -39,24 +36,21 @@ __all__ = [
     "ToolPathSettings",
     "check_tool",
     "discover_tools",
-    "discover_tools_sync",
     "locate_tools",
 ]
 
 #: Test-only opt-in: accept ``.cmd`` / ``.bat`` tools on Windows. Nothing else should set it.
 ALLOW_SCRIPT_TOOLS_ENV = "REFRAME_ALLOW_SCRIPT_TOOLS"
 
-TOOL_NAMES: tuple[ToolName, ...] = ("ffmpeg", "ffprobe", "mkvpropedit", "mediainfo")
-ENV_VARS: Mapping[ToolName, str] = {
-    "ffmpeg": "REFRAME_FFMPEG",
-    "ffprobe": "REFRAME_FFPROBE",
-    "mkvpropedit": "REFRAME_MKVPROPEDIT",
-    "mediainfo": "REFRAME_MEDIAINFO",
-}
-#: Distro folders with libva drivers. The bundled libva may not look there, so the bundled
-#: FFmpeg on Linux gets the first one that exists as ``LIBVA_DRIVERS_PATH``.
+TOOL_NAMES: tuple[ToolName, ...] = ("ffmpeg", "ffprobe")
+ENV_VARS: Mapping[ToolName, str] = {"ffmpeg": "REFRAME_FFMPEG", "ffprobe": "REFRAME_FFPROBE"}
+#: Distro folders with libva drivers, in search order: Debian/Ubuntu, Fedora (RPM Fusion's
+#: drivers first, as Fedora's libva has them), Arch. The bundled FFmpeg on Linux gets those that
+#: exist as ``LIBVA_DRIVERS_PATH``.
 LIBVA_DRIVER_DIRS = (
     Path("/usr/lib/x86_64-linux-gnu/dri"),
+    Path("/usr/lib64/dri-nonfree"),
+    Path("/usr/lib64/dri-freeworld"),
     Path("/usr/lib64/dri"),
     Path("/usr/lib/dri"),
 )
@@ -64,18 +58,7 @@ LIBVA_DRIVER_DIRS = (
 #: or under a virus scanner can be slow.
 VERSION_TIMEOUT = 20.0
 
-_DISPLAY = {
-    "ffmpeg": "FFmpeg",
-    "ffprobe": "ffprobe",
-    "mkvpropedit": "mkvpropedit",
-    "mediainfo": "MediaInfo",
-}
-_FAMILY: Mapping[ToolName, ToolName] = {
-    "ffmpeg": "ffmpeg",
-    "ffprobe": "ffmpeg",
-    "mkvpropedit": "mkvpropedit",
-    "mediainfo": "mediainfo",
-}
+_DISPLAY: Mapping[ToolName, str] = {"ffmpeg": "FFmpeg", "ffprobe": "ffprobe"}
 
 #: Tool paths by tool name. A model with the same fields (``AppSettings.tools``) is accepted too.
 ToolPathSettings = Mapping[str, str | os.PathLike[str] | None]
@@ -96,6 +79,8 @@ class ToolLocation:
     fixes: list[Fix] = field(default_factory=list)
     problem_status: ToolStatus = ToolStatus.MISSING
     """The status that ``problem`` gives (``broken`` for a script tool on Windows)."""
+    bundled: bool = False
+    """A bundled build of the tool's family exists."""
 
 
 @dataclass(frozen=True)
@@ -148,14 +133,13 @@ def _use_bundled_fix(tool: ToolName, bundled_exists: bool) -> Fix:
 
 
 def _bundled_dir(ctx: _Context, tool: ToolName) -> tuple[Path | None, Path | None]:
-    """``(binary, family_dir)``: the bundled binary (or None), and the bundled folder of the
-    tool's family if one exists (for FFmpeg: the first root with ffmpeg or ffprobe in it)."""
+    """``(binary, family_dir)``: the bundled binary (or None), and the bundled FFmpeg folder if
+    one exists (the first root with ffmpeg or ffprobe in it)."""
     subdir = paths.BUNDLED_SUBDIRS[tool]
-    members = ("ffmpeg", "ffprobe") if _FAMILY[tool] == "ffmpeg" else (tool,)
     for root in ctx.roots:
         family_dir = root / subdir
         search = [family_dir / "bin", family_dir]
-        if any(_find_in_dirs(ctx, m, search) for m in members):
+        if any(_find_in_dirs(ctx, m, search) for m in TOOL_NAMES):
             return _find_in_dirs(ctx, tool, search), family_dir
     return None, None
 
@@ -163,10 +147,8 @@ def _bundled_dir(ctx: _Context, tool: ToolName) -> tuple[Path | None, Path | Non
 def _libva_env(ctx: _Context) -> dict[str, str]:
     if not ctx.platform.startswith("linux") or ctx.environ.get("LIBVA_DRIVERS_PATH"):
         return {}
-    for directory in LIBVA_DRIVER_DIRS:
-        if directory.is_dir():
-            return {"LIBVA_DRIVERS_PATH": str(directory)}
-    return {}
+    found = [str(directory) for directory in LIBVA_DRIVER_DIRS if directory.is_dir()]
+    return {"LIBVA_DRIVERS_PATH": ":".join(found)} if found else {}
 
 
 def _override(
@@ -192,7 +174,7 @@ def _override(
         problem = f"{where}: the folder has no {tool} executable.{cannot_fix}"
         return ToolLocation(tool, given, origin, problem, env_var, fixes=fixes)
     if not path.is_file():
-        problem = f"{where}: the file does not exist.{cannot_fix}"
+        problem = f"{where}: {missing_text(path, 'the file does not exist.')}{cannot_fix}"
         return ToolLocation(tool, path, origin, problem, env_var, fixes=fixes)
     if not ctx.runnable(path):
         problem = (
@@ -237,8 +219,19 @@ def _search_path(ctx: _Context, tool: str) -> Path | None:
 def _locate(
     ctx: _Context, tool: ToolName, located: Mapping[ToolName, ToolLocation]
 ) -> ToolLocation:
-    env_var = ENV_VARS[tool]
     bundled, family_dir = _bundled_dir(ctx, tool)
+    loc = _locate_in(ctx, tool, located, bundled, family_dir)
+    return replace(loc, bundled=family_dir is not None)
+
+
+def _locate_in(
+    ctx: _Context,
+    tool: ToolName,
+    located: Mapping[ToolName, ToolLocation],
+    bundled: Path | None,
+    family_dir: Path | None,
+) -> ToolLocation:
+    env_var = ENV_VARS[tool]
     bundled_exists = family_dir is not None
 
     env_value = ctx.environ.get(env_var, "").strip()
@@ -269,10 +262,10 @@ def _locate(
                 )
 
     if family_dir is not None:
-        env = _libva_env(ctx) if _FAMILY[tool] == "ffmpeg" else {}
+        env = _libva_env(ctx)
         if bundled is None:
             problem = (
-                f"The bundled {_DISPLAY[_FAMILY[tool]]} in {family_dir} has no {tool}: the "
+                f"The bundled FFmpeg in {family_dir} has no {tool}: the "
                 f"installation is damaged. Reinstall Reframe (or run `reframe tools fetch`)."
             )
             return ToolLocation(tool, None, ToolOrigin.BUNDLED, problem, env_var)
@@ -281,14 +274,10 @@ def _locate(
     found = _search_path(ctx, tool)
     if found is not None:
         return ToolLocation(tool, found, ToolOrigin.PATH, None, env_var)
-    if tool in ("mkvpropedit", "mediainfo"):
-        # A web client cannot set a tool path in Settings: name what works in every mode.
-        problem = f"{tool} was not found (optional: install it, or set {env_var} to its path)."
-    else:
-        problem = (
-            f"{tool} was not found: no bundled build, nothing on PATH. Set its path in "
-            f"Settings or {env_var}, or run `reframe tools fetch`."
-        )
+    problem = (
+        f"{tool} was not found: no bundled build, nothing on PATH. Set its path in "
+        f"Settings or {env_var}, or run `reframe tools fetch`."
+    )
     return ToolLocation(tool, None, None, problem, env_var)
 
 
@@ -328,14 +317,6 @@ def _settings_mapping(settings: ToolPathSettings | BaseModel | None) -> ToolPath
     return settings
 
 
-def _version_argv(tool: ToolName, path: Path) -> list[str]:
-    if tool in ("ffmpeg", "ffprobe"):
-        return [str(path), "-version"]
-    if tool == "mkvpropedit":
-        return [str(path), "--version"]
-    return [str(path), "--Version"]
-
-
 def _last_line(text: str) -> str:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     return lines[-1] if lines else ""
@@ -353,6 +334,7 @@ def _info(loc: ToolLocation, status: ToolStatus, reason: str | None, **kw: objec
             "env": loc.env,
             "env_var": loc.env_var,
             "next_to_ffmpeg": loc.next_to_ffmpeg,
+            "bundled": loc.bundled,
             "fixes": fixes,
             **kw,
         }
@@ -378,7 +360,7 @@ async def check_tool(
     """Run the tool's version command and turn the result into a :class:`ToolInfo`."""
     if loc.problem is not None or loc.path is None:
         return _info(loc, loc.problem_status, loc.problem or f"{loc.name} was not found.")
-    result = await run(_version_argv(loc.name, loc.path), timeout=timeout, extra_env=loc.env)
+    result = await run([str(loc.path), "-version"], timeout=timeout, extra_env=loc.env)
     label = f"{loc.path}"
     if result.error is not None:
         return _info(
@@ -392,20 +374,7 @@ async def check_tool(
         reason = f"{label}: the version check exited with code {result.returncode}"
         reason += f": {detail}." if detail else "."
         return _info(loc, ToolStatus.BROKEN, _with_origin_note(loc, reason))
-
-    out = result.stdout_text
-    if loc.name in ("ffmpeg", "ffprobe"):
-        return _ffmpeg_info(loc, out)
-    parsed = (
-        versions.parse_mkvpropedit_version(out)
-        if loc.name == "mkvpropedit"
-        else versions.parse_mediainfo_version(out)
-    )
-    if parsed is None:
-        first = out.strip().splitlines()[0] if out.strip() else ""
-        reason = f"{label} does not look like {loc.name} (version output: {first[:120]!r})."
-        return _info(loc, ToolStatus.BROKEN, _with_origin_note(loc, reason))
-    return _info(loc, ToolStatus.FOUND, None, version=parsed.version, release=parsed.version)
+    return _ffmpeg_info(loc, result.stdout_text)
 
 
 def _ffmpeg_info(loc: ToolLocation, out: str) -> ToolInfo:
@@ -446,7 +415,9 @@ async def discover_tools(
     timeout: float = VERSION_TIMEOUT,  # noqa: ASYNC109 - passed to run()
 ) -> ToolSet:
     """Locate every tool and check its version (in parallel). Never raises for tool problems."""
-    located = locate_tools(
+    # locate_tools() runs in a thread: a network share can be slow to stat.
+    located = await asyncio.to_thread(
+        locate_tools,
         settings,
         environ=environ,
         bundled_roots=bundled_roots,
@@ -458,28 +429,3 @@ async def discover_tools(
     async with asyncio.TaskGroup() as group:
         checks = [group.create_task(check_tool(located[t], timeout=timeout)) for t in TOOL_NAMES]
     return ToolSet(**{check.result().name: check.result() for check in checks})
-
-
-def discover_tools_sync(
-    settings: ToolPathSettings | BaseModel | None = None,
-    *,
-    environ: Mapping[str, str] | None = None,
-    bundled_roots: Sequence[Path] | None = None,
-    search_path: str | None = None,
-    platform: str | None = None,
-    timeout: float = VERSION_TIMEOUT,
-) -> ToolSet:
-    """:func:`discover_tools` for synchronous code.
-
-    It runs its own event loop, so it must not be called from a running loop.
-    """
-    return asyncio.run(
-        discover_tools(
-            settings,
-            environ=environ,
-            bundled_roots=bundled_roots,
-            search_path=search_path,
-            platform=platform,
-            timeout=timeout,
-        )
-    )

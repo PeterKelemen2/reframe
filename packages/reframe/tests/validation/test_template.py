@@ -2,12 +2,7 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
@@ -17,6 +12,7 @@ from reframe.jsonpatch import apply_patch
 from reframe.models import (
     AudioCodecRule,
     AudioOutputSettings,
+    AverageBitrate,
     ConstantQuality,
     EncoderState,
     EncoderStatus,
@@ -30,25 +26,15 @@ from reframe.models import (
     TrackSelector,
     VideoSettings,
 )
-from reframe.validation import TEMPLATE_RULES, validate_template
+from reframe.models.issues import ValidationIssue
+from reframe.validation import TEMPLATE_RULES, TemplateContext, validate_template
+from reframe.validation.common import error, fix, replace
+from reframe.validation.registry import Rule
 
+from . import scenario as sc
+from .scenario import Case, Mod, both
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 ERR, WARN, INFO = Severity.ERROR, Severity.WARNING, Severity.INFO
-
-type Mod = Callable[[Any], None]
 
 
 def preset(**video: Any) -> Preset:
@@ -70,16 +56,6 @@ def build(mod: Mod) -> Any:
     return scenario
 
 
-@dataclass(frozen=True)
-class Case:
-    id: str
-    code: str
-    path: str
-    severity: Severity
-    positive: Mod
-    negative: Mod
-
-
 def video(**changes: Any) -> Mod:
     def mod(s: Any) -> None:
         for key, value in changes.items():
@@ -91,14 +67,6 @@ def video(**changes: Any) -> Mod:
 def caps(states: dict[str, Any], **kw: Any) -> Mod:
     def mod(s: Any) -> None:
         s.caps = sc.make_caps(states, **kw)
-
-    return mod
-
-
-def both(*mods: Mod) -> Mod:
-    def mod(s: Any) -> None:
-        for m in mods:
-            m(s)
 
     return mod
 
@@ -141,7 +109,7 @@ def nothing(s: Any) -> None:
     del s
 
 
-NO_HEVC_HARDWARE = {
+NO_HEVC_HARDWARE: dict[str, EncoderState | EncoderStatus] = {
     "hevc_nvenc": EncoderStatus(
         id="hevc_nvenc",
         state=EncoderState.UNAVAILABLE,
@@ -354,6 +322,14 @@ CASES: list[Case] = [
         rule(codec="ac3", mixdown="5.1", max_bitrate=700),
         rule(codec="ac3", mixdown="5.1", max_bitrate=640),
     ),
+    Case(
+        "NVENC H.265 level 4.1 above its bitrate",
+        "encoder.level_bitrate_too_high",
+        "video.rate_control.kbps",
+        ERR,
+        video(encoder="hevc_nvenc", level="4.1", rate_control=AverageBitrate(kbps=12000)),
+        video(encoder="hevc_nvenc", level="4.1", rate_control=AverageBitrate(kbps=11000)),
+    ),
     # The advanced-option rules need only the video settings.
     Case(
         "x265 amp without rectangular partitions",
@@ -379,11 +355,27 @@ CASES: list[Case] = [
         video(encoder="libsvtav1", advanced={"min-qp": 40, "max-qp": 20}),
         video(encoder="libsvtav1", advanced={"min-qp": 20, "max-qp": 40}),
     ),
+    Case(
+        "custom parameter names a file",
+        "encoder.custom_param_file",
+        "video.custom_params",
+        ERR,
+        video(custom_params="aq-mode=3:analysis-save=/home/u/x"),
+        video(custom_params="aq-mode=3"),
+    ),
+    Case(
+        "custom parameter overrides an option",
+        "encoder.custom_param_overrides",
+        "video.advanced.psy-rd",
+        WARN,
+        video(custom_params="psy-rd=0.75", advanced={"psy-rd": 1.5}),
+        video(advanced={"psy-rd": 1.5}),
+    ),
 ]
 
 
 def test_a_codec_the_container_cannot_hold_is_reported_once() -> None:
-    """The container rule reports it; the defaults lint runs with ``container_codecs=False``."""
+    """The container rule reports it; the defaults lint does not."""
     issues = sc.check_template(build(webm_video))
     on_path = [i for i in issues if i.path == "audio_defaults.codec_rules[0].codec"]
     assert [i.code for i in on_path] == ["container.codec_unsupported"]
@@ -403,20 +395,26 @@ def test_positive(case: Case) -> None:
     assert all(f.target == "template" for i in issues for f in i.fixes)
 
 
-@pytest.mark.parametrize("case", CASES, ids=[c.id for c in CASES])
+#: A negative of `nothing` is the clean template itself, so `test_clean_template_has_no_issues`
+#: is the negative test of those codes and running `check_template` on it again would add nothing.
+NEGATIVE_CASES = [c for c in CASES if c.negative is not nothing]
+
+
+@pytest.mark.parametrize("case", NEGATIVE_CASES, ids=[c.id for c in NEGATIVE_CASES])
 def test_negative(case: Case) -> None:
     issues = sc.check_template(build(case.negative))
     assert not sc.found(issues, case.code, case.path), issues
 
 
 @pytest.mark.parametrize("registered", TEMPLATE_RULES, ids=[r.name for r in TEMPLATE_RULES])
-def test_every_template_rule_has_a_positive_case(registered: Any) -> None:
+def test_every_template_rule_has_a_positive_case(registered: Any, monkeypatch: Any) -> None:
+    monkeypatch.setattr("reframe.validation.TEMPLATE_RULES", [registered])
     for case in CASES:
         scenario = build(case.positive)
         found = validate_template(
-            scenario.template, scenario.caps, definitions=scenario.definitions, rules=[registered]
+            scenario.template, scenario.caps, definitions=scenario.definitions
         )
-        if found:
+        if any(i.code in registered.codes for i in found):
             return
     pytest.fail(f"no positive case for the template rule {registered.name}")
 
@@ -449,3 +447,23 @@ def test_subject_names_the_template() -> None:
     template = preset(encoder="libx999")
     (issue,) = validate_template(template, sc.make_caps(), subject="Batch group 2")
     assert issue.message == "Batch group 2 uses the unknown encoder 'libx999'."
+
+
+def test_template_fixes_target_the_template_but_settings_fixes_stay(monkeypatch: Any) -> None:
+    def both_targets(ctx: TemplateContext) -> list[ValidationIssue]:
+        return [
+            error(
+                "output.example",
+                "output",
+                "Example.",
+                fix("Fix the preset", replace("output.path", None)),
+                fix(
+                    "Fix the settings", replace("output.collision", "overwrite"), target="settings"
+                ),
+            )
+        ]
+
+    rule = Rule("output", "both_targets", both_targets, ("output.example",))
+    monkeypatch.setattr("reframe.validation.TEMPLATE_RULES", [rule])
+    (issue,) = validate_template(preset(), sc.make_caps())
+    assert [f.target for f in issue.fixes] == ["template", "settings"]

@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
 from typing import Any
 
-import psutil
 import pytest
 from pydantic import BaseModel
 
@@ -17,24 +15,10 @@ from reframe.models import TaskDoneEvent, TaskProgressEvent, TaskState
 from reframe.tasks import DEFAULT_LIMIT, TaskContext, TaskFailed, TaskManager
 from reframe.tools import run
 from reframe_testing import fake_tools as ft
+from reframe_testing.processes import alive
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
-
-
-async def until(condition: Callable[[], bool], limit: float = 30.0) -> None:
-    """Wait (polling) until ``condition()`` is true."""
-    deadline = time.monotonic() + limit
-    while not condition():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.02)
-
-
-def _alive(pid: int) -> bool:
-    try:
-        return psutil.Process(pid).status() != psutil.STATUS_ZOMBIE
-    except psutil.Error:
-        return False
 
 
 def drain(sub: Subscription) -> list[TaskProgressEvent | TaskDoneEvent]:
@@ -65,7 +49,7 @@ async def test_start_returns_at_once_and_progress_events_are_in_order() -> None:
             ctx.progress(done=i, total=3, message=f"{i}/3")
         return {"items": 3}
 
-    info = tasks.start("scan", work, message="Scanning")
+    info = tasks.start("scan", work, message="Scanning", result_json=lambda value: value)
     assert info.state is TaskState.QUEUED
     assert info.created_at is not None
     assert info.id.startswith("t-")
@@ -124,7 +108,7 @@ async def test_cancel_kills_the_subprocess_within_one_second(fake_tools: ft.Fake
         return await run([str(fake_tools.ffprobe), "-i", "x"], timeout=60, cancel=ctx.cancel)
 
     info = tasks.start("probe", work)
-    await until(lambda: bool(fake_tools.pids()))
+    await wait_until(lambda: bool(fake_tools.pids()))
     [pid] = fake_tools.pids()
     started = time.monotonic()
     assert tasks.cancel(info.id)
@@ -132,7 +116,7 @@ async def test_cancel_kills_the_subprocess_within_one_second(fake_tools: ft.Fake
     elapsed = time.monotonic() - started
     assert final.state is TaskState.CANCELLED
     assert elapsed < 1.0
-    assert not _alive(pid)
+    assert not alive(pid)
     assert not tasks.cancel(info.id)  # already finished
 
 
@@ -145,11 +129,11 @@ async def test_cancel_without_token_use_still_kills(fake_tools: ft.FakeTools) ->
         return await run([str(fake_tools.ffprobe)], timeout=60)
 
     info = tasks.start("probe", work)
-    await until(lambda: bool(fake_tools.pids()))
+    await wait_until(lambda: bool(fake_tools.pids()))
     [pid] = fake_tools.pids()
     tasks.cancel(info.id)
     assert (await tasks.wait(info.id)).state is TaskState.CANCELLED
-    assert not _alive(pid)
+    assert not alive(pid)
 
 
 async def test_per_kind_limit_holds() -> None:
@@ -174,8 +158,6 @@ async def test_per_kind_limit_holds() -> None:
     for task_id in ids:
         assert (await tasks.wait(task_id)).state is TaskState.DONE
     assert peak == {"scan": 2, "other": DEFAULT_LIMIT}
-    assert tasks.limit("scan") == 2
-    assert tasks.limit("probe_folder") == 2
 
 
 async def test_queued_tasks_start_in_order() -> None:
@@ -253,7 +235,7 @@ async def test_cancel_slot_handover_race() -> None:
 
     first = tasks.start("k", blocker)
     second = tasks.start("k", blocker)
-    third = tasks.start("k", quick)
+    third = tasks.start("k", quick, result_json=lambda value: value)
     await asyncio.sleep(0.01)
     gate.set()
     await asyncio.sleep(0)  # first finishes and hands the slot to second
@@ -305,6 +287,26 @@ async def test_an_expected_failure_is_its_message_without_a_traceback(
     assert final.error == "ffprobe cannot be used: not found"
     assert not any(record.exc_info for record in caplog.records)
     assert mediatask.TaskFailed is TaskFailed
+    assert final.error_code is None
+
+
+async def test_an_expected_failure_carries_its_error_code() -> None:
+    tasks = TaskManager()
+
+    async def offline(ctx: TaskContext) -> None:
+        raise TaskFailed("cannot reach the download server", code="tools.fetch_offline")
+
+    async def bug(ctx: TaskContext) -> None:
+        raise RuntimeError("a bug")
+
+    final = await tasks.wait(tasks.start("k", offline).id)
+    assert (final.state, final.error, final.error_code) == (
+        TaskState.FAILED,
+        "cannot reach the download server",
+        "tools.fetch_offline",
+    )
+    other = await tasks.wait(tasks.start("k", bug).id)
+    assert (other.state, other.error_code) == (TaskState.FAILED, None)
 
 
 class Result(BaseModel):
@@ -325,11 +327,7 @@ async def test_result_conversion() -> None:
 
     cases = {
         start(Result(count=2)): {"count": 2},
-        start([1, "a", None, {"b": 1.5}]): [1, "a", None, {"b": 1.5}],
         start(object()): None,
-        start(float("nan")): None,
-        start({1: 2}): None,
-        start((1, 2)): None,
         start(object(), result_json=lambda v: "custom"): "custom",
     }
     for task_id, expected in cases.items():
@@ -361,33 +359,9 @@ async def test_get_list_unknown_and_pruning() -> None:
         await tasks.wait("nope")
 
 
-async def test_set_limit_starts_waiting_tasks() -> None:
-    tasks = TaskManager(limits={"k": 1})
-    gate = asyncio.Event()
-
-    async def blocker(ctx: TaskContext) -> None:
-        await gate.wait()
-
-    a, b = tasks.start("k", blocker), tasks.start("k", blocker)
-    await asyncio.sleep(0.01)
-    assert [t.state for t in tasks.list()] == [TaskState.RUNNING, TaskState.QUEUED]
-    tasks.set_limit("k", 2)
-    await asyncio.sleep(0.01)
-    assert [t.state for t in tasks.list()] == [TaskState.RUNNING, TaskState.RUNNING]
-    tasks.set_limit("new-kind", 3)
-    assert tasks.limit("new-kind") == 3
-    gate.set()
-    await tasks.wait(a.id)
-    await tasks.wait(b.id)
-
-
 def test_limits_must_be_positive() -> None:
     with pytest.raises(ValueError, match="at least 1"):
         TaskManager(limits={"k": 0})
-    with pytest.raises(ValueError, match="at least 1"):
-        TaskManager(default_limit=0)
-    with pytest.raises(ValueError, match="at least 1"):
-        TaskManager().set_limit("k", 0)
 
 
 async def test_close_cancels_everything() -> None:

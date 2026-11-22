@@ -13,6 +13,7 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from reframe import paths
+from reframe.models.settings import WhenDone
 
 __all__ = ["AuthMode", "ServerConfig", "ServerMode", "is_loopback"]
 
@@ -72,6 +73,13 @@ class ServerConfig(BaseSettings):
     """``Host`` names accepted besides the loopback names. ``None``: the defaults."""
     parent_pid: int | None = Field(default=None, gt=0)
     """Stop when this process ends (the desktop shell's pid). ``None``: no watch."""
+    ffmpeg_build: str | None = None
+    """An offered FFmpeg build (``default``) that the server downloads at start when tool
+    discovery finds no usable FFmpeg and no path override. ``None``: no download without the
+    UI."""
+    container: bool = False
+    """The server runs in a container (``REFRAME_CONTAINER=1``, set by the Docker image): it
+    cannot put its computer to sleep or shut it down."""
 
     @field_validator("endpoint_file", mode="before")
     @classmethod
@@ -127,6 +135,22 @@ class ServerConfig(BaseSettings):
         """The resolved auth mode (never ``None`` after validation)."""
         assert self.auth is not None
         return self.auth
+
+    @property
+    def unavailable_when_done(self) -> dict[WhenDone, str]:
+        """The when-done actions this server cannot carry out, each with the reason."""
+        unavailable: dict[WhenDone, str] = {}
+        if self.mode != "desktop":
+            unavailable["quit"] = (
+                "Quit Reframe is for the desktop app: a server for browsers keeps running."
+            )
+        if self.container:
+            reason = (
+                "The server runs in a container, which cannot put its computer to sleep or "
+                "shut it down."
+            )
+            unavailable["sleep"] = unavailable["shutdown"] = reason
+        return unavailable
 
     @property
     def secret_token(self) -> str:

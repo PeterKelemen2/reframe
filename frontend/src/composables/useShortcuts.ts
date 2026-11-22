@@ -21,9 +21,12 @@ function inNumberField(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest('.p-inputnumber') !== null
 }
 
-/** Picks, fixes and name corrections are made in the matrix and its popovers: undo them there. */
+/**
+ * Picks, fixes and name corrections are made in the matrix and its popovers, and range changes
+ * in the range popover: undo them there.
+ */
 function undoesInModal(modal: Element): boolean {
-  return modal.matches('.matrix-dialog, .matrix-popover')
+  return modal.matches('.matrix-dialog, .matrix-popover, .range-popover')
 }
 
 /** `Digit1` … `Digit8` (and the keypad's), whatever the keyboard layout prints on the key. */

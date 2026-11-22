@@ -10,10 +10,9 @@ from functools import cached_property
 from pathlib import Path
 
 from reframe.definitions import ContainerDef, Definitions
-from reframe.dimensions import compute_geometry, source_geometry
+from reframe.dimensions import compute_geometry, job_source_geometry
 from reframe.models.capabilities import CapabilitySnapshot
 from reframe.models.geometry import Geometry, SourceGeometry
-from reframe.models.issues import FixTarget
 from reframe.models.job import JobSettings
 from reframe.models.media import AudioStream, MediaSource, SubtitleStream, VideoStream
 from reframe.models.naming import NameResult, NamingOptions
@@ -40,12 +39,16 @@ class JobContext:
     naming: NamingOptions
     """The effective naming options (the preset's, else Settings → Output)."""
 
-    target: FixTarget = "job"
     subject: str | None = None
 
+    @property
+    def doc(self) -> JobSettings | JobTemplate:
+        """What a rule shared with templates checks: the job."""
+        return self.job
+
     @cached_property
-    def container(self) -> ContainerDef | None:
-        return self.definitions.containers.get(self.job.output.container)
+    def container(self) -> ContainerDef:
+        return self.definitions.containers[self.job.output.container]
 
     @cached_property
     def video_stream(self) -> VideoStream | None:
@@ -70,15 +73,10 @@ class JobContext:
 
     @cached_property
     def source_geometry(self) -> SourceGeometry | None:
-        """The geometry of the main video stream, as the command builder sees it. A job that
-        deinterlaces encodes progressive frames (``interlaced`` off), so the crop is on the
-        frame's chroma grid, not the field's."""
+        """The geometry of the main video stream, as the command builder sees it."""
         if self.video_stream is None:
             return None
-        src = source_geometry(self.video_stream)
-        if "deinterlace" in self.job.filters.root:
-            src = src.model_copy(update={"interlaced": False})
-        return src
+        return job_source_geometry(self.video_stream, self.job)
 
     @cached_property
     def output_size(self) -> tuple[int, int] | None:
@@ -117,8 +115,12 @@ class TemplateContext:
     caps: CapabilitySnapshot
     definitions: Definitions
     subject: str | None = None
-    target: FixTarget = "template"
+
+    @property
+    def doc(self) -> JobSettings | JobTemplate:
+        """What a rule shared with jobs checks: the template."""
+        return self.template
 
     @cached_property
-    def container(self) -> ContainerDef | None:
-        return self.definitions.containers.get(self.template.output.container)
+    def container(self) -> ContainerDef:
+        return self.definitions.containers[self.template.output.container]

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import io
-import sys
-from collections.abc import Iterator
+import socket
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import pytest
 from rich.console import Console
-from typer.testing import CliRunner, Result
+from typer.testing import Result
 
 from reframe import cli
 from reframe.cli import (
@@ -20,38 +21,36 @@ from reframe.cli import (
     EXIT_OK,
     EXIT_USAGE,
     FetchView,
-    build_app,
     fetched_text,
-    task_error,
 )
-from reframe.models import TaskInfo, TaskState
-from reframe.probe import mediainfo
+from reframe.models import (
+    EncoderState,
+    EncoderStatus,
+    TaskInfo,
+    TaskState,
+    ToolInfo,
+    ToolSet,
+    ToolStatus,
+)
+from reframe.models.tools import InstalledToolBuild, ToolBuildOffer, ToolBuilds
 from reframe.tools import ENV_VARS
 from reframe.tools import fetch as fetch_module
 from reframe.tools.__main__ import status_lines
 from reframe.tools.fetch import host_platform, install_dir_for, installed_build
 from reframe_testing import fake_tools as ft
+from reframe_testing.cli import invoke, run_cli
 
 from .fetch_server import (
     FAKE_VERSION,
+    POSIX_ONLY,
     Archive,
     LocalServer,
+    archive_ext,
     fake_archive,
     foreign_platform,
-    local_server,
     sha256,
     write_manifest,
 )
-
-WIDTH = "200"
-POSIX_ONLY = pytest.mark.skipif(
-    sys.platform == "win32" or host_platform() != "linux-x64",
-    reason="the fake Linux build runs only on a linux-x64 host",
-)
-
-
-def invoke(*args: str) -> Result:
-    return CliRunner().invoke(build_app(), list(args), env={"COLUMNS": WIDTH})
 
 
 def assert_clean_failure(result: Result, code: int) -> list[str]:
@@ -63,11 +62,6 @@ def assert_clean_failure(result: Result, code: int) -> list[str]:
 
 
 @pytest.fixture
-def server() -> Iterator[LocalServer]:
-    yield from local_server()
-
-
-@pytest.fixture
 def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     for var in ENV_VARS.values():
         monkeypatch.delenv(var, raising=False)
@@ -76,7 +70,6 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     empty = tmp_path / "empty-path"
     empty.mkdir()
     monkeypatch.setenv("PATH", str(empty))
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     return tmp_path / "data"
 
 
@@ -87,25 +80,8 @@ def fake(env: Path, fake_tools: ft.FakeTools, monkeypatch: pytest.MonkeyPatch) -
     return fake_tools
 
 
-def _ext(platform: str) -> str:
-    return "zip" if platform == "windows-x64" else "tar.xz"
-
-
 def use_manifest(monkeypatch: pytest.MonkeyPatch, manifest: Path) -> None:
     monkeypatch.setattr(fetch_module, "DEFAULT_MANIFEST", manifest)
-
-
-def test_status_prints_the_lines_of_python_m_reframe_tools(fake: ft.FakeTools, env: Path) -> None:
-    result = invoke("tools", "status")
-    assert result.exit_code == EXIT_OK, result.output
-    lines = result.stdout.splitlines()
-    assert lines[0] == f"ffmpeg       found    env      {fake.ffmpeg}  {FAKE_VERSION}"
-    assert lines[1] == f"ffprobe      found    env      {fake.ffprobe}  {FAKE_VERSION}"
-    assert lines[2].startswith("mkvpropedit  missing  -        -  (")
-    assert lines[3].startswith("mediainfo    missing  -        -  (")
-    install = env / "tools" / "ffmpeg"
-    assert lines[4] == f'Fetched build: none ("reframe tools fetch" installs it into {install}).'
-    assert result.stderr == ""
 
 
 def test_status_json_is_the_toolset(fake: ft.FakeTools) -> None:
@@ -114,7 +90,7 @@ def test_status_json_is_the_toolset(fake: ft.FakeTools) -> None:
     result = invoke("tools", "status", "--json")
     assert result.exit_code == EXIT_OK, result.output
     data = json.loads(result.stdout)
-    assert set(data) == {"ffmpeg", "ffprobe", "mkvpropedit", "mediainfo"}
+    assert set(data) == {"ffmpeg", "ffprobe"}
     assert data["ffmpeg"]["origin"] == "env"
     assert data["ffmpeg"]["status"] == "found"
 
@@ -146,13 +122,21 @@ def test_status_json_still_exits_4(env: Path) -> None:
     assert result.stdout.lstrip().startswith("{")
 
 
-def test_status_lines_are_shared_with_python_m_reframe_tools(fake: ft.FakeTools) -> None:
-    from reframe.tools import discover_tools_sync
+def test_status_lines_are_shared_with_python_m_reframe_tools(fake: ft.FakeTools, env: Path) -> None:
+    from reframe.tools import discover_tools
 
-    tools = discover_tools_sync()
+    tools = asyncio.run(discover_tools())
     lines = status_lines(tools)
     result = invoke("tools", "status")
-    assert result.stdout.splitlines()[:4] == lines
+    assert result.exit_code == EXIT_OK, result.output
+    assert [line.split()[0] for line in lines] == ["ffmpeg", "ffprobe"]
+    assert result.stdout.splitlines()[: len(lines)] == lines
+    out = result.stdout.splitlines()
+    assert out[0] == f"ffmpeg       found    env      {fake.ffmpeg}  {FAKE_VERSION}"
+    assert out[1] == f"ffprobe      found    env      {fake.ffprobe}  {FAKE_VERSION}"
+    install = env / "tools" / "ffmpeg"
+    assert out[2] == f'Fetched build: none ("reframe tools fetch" installs it into {install}).'
+    assert result.stderr == ""
 
 
 def test_fetched_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -299,7 +283,7 @@ def test_unknown_build_and_platform_are_usage_errors(
         monkeypatch,
         write_manifest(
             tmp_path / "m.toml",
-            {"default": [Archive(f"https://example.invalid/a.{_ext(other)}", b"x", other)]},
+            {"default": [Archive(f"https://example.invalid/a.{archive_ext(other)}", b"x", other)]},
         ),
     )
     result = invoke("tools", "fetch", "--build", "nightly")
@@ -333,7 +317,7 @@ async def test_ctrl_c_stops_the_download(
 ) -> None:
     """Cancelling the task is what asyncio.run does on Ctrl+C."""
     other = foreign_platform()
-    ext = _ext(other)
+    ext = archive_ext(other)
     data = fake_archive(other, tmp_path / "work") + b"\0" * (2 << 20)
     route = server.add(f"/a.{ext}", data, delay=0.05)
     use_manifest(
@@ -395,6 +379,297 @@ def test_fetch_help() -> None:
     assert result.exit_code == 0
     for text in ("--build", "--platform", "linux-x64", "windows-x64", "SHA-256", "Exit codes"):
         assert text in result.stdout
+    assert "--file" in result.stdout
+    assert "Builds to choose:" in result.stdout
+    assert "default (Recommended): The build Reframe is tested with." in result.stdout
+    assert "compat (Compatibility): FFmpeg 8.1" in result.stdout
+    assert "override-test" not in result.stdout
+
+
+def test_offered_builds_text_lists_only_the_offered_builds() -> None:
+    assert cli.offered_builds_text().split("\n\n") == [
+        "Builds to choose:",
+        "default (Recommended): The build Reframe is tested with. NVIDIA NVENC needs driver 610 "
+        "or newer.",
+        "compat (Compatibility): FFmpeg 8.1, for NVIDIA drivers 570 to 609, such as a GeForce "
+        "10 series card with driver 580. Checked with drivers 582.78 and 580.159.",
+    ]
+
+
+NAME = "ffmpeg-test-linux64.tar.xz"
+
+
+def file_manifest(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, data: bytes) -> str:
+    """The packaged manifest replaced by one whose offered ``default`` archive is ``data``,
+    named NAME; returns its URL."""
+    url = f"https://downloads.example/{NAME}"
+    use_manifest(
+        monkeypatch,
+        write_manifest(
+            tmp_path / "m.toml", {"default": [Archive(url, data, "linux-x64")]}, offered=["default"]
+        ),
+    )
+    return url
+
+
+@POSIX_ONLY
+def test_fetch_file_installs_the_archive_that_discovery_then_uses(
+    env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    data = fake_archive("linux-x64", tmp_path / "work")
+    file_manifest(monkeypatch, tmp_path, data)
+    archive = tmp_path / NAME
+    archive.write_bytes(data)
+    result = invoke("tools", "fetch", "--file", str(archive))
+    assert result.exit_code == EXIT_OK, (result.stdout, result.stderr)
+    out = result.stdout.splitlines()
+    assert out[0] == f"FFmpeg {FAKE_VERSION} (default, linux-x64): {archive}"
+    install = env / "tools" / "ffmpeg"
+    assert f"Installed FFmpeg {FAKE_VERSION} into {install}." in out
+    assert f"ffmpeg       found    bundled  {install / 'bin' / 'ffmpeg'}  {FAKE_VERSION}" in out
+    assert result.stderr == ""
+    again = invoke("tools", "fetch", "--file", str(archive), "--build", "default")
+    assert again.exit_code == EXIT_OK, again.output
+    assert (
+        f"FFmpeg {FAKE_VERSION} is already installed in {install} and every file is intact: "
+        "nothing was installed." in again.stdout.splitlines()
+    )
+    assert "downloaded" not in again.stdout
+
+
+def test_fetch_file_refuses_a_wrong_archive(
+    env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    data = b"the pinned archive"
+    file_manifest(monkeypatch, tmp_path, data)
+    host = host_platform()
+    wrong = tmp_path / NAME
+    wrong.write_bytes(b"the pinned archivE")
+    result = invoke("tools", "fetch", "--file", str(wrong), "--build", "default")
+    if host != "linux-x64":  # the test manifest has only a linux-x64 archive
+        assert result.exit_code == EXIT_USAGE
+        return
+    error = (
+        f"error: the install failed: {NAME} is not the archive of the FFmpeg build 'default' "
+        f"for linux-x64 ({NAME}), or it is damaged: the SHA-256 is "
+        f"{sha256(wrong.read_bytes())}, expected {sha256(data)}"
+    )
+    assert assert_clean_failure(result, EXIT_FAILED) == [error]
+    assert result.stderr.splitlines() == [error]
+    assert not (env / "tools" / "ffmpeg").exists()
+
+
+def test_a_failed_install_is_one_line_in_a_real_process(
+    fake_tools: ft.FakeTools, tmp_path: Path
+) -> None:
+    """The task's log record does not repeat the error: the command sets up no logging, and
+    Python would print it on stderr."""
+    wrong = tmp_path / "ffmpeg.tar.xz"
+    wrong.write_bytes(b"not the pinned archive")
+    result = run_cli(
+        fake_tools, tmp_path, "tools", "fetch", "--file", str(wrong), "--build", "default",
+        encoding="utf-8",
+    )  # fmt: skip
+    assert result.returncode == EXIT_FAILED
+    stderr = result.stderr.decode("utf-8").splitlines()
+    assert len(stderr) == 1, stderr
+    assert stderr[0].startswith(
+        "error: the install failed: ffmpeg.tar.xz is not the archive of the FFmpeg build "
+        "'default' for "
+    )
+    assert "or it is damaged: the size is 22 bytes, expected " in stderr[0]
+
+
+def test_fetch_file_usage_errors(
+    env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    file_manifest(monkeypatch, tmp_path, b"x")
+    missing = invoke("tools", "fetch", "--file", str(tmp_path / "nope.tar.xz"))
+    assert assert_clean_failure(missing, cli.EXIT_NOT_FOUND) == [
+        f"error: {tmp_path / 'nope.tar.xz'}: there is no such file."
+    ]
+    other = tmp_path / "other.tar.xz"
+    other.write_bytes(b"x")
+    platform = invoke("tools", "fetch", "--file", str(other), "--platform", "windows-x64")
+    assert assert_clean_failure(platform, EXIT_USAGE) == [
+        "error: --file installs a build for this computer: leave out --platform."
+    ]
+    if host_platform() != "linux-x64":
+        return
+    unnamed = invoke("tools", "fetch", "--file", str(other))
+    assert assert_clean_failure(unnamed, EXIT_USAGE) == [
+        f"error: other.tar.xz is not the file name of an offered build's archive for linux-x64 "
+        f"({NAME}): name the build it is (--build NAME)."
+    ]
+    unknown = invoke("tools", "fetch", "--file", str(other), "--build", "nightly")
+    assert assert_clean_failure(unknown, EXIT_USAGE) == [
+        'error: there is no build "nightly" in the manifest. Builds: "default".'
+    ]
+
+
+def test_an_offline_fetch_names_the_file_install(
+    env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    host = host_platform()
+    if host is None:
+        pytest.skip("no build is pinned for this computer")
+    url = f"https://downloads.example/ffmpeg.{archive_ext(host)}"
+    use_manifest(
+        monkeypatch,
+        write_manifest(tmp_path / "m.toml", {"default": [Archive(url, b"x", host)]}),
+    )
+    monkeypatch.setattr(fetch_module, "_sleep", lambda seconds, cancel: None)
+
+    def unreachable(*args: object, **kwargs: object) -> None:
+        raise urllib.error.URLError(socket.gaierror(-2, "Name or service not known"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", unreachable)
+    result = invoke("tools", "fetch")
+    errors = assert_clean_failure(result, EXIT_FAILED)
+    assert errors[0].startswith(
+        "error: the fetch failed: cannot reach the download server downloads.example (Name or "
+        "service not known; 1 attempt(s)). Without a connection, install the build from its "
+        "archive file"
+    )
+    assert result.stderr.splitlines()[-1] == (
+        f'hint: download {url} on another computer, then run "reframe tools fetch --file '
+        'ARCHIVE" here.'
+    )
+    assert not (env / "tools" / "ffmpeg").exists()
+
+
+def test_fetched_text_says_when_the_build_is_outdated(tmp_path: Path) -> None:
+    host = host_platform()
+    if host is None:
+        pytest.skip("no build is pinned for this computer")
+    install = install_dir_for(tmp_path, host, host)
+    install.mkdir(parents=True)
+    (install / fetch_module.MARKER_NAME).write_text(
+        f'{{"build": "default", "version": "n9", "platform": "{host}"}}', encoding="utf-8"
+    )
+    offer = ToolBuildOffer(
+        name="default",
+        label="Recommended",
+        summary="…",
+        version="n10",
+        release_version="10.0",
+        license="GPL-3.0-or-later",
+    )
+    current = ToolBuilds(builds=[offer], installed=InstalledToolBuild(name="default", version="n9"))
+    line = f"Fetched build: n9 (default, {host}) in {install}."
+    assert fetched_text(tmp_path, current) == line
+    outdated = current.model_copy(
+        update={"installed": InstalledToolBuild(name="default", version="n9", outdated=True)}
+    )
+    assert fetched_text(tmp_path, outdated) == (
+        f'{line} It is outdated: this release pins n10 as "default" ("reframe tools fetch '
+        '--build default" installs it).'
+    )
+    unoffered = outdated.model_copy(update={"builds": []})
+    assert 'pins another version of "default"' in fetched_text(tmp_path, unoffered)
+
+
+def test_status_says_when_the_downloaded_build_is_outdated(
+    fake: ft.FakeTools, env: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    host = host_platform()
+    if host is None:
+        pytest.skip("no build is pinned for this computer")
+    install = install_dir_for(env, host, host)
+    install.mkdir(parents=True)
+    (install / fetch_module.MARKER_NAME).write_text(
+        f'{{"build": "default", "version": "n9.0.1", "platform": "{host}"}}', encoding="utf-8"
+    )
+    url = f"https://downloads.example/ffmpeg.{archive_ext(host)}"
+    use_manifest(
+        monkeypatch,
+        write_manifest(
+            tmp_path / "m.toml",
+            {"default": [Archive(url, b"x", host)]},
+            version="n9.0.2",
+            offered=["default"],
+        ),
+    )
+    result = invoke("tools", "status")
+    assert result.exit_code == EXIT_OK, result.output
+    assert (
+        f"Fetched build: n9.0.1 (default, {host}) in {install}. It is outdated: this release "
+        'pins n9.0.2 as "default" ("reframe tools fetch --build default" installs it).'
+    ) in result.stdout.splitlines()
+
+
+RELEASES = {"default": "9.0.2", "compat": "8.1.3", "older": "7.1.2"}
+
+
+def _builds(*names: str, installed: str | None = None) -> ToolBuilds:
+    offers = [
+        ToolBuildOffer(
+            name=name,
+            label=name,
+            summary="",
+            version="v",
+            release_version=RELEASES[name],
+            license="GPL",
+        )
+        for name in names
+    ]
+    done = InstalledToolBuild(name=installed, version="v") if installed else None
+    return ToolBuilds(builds=offers, installed=done)
+
+
+@pytest.mark.parametrize(
+    ("in_use", "builds", "other"),
+    [
+        (None, _builds("default", "compat"), "compat"),  # the user's own or a packaged FFmpeg
+        ("default", _builds("default", "compat"), "compat"),
+        ("default", _builds("default", "older", "compat"), "compat"),  # the closest older one
+        ("compat", _builds("default", "compat", "older"), "older"),
+        # a newer FFmpeg never needs an older driver: nothing to suggest
+        ("compat", _builds("default", "compat"), None),
+        ("default", _builds("default"), None),
+        (None, _builds("default"), "default"),
+        (None, None, "compat"),
+        ("gone", _builds("default", "compat"), "default"),  # no longer offered
+    ],
+)
+def test_the_hint_names_an_offered_build_of_an_older_ffmpeg(
+    in_use: str | None, builds: ToolBuilds | None, other: str | None
+) -> None:
+    assert cli.other_build(in_use, builds) == other
+
+
+def test_without_an_older_build_the_hint_names_only_the_driver_and_an_own_ffmpeg() -> None:
+    status = EncoderStatus(
+        id="hevc_nvenc",
+        state=EncoderState.UNAVAILABLE,
+        build_mismatch=True,
+        build_mismatch_cause="driver",
+    )
+    assert cli.build_mismatch_hints([status], None) == [
+        "hint: hevc_nvenc needs newer system software than this FFmpeg build expects: update "
+        "the driver (no offered build works with an older one), or use your own FFmpeg "
+        "(REFRAME_FFMPEG / tools.ffmpeg)."
+    ]
+
+
+def test_the_build_in_use_is_the_downloaded_one_only_when_discovery_picked_it(
+    tmp_path: Path,
+) -> None:
+    host = host_platform()
+    if host is None:
+        pytest.skip("no build is pinned for this computer")
+    install = install_dir_for(tmp_path, host, host)
+    builds = _builds("default", "compat", installed="compat")
+
+    def tools(path: Path) -> ToolSet:
+        return ToolSet(
+            ffmpeg=ToolInfo(name="ffmpeg", status=ToolStatus.FOUND, path=path),
+            ffprobe=ToolInfo(name="ffprobe", status=ToolStatus.FOUND, path=path),
+        )
+
+    assert cli.build_in_use(tools(install / "bin" / "ffmpeg"), builds, tmp_path) == "compat"
+    assert cli.build_in_use(tools(tmp_path / "own" / "ffmpeg"), builds, tmp_path) is None
+    assert cli.build_in_use(tools(install / "bin" / "ffmpeg"), _builds("default"), tmp_path) is None
 
 
 def _task(message: str, progress: float | None) -> TaskInfo:
@@ -429,34 +704,3 @@ def test_fetch_view_bar() -> None:
     view.close()
     view.close()
     assert "Downloading a.tar.xz" in out.getvalue()
-
-
-def test_task_error_drops_the_expected_failure_prefix() -> None:
-    info = _task("x", None).model_copy(update={"error": "TaskFailed: the SHA-256 is wrong"})
-    assert task_error(info) == "the SHA-256 is wrong"
-    info = info.model_copy(update={"error": "ValueError: boom"})
-    assert task_error(info) == "ValueError: boom"
-    assert task_error(info.model_copy(update={"error": None})) == "no reason given"
-
-
-def test_an_expected_task_failure_is_not_logged_with_a_traceback() -> None:
-    """With no logging configured, the task manager's ``log.exception`` would print a traceback."""
-    import logging
-
-    from reframe.mediatask import TaskFailed
-
-    cli._quiet_expected_failures()
-    cli._quiet_expected_failures()
-    logger = logging.getLogger("reframe.tasks")
-    filters = [f for f in logger.filters if isinstance(f, cli._ExpectedTaskFailure)]
-    assert len(filters) == 1
-
-    def record(exc: BaseException) -> logging.LogRecord:
-        return logging.LogRecord(
-            "reframe.tasks", logging.ERROR, __file__, 1, "task failed", (), (type(exc), exc, None)
-        )
-
-    assert not filters[0].filter(record(TaskFailed("the SHA-256 is wrong")))
-    assert filters[0].filter(record(ValueError("a bug")))
-    plain = logging.LogRecord("reframe.tasks", logging.ERROR, __file__, 1, "x", (), None)
-    assert filters[0].filter(plain)

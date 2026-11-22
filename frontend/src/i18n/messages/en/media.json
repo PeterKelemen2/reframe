@@ -11,13 +11,14 @@
     "countingTrack": "Counting the events of track {n}",
     "cancelCountTrack": "Cancel the event count of track {n}",
     "countAll": "Count events",
-    "countAllLabel": "Count the events of every subtitle track",
+    "countAllLabel": "Count events of every subtitle track",
     "countingAll": "Counting the events of every subtitle track",
     "cancelCountAll": "Cancel the event count of every subtitle track",
     "countHelp": "Counts the events of each track, and the forced events of PGS and VobSub tracks. It reads the whole file.",
     "measureLoudness": "Measure loudness",
     "measureLoudnessAgain": "Measure again",
-    "measureLoudnessLabel": "Measure the loudness of track {n}",
+    "measureLoudnessLabel": "Measure loudness of track {n}",
+    "measureLoudnessAgainLabel": "Measure again: loudness of track {n}",
     "measuringLoudness": "Measuring the loudness of track {n}",
     "cancelLoudness": "Cancel the loudness measurement of track {n}",
     "failed": {
@@ -30,13 +31,17 @@
     "ended": {
       "bitrate": "Track {n}: {value} kb/s, measured.",
       "noBitrate": "Track {n}: no bitrate could be measured.",
-      "events": "Track {n}: one event counted. | Track {n}: {count} events counted.",
-      "eventsForced": "Track {n}: {count} events counted, {forced} forced.",
+      "events": "Track {track}: one event counted. | Track {track}: {count} events counted.",
+      "eventsForced": "Track {track}: one event counted, {forced} forced. | Track {track}: {count} events counted, {forced} forced.",
       "eventsAll": "The events of every subtitle track are counted.",
       "loudness": "Track {n}: integrated loudness {integrated}, true peak {peak}, loudness range {range}.",
       "done": "{scan}: done.",
       "cancelled": "{scan}: cancelled."
     }
+  },
+  "delay": {
+    "ms": "{sign}{value} ms",
+    "seconds": "{sign}{value} s"
   },
   "events": {
     "forced": "{count} forced",

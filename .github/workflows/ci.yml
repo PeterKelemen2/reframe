@@ -49,7 +49,7 @@ jobs:
         with:
           enable-cache: true
 
-      # The build that ships goes where Reframe's tool discovery looks for the bundled
+      # The default build goes where Reframe's tool discovery looks for the bundled
       # build, $REFRAME_DATA_DIR/tools/ffmpeg (reframe/paths.py). It is NOT put on PATH, so
       # the tests and the fixture generator use exactly the binary that discovery picks.
       - name: Point REFRAME_DATA_DIR to a temporary folder
@@ -61,7 +61,7 @@ jobs:
           path: ${{ runner.temp }}/reframe-data/tools/ffmpeg
           key: tools-${{ runner.os }}-default-bundled-${{ hashFiles('tools/ffmpeg.toml') }}
 
-      # Downloads (or re-verifies the cached copy of) the build that ships, checks the SHA-256
+      # Downloads (or re-verifies the cached copy of) the default build, checks the SHA-256
       # and the version, and lays it out as a bundled build (bin/, plus lib/ on Linux).
       - name: Install the pinned FFmpeg as the bundled build (tools/ffmpeg.toml)
         run: >-
@@ -72,6 +72,9 @@ jobs:
       - name: Check that uv.lock matches pyproject.toml
         run: uv lock --check
 
+      - name: Check that every package's version is the core's (scripts/stamp-version.py)
+        run: uv run --no-project python scripts/stamp-version.py --check
+
       - run: uv sync --frozen
 
       - name: Show the tools that discovery picks (FFmpeg must be the bundled build)
@@ -81,6 +84,9 @@ jobs:
       - run: uv run ruff format --check
       - run: uv run mypy
 
+      - name: Check that the committed language data is a build of the locked libraries
+        run: uv run python scripts/gen-language-data.py --check
+
       - name: Cache the generated test media
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -89,6 +95,14 @@ jobs:
 
       - name: Generate the test media (incremental)
         run: uv run python scripts/make-testdata.py
+
+      # The Matroska header writer's oracle tests (needs_mkvtoolnix) compare with MKVToolNix.
+      # The product never runs it; on Windows those tests skip.
+      - name: Install MKVToolNix for the header writer's oracle tests
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mkvtoolnix
 
       - run: uv run pytest -m "not needs_gpu and not benchmark"
 
@@ -159,9 +173,112 @@ jobs:
       - run: cargo test
         working-directory: desktop/src-tauri
 
+  desktop-smoke:
+    # The release app with its frozen sidecar and no FFmpeg, driven through tauri-driver
+    # (desktop/tests/smoke): it starts, reaches its backend, installs the default FFmpeg build
+    # from the cached archive (Install from file), opens a file from argv, finishes a job and
+    # quits without leaving processes behind. Ubuntu 22.04 is the oldest supported distro.
+    name: Desktop smoke test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.node-version
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      # Tauri's libraries; meson, ninja and libdrm for bundle-tools.py's libva build;
+      # WebKitWebDriver, Xvfb, and python3-xlib to close the window as a user does. The same
+      # list builds desktop/tests/smoke/linux/Dockerfile.
+      - name: Tauri's Linux libraries, the libva build tools, WebKitWebDriver and Xvfb
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          xargs sudo apt-get install -y < desktop/tests/smoke/linux/apt-packages.txt
+
+      - run: uv sync --frozen
+
+      - name: Lay out the packaged libraries (tools/bundled-tools.toml; none on Windows)
+        run: uv run python scripts/bundle-tools.py --platform ${{ runner.os == 'Windows' && 'windows-x64' || 'linux-x64' }}
+
+      - name: Build the frozen sidecar
+        run: uv run python desktop/sidecar/build.py
+
+      - run: npm ci
+        working-directory: frontend
+      - run: npm ci
+        working-directory: desktop
+
+      # The binary next to its resources (sidecar/, tools/), as the installers lay it out.
+      - name: Build the release app (no installers)
+        run: npx tauri build --no-bundle
+        working-directory: desktop
+
+      - name: Install tauri-driver
+        run: cargo install --locked tauri-driver@2.1.0
+
+      # A driver of another major version than the WebView2 runtime refuses the session.
+      - name: Put the msedgedriver of the runner's WebView2 on PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dir = & desktop/tests/smoke/msedgedriver.ps1 -Dest "$env:RUNNER_TEMP\msedgedriver"
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
+
+      # The archive that the test installs with Install from file, so that the app's first run
+      # does not depend on GitHub's download servers.
+      - name: Cache the pinned FFmpeg archive
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ffmpeg-archive
+          key: ffmpeg-archive-${{ runner.os }}-default-${{ hashFiles('tools/ffmpeg.toml') }}
+
+      - name: The FFmpeg archive, and the test file made with its FFmpeg
+        run: |
+          cache="$RUNNER_TEMP/ffmpeg-archive"
+          archive=$(uv run python desktop/tests/smoke/ffmpeg-archive.py "$cache")
+          echo "REFRAME_SMOKE_FFMPEG_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          bin=$(uv run python desktop/tests/smoke/ffmpeg-archive.py "$cache" --extract "$RUNNER_TEMP/ffmpeg")
+          exe=""
+          if [ "$RUNNER_OS" = Windows ]; then exe=.exe; fi
+          REFRAME_FFMPEG="$bin/ffmpeg$exe" REFRAME_FFPROBE="$bin/ffprobe$exe" \
+            uv run python scripts/make-testdata.py --only multitrack
+
+      - name: Type-check, lint and format-check the smoke test (the frontend's rules)
+        run: |
+          npm run smoke:typecheck
+          ../frontend/node_modules/.bin/oxlint -c ../frontend/.oxlintrc.json --deny-warnings tests/smoke
+          ../frontend/node_modules/.bin/oxfmt -c ../frontend/.oxfmtrc.json --check tests/smoke
+        working-directory: desktop
+
+      - name: Smoke test (Xvfb)
+        if: runner.os == 'Linux'
+        run: dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1000x24' npm run smoke
+        working-directory: desktop
+
+      - name: Smoke test
+        if: runner.os == 'Windows'
+        run: npm run smoke
+        working-directory: desktop
+
   frontend-server:
     # The frontend against a real reframe-server and a real FFmpeg: the server tests (vitest)
-    # and the browser flows (Playwright, Chromium and Firefox). Linux only: the tests find the
+    # and the browser flows (Playwright, Chromium, Firefox and WebKit). Linux only: the tests find the
     # pinned FFmpeg through .tools/ and start the servers with a POSIX shell.
     name: Frontend, npm run ${{ matrix.script }} (ubuntu-latest)
     strategy:
@@ -169,7 +286,8 @@ jobs:
       matrix:
         script: [test:server, e2e]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # e2e in three browsers takes about 20 min on the AMD desktop (WebKit alone about 10).
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -221,7 +339,7 @@ jobs:
 
       - name: Install the browsers
         if: matrix.script == 'e2e'
-        run: npx playwright install --with-deps chromium firefox
+        run: npx playwright install --with-deps chromium firefox webkit
         working-directory: frontend
 
       - run: npm run ${{ matrix.script }}
@@ -353,4 +471,4 @@ jobs:
         run: uv run python scripts/make-testdata.py
 
       - name: Performance budgets
-        run: uv run pytest -m "benchmark and not needs_gpu" -v
+        run: uv run pytest -m "benchmark and not needs_gpu" -v -n 0

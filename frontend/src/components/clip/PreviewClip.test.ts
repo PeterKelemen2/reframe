@@ -85,9 +85,19 @@ function video(wrapper: VueWrapper) {
   return wrapper.find('[data-field="clip-video"]')
 }
 
-async function videoError(wrapper: VueWrapper, code: number): Promise<void> {
+async function videoLoaded(wrapper: VueWrapper, width: number): Promise<void> {
+  Object.defineProperty(video(wrapper).element, 'videoWidth', { value: width, configurable: true })
+  await video(wrapper).trigger('loadeddata')
+  await flushPromises()
+}
+
+async function videoError(
+  wrapper: VueWrapper,
+  code: number,
+  message = 'Decoder gone',
+): Promise<void> {
   const element = video(wrapper).element
-  Object.defineProperty(element, 'error', { value: { code, message: 'Decoder gone' } })
+  Object.defineProperty(element, 'error', { value: { code, message } })
   await video(wrapper).trigger('error')
   await flushPromises()
 }
@@ -255,6 +265,13 @@ describe('the preview clip', () => {
     expect(video(wrapper).attributes('src')).toBe('http://server/api/preview/clips/clip-1?sig=1')
   })
 
+  it('names the player, and leaves playing to the user', async () => {
+    const { wrapper } = await encoded()
+    expect(video(wrapper).attributes('aria-label')).toBe('The preview clip')
+    expect(video(wrapper).attributes('autoplay')).toBeUndefined()
+    expect(video(wrapper).attributes('controls')).toBeDefined()
+  })
+
   it('shows why the clip link failed', async () => {
     const { wrapper } = await encoded((fake) =>
       fake.on('GET /api/preview/clips/clip-1/link', () =>
@@ -278,21 +295,69 @@ describe('the preview clip', () => {
   })
 
   it('names another player error by its message', async () => {
-    const { wrapper } = await encoded()
-    await videoError(wrapper, 3)
-    await videoError(wrapper, 3)
+    const { wrapper, server } = await encoded()
+    await videoError(wrapper, 2, 'Network gone')
+    await videoError(wrapper, 2, 'Network gone')
+    expect(server.count('GET /api/preview/clips/clip-1/link')).toBe(2)
     expect(wrapper.find('[data-field="clip-play-error"]').text()).toContain(
-      'the player stopped with an error (Decoder gone)',
+      'the player stopped with an error (Network gone)',
     )
   })
+
+  it.each([
+    ['before', null],
+    ['after', 320],
+  ])(
+    'shows the frame compare at a decode error %s the clip loads, without a new link',
+    async (_when, width) => {
+      const { wrapper, server } = await encoded()
+      if (width !== null) await videoLoaded(wrapper, width)
+      await videoError(wrapper, 3)
+      expect(server.count('GET /api/preview/clips/clip-1/link')).toBe(1)
+      expect(video(wrapper).exists()).toBe(false)
+      expect(wrapper.find('[data-field="clip-play-error"]').text()).toContain(
+        'this browser cannot play hevc video',
+      )
+      expect(wrapper.find('[data-field="clip-compare"]').exists()).toBe(true)
+    },
+  )
 
   it('asks for a new link again after the clip has played', async () => {
     const { wrapper, server } = await encoded()
     await videoError(wrapper, 4)
-    await video(wrapper).trigger('loadeddata')
+    await videoLoaded(wrapper, 320)
     await videoError(wrapper, 2)
     expect(server.count('GET /api/preview/clips/clip-1/link')).toBe(3)
     expect(video(wrapper).exists()).toBe(true)
+  })
+
+  it('shows the frame compare when the player loads the clip without a picture', async () => {
+    const { wrapper } = await encoded()
+    await videoLoaded(wrapper, 0)
+    expect(video(wrapper).exists()).toBe(false)
+    expect(wrapper.find('[data-field="clip-play-error"]').text()).toContain(
+      'this browser cannot play hevc video',
+    )
+    expect(wrapper.find('[data-field="clip-compare"]').exists()).toBe(true)
+  })
+
+  it('keeps the player when the clip loads with a picture', async () => {
+    const { wrapper } = await encoded()
+    await videoLoaded(wrapper, 320)
+    expect(video(wrapper).exists()).toBe(true)
+    expect(wrapper.find('[data-field="clip-play-error"]').exists()).toBe(false)
+  })
+
+  it('shows the frame compare and no player when the window cannot play video', async () => {
+    vi.spyOn(platform, 'canPlayVideo').mockResolvedValue(false)
+    const { wrapper } = await encoded()
+    expect(video(wrapper).exists()).toBe(false)
+    expect(wrapper.find('[data-field="clip-play-error"]').text()).toContain(
+      'this window has no video player',
+    )
+    expect(wrapper.find('[data-field="clip-compare"]').exists()).toBe(true)
+    expect(wrapper.find('[data-action="play-clip"]').exists()).toBe(false)
+    expect(wrapper.find('[data-action="open-external"]').attributes('disabled')).toBeUndefined()
   })
 
   it('switches between the player and the frame compare', async () => {

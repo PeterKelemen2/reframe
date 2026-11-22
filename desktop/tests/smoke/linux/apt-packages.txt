@@ -1,0 +1,13 @@
+libwebkit2gtk-4.1-dev
+libayatana-appindicator3-dev
+librsvg2-dev
+libxdo-dev
+meson
+ninja-build
+pkg-config
+gcc
+libdrm-dev
+webkit2gtk-driver
+xvfb
+xauth
+python3-xlib

@@ -1,12 +1,21 @@
 import { describe, expect, it } from 'vitest'
+import { createI18n } from 'vue-i18n'
 
 import type { JobProgress } from '@/api/types'
-import { createAppI18n } from '@/i18n'
+import { createAppI18n, en } from '@/i18n'
 
-import { jobActions, liveColumns, runState, stepText } from './format'
+import {
+  encoderUnavailable,
+  isHeld,
+  jobActions,
+  jobStateLabel,
+  liveColumns,
+  runState,
+  stepText,
+} from './format'
 import { job } from './testing'
 
-const t = createAppI18n().global.t as (key: string, named?: Record<string, unknown>) => string
+const { t, n } = createAppI18n().global
 
 function progress(extra: Partial<JobProgress> = {}): JobProgress {
   return { percent: 40, step: 0, step_count: 1, step_kind: 'encode', ...extra }
@@ -16,6 +25,23 @@ describe('the step of a running job', () => {
   it('names the pass of a two-pass encode and where it is among the steps', () => {
     expect(stepText(progress({ step_kind: 'pass1', step: 0, step_count: 3 }), t)).toBe(
       'Pass 1 of 2 · step 1 of 3',
+    )
+  })
+
+  // Before the next test, whose merged message the shared English messages keep.
+  it('names the header edit, alone in place or after an encode', () => {
+    expect(stepText(progress({ step_kind: 'header_edit' }), t)).toBe('Writing the MKV header')
+    expect(stepText(progress({ step_kind: 'header_edit', step: 1, step_count: 3 }), t)).toBe(
+      'Writing the MKV header · step 2 of 3',
+    )
+  })
+
+  it('joins the kind and the step with one message, which a translation may reorder', () => {
+    const i18n = createAppI18n()
+    i18n.global.mergeLocaleMessage('en', { queue: { step: { withKind: '{step}: {kind}' } } })
+    const reordered = i18n.global.t as (key: string, named?: Record<string, unknown>) => string
+    expect(stepText(progress({ step_kind: 'analyse', step: 0, step_count: 2 }), reordered)).toBe(
+      'step 1 of 2: Analysing',
     )
   })
 
@@ -40,8 +66,9 @@ describe('the live columns', () => {
         output_size: 3 * 1024 ** 2,
       }),
     })
-    expect(liveColumns(running, t)).toEqual({
+    expect(liveColumns(running, t, n)).toEqual({
       percent: 27.53,
+      percentText: '27.5 %',
       step: null,
       fps: '3.8 fps',
       speed: '0.67×',
@@ -50,17 +77,38 @@ describe('the live columns', () => {
     })
   })
 
+  it('writes the numbers as the locale does', () => {
+    const german = createI18n({
+      legacy: false,
+      locale: 'de',
+      fallbackLocale: 'en',
+      messages: { en },
+      missingWarn: false,
+      fallbackWarn: false,
+    }).global
+    const running = job('a', 'running', {
+      progress: progress({ percent: 27.53, fps: 3.84, speed: 0.666 }),
+    })
+    const columns = liveColumns(running, german.t, german.n)
+    expect([columns.percentText, columns.fps, columns.speed]).toEqual([
+      '27,5 %',
+      '3,8 fps',
+      '0,67×',
+    ])
+  })
+
   it('leaves out the time left of a paused job', () => {
     const paused = job('a', 'paused', { progress: progress({ eta: 83 }) })
-    expect(liveColumns(paused, t).eta).toBeNull()
-    expect(liveColumns(paused, t).percent).toBe(40)
+    expect(liveColumns(paused, t, n).eta).toBeNull()
+    expect(liveColumns(paused, t, n).percent).toBe(40)
   })
 
   it('shows a done job full and a waiting or ended one empty', () => {
-    expect(liveColumns(job('a', 'done'), t).percent).toBe(100)
+    expect(liveColumns(job('a', 'done'), t, n).percent).toBe(100)
+    expect(liveColumns(job('a', 'done'), t, n).percentText).toBe('100.0 %')
     // A progress left on a job that is no longer running is not shown.
-    expect(liveColumns(job('a', 'failed', { progress: progress() }), t).percent).toBeNull()
-    expect(liveColumns(job('a', 'waiting'), t).percent).toBeNull()
+    expect(liveColumns(job('a', 'failed', { progress: progress() }), t, n).percent).toBeNull()
+    expect(liveColumns(job('a', 'waiting'), t, n).percentText).toBeNull()
   })
 })
 
@@ -80,6 +128,57 @@ describe('the actions of a job', () => {
   it('offers reveal in folder only on the desktop, for a done job', () => {
     expect(jobActions(job('a', 'done'), true)).toContain('reveal')
     expect(jobActions(job('a', 'failed'), true)).not.toContain('reveal')
+  })
+
+  it('offers Start first on a waiting job that the runner does not take now', () => {
+    expect(jobActions(job('a', 'waiting'), false, true)).toEqual([
+      'start',
+      'cancel',
+      'log',
+      'edit',
+      'duplicate',
+      'remove',
+    ])
+    expect(jobActions(job('a', 'failed'), false, true)).not.toContain('start')
+  })
+})
+
+describe('a job whose encoder is unavailable', () => {
+  const issue = {
+    severity: 'error',
+    code: 'encoder.unavailable',
+    path: 'video.encoder',
+    message: 'No NVENC',
+  } as const
+
+  it('is a failed job with that error, and says so in its state', () => {
+    const failed = job('a', 'failed', { issues: [issue] })
+    expect(encoderUnavailable(failed)).toEqual(issue)
+    expect(jobStateLabel(failed, t)).toBe('Failed — encoder unavailable')
+  })
+
+  it('is no other job', () => {
+    expect(encoderUnavailable(job('a', 'waiting', { issues: [issue] }))).toBeNull()
+    expect(
+      encoderUnavailable(job('a', 'failed', { issues: [{ ...issue, severity: 'warning' }] })),
+    ).toBeNull()
+    expect(jobStateLabel(job('a', 'failed'), t)).toBe('Failed')
+  })
+})
+
+describe('a held job', () => {
+  it('is a waiting job while the queue is stopped', () => {
+    expect(isHeld(job('a', 'waiting'), false, null)).toBe(true)
+    expect(isHeld(job('a', 'failed'), false, null)).toBe(false)
+  })
+
+  it('is a waiting job the runner does not take: not one of the started jobs', () => {
+    expect(isHeld(job('a', 'waiting'), true, ['b'])).toBe(true)
+    expect(isHeld(job('b', 'waiting'), true, ['b'])).toBe(false)
+  })
+
+  it('is no job while the queue takes every waiting job', () => {
+    expect(isHeld(job('a', 'waiting'), true, null)).toBe(false)
   })
 })
 

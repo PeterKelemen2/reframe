@@ -19,8 +19,6 @@ from typing import TYPE_CHECKING
 
 from reframe.capabilities.cache import CacheKey, CapabilityCache, cache_key
 from reframe.capabilities.detect import (
-    LIST_TIMEOUT,
-    MAX_PARALLEL_TESTS,
     DetectionOptions,
     current_os,
     detect_capabilities,
@@ -29,13 +27,13 @@ from reframe.capabilities.detect import (
 )
 from reframe.capabilities.devices import render_nodes as list_render_nodes
 from reframe.capabilities.fingerprint import gpu_fingerprint
-from reframe.capabilities.hwtest import TEST_TIMEOUT
 from reframe.capabilities.issues import closest_available
 from reframe.definitions import Definitions, load_definitions
+from reframe.errors import ReframeClosedError
 from reframe.events import EventBus, Subscription
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe.models.events import CapabilitiesChangedEvent, ToolsChangedEvent
-from reframe.models.tools import ToolInfo, ToolStatus
+from reframe.models.tools import ToolInfo
 from reframe.tools import CancelToken
 
 if TYPE_CHECKING:
@@ -60,18 +58,6 @@ def _same(a: EncoderStatus | None, b: EncoderStatus) -> bool:
     return a.model_dump(exclude={"checked_at"}) == b.model_dump(exclude={"checked_at"})
 
 
-def _closed_error() -> Exception:
-    from reframe.service import ReframeClosedError  # reframe.service imports this module
-
-    return ReframeClosedError()
-
-
-def _is_closed_error(exc: Exception) -> bool:
-    from reframe.service import ReframeClosedError
-
-    return isinstance(exc, ReframeClosedError)
-
-
 class CapabilityService:
     """Which encoders this FFmpeg build and this computer can use.
 
@@ -79,7 +65,6 @@ class CapabilityService:
     :param tools: tool discovery; detection waits for its result (``ToolsService.status()``).
     :param settings: the current settings (``encoders.hardware_tests``).
     :param cache_dir: the folder of the capability cache.
-    :param definitions: the encoder definitions (default :func:`load_definitions`).
     :param platform: a ``sys.platform`` value for the definitions' ``platforms`` (default:
         this one); tests use it to get the same results on every OS.
     :param render_nodes: lists the VAAPI render nodes to try (blocking; called in a worker
@@ -87,7 +72,6 @@ class CapabilityService:
         ``/dev/dri/renderD*``).
     :param gpu_fingerprint: returns the GPU fingerprint of the cache key (blocking; called
         in a worker thread once per service).
-    :param watch_tools: start a new detection when ``tools.changed`` reports another ffmpeg.
     """
 
     def __init__(
@@ -97,35 +81,25 @@ class CapabilityService:
         settings: SettingsGetter,
         *,
         cache_dir: Path,
-        definitions: Definitions | None = None,
         platform: str | None = None,
         render_nodes: Callable[[], Sequence[str]] | None = None,
-        test_timeout: float = TEST_TIMEOUT,
-        list_timeout: float = LIST_TIMEOUT,
-        max_parallel_tests: int = MAX_PARALLEL_TESTS,
         gpu_fingerprint: Callable[[], str] | None = None,
-        watch_tools: bool = True,
     ) -> None:
         self._events = events
         self._tools = tools
         self._settings = settings
-        self._definitions = definitions if definitions is not None else load_definitions()
+        self._definitions = load_definitions()
         self._cache = CapabilityCache(cache_dir)
         self._os = current_os(platform)
         self._render_nodes = render_nodes or list_render_nodes
-        self._test_timeout = test_timeout
-        self._list_timeout = list_timeout
-        self._max_parallel_tests = max_parallel_tests
         self._gpu_source = gpu_fingerprint or (lambda: _default_fingerprint(platform))
         self._gpu: str | None = None
-        self._watch_tools = watch_tools
         self._snapshot = CapabilitySnapshot(encoders=initial_statuses(self._definitions))
         self._task: asyncio.Task[CapabilitySnapshot] | None = None
         self._token: CancelToken | None = None
         self._ffmpeg_identity: _FfmpegIdentity | None = None
         self._subscription: Subscription | None = None
         self._watcher: asyncio.Task[None] | None = None
-        self._writes: set[asyncio.Task[None]] = set()
         self._detections: set[asyncio.Task[CapabilitySnapshot]] = set()
         """Every detection that has not ended (a replaced one may still kill its encodes)."""
         self._closed = False
@@ -147,7 +121,7 @@ class CapabilityService:
     def start(self) -> None:
         """Start the first detection in the background (unless one ran). Returns at once."""
         self._check_open()
-        if self._watch_tools and self._watcher is None:
+        if self._watcher is None:
             self._subscription = self._events.subscribe(types={"tools.changed"})
             self._watcher = asyncio.get_running_loop().create_task(
                 self._watch(self._subscription), name="reframe-capabilities-tools-watch"
@@ -184,11 +158,10 @@ class CapabilityService:
     async def close(self) -> None:
         """Cancel the detection (killing its test encodes) and stop watching tool changes.
         Returns when every detection it started has ended (one that ``rescan()`` replaced
-        may still be killing its test encodes). A cache write that has started is finished
-        first (the next start shows its result)."""
+        may still be killing its test encodes)."""
         self._closed = True
         if self._token is not None:
-            self._token.cancel("shutting down")
+            self._token.cancel()
         tasks = [t for t in (self._task, self._watcher) if t is not None and not t.done()]
         if self._subscription is not None:
             self._subscription.close()
@@ -198,17 +171,15 @@ class CapabilityService:
         pending = {*tasks, *self._detections}
         if pending:
             await asyncio.wait(pending)
-        if self._writes:
-            await asyncio.wait(set(self._writes))
 
     def _check_open(self) -> None:
         if self._closed:
-            raise _closed_error()
+            raise ReframeClosedError
 
     def _start(self, *, use_cache: bool) -> asyncio.Task[CapabilitySnapshot]:
         previous, old_token = self._task, self._token
         if old_token is not None:
-            old_token.cancel("replaced by a new detection")
+            old_token.cancel()
         if previous is not None and not previous.done():
             previous.cancel()
         token = CancelToken()
@@ -235,9 +206,6 @@ class CapabilityService:
             os=self._os,
             vaapi_device=forced,
             render_nodes=nodes,
-            test_timeout=self._test_timeout,
-            list_timeout=self._list_timeout,
-            max_parallel_tests=self._max_parallel_tests,
         )
 
     async def _detect(
@@ -249,14 +217,12 @@ class CapabilityService:
     ) -> CapabilitySnapshot:
         if previous is not None:
             await asyncio.wait({previous})  # its test encodes are gone before new ones start
-        if self._writes:
-            await asyncio.wait(set(self._writes))  # an older result never overwrites this one
         try:
             tools = await self._tools.status()
+        except ReframeClosedError as exc:  # Reframe is shutting down
+            log.info("encoder detection stopped: %s", exc)
+            return self._snapshot
         except Exception as exc:
-            if _is_closed_error(exc):  # Reframe is shutting down
-                log.info("encoder detection stopped: %s", exc)
-                return self._snapshot
             log.exception("tool discovery failed: no encoder detection")
             return self._fail(exc, token)  # data, never "detecting" for ever
         ffmpeg = tools.ffmpeg
@@ -272,7 +238,7 @@ class CapabilityService:
     ) -> CapabilitySnapshot:
         definitions = self._definitions
         options = await self._options()
-        if ffmpeg.status is not ToolStatus.FOUND or ffmpeg.path is None:
+        if not ffmpeg.usable:
             return self._finish(unusable_snapshot(ffmpeg, definitions), token)
 
         key = await self._key(ffmpeg, options)
@@ -307,18 +273,11 @@ class CapabilityService:
         if token.cancelled:
             return self._snapshot
         if key is not None:
-            await self._store(key, final)  # cached before anyone can see that it ended
+            # On the loop with no await before _finish: a cancel cannot stop the write half-way,
+            # no later detection can run during it, and the result is cached before anyone can
+            # see that the detection ended. It is one small file.
+            self._put(key, final)
         return self._finish(final, token)
-
-    async def _store(self, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
-        """Write ``snapshot`` to the cache in a worker thread. Cancelling the detection does
-        not cancel a started write: :meth:`close` and the next detection wait for it."""
-        write = asyncio.get_running_loop().create_task(
-            asyncio.to_thread(self._put, key, snapshot), name="reframe-capability-cache-write"
-        )
-        self._writes.add(write)
-        write.add_done_callback(self._writes.discard)
-        await asyncio.shield(write)
 
     def _put(self, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
         try:

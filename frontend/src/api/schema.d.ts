@@ -167,6 +167,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Diagnostics
+         * @description The diagnostics report for a bug report. Waits for a tool discovery that is running;
+         *     never waits for an encoder detection (the report gives each encoder's status now).
+         */
+        get: operations["system_diagnostics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/system/encoders": {
         parameters: {
             query?: never;
@@ -240,10 +261,56 @@ export interface paths {
         put?: never;
         /**
          * Fetch Tools
-         * @description Download, check and install the pinned FFmpeg build, then run discovery again: a task
-         *     whose result is a ``ToolFetchResult``.
+         * @description Download, check and install an offered FFmpeg build, then run discovery again: a task
+         *     whose result is a ``ToolFetchResult``. A build that is not offered is refused (422,
+         *     ``tools.build_not_offered``). A download server that cannot be reached ends the task
+         *     ``failed`` with ``error_code`` ``tools.fetch_offline``.
          */
         post: operations["system_fetch_tools"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/tools/builds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tool Builds
+         * @description The FFmpeg builds the user may download or install from a file, and the build
+         *     installed in the data folder (``outdated`` when this release pins another version).
+         */
+        get: operations["system_tool_builds"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/system/tools/install-file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install Tools File
+         * @description Install an FFmpeg archive file from the server's disk, checked like a download (size
+         *     and SHA-256 against the manifest), then run discovery again: a task whose result is a
+         *     ``ToolFetchResult``. Web mode: the path must be inside a media root. A build that is not
+         *     offered is refused (422, ``tools.build_not_offered``).
+         */
+        post: operations["system_install_tools_file"];
         delete?: never;
         options?: never;
         head?: never;
@@ -575,6 +642,27 @@ export interface paths {
          * @description A signed URL of a cached clip, for a ``<video>``.
          */
         get: operations["preview_clip_link"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/preview/clips/{clip_id}/file": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Clip Path
+         * @description The file of a cached clip, desktop mode only: a player given the clip's URL would be the
+         *     browser. Web mode: ``404 preview.no_clip_file`` (the file is on the server's computer).
+         */
+        get: operations["preview_clip_path"];
         put?: never;
         post?: never;
         delete?: never;
@@ -940,6 +1028,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jobs/track-names": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Track Names
+         * @description Each track's name as it will be written: a name with a track name variable
+         *     (``{lang_name} {channels} {codec}``) is filled in for its track.
+         */
+        post: operations["jobs_track_names"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/chapters/import": {
         parameters: {
             query?: never;
@@ -1084,6 +1193,30 @@ export interface paths {
          *     checks over every group. A source that is the planned output of another is left out.
          */
         post: operations["batch_resolve_run"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/batch/detect-crops": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Detect Crops
+         * @description *Add group to queue*: the run of ``resolve-run`` with the crop detected in each file
+         *     whose job crops automatically or conservatively without a rectangle, as a task whose result
+         *     is a :class:`BatchRun`. One FFmpeg run per sample frame and file: the task reports each
+         *     file it measures (``file n of N``), and a cancel stops it. A path out of the roots is
+         *     refused (403) before the task starts.
+         */
+        post: operations["batch_detect_crops"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1421,7 +1554,9 @@ export interface paths {
         /**
          * Set When Done
          * @description Set what happens when the queue is finished (the ``queue.when_done`` setting). A power
-         *     countdown that is running for another action is cancelled.
+         *     countdown that is running for another action is cancelled. An action this server cannot
+         *     carry out (``quit`` in web mode, ``sleep`` and ``shutdown`` in a container) is a 403
+         *     problem.
          */
         put: operations["queue_set_when_done"];
         post?: never;
@@ -1679,7 +1814,7 @@ export interface components {
         AppSettings: {
             /**
              * Schema Version
-             * @default 1
+             * @default 3
              */
             schema_version: number;
             tools?: components["schemas"]["ToolPaths"];
@@ -1689,6 +1824,7 @@ export interface components {
             preview?: components["schemas"]["PreviewSettings"];
             queue?: components["schemas"]["QueueSettings"];
             appearance?: components["schemas"]["AppearanceSettings"];
+            diagnostics?: components["schemas"]["DiagnosticsSettings"];
         };
         /**
          * AppWarningEvent
@@ -2163,10 +2299,10 @@ export interface components {
             language?: string | null;
             /**
              * Language Ietf
-             * @description The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
-             *     ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
-             *     Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
-             *     MediaInfo's value when MediaInfo is available. ``None`` when there is none.
+             * @description The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: with a
+             *     Matroska ``LanguageIETF`` of ``pt-BR`` ffprobe still says ``por``. A Matroska track that
+             *     Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take the
+             *     BCP 47 form of their ISO 639 code (``por`` → ``pt``). ``None`` when there is none.
              *
              *     The effective language, which track rules match, is ``language_ietf`` if set, else
              *     ``language``.
@@ -2456,6 +2592,11 @@ export interface components {
             value?: number | null;
             /** @default unknown */
             source: components["schemas"]["BitrateSource"];
+            /**
+             * Samples
+             * @description ``estimated`` only: the number of clusters the estimate was made from.
+             */
+            samples?: number | null;
         };
         /** BitrateLimits */
         BitrateLimits: {
@@ -2503,7 +2644,7 @@ export interface components {
          * @description Where a bit rate came from.
          * @enum {string}
          */
-        BitrateSource: "stream" | "stats_tag" | "mediainfo" | "measured" | "unknown";
+        BitrateSource: "stream" | "stats_tag" | "estimated" | "measured" | "unknown";
         /** CacheCleared */
         CacheCleared: {
             /**
@@ -2781,6 +2922,13 @@ export interface components {
             default_by_depth?: {
                 [key: string]: string;
             };
+            /**
+             * Write Default
+             * @description The command writes the default when none is chosen: FFmpeg releases differ in their
+             *     own default for this setting.
+             * @default false
+             */
+            write_default: boolean;
             /** Mapping */
             mapping: components["schemas"]["X26xParam"] | components["schemas"]["FfmpegArg"] | components["schemas"]["PrivateOpt"];
             /**
@@ -2795,6 +2943,14 @@ export interface components {
          *     an ``AuthMessage``.
          */
         ClientMessage: components["schemas"]["AuthMessage"] | components["schemas"]["DetachMessage"];
+        /** ClipFile */
+        ClipFile: {
+            /**
+             * Path
+             * @description The cached clip file, for the desktop app to open in the user's player.
+             */
+            path: string;
+        };
         /** ClipFramesRequest */
         ClipFramesRequest: {
             /**
@@ -2872,7 +3028,11 @@ export interface components {
          * @description When an option applies, e.g. ``rate_control == "bitrate"``.
          */
         Condition: {
-            /** Field */
+            /**
+             * Field
+             * @description A rule field such as ``rate_control``, or ``option:<key>`` for another option of the same
+             *     encoder.
+             */
             field: string;
             /**
              * Op
@@ -2946,17 +3106,6 @@ export interface components {
              * @description Flags the FFmpeg muxer writes (and ffprobe reads back).
              */
             flags: ("default" | "forced" | "commentary" | "hearing_impaired" | "visual_impaired" | "original")[];
-            /**
-             * Mkvpropedit Flags
-             * @description Flags the muxer cannot write that a ``mkvpropedit`` step can.
-             */
-            mkvpropedit_flags?: ("default" | "forced" | "commentary" | "hearing_impaired" | "visual_impaired" | "original")[];
-            /**
-             * Default Always Set
-             * @description MP4: when no track of a type is default, the muxer marks the first one default.
-             * @default false
-             */
-            default_always_set: boolean;
             /**
              * Language Format
              * @description The language tag format: ISO 639-2/B for MKV, ISO 639-2/T for MP4.
@@ -3094,6 +3243,12 @@ export interface components {
              */
             mode: "auto" | "conservative" | "none" | "manual";
             rect?: components["schemas"]["CropRect"] | null;
+            /**
+             * Detection Error
+             * @description Why crop detection failed in this job's file (``auto`` and ``conservative`` without
+             *     ``rect``): the picture is not cropped. ``None``: detection did not fail.
+             */
+            detection_error?: string | null;
         };
         /**
          * DataStream
@@ -3226,6 +3381,35 @@ export interface components {
              * @enum {string}
              */
             type: "detach";
+        };
+        /**
+         * DiagnosticsReport
+         * @description What a bug report needs, for **Copy diagnostics**.
+         */
+        DiagnosticsReport: {
+            /**
+             * Text
+             * @description The report as plain text: the app version, the OS, each tool's version and build flags,
+             *     each encoder's status with its reason, and the settings without secrets. Paths under the
+             *     user's home folder start with ``~``.
+             */
+            text: string;
+            /**
+             * Logs Dir
+             * @description The folder of ``reframe.log``, the job logs and the desktop's sidecar log (``~`` for the
+             *     home folder).
+             */
+            logs_dir: string;
+        };
+        /** DiagnosticsSettings */
+        DiagnosticsSettings: {
+            /**
+             * Log Level
+             * @description The lowest level written to ``<data>/logs/reframe.log``.
+             * @default info
+             * @enum {string}
+             */
+            log_level: "error" | "warning" | "info" | "debug";
         };
         /**
          * DimensionSettings
@@ -3615,6 +3799,23 @@ export interface components {
              */
             reason_10bit?: string | null;
             /**
+             * Build Mismatch
+             * @description ``True`` when the encoder is unavailable because this FFmpeg build needs newer system
+             *     software than the computer has (an NVIDIA driver older than the build's NVENC needs, a
+             *     system library too old for the build): a driver update or another FFmpeg build can make it
+             *     available. Never set by a 10-bit-only limit.
+             * @default false
+             */
+            build_mismatch: boolean;
+            /**
+             * Build Mismatch Cause
+             * @description What the build needs when ``build_mismatch`` is ``True``: ``driver``, a newer GPU driver
+             *     (another build can help), or ``system_library``, a system library that is missing or too
+             *     old, such as libva (install or update it, or use an FFmpeg that does not need it). ``None``
+             *     otherwise.
+             */
+            build_mismatch_cause?: ("driver" | "system_library") | null;
+            /**
              * Device
              * @description The device the encoder works on, for encoders that need one: the VAAPI render node
              *     (``/dev/dri/renderD128``), the first node where the test encode worked, or the node that
@@ -3750,7 +3951,7 @@ export interface components {
         FetchRequest: {
             /**
              * Build
-             * @description A build name of the pinned FFmpeg manifest.
+             * @description An offered build of the pinned FFmpeg manifest.
              * @default default
              */
             build: string;
@@ -3839,12 +4040,6 @@ export interface components {
             id: "detelecine" | "interlace_detection" | "deinterlace" | "denoise" | "deblock" | "custom" | "tonemap" | "colorspace" | "sharpen" | "chroma_smooth" | "grayscale";
             /** Label */
             label: string;
-            /**
-             * Position
-             * @description Index in ``Definitions.filter_order``; set when the definitions are validated.
-             * @default 0
-             */
-            position: number;
             /**
              * Analysis
              * @description Interlace detection: it marks frames for deinterlacing and changes no pixels.
@@ -4344,6 +4539,22 @@ export interface components {
             source: "stream" | "frame";
         };
         /**
+         * HeaderEdit
+         * @description The Matroska header changes of one ``header_edit`` step, written into ``path`` in
+         *     place (``reframe.metadata.header``).
+         */
+        HeaderEdit: {
+            /**
+             * Path
+             * Format: path
+             * @description The file to edit: the source of a ``metadata_edit`` job, else the ``.part`` file.
+             */
+            path: string;
+            /** Tracks */
+            tracks?: components["schemas"]["TrackHeaderEdit"][];
+            info?: components["schemas"]["InfoHeaderEdit"] | null;
+        };
+        /**
          * Health
          * @description This server run.
          */
@@ -4422,6 +4633,53 @@ export interface components {
              * @description ``""`` when the file gives no name.
              */
             name: string;
+        };
+        /**
+         * InfoHeaderEdit
+         * @description The change to the segment ``Info``.
+         */
+        InfoHeaderEdit: {
+            /**
+             * Title
+             * @description The new ``Title``; ``None`` removes it.
+             */
+            title: string | null;
+        };
+        /** InstallFileRequest */
+        InstallFileRequest: {
+            /**
+             * Path
+             * @description The archive file on the server (web mode: inside a media root).
+             */
+            path: string;
+            /**
+             * Build
+             * @description The offered build the archive is checked against. ``None``: the offered build whose
+             *     archive has the file's name.
+             */
+            build?: string | null;
+        };
+        /**
+         * InstalledToolBuild
+         * @description The build that a download or a file install put in ``<data dir>/tools/ffmpeg``.
+         */
+        InstalledToolBuild: {
+            /**
+             * Name
+             * @description The manifest's build name it was installed as.
+             */
+            name: string;
+            /**
+             * Version
+             * @description Its FFmpeg version string.
+             */
+            version: string;
+            /**
+             * Outdated
+             * @description ``True`` when this release's manifest pins another version for that build name.
+             * @default false
+             */
+            outdated: boolean;
         };
         /**
          * JobDraft
@@ -4589,7 +4847,7 @@ export interface components {
              */
             step_count: number;
             /** Step Kind */
-            step_kind?: ("analyse" | "pass1" | "pass2" | "encode" | "mkvpropedit" | "finalize") | null;
+            step_kind?: ("analyse" | "pass1" | "pass2" | "encode" | "header_edit" | "finalize") | null;
         };
         /** JobProgressEvent */
         JobProgressEvent: {
@@ -4890,7 +5148,7 @@ export interface components {
         MediaSource: {
             /**
              * Schema Version
-             * @default 1
+             * @default 2
              */
             schema_version: number;
             ref: components["schemas"]["SourceRef"];
@@ -5299,12 +5557,6 @@ export interface components {
         OutputDefaults: {
             naming?: components["schemas"]["NamingOptions"];
             /**
-             * Default Container
-             * @default mkv
-             * @enum {string}
-             */
-            default_container: "mkv" | "mp4" | "webm";
-            /**
              * Collision
              * @description ``ask`` needs a UI: the CLI and the queue treat it as an error with fixes. The default
              *     never overwrites and never blocks.
@@ -5385,7 +5637,7 @@ export interface components {
             naming?: components["schemas"]["JobNaming"];
             /**
              * Edit In Place
-             * @description Remux-only jobs on MKV: edit metadata in place with mkvpropedit.
+             * @description Remux-only jobs on MKV: edit the metadata of the source in place, with no new file.
              * @default false
              */
             edit_in_place: boolean;
@@ -5560,12 +5812,13 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "analyse" | "pass1" | "pass2" | "encode" | "mkvpropedit" | "finalize";
+            kind: "analyse" | "pass1" | "pass2" | "encode" | "header_edit" | "finalize";
             /**
              * Tool
-             * @description ``None`` for ``finalize`` (rename ``.part`` → final name, done in Python).
+             * @description ``None`` for ``finalize`` (rename ``.part`` → final name, done in Python) and
+             *     ``header_edit`` (Reframe's own Matroska writer).
              */
-            tool: ("ffmpeg" | "ffprobe" | "mkvpropedit") | null;
+            tool: ("ffmpeg" | "ffprobe") | null;
             /**
              * Argv
              * @description Arguments **after** the program (the runner prepends the discovered tool path).
@@ -5584,6 +5837,8 @@ export interface components {
             description: string;
             /** Measures */
             measures?: components["schemas"]["Measurement"][];
+            /** @description The edits of a ``header_edit`` step, and only of one. */
+            header_edit?: components["schemas"]["HeaderEdit"] | null;
         };
         /** PowerCancel */
         PowerCancel: {
@@ -6351,7 +6606,7 @@ export interface components {
             mtime: number;
             /**
              * Probe Hash
-             * @description A hash of the probe result (stream layout); ``None`` before the file is probed.
+             * @description Not written by this version; older documents may carry a value.
              */
             probe_hash?: string | null;
         };
@@ -6420,6 +6675,14 @@ export interface components {
              * @description Only these jobs start; other waiting jobs stay waiting. ``null``: every waiting job.
              */
             job_ids?: string[] | null;
+            /**
+             * Own Batch
+             * @description With ``job_ids``: ``true`` makes the jobs a batch of their own (a CLI command's), so the
+             *     when-done action runs when they end; ``false`` (a queue row's Start) leaves Sleep, Shut down
+             *     and Quit to the end of the jobs that still wait.
+             * @default true
+             */
+            own_batch: boolean;
         };
         /**
          * SubtitleDefaults
@@ -6583,10 +6846,10 @@ export interface components {
             language?: string | null;
             /**
              * Language Ietf
-             * @description The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
-             *     ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
-             *     Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
-             *     MediaInfo's value when MediaInfo is available. ``None`` when there is none.
+             * @description The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: with a
+             *     Matroska ``LanguageIETF`` of ``pt-BR`` ffprobe still says ``por``. A Matroska track that
+             *     Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take the
+             *     BCP 47 form of their ISO 639 code (``por`` → ``pt``). ``None`` when there is none.
              *
              *     The effective language, which track rules match, is ``language_ietf`` if set, else
              *     ``language``.
@@ -6679,12 +6942,20 @@ export interface components {
              * @description The server's ``sys.platform``: ``linux``, ``win32``, ``darwin``.
              */
             platform: string;
+            /**
+             * Container
+             * @description The server runs in a container (the Docker image): it offers no *Sleep* and no *Shut
+             *     down* when the queue is done.
+             */
+            container: boolean;
             /** @description Each tool's status, path and version, after discovery. */
             tools: components["schemas"]["ToolSet"];
             /**
              * Problems
              * @description Start-up problems of the settings and preset files (a damaged, newer or unreadable
-             *     file) and later failed saves.
+             *     file), later failed saves, and a wrong, skipped or failed start-up download of
+             *     ``REFRAME_FFMPEG_BUILD`` (``tools.build_unknown``, ``tools.fetch_skipped``,
+             *     ``tools.fetch_failed``).
              */
             problems: components["schemas"]["AppWarningEvent"][];
             /**
@@ -6777,7 +7048,7 @@ export interface components {
             id: string;
             /**
              * Kind
-             * @description ``probe_folder``, ``cropdetect``, ``bitrate_scan``, ``frames``, …
+             * @description ``probe_sources``, ``cropdetect``, ``bitrate_scan``, ``frames``, …
              */
             kind: string;
             /** @default queued */
@@ -6797,6 +7068,12 @@ export interface components {
             result?: components["schemas"]["JsonValue"];
             /** Error */
             error?: string | null;
+            /**
+             * Error Code
+             * @description A stable code for an expected failure that a client handles on its own
+             *     (``tools.fetch_offline``); ``None`` for the others.
+             */
+            error_code?: string | null;
         };
         /** TaskProgressEvent */
         TaskProgressEvent: {
@@ -6845,6 +7122,73 @@ export interface components {
             end?: number | null;
         };
         /**
+         * ToolBuildOffer
+         * @description An FFmpeg build of the manifest that the user may choose to install.
+         */
+        ToolBuildOffer: {
+            /**
+             * Name
+             * @description The manifest's build name (``default``, ``compat``).
+             */
+            name: string;
+            /**
+             * Label
+             * @description A short name for the picker ("Recommended").
+             */
+            label: string;
+            /**
+             * Summary
+             * @description One sentence on who the build is for ("For NVIDIA drivers 570 to 609").
+             */
+            summary: string;
+            /**
+             * Version
+             * @description What ``ffmpeg -version`` prints after ``ffmpeg version``.
+             */
+            version: string;
+            /**
+             * Release Version
+             * @description The upstream release the build is based on (``9.0.2``).
+             */
+            release_version: string;
+            /**
+             * License
+             * @description SPDX expression of the build (``GPL-3.0-or-later``).
+             */
+            license: string;
+            /**
+             * Source Links
+             * @description Where the corresponding source is: the FFmpeg commit and the build scripts.
+             */
+            source_links?: string[];
+            /**
+             * Size
+             * @description Bytes of this platform's archive; ``None`` when the build has none for this platform.
+             */
+            size?: number | null;
+            /**
+             * Archive Url
+             * @description Where this platform's archive is downloaded from, to install it from a file on a
+             *     computer without a connection; ``None`` when the build has none for this platform.
+             */
+            archive_url?: string | null;
+            /**
+             * Sha256
+             * @description The SHA-256 of this platform's archive (64 lowercase hex digits), which an install
+             *     checks; ``None`` when the build has none for this platform.
+             */
+            sha256?: string | null;
+        };
+        /**
+         * ToolBuilds
+         * @description The builds the user may install, and the one installed in the data folder.
+         */
+        ToolBuilds: {
+            /** Builds */
+            builds?: components["schemas"]["ToolBuildOffer"][];
+            installed?: components["schemas"]["InstalledToolBuild"] | null;
+        };
+        /**
          * ToolInfo
          * @description The result of discovering one tool.
          *
@@ -6858,7 +7202,7 @@ export interface components {
              * Name
              * @enum {string}
              */
-            name: "ffmpeg" | "ffprobe" | "mkvpropedit" | "mediainfo";
+            name: "ffmpeg" | "ffprobe";
             status: components["schemas"]["ToolStatus"];
             /**
              * Path
@@ -6921,6 +7265,13 @@ export interface components {
              * @default false
              */
             next_to_ffmpeg: boolean;
+            /**
+             * Bundled
+             * @description A bundled build of the tool's family (FFmpeg: ffmpeg and ffprobe) exists, so without a
+             *     Settings path discovery uses it. Also set while an override is in use.
+             * @default false
+             */
+            bundled: boolean;
             /** Fixes */
             fixes?: components["schemas"]["Fix"][];
         };
@@ -6940,20 +7291,14 @@ export interface components {
             ffmpeg?: string | null;
             /** Ffprobe */
             ffprobe?: string | null;
-            /** Mkvpropedit */
-            mkvpropedit?: string | null;
-            /** Mediainfo */
-            mediainfo?: string | null;
         };
         /**
          * ToolSet
-         * @description The discovery result for all four tools.
+         * @description The discovery result for every tool.
          */
         ToolSet: {
             ffmpeg: components["schemas"]["ToolInfo"];
             ffprobe: components["schemas"]["ToolInfo"];
-            mkvpropedit: components["schemas"]["ToolInfo"];
-            mediainfo: components["schemas"]["ToolInfo"];
         };
         /**
          * ToolStatus
@@ -7131,13 +7476,11 @@ export interface components {
         };
         /**
          * TrackFlagDef
-         * @description How a track flag is written: FFmpeg disposition and mkvpropedit property.
+         * @description How a track flag is written: its FFmpeg disposition.
          */
         TrackFlagDef: {
             /** Disposition */
             disposition: string;
-            /** Mkvpropedit */
-            mkvpropedit: string;
         };
         /**
          * TrackFlags
@@ -7174,6 +7517,50 @@ export interface components {
              * @default false
              */
             original: boolean;
+        };
+        /**
+         * TrackHeaderEdit
+         * @description The changes to one Matroska ``TrackEntry``. A field left at its default is kept.
+         */
+        TrackHeaderEdit: {
+            /**
+             * Track Type
+             * @enum {string}
+             */
+            track_type: "video" | "audio" | "subtitle";
+            /**
+             * Number
+             * @description 1-based: the n-th track of ``track_type`` in ``TrackEntry`` order.
+             */
+            number: number;
+            /**
+             * Language
+             * @description ISO 639-2/B for ``Language``. Set together with ``language_ietf``: both are written.
+             */
+            language?: string | null;
+            /**
+             * Language Ietf
+             * @description BCP 47 for ``LanguageIETF``.
+             */
+            language_ietf?: string | null;
+            /**
+             * Name
+             * @description A new track name (not empty).
+             */
+            name?: string | null;
+            /**
+             * Delete Name
+             * @description Remove the ``Name`` element.
+             * @default false
+             */
+            delete_name: boolean;
+            /**
+             * Flags
+             * @description The flags to write, in the order of ``HeaderFlag``.
+             */
+            flags?: {
+                [key: string]: boolean;
+            };
         };
         /**
          * TrackMatch
@@ -7300,6 +7687,27 @@ export interface components {
             visual_impaired?: boolean | null;
             /** Original */
             original?: boolean | null;
+        };
+        /**
+         * TrackNames
+         * @description The name each track of a job is written with: a name template filled in.
+         */
+        TrackNames: {
+            /**
+             * Video
+             * @description ``null`` keeps the source title; ``""`` writes no title.
+             */
+            video: string | null;
+            /**
+             * Audio
+             * @description In the order of the job's audio tracks.
+             */
+            audio: (string | null)[];
+            /**
+             * Subtitles
+             * @description In the order of the job's subtitle tracks.
+             */
+            subtitles: (string | null)[];
         };
         /**
          * TrackRole
@@ -7561,8 +7969,6 @@ export interface components {
              * @enum {string}
              */
             family: "software" | "nvenc" | "qsv" | "amf" | "vaapi";
-            /** Hardware */
-            hardware: boolean;
             /** Vendor */
             vendor?: ("nvidia" | "intel" | "amd") | null;
             /** Platforms */
@@ -7607,6 +8013,8 @@ export interface components {
             extra_args?: string[];
             /** Options */
             options?: components["schemas"]["EncoderOption"][];
+            /** Hardware */
+            readonly hardware: boolean;
         };
         /**
          * VideoSettings
@@ -7712,10 +8120,10 @@ export interface components {
             language?: string | null;
             /**
              * Language Ietf
-             * @description The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
-             *     ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
-             *     Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
-             *     MediaInfo's value when MediaInfo is available. ``None`` when there is none.
+             * @description The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: with a
+             *     Matroska ``LanguageIETF`` of ``pt-BR`` ffprobe still says ``por``. A Matroska track that
+             *     Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take the
+             *     BCP 47 form of their ISO 639 code (``por`` → ``pt``). ``None`` when there is none.
              *
              *     The effective language, which track rules match, is ``language_ietf`` if set, else
              *     ``language``.
@@ -8102,6 +8510,35 @@ export interface operations {
             };
         };
     };
+    system_diagnostics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnosticsReport"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     system_encoders: {
         parameters: {
             query?: never;
@@ -8199,6 +8636,68 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": components["schemas"]["FetchRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAccepted"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    system_tool_builds: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ToolBuilds"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    system_install_tools_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallFileRequest"];
             };
         };
         responses: {
@@ -8778,6 +9277,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MediaLink"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    preview_clip_path: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clip_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClipFile"];
                 };
             };
             /** @description An expected failure */
@@ -9385,6 +9915,39 @@ export interface operations {
             };
         };
     };
+    jobs_track_names: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SingleJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrackNames"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
     chapters_import_file: {
         parameters: {
             query?: never;
@@ -9603,6 +10166,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BatchRun"];
+                };
+            };
+            /** @description An expected failure */
+            "4XX": {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    batch_detect_crops: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchRunRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskAccepted"];
                 };
             };
             /** @description An expected failure */

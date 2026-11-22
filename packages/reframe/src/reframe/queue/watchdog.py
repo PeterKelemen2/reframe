@@ -4,7 +4,9 @@ An encode has no wall-clock limit. A step is stalled when, for ``stall_after`` s
 shows no progress, prints no line, and its process tree uses less than :data:`CPU_SHARE` of
 one core. FFmpeg prints a progress block about every half second even with no new frame, so
 "no output" alone never means a hang: the CPU check keeps a slow encoder with a long
-look-ahead from being killed.
+look-ahead from being killed. After its last progress block (``progress=end``) FFmpeg has
+written the output and only closes: a step still running :data:`EXIT_GRACE` later hangs, busy
+or not.
 
 Sleep-aware: each tick counts at most ``max_tick`` seconds, so a system sleep adds one short
 tick, whatever the clocks say. Paused time does not count, and a pause resets the idle time.
@@ -21,6 +23,7 @@ import psutil
 
 __all__ = [
     "CPU_SHARE",
+    "EXIT_GRACE",
     "STALL_AFTER",
     "STEP_TIME_LIMIT",
     "TICK",
@@ -32,14 +35,17 @@ __all__ = [
 #: Seconds of active time without progress, output or CPU use before an FFmpeg step counts as
 #: stalled.
 STALL_AFTER = 600.0
-#: Seconds of active time a short step (``mkvpropedit``) may take.
+#: Seconds of active time an FFmpeg step may run after its last progress block. Intel QSV can
+#: leave FFmpeg spinning on one core after an encoder error, so the CPU check never fires.
+EXIT_GRACE = 60.0
+#: Seconds of active time a tool step other than FFmpeg may take.
 STEP_TIME_LIMIT = 300.0
 #: Seconds between two watchdog ticks.
 TICK = 5.0
 #: A tree that used less CPU time than this share of the tick (of one core) is idle.
 CPU_SHARE = 0.05
 
-Verdict = Literal["stalled", "timeout"]
+Verdict = Literal["stalled", "timeout", "no_exit"]
 
 
 class StepWatch:
@@ -52,9 +58,11 @@ class StepWatch:
         time_limit: float | None,
         max_tick: float,
         cpu_share: float = CPU_SHARE,
+        exit_grace: float | None = None,
     ) -> None:
         self.stall_after = stall_after
         self.time_limit = time_limit
+        self.exit_grace = exit_grace
         self._max_tick = max_tick
         self._cpu_share = cpu_share
         self._last: float | None = None
@@ -64,10 +72,17 @@ class StepWatch:
         """Active seconds since the last progress, output or CPU use."""
         self.active = 0.0
         """Active seconds since the step started (pauses and sleeps not counted)."""
+        self.since_end: float | None = None
+        """Active seconds since the last progress block; ``None`` before it."""
 
     def activity(self) -> None:
         """The step made progress or printed a line."""
         self._activity = True
+
+    def ended(self) -> None:
+        """The step printed its last progress block."""
+        if self.since_end is None:
+            self.since_end = 0.0
 
     def tick(self, mono: float, cpu: float | None, *, paused: bool) -> Verdict | None:
         """One tick: ``mono`` from the monotonic clock, ``cpu`` the tree's CPU seconds (``None``
@@ -87,6 +102,10 @@ class StepWatch:
         )
         self._activity = False
         self.idle = 0.0 if busy else self.idle + step
+        if self.since_end is not None:
+            self.since_end += step
+            if self.exit_grace is not None and self.since_end >= self.exit_grace:
+                return "no_exit"
         if self.time_limit is not None and self.active >= self.time_limit:
             return "timeout"
         if self.stall_after is not None and self.idle >= self.stall_after:

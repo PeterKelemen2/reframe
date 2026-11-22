@@ -390,7 +390,7 @@ describe('an output audio track', () => {
     const { wrapper } = await mountTab()
     useValidationStore().issues = [
       issue('container.codec_unsupported', 'audio[1].encoder', 'error'),
-      issue('metadata.language_tag_lost', 'audio[1].metadata.language', 'warning'),
+      issue('metadata.language_invalid', 'audio[1].metadata.language', 'warning'),
       issue('audio.elsewhere', 'audio[1]', 'warning'),
     ]
     await nextTick()
@@ -401,11 +401,11 @@ describe('an output audio track', () => {
     expect(field.classes()).toContain('rf-field--error')
     expect(field.text()).toContain('container.codec_unsupported at audio[1].encoder')
     const language = second.find('.rf-field[data-path="audio[1].metadata.language"]')
-    expect(language.text()).toContain('metadata.language_tag_lost')
+    expect(language.text()).toContain('metadata.language_invalid')
     const listed = second.find('.track-row__issues').text()
     expect(listed).toContain('audio.elsewhere')
     expect(listed).not.toContain('container.codec_unsupported')
-    expect(listed).not.toContain('metadata.language_tag_lost')
+    expect(listed).not.toContain('metadata.language_invalid')
   })
 
   it('is where a link to the track lands', async () => {
@@ -477,5 +477,26 @@ describe('an output subtitle track', () => {
     await wrapper.find('[data-list="subtitles"] [data-action="add-all"]').trigger('click')
     expect(editor.job?.subtitles?.map((track) => track.source)).toEqual([4, 5, 6])
     expect(editor.job?.subtitles?.[1]?.metadata).toMatchObject({ hearing_impaired: true })
+  })
+})
+
+describe('the numbers of an output audio track', () => {
+  // Only English ships; a German locale shows the values that `toFixed` or `String` would
+  // write the English way.
+  it('are written in the app’s locale: DRC, sample rates and gain', async () => {
+    const { wrapper, editor } = await mountTab()
+    editor.set('/audio/0/action', 'encode')
+    editor.set('/audio/0/encoder', 'aac')
+    editor.set('/audio/0/drc', 1.5)
+    editor.set('/audio/0/gain', -1.5)
+    ;(wrapper.vm as unknown as { $i18n: { locale: string } }).$i18n.locale = 'de'
+    await flushPromises()
+    expect(wrapper.find('[data-path="audio[0].drc"] output').text()).toBe('1,5')
+    const rates = control(wrapper, 'audio[0].samplerate', Select).props().options as {
+      label: string
+    }[]
+    expect(rates.map((rate) => rate.label)).toContain('44,1\u00a0kHz')
+    const gain = wrapper.find<HTMLInputElement>('[data-path="audio[0].gain"] input')
+    expect(gain.element.value).toBe('-1,5 dB')
   })
 })

@@ -11,18 +11,14 @@ from typing import Any
 
 import pytest
 
+from reframe import fsretry
 from reframe import settings as settings_module
-from reframe.events import EventBus, Subscription
-from reframe.models import AppSettings, AppWarningEvent, Event
+from reframe.events import EventBus
+from reframe.models import AppSettings, AppWarningEvent
 from reframe.models import migrations as migrations_module
-from reframe.models.migrations import MigrationRegistry
-from reframe.settings import (
-    REPLACE_ATTEMPTS,
-    JsonDocumentFile,
-    SettingsStore,
-    migrate_document,
-    replace_file,
-)
+from reframe.models.migrations import MigrationRegistry, current_version, migrate
+from reframe.settings import JsonDocumentFile, SettingsStore
+from reframe_testing.helpers import drain, nested
 
 #: A made-up settings.json at schema version 1. Its ``from_the_future`` field is unknown to
 #: this Reframe and must survive a load and a save.
@@ -50,13 +46,6 @@ def registry_v2() -> MigrationRegistry:
     return registry
 
 
-def drain(subscription: Subscription) -> list[Event]:
-    events = []
-    while (event := subscription.get_nowait()) is not None:
-        events.append(event)
-    return events
-
-
 def write_json(path: Path, data: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data), encoding="utf-8")
@@ -75,7 +64,7 @@ def test_save_then_load_round_trip_keeps_unknown_fields(tmp_path: Path) -> None:
     settings = AppSettings.model_validate(
         {"queue": {"parallel_jobs": 2, "new_queue_knob": True}, "new_section": {"a": 1}}
     )
-    store.save(settings)
+    store.write(settings)
     data = json.loads((tmp_path / "settings.json").read_text("utf-8"))
     assert data["new_section"] == {"a": 1}
     assert data["queue"]["new_queue_knob"] is True
@@ -91,13 +80,17 @@ def test_a_path_that_is_not_utf8_is_saved_and_loaded_back(tmp_path: Path) -> Non
     settings = AppSettings.model_validate({"tools": {"ffmpeg": "/opt/Amélie/bad\udcff/ffmpeg"}})
     assert store.write(settings) is None
     text = (tmp_path / "settings.json").read_text("utf-8")
-    assert "Amélie/bad\\udcff/ffmpeg" in text
+    assert "Amélie" in text
+    assert "bad\\udcff" in text
     assert SettingsStore(tmp_path).load() == settings
 
 
-def test_old_schema_fixture_loads_after_migration(tmp_path: Path) -> None:
+def test_old_schema_fixture_loads_after_migration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(migrations_module, "REGISTRY", registry_v2())
     write_json(tmp_path / "settings.json", OLD_SETTINGS_V1)
-    store = SettingsStore(tmp_path, registry=registry_v2())
+    store = SettingsStore(tmp_path)
     settings = store.load()
     assert store.problems == []
     assert settings.schema_version == 2
@@ -107,7 +100,7 @@ def test_old_schema_fixture_loads_after_migration(tmp_path: Path) -> None:
     assert settings.languages.preferred_audio == ["hu", "en"]
     # The unknown field is kept and written back; the file itself is not touched by a load.
     assert json.loads((tmp_path / "settings.json").read_text("utf-8")) == OLD_SETTINGS_V1
-    store.save(settings)
+    store.write(settings)
     saved = json.loads((tmp_path / "settings.json").read_text("utf-8"))
     assert saved["schema_version"] == 2
     assert saved["queue"]["parallel_jobs"] == 3
@@ -115,20 +108,27 @@ def test_old_schema_fixture_loads_after_migration(tmp_path: Path) -> None:
     assert saved["from_the_future"] == {"keep": ["me"]}
 
 
-def test_real_loader_runs_the_migration_registry(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Without ``registry=`` the store migrates with ``REGISTRY``, which this test swaps."""
-    monkeypatch.setattr(migrations_module, "REGISTRY", registry_v2())
-    write_json(tmp_path / "settings.json", OLD_SETTINGS_V1)
-    settings = SettingsStore(tmp_path).load()
-    assert settings.schema_version == 2
-    assert settings.queue.parallel_jobs == 3
-
-
 def test_current_files_need_no_migration() -> None:
     data = AppSettings().model_dump(mode="json")
-    assert migrate_document("settings", data) == data
+    assert migrate("settings", data) == data
+
+
+def test_a_v2_file_with_a_default_container_loads_and_is_saved_without_it(
+    tmp_path: Path,
+) -> None:
+    write_json(
+        tmp_path / "settings.json",
+        {"schema_version": 2, "output": {"default_container": "webm", "partial_file": "keep"}},
+    )
+    store = SettingsStore(tmp_path)
+    settings = store.load()
+    assert store.problems == []
+    assert settings.output.partial_file == "keep"
+    store.write(settings)
+    saved = json.loads((tmp_path / "settings.json").read_text("utf-8"))
+    assert saved["schema_version"] == 3
+    assert "default_container" not in saved["output"]
+    assert saved["output"]["partial_file"] == "keep"
 
 
 def test_corrupt_file_is_backed_up_and_replaced_with_defaults(tmp_path: Path) -> None:
@@ -178,7 +178,9 @@ def test_damaged_contents_count_as_corrupt(
     assert len(list(tmp_path.glob("settings.corrupt-*.json"))) == 1
 
 
-def test_a_failing_migration_counts_as_corrupt(tmp_path: Path) -> None:
+def test_a_failing_migration_counts_as_corrupt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     registry = MigrationRegistry()
     registry.add_kind("settings", 2)
 
@@ -186,8 +188,9 @@ def test_a_failing_migration_counts_as_corrupt(tmp_path: Path) -> None:
     def _broken(data: dict[str, Any]) -> dict[str, Any]:
         return {"queue": data["no such key"]}
 
+    monkeypatch.setattr(migrations_module, "REGISTRY", registry)
     write_json(tmp_path / "settings.json", {"schema_version": 1})
-    store = SettingsStore(tmp_path, registry=registry)
+    store = SettingsStore(tmp_path)
     assert store.load() == AppSettings()
     assert [p.code for p in store.problems] == ["settings.corrupt"]
 
@@ -207,7 +210,7 @@ def test_newer_file_is_kept_untouched_and_never_overwritten(tmp_path: Path) -> N
     assert event.detail is not None
     assert "7" in event.detail
     # Saving is refused with a warning, and the file stays as it was.
-    store.save(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
+    store.write(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
     [refused] = drain(events)
     assert isinstance(refused, AppWarningEvent)
     assert refused.code == "settings.not_saved"
@@ -252,7 +255,7 @@ def test_permission_denied_on_write_is_a_warning(tmp_path: Path) -> None:
     events = bus.subscribe()
     try:
         store = SettingsStore(folder, bus)
-        store.save(AppSettings())  # no exception
+        store.write(AppSettings())  # no exception
         [event] = drain(events)
         assert isinstance(event, AppWarningEvent)
         assert event.code == "settings.write_failed"
@@ -271,7 +274,7 @@ def test_corrupt_file_that_cannot_be_backed_up_is_left_alone(
     def fail(source: Path, target: Path) -> None:
         raise PermissionError(13, "Permission denied", str(source))
 
-    monkeypatch.setattr(settings_module, "_replace", fail)
+    monkeypatch.setattr(os, "replace", fail)
     store = SettingsStore(tmp_path)
     assert store.load() == AppSettings()
     [problem] = store.problems
@@ -295,7 +298,7 @@ def test_write_is_atomic_and_leaves_no_temporary_file(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = SettingsStore(tmp_path)
-    store.save(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
+    store.write(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
     before = (tmp_path / "settings.json").read_bytes()
     seen: list[tuple[Path, Path]] = []
 
@@ -303,7 +306,7 @@ def test_write_is_atomic_and_leaves_no_temporary_file(
         seen.append((source, target))
         raise OSError(28, "No space left on device", str(target))
 
-    monkeypatch.setattr(settings_module, "_replace", crash)
+    monkeypatch.setattr(os, "replace", crash)
     warning = store.write(AppSettings.model_validate({"queue": {"parallel_jobs": 3}}))
     assert warning is not None
     assert warning.code == "settings.write_failed"
@@ -331,6 +334,9 @@ def test_unserialisable_data_is_a_failure_not_an_exception(tmp_path: Path) -> No
     assert list(tmp_path.iterdir()) == []
 
 
+REAL_REPLACE = os.replace
+
+
 class FlakyReplace:
     """``os.replace`` that fails ``failures`` times with a Windows sharing violation."""
 
@@ -343,7 +349,7 @@ class FlakyReplace:
         if self.calls <= self.failures:
             # ERROR_SHARING_VIOLATION as Python reports it on Windows
             raise PermissionError(13, "The process cannot access the file", str(target))
-        os.replace(source, target)
+        REAL_REPLACE(source, target)
 
 
 def test_windows_sharing_violation_is_retried(
@@ -351,55 +357,14 @@ def test_windows_sharing_violation_is_retried(
 ) -> None:
     flaky = FlakyReplace(failures=2)
     sleeps: list[float] = []
-    monkeypatch.setattr(settings_module, "WINDOWS", True)
-    monkeypatch.setattr(settings_module, "_replace", flaky)
-    monkeypatch.setattr(settings_module, "_sleep", sleeps.append)
+    monkeypatch.setattr(fsretry, "WINDOWS", True)
+    monkeypatch.setattr(os, "replace", flaky)
+    monkeypatch.setattr(fsretry, "_sleep", sleeps.append)
     store = SettingsStore(tmp_path)
     assert store.write(AppSettings.model_validate({"queue": {"parallel_jobs": 2}})) is None
     assert flaky.calls == 3
     assert sleeps == [0.05, 0.1]
     assert SettingsStore(tmp_path).load().queue.parallel_jobs == 2
-
-
-def test_windows_gives_up_after_the_last_attempt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    flaky = FlakyReplace(failures=100)
-    monkeypatch.setattr(settings_module, "WINDOWS", True)
-    monkeypatch.setattr(settings_module, "_replace", flaky)
-    monkeypatch.setattr(settings_module, "_sleep", lambda seconds: None)
-    warning = SettingsStore(tmp_path).write(AppSettings())
-    assert warning is not None
-    assert warning.code == "settings.write_failed"
-    assert flaky.calls == REPLACE_ATTEMPTS
-    assert list(tmp_path.iterdir()) == []  # the temporary file is gone
-
-
-def test_permission_error_is_not_retried_on_linux(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    flaky = FlakyReplace(failures=1)
-    monkeypatch.setattr(settings_module, "WINDOWS", False)
-    monkeypatch.setattr(settings_module, "_replace", flaky)
-    with pytest.raises(PermissionError):
-        replace_file(tmp_path / "a", tmp_path / "b")
-    assert flaky.calls == 1
-
-
-def test_other_os_errors_are_not_retried_on_windows(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls: list[int] = []
-
-    def gone(source: Path, target: Path) -> None:
-        calls.append(1)
-        raise FileNotFoundError(2, "No such file", str(source))
-
-    monkeypatch.setattr(settings_module, "WINDOWS", True)
-    monkeypatch.setattr(settings_module, "_replace", gone)
-    with pytest.raises(FileNotFoundError):
-        replace_file(tmp_path / "a", tmp_path / "b")
-    assert calls == [1]
 
 
 def test_backup_names_do_not_collide(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -414,14 +379,6 @@ def test_backup_names_do_not_collide(tmp_path: Path, monkeypatch: pytest.MonkeyP
         "presets.corrupt-20261013-120000-2.json",
         "presets.corrupt-20261013-120000-3.json",
     ]
-
-
-def nested(depth: int) -> list[Any]:
-    """A list nested ``depth`` levels deep (built without recursion)."""
-    value: list[Any] = []
-    for _ in range(depth - 1):
-        value = [value]
-    return value
 
 
 @pytest.mark.parametrize("depth", [100, 600, 100_000])
@@ -452,7 +409,7 @@ def test_nesting_up_to_the_limit_is_fine(tmp_path: Path) -> None:
 def test_too_deep_settings_are_not_saved_and_no_exception(tmp_path: Path, depth: int) -> None:
     """A document the loader would reject as damaged is never written."""
     store = SettingsStore(tmp_path)
-    store.save(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
+    store.write(AppSettings.model_validate({"queue": {"parallel_jobs": 2}}))
     before = (tmp_path / "settings.json").read_bytes()
     warning = store.write(AppSettings.model_validate({"x": nested(depth)}))
     assert warning is not None
@@ -467,16 +424,19 @@ def test_too_deep_counts_levels_without_recursion() -> None:
     assert settings_module.too_deep(nested(1_000_000), 64)
 
 
-def test_the_store_writes_the_current_schema_version(tmp_path: Path) -> None:
+def test_the_store_writes_the_current_schema_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A newer label would make the next start read the file as newer and use the defaults."""
     store = SettingsStore(tmp_path)
     assert store.write(AppSettings.model_validate({"schema_version": 7})) is None
     saved = json.loads((tmp_path / "settings.json").read_text("utf-8"))
-    assert saved["schema_version"] == 1
+    assert saved["schema_version"] == current_version("settings")
     again = SettingsStore(tmp_path)
     again.load()
     assert again.problems == []
-    v2 = SettingsStore(tmp_path, registry=registry_v2())
+    monkeypatch.setattr(migrations_module, "REGISTRY", registry_v2())
+    v2 = SettingsStore(tmp_path)
     assert v2.write(AppSettings()) is None
     assert json.loads((tmp_path / "settings.json").read_text("utf-8"))["schema_version"] == 2
 
@@ -563,6 +523,7 @@ def test_windows_link_target_is_written_mock(
     real.write_text("{", encoding="utf-8")
     link = config / "settings.json"
     monkeypatch.setattr(settings_module, "WINDOWS", True)
+    monkeypatch.setattr(fsretry, "WINDOWS", True)
     monkeypatch.setattr(
         settings_module, "_link_target", lambda path: real if path == link else path
     )
@@ -573,8 +534,8 @@ def test_windows_link_target_is_written_mock(
         seen.append((source, target))
         flaky(source, target)
 
-    monkeypatch.setattr(settings_module, "_replace", replace)
-    monkeypatch.setattr(settings_module, "_sleep", lambda seconds: None)
+    monkeypatch.setattr(os, "replace", replace)
+    monkeypatch.setattr(fsretry, "_sleep", lambda seconds: None)
     store = SettingsStore(config)
     store.load()  # reads "{" through the "link": damaged
     [problem] = store.problems

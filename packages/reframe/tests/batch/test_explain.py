@@ -1,24 +1,14 @@
-"""``explain``, ``explain_subtitles`` and ``draft_tracks`` with the selection stage."""
+"""``audio_stage``, ``subtitle_stage`` and ``resolve_tracks`` with the selection stage."""
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 from typing import Any, Literal
 
 import pytest
 
-from reframe.batch import (
-    draft_tracks,
-    effective_language,
-    explain,
-    explain_subtitles,
-    foreign_audio_search,
-)
-from reframe.batch.explain import audio_language, forced_evidence, subtitle_stage
+from reframe.batch import effective_language, foreign_audio_search, resolve_tracks
+from reframe.batch.explain import audio_language, audio_stage, forced_evidence, subtitle_stage
 from reframe.batch.selection import KEEP_EVERYTHING
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
@@ -26,7 +16,6 @@ from reframe.models import (
     AudioDefaults,
     AudioOutputTrack,
     AudioRuleExtras,
-    AudioStream,
     BurnInBehaviour,
     ExtraAudioOutput,
     JobTemplate,
@@ -44,24 +33,7 @@ from reframe.models import (
 from reframe.probe import ProbeError
 from reframe.service import Reframe
 
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-T = _load("defaults_tracks")
-audio: Callable[..., AudioStream] = T.audio
-subtitle: Callable[..., SubtitleStream] = T.subtitle
-source: Callable[..., MediaSource] = T.source
-role: Callable[..., Any] = T.role
+from .defaults_tracks import EXAMPLE_CODEC_RULES, audio, role, source, subtitle
 
 type DefaultTrack = Literal["first_output", "first_in_first_language", "forced", "none"]
 
@@ -74,25 +46,7 @@ def defaults_flags(tracks: list[AudioOutputTrack] | list[SubtitleOutputTrack]) -
     return [t.metadata.default for t in tracks]
 
 
-#: The four rules of the example.
-EXAMPLE_RULES = [
-    AudioCodecRule(
-        languages=["hu"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1",
-        max_bitrate=320, if_fits="passthru",
-    ),
-    AudioCodecRule(
-        languages=["en"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1",
-        max_bitrate=384, if_fits="passthru",
-    ),
-    AudioCodecRule(
-        languages=None, source_channels="stereo_or_less", codec="aac", mixdown="stereo",
-        max_bitrate=160, if_fits="passthru",
-    ),
-    AudioCodecRule(
-        languages=None, source_channels="any", codec="libopus", mixdown="up_to_5.1",
-        max_bitrate=256, if_fits="reencode",
-    ),
-]  # fmt: skip
+EXAMPLE_RULES = EXAMPLE_CODEC_RULES
 
 #: Hungarian, English; every matching track, so that all four rows of the example are selected.
 EXAMPLE_DEFAULTS = AudioDefaults(
@@ -128,8 +82,8 @@ EXAMPLE_ROWS = [
 
 def test_the_codec_rules_example_row_by_row_through_draft_and_explain() -> None:
     template = JobTemplate(audio_defaults=EXAMPLE_DEFAULTS)
-    draft = draft_tracks(EXAMPLE_SOURCE, template)
-    decisions = explain(EXAMPLE_DEFAULTS, EXAMPLE_SOURCE)
+    draft = resolve_tracks(template, EXAMPLE_SOURCE).draft
+    decisions = audio_stage(EXAMPLE_DEFAULTS, EXAMPLE_SOURCE).decisions
     assert decisions == draft.decisions
     got = [(d.source_stream, d.rule, summary(d.outputs[0]), d.reason, d.measure) for d in decisions]
     assert got == EXAMPLE_ROWS
@@ -156,7 +110,7 @@ def test_each_preview_row_has_its_rule_outputs_and_a_reason() -> None:
             audio(4, "jpn", "aac", 2, 128),  # not selected: a row with a reason too
         ]
     )
-    rows = explain(EXAMPLE_DEFAULTS, media)
+    rows = audio_stage(EXAMPLE_DEFAULTS, media).decisions
     preview = [
         (d.source_stream, d.selected, d.selection, d.rule, [summary(t) for t in d.outputs])
         for d in rows
@@ -238,7 +192,7 @@ def test_audio_default_track(policy: DefaultTrack, expected: list[bool], note: s
             languages=["hu", "en"], tracks_per_language="all", order="source", default_track=policy
         )
     )
-    draft = draft_tracks(DEFAULT_SOURCE, JobTemplate(audio_defaults=defaults))
+    draft = resolve_tracks(JobTemplate(audio_defaults=defaults), DEFAULT_SOURCE).draft
     assert [t.source_stream for t in draft.audio] == [1, 2, 3]
     assert defaults_flags(draft.audio) == expected
     notes = [n for d in draft.decisions for n in d.notes if n.startswith("The default")]
@@ -253,7 +207,7 @@ def test_first_in_first_language_falls_back_to_the_first_output() -> None:
             languages=["de", "en"], default_track="first_in_first_language", order="source"
         )
     )
-    draft = draft_tracks(DEFAULT_SOURCE, JobTemplate(audio_defaults=defaults))
+    draft = resolve_tracks(JobTemplate(audio_defaults=defaults), DEFAULT_SOURCE).draft
     assert [t.source_stream for t in draft.audio] == [1]
     assert defaults_flags(draft.audio) == [True]
 
@@ -266,7 +220,7 @@ def test_extra_outputs_are_never_the_default_track() -> None:
         extras=AudioRuleExtras(extra_outputs=[ExtraAudioOutput(codec="aac", bitrate=160)]),
     )
     defaults = AudioDefaults(selection=TrackSelection(languages=["en"]), codec_rules=[rule])
-    draft = draft_tracks(DEFAULT_SOURCE, JobTemplate(audio_defaults=defaults))
+    draft = resolve_tracks(JobTemplate(audio_defaults=defaults), DEFAULT_SOURCE).draft
     assert [(t.source_stream, t.action) for t in draft.audio] == [(1, "passthru"), (1, "encode")]
     assert defaults_flags(draft.audio) == [True, False]
 
@@ -286,7 +240,7 @@ def test_first_track_of_language_follows_the_selection() -> None:
         codec_rules=[first_only, AudioCodecRule(codec="aac", mixdown="stereo", max_bitrate=128)],
     )
     media = source([audio(1, "hun", "ac3", 2, 192), audio(2, "hun", "dts", 6, 1500, lossless=True)])
-    rows = explain(defaults, media)
+    rows = audio_stage(defaults, media).decisions
     assert [(d.source_stream, d.rule) for d in rows] == [(1, 2), (2, 1)]
     assert rows[0].reason.startswith("Rule 1 is only for the first track of a language")
 
@@ -299,7 +253,7 @@ def test_an_undetermined_track_is_treated_as_the_first_language() -> None:
         codec_rules=[EXAMPLE_RULES[0], EXAMPLE_RULES[3]],
     )
     media = source([audio(1, None, "dts", 6, 2104, lossless=True)])
-    (row,) = explain(defaults, media)
+    (row,) = audio_stage(defaults, media).decisions
     assert row.rule == 1
     assert row.outputs[0].metadata.language == "hu"
     assert row.notes[0] == (
@@ -311,7 +265,7 @@ def test_an_undetermined_track_is_treated_as_the_first_language() -> None:
 def test_dropped_tracks_have_a_reason_and_no_output() -> None:
     defaults = AudioDefaults(selection=TrackSelection(languages=["hu"]))
     media = source([audio(1, "hun"), audio(2, "jpn"), audio(3, "hun", comment=True)])
-    rows = explain(defaults, media)
+    rows = audio_stage(defaults, media).decisions
     dropped = [d for d in rows if not d.selected]
     assert [d.source_stream for d in dropped] == [2, 3]
     for d in dropped:
@@ -326,7 +280,7 @@ def test_no_listed_language_take_none_is_an_error_with_fixes() -> None:
     defaults = AudioDefaults(selection=TrackSelection(languages=["hu", "de"], no_match="none"))
     template = JobTemplate(audio_defaults=defaults)
     media = source([audio(1, "jpn", default=True), audio(2, "eng")])
-    draft = draft_tracks(media, template)
+    draft = resolve_tracks(template, media).draft
     assert draft.audio == []
     (issue,) = [i for i in draft.issues if i.code == "defaults.no_listed_language"]
     assert issue.severity is Severity.ERROR
@@ -342,29 +296,18 @@ def test_no_listed_language_take_none_is_an_error_with_fixes() -> None:
     for fix, stream in zip(issue.fixes, (1, 1), strict=True):
         assert fix.target == "template"
         fixed = JobTemplate.model_validate(apply_patch(template.model_dump(mode="json"), fix.patch))
-        again = draft_tracks(media, fixed)
+        again = resolve_tracks(fixed, media).draft
         assert [t.source_stream for t in again.audio] == [stream]
         assert not [i for i in again.issues if i.code == "defaults.no_listed_language"]
     # A source without audio is not an error.
-    assert draft_tracks(source(), template).issues == []
+    assert resolve_tracks(template, source()).draft.issues == []
     # Other languages kept: the selection takes a track, so there is nothing to fix.
     for other, expected in (("keep_first", [1]), ("keep_all", [1, 2])):
         selection = defaults.selection.model_copy(update={"other_languages": other})
         kept = JobTemplate(audio_defaults=defaults.model_copy(update={"selection": selection}))
-        draft = draft_tracks(media, kept)
+        draft = resolve_tracks(kept, media).draft
         assert [t.source_stream for t in draft.audio] == expected
         assert not [i for i in draft.issues if i.code == "defaults.no_listed_language"]
-
-
-def test_the_draft_has_the_lint_for_this_source() -> None:
-    """``defaults.rule_unused`` for a rule that no selected track uses."""
-    template = JobTemplate(audio_defaults=EXAMPLE_DEFAULTS)
-    media = source([audio(1, "hun", "ac3", 6, 224)])
-    draft = draft_tracks(media, template)
-    assert [(i.code, i.path) for i in draft.issues] == [
-        ("defaults.rule_unused", "audio_defaults.codec_rules[1]"),
-        ("defaults.rule_unused", "audio_defaults.codec_rules[2]"),
-    ]
 
 
 def test_keep_everything_keeps_the_source_flags_with_one_default() -> None:
@@ -377,7 +320,7 @@ def test_keep_everything_keeps_the_source_flags_with_one_default() -> None:
     template = JobTemplate(
         subtitle_defaults=SubtitleDefaults(foreign_audio_search=True, burn_in="first")
     )
-    draft = draft_tracks(media, template)
+    draft = resolve_tracks(template, media).draft
     assert [t.source_stream for t in draft.audio] == [1, 2]
     assert defaults_flags(draft.audio) == [True, False]
     assert [t.metadata.commentary for t in draft.audio] == [False, True]
@@ -396,14 +339,16 @@ def test_settings_languages_switch_the_selection_on() -> None:
     template = JobTemplate(
         subtitle_defaults=SubtitleDefaults(selection=TrackSelection(no_match="none"))
     )
-    plain = draft_tracks(media, template)
+    plain = resolve_tracks(template, media).draft
     assert len(plain.audio) == 2
     assert len(plain.subtitles) == 2
     languages = LanguageSettings(preferred_audio=["en"], preferred_subtitle=["hu"])
-    chosen = draft_tracks(media, template, languages=languages)
+    chosen = resolve_tracks(template, media, languages=languages).draft
     assert [t.source_stream for t in chosen.audio] == [2]
     assert [t.source for t in chosen.subtitles] == [4]
-    only_audio = draft_tracks(media, template, languages=LanguageSettings(preferred_audio=["en"]))
+    only_audio = resolve_tracks(
+        template, media, languages=LanguageSettings(preferred_audio=["en"])
+    ).draft
     assert len(only_audio.audio) == 1
     assert len(only_audio.subtitles) == 2  # no subtitle language: every subtitle
 
@@ -468,7 +413,7 @@ def test_foreign_audio_search_finds_the_forced_track(forced: SubtitleStream, evi
     assert stage.foreign_audio is not None
     assert stage.foreign_audio.track is not None
     assert media.subtitles[stage.foreign_audio.track].index == 4
-    assert stage.foreign_audio.evidence == evidence
+    assert f"({evidence})" in stage.foreign_audio.note
     # Put first and flagged forced; the language selection's full track follows.
     assert [(t.source, t.action, t.metadata.forced) for t in stage.outputs] == [
         (4, "copy", True),
@@ -529,7 +474,7 @@ def test_foreign_audio_search_needs_the_viewers_language() -> None:
     japanese = [ENGLISH_AUDIO[0].model_copy(update={"metadata": TrackMetadata(language="ja")})]
     stage = subtitle_stage(fas_defaults(), media, audio=japanese)
     assert stage.foreign_audio is not None
-    assert not stage.foreign_audio.searched
+    assert stage.foreign_audio.note.startswith("Foreign audio search: not run")
     assert [t.source for t in stage.outputs] == [3]
     note = (
         "Foreign audio search: not run, the audio is Japanese and the first subtitle language "
@@ -540,14 +485,13 @@ def test_foreign_audio_search_needs_the_viewers_language() -> None:
         media.subtitles, audio_language=None, user_language="en", can_burn=False
     )
     assert result.note == "Foreign audio search: no audio language"
-    assert not result.searched
 
 
 def test_no_forced_track_found() -> None:
     media = fas_source()
     stage = subtitle_stage(fas_defaults(), media, audio=ENGLISH_AUDIO)
     assert stage.foreign_audio is not None
-    assert stage.foreign_audio.searched
+    assert stage.foreign_audio.note.startswith("Foreign audio search: no forced")
     assert stage.foreign_audio.track is None
     note = (
         "Foreign audio search: no forced English subtitle track (no forced flag or title, and "
@@ -571,9 +515,9 @@ def test_the_audio_language() -> None:
     assert audio_language(lost, media) is None
 
 
-def test_explain_subtitles_without_audio_uses_the_source_default_audio() -> None:
+def test_subtitle_stage_without_audio_uses_the_source_default_audio() -> None:
     media = fas_source(subtitle(4, "eng", forced=True))
-    rows = explain_subtitles(fas_defaults(), media)
+    rows = subtitle_stage(fas_defaults(), media).decisions
     assert [(d.source_stream, d.selected) for d in rows] == [
         (2, True),
         (3, False),
@@ -671,7 +615,7 @@ def test_subtitle_order_and_container_notes() -> None:
     defaults = SubtitleDefaults(
         selection=TrackSelection(languages=["en"], tracks_per_language="all")
     )
-    rows = explain_subtitles(defaults, media, container="mp4", audio=ENGLISH_AUDIO)
+    rows = subtitle_stage(defaults, media, container="mp4", audio=ENGLISH_AUDIO).decisions
     assert [d.notes for d in rows] == [
         [
             "MP4 cannot hold hdmv_pgs_subtitle subtitles: validation offers burn-in or another "
@@ -679,12 +623,15 @@ def test_subtitle_order_and_container_notes() -> None:
         ],
         ["MP4: converted to mov_text"],
     ]
-    assert explain_subtitles(defaults, media, container="mkv", audio=ENGLISH_AUDIO)[0].notes == []
-    draft = draft_tracks(
-        media,
-        JobTemplate(output=OutputOptions(container="mp4"), subtitle_defaults=defaults),
-        languages=LanguageSettings(preferred_audio=["en"]),
+    assert (
+        subtitle_stage(defaults, media, container="mkv", audio=ENGLISH_AUDIO).decisions[0].notes
+        == []
     )
+    draft = resolve_tracks(
+        JobTemplate(output=OutputOptions(container="mp4"), subtitle_defaults=defaults),
+        media,
+        languages=LanguageSettings(preferred_audio=["en"]),
+    ).draft
     assert [d.notes for d in draft.subtitle_decisions] == [d.notes for d in rows]
 
 
@@ -707,7 +654,7 @@ def test_an_empty_subtitle_track_is_not_the_forced_track() -> None:
     found = foreign_audio_search(
         [full, empty], audio_language="en", user_language="en", can_burn=False
     )
-    assert found.searched
+    assert found.note.startswith("Foreign audio search: no forced")
     assert found.track is None
     # A real low count is still found.
     few = subtitle(4, "eng", events=20)
@@ -723,10 +670,10 @@ def test_an_invalid_language_ietf_falls_back_to_the_language(broken: str) -> Non
     track = audio(1, "hun", ietf=broken)
     assert effective_language(track) == "hu"
     assert effective_language(subtitle(2, "eng", ietf=broken)) == "en"
-    draft = draft_tracks(
-        source([track]),
+    draft = resolve_tracks(
         JobTemplate(audio_defaults=AudioDefaults(selection=TrackSelection(languages=["hu"]))),
-    )
+        source([track]),
+    ).draft
     assert [(t.source_stream, t.metadata.language) for t in draft.audio] == [(1, "hu")]
     assert draft.decisions[0].selection == "Hungarian: the first matching track"
     # A valid tag still wins, and a track with nothing valid keeps its raw tag.

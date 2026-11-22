@@ -10,9 +10,11 @@ from pathlib import PurePath
 
 __all__ = [
     "BITMAP_SUBTITLE_CODECS",
+    "FORCED_ONLY_SUBTITLE_CODECS",
     "LOSSLESS_AUDIO_CODECS",
     "LOSSLESS_DTS_PROFILES",
     "audio_display_name",
+    "codec_name",
     "container_display_name",
     "is_lossless_audio",
     "subtitle_display_name",
@@ -168,6 +170,8 @@ _SUBTITLE_NAMES: Mapping[str, str] = {
 
 #: Subtitle codecs whose events are pictures, not text.
 BITMAP_SUBTITLE_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"})
+#: Subtitle codecs whose FFmpeg decoder has ``forced_subs_only`` (PGS, VobSub).
+FORCED_ONLY_SUBTITLE_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle"})
 
 
 def subtitle_display_name(codec: str | None) -> str | None:
@@ -175,6 +179,15 @@ def subtitle_display_name(codec: str | None) -> str | None:
     if not codec:
         return None
     return _SUBTITLE_NAMES.get(codec, codec)
+
+
+def codec_name(codec: str) -> str:
+    """The short display name of a video, audio or subtitle codec without its profile; the codec
+    name itself when it is not known."""
+    for table in (_VIDEO_BASE, _AUDIO_BASE, _SUBTITLE_NAMES):
+        if codec in table:
+            return table[codec]
+    return codec
 
 
 #: ``format_name`` → ``{file extension: name}``; ``""`` is the default for the format.

@@ -13,15 +13,20 @@ type Tools = SystemInfo['tools']
 type Tool = Tools['ffmpeg']
 
 function tool(name: Tool['name'], extra: Partial<Tool> = {}): Tool {
-  return { name, status: 'found', next_to_ffmpeg: false, path: `/usr/bin/${name}`, ...extra }
+  return {
+    name,
+    status: 'found',
+    next_to_ffmpeg: false,
+    bundled: false,
+    path: `/usr/bin/${name}`,
+    ...extra,
+  }
 }
 
 function tools(extra: Partial<Tools> = {}): Tools {
   return {
     ffmpeg: tool('ffmpeg'),
     ffprobe: tool('ffprobe'),
-    mkvpropedit: tool('mkvpropedit'),
-    mediainfo: tool('mediainfo', { status: 'missing' }),
     ...extra,
   }
 }
@@ -31,6 +36,7 @@ function info(extra: Partial<SystemInfo> = {}): SystemInfo {
     mode: 'web',
     auth: 'token',
     platform: 'linux',
+    container: false,
     tools: tools(),
     problems: [],
     settings_read_only: false,
@@ -39,7 +45,18 @@ function info(extra: Partial<SystemInfo> = {}): SystemInfo {
 }
 
 function encoder(id: string, state: EncoderStatus['state'], checked_at = 't1'): EncoderStatus {
-  return { id, state, hardware: false, checked_at }
+  return { id, state, hardware: false, build_mismatch: false, checked_at }
+}
+
+/** A download task that could not reach the download server. */
+function offline(id: string): TaskInfo {
+  return {
+    id,
+    kind: 'tools_fetch',
+    state: 'failed',
+    error: 'cannot reach the download server github.com',
+    error_code: 'tools.fetch_offline',
+  }
 }
 
 function capabilities(detecting: boolean, ...encoders: EncoderStatus[]): CapabilitySnapshot {
@@ -138,6 +155,24 @@ describe('the system store', () => {
     store.onAppWarning(later)
     await store.resync()
     expect(store.warnings.map((w) => w.code)).toEqual(['settings.corrupt', 'power.inhibit'])
+  })
+
+  it('lists a start-up problem that also came as an event once', async () => {
+    const failed = {
+      type: 'app.warning',
+      code: 'tools.fetch_failed',
+      message: "The download of the FFmpeg build 'default' failed",
+      detail: 'cannot reach the download server github.com',
+    } as const
+    system = info({ problems: [failed] })
+    const store = useSystemStore()
+    store.onAppWarning({ ...failed })
+    store.onAppWarning({ ...failed, message: 'Another download failed' })
+    await store.resync()
+    expect(store.warnings.map((w) => w.message)).toEqual([
+      "The download of the FFmpeg build 'default' failed",
+      'Another download failed',
+    ])
   })
 
   describe('login', () => {
@@ -239,20 +274,80 @@ describe('the system store', () => {
     ])
   })
 
-  it('names the running FFmpeg download while it runs', async () => {
+  it('names the running FFmpeg download while it runs, then reads the tools and builds', async () => {
     const store = useSystemStore()
     const tasks = useTasksStore()
     server.on(
       'POST /api/system/tools/fetch',
       () => new Response(JSON.stringify({ task_id: 'f1' }), { status: 202 }),
     )
-    const fetching = store.fetchTools()
+    server.on('GET /api/system/tools/builds', {
+      builds: [],
+      installed: { name: 'compat', version: 'n8.1', outdated: false },
+    })
+    const fetching = store.fetchTools('compat')
     await settle()
     expect(store.toolsFetch).toBe('f1')
+    expect(server.requests.at(-1)?.body).toEqual({ build: 'compat' })
     tasks.onTaskDone({ type: 'task.done', task: { id: 'f1', kind: 'tools_fetch', state: 'done' } })
-    await fetching
+    expect((await fetching).state).toBe('done')
     expect(store.toolsFetch).toBeNull()
     expect(store.info?.tools.ffmpeg.status).toBe('found')
+    expect(store.builds?.installed?.name).toBe('compat')
+  })
+
+  it('toasts a download that cannot reach the server unless the caller shows it', async () => {
+    const store = useSystemStore()
+    const tasks = useTasksStore()
+    let next = 0
+    server.on(
+      'POST /api/system/tools/fetch',
+      () => new Response(JSON.stringify({ task_id: `f${++next}` }), { status: 202 }),
+    )
+    server.on('GET /api/system/tools/builds', { builds: [], installed: null })
+
+    const toasted = store.fetchTools('default')
+    await settle()
+    tasks.onTaskDone({ type: 'task.done', task: offline('f1') })
+    await toasted
+    expect(useToastStore().items).toEqual([
+      expect.objectContaining({
+        severity: 'error',
+        detail: 'cannot reach the download server github.com',
+      }),
+    ])
+
+    const shown = store.fetchTools('default', { showsOffline: true })
+    await settle()
+    tasks.onTaskDone({ type: 'task.done', task: offline('f2') })
+    expect((await shown).error_code).toBe('tools.fetch_offline')
+    expect(useToastStore().items).toHaveLength(1)
+  })
+
+  it('installs an archive file as the chosen build; a download without a build sends none', async () => {
+    const store = useSystemStore()
+    const tasks = useTasksStore()
+    server.on(
+      'POST /api/system/tools/install-file',
+      () => new Response(JSON.stringify({ task_id: 'i1' }), { status: 202 }),
+    )
+    server.on(
+      'POST /api/system/tools/fetch',
+      () => new Response(JSON.stringify({ task_id: 'f2' }), { status: 202 }),
+    )
+    server.on('GET /api/system/tools/builds', { builds: [], installed: null })
+    const installing = store.installToolsFile('/media/ffmpeg.tar.xz', 'compat')
+    await settle()
+    expect(server.requests.at(-1)?.body).toEqual({ path: '/media/ffmpeg.tar.xz', build: 'compat' })
+    tasks.onTaskDone({ type: 'task.done', task: { id: 'i1', kind: 'tools_fetch', state: 'done' } })
+    expect((await installing).state).toBe('done')
+
+    const fetching = store.fetchTools()
+    await settle()
+    expect(server.requests.at(-1)?.body ?? null).toBeNull()
+    tasks.onTaskDone({ type: 'task.done', task: { id: 'f2', kind: 'tools_fetch', state: 'done' } })
+    expect((await fetching).state).toBe('done')
+    expect(useToastStore().items).toEqual([])
   })
 
   it('reads the definitions, the naming variables and the languages', async () => {

@@ -5,15 +5,38 @@ Pinned third-party tool builds. Plan: [02 §Bundled FFmpeg](../docs/plan/02-arch
 
 | File | Content |
 |------|---------|
-| `ffmpeg.toml` | The FFmpeg build that ships (`default`) and a second build for the CI job that tests the path override (`override-test`). For each platform: URL, SHA-256, size, archive layout. Also the exact version string, licence and the source commits (GPL source obligations). |
+| `ffmpeg.toml` | The FFmpeg builds that users may download (`offered = true`, with a `label` and a `summary`): `default`, the recommended build, and `compat`, release/8.1 for NVIDIA drivers 570 to 609. Also `override-test`, the build for the CI job that tests the path override: the same pin as `compat`. For each platform: URL, SHA-256, size, archive layout. Also the exact version string, licence and the source commits (GPL source obligations). |
+| `bundled-tools.toml` | The libva source that the Linux packages ship (built into `libva/` of the tools layout, copied into a downloaded FFmpeg's `lib/`): URL, SHA-256, size, archive layout, licence and source links. No package bundles or needs MKVToolNix or MediaInfo: Reframe writes Matroska headers and probes files itself (decisions 0080, 0081). |
+| `static-builds.toml` | Bundled binaries that are static builds (the AppImage runtime): the tree each was built from and every library it links (URL, SHA-256, licence), for the sources release and the notices; and the runtime file that `desktop/packaging/linux/appimage-runtime.sh` hands to the bundler (decision 0079, "Fix round — FS"). |
+| `licence-texts.toml` | Licence texts that the notices cannot find by themselves: npm and PyPI packages that ship no licence file, and sources whose licence is only in their files' headers (`scripts/sources-fetch.py` finds no licence file in them). Each with the version and the place it was read; the notices and the fetch stop on a part that has neither (decision 0079, "Fix round — FL"). Its `[data]` tables are the notices of the language tables' data (CLDR, the IANA registry, Wiktionary's names, langcodes and language_data; decision 0082): update them with the libraries that `scripts/gen-language-data.py` builds the tables from. |
 
-MKVToolNix and MediaInfo pins come with `D-7`.
+## Lay out the tools folder of a package
+
+```sh
+uv run python scripts/bundle-tools.py --platform linux-x64     # or windows-x64
+```
+
+No package contains FFmpeg: the app downloads it, or installs it from an archive, at the first
+run. The script lays out `desktop/src-tauri/resources/tools/` (`--dest DIR` for another
+folder). On Linux it builds libva from its pinned source (DRM only) into `libva/`, with its
+licence as `LICENSE-libva.txt`; the app copies `libva.so.2` and `libva-drm.so.2` into the
+`lib/` of a build it installs, because the distros' older libva lacks functions the FFmpeg build
+calls. The Windows layout holds only the folder's README. The script checks the source
+archive's size and SHA-256 before it extracts anything, keeps a folder whose files still match
+on a rerun, removes folders that an earlier layout made (an `ffmpeg/` among them), and refuses
+to touch a destination that holds files it did not make. On Linux it then loads the built
+libraries. The build needs meson, ninja, pkg-config, gcc and libdrm's headers (`apt install
+meson ninja-build pkg-config gcc libdrm-dev`); build it on the oldest supported distro (Ubuntu
+22.04): the library needs that host's glibc.
+
+Keep the libva pin at the newest libva release: libva does not load a VA driver built against
+a newer VA-API than its own.
 
 ## Fetch a build
 
 ```sh
 uv run python scripts/fetch-tools.py                          # default build, host platform
-uv run python scripts/fetch-tools.py --build override-test
+uv run python scripts/fetch-tools.py --build override-test    # the pin of compat
 uv run python scripts/fetch-tools.py --platform windows-x64   # download + verify only
 ```
 
@@ -28,9 +51,10 @@ the DLLs are next to the `.exe` files.
 
 ## Where the builds come from
 
-[BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds), release-branch `gpl-shared`
-variant. This is the first candidate from the plan. `D-7` tests it on real GPUs and records the
-final choice in `docs/decisions/0002-bundled-ffmpeg.md`.
+[BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds) (moved to
+`github.com/FFmpeg-Builds/FFmpeg-Builds`; the old URLs redirect), release-branch `gpl-shared`
+variant. [Decision 0002](../docs/decisions/0002-bundled-ffmpeg.md) confirms the choice, with
+the host tests and the Windows builds that were tried instead.
 
 **Retention.** BtbN keeps the last build of each month for two years and only the last 14 daily
 builds. The `latest` release floats. So:
@@ -43,6 +67,8 @@ builds. The `latest` release floats. So:
 
 ## Update a pin
 
+FFmpeg (`ffmpeg.toml`):
+
 1. List the releases: `curl -s "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases?per_page=100"`.
    Choose the newest month-end `autobuild-…` release.
 2. In that release, find the `ffmpeg-n<X.Y.Z>-…-linux64-gpl-shared-<X.Y>.tar.xz` and
@@ -53,16 +79,26 @@ builds. The `latest` release floats. So:
    the `-YYYYMMDD` suffix), `release_version`, `release_tag`, `release_url`, `checksums_url`,
    `source_commit` (the full FFmpeg commit from the `-g<hash>` part of the version) and
    `build_scripts_commit` (the BtbN commit that the release tag points to).
-5. Copy the file to `packages/reframe/src/reframe/tools/ffmpeg.toml`: the installed package
+5. `compat` and `override-test` are the same pin, and a test fails while they differ
+   (`testing/tests/test_fetch_tools.py`): change both, or neither. To give `compat` another
+   release, move `override-test` with it, and update `compat`'s `summary` to what was
+   checked with that release.
+6. Copy the file to `packages/reframe/src/reframe/tools/ffmpeg.toml`: the installed package
    reads that copy for `reframe tools fetch` (decision 0038), and a test fails while the two
    differ.
-6. Run `uv run python scripts/fetch-tools.py` for both builds, and `uv run pytest`.
+7. Run `uv run python scripts/fetch-tools.py` for both builds, and `uv run pytest`.
    The CI caches of `.tools/` and `testdata/media/` are keyed on this file, so they refresh.
 
 ## Licence
 
-The builds use `--enable-gpl --enable-version3`: **GPL-3.0-or-later**. Each archive contains
-`LICENSE.txt`. Every artefact that bundles a build must ship that licence and the corresponding
-source (or a written offer) for the exact build: the FFmpeg commit in `source_commit` and the
-BtbN build scripts at `build_scripts_commit`, which pin the source of every dependency
-(see [09 §Licensing](../docs/plan/09-quality-and-release.md#licensing)).
+FFmpeg: the builds use `--enable-gpl --enable-version3`: **GPL-3.0-or-later**. Each archive contains
+`LICENSE.txt`. No artefact of Reframe bundles a build: users download it from BtbN's release,
+and the build picker shows the licence and the source links (the FFmpeg commit in
+`source_commit`, the BtbN build scripts at `build_scripts_commit`, which pin the source of every
+dependency). An artefact that bundled a build again would have to ship that licence and the
+corresponding source (see [09 §Licensing](../docs/plan/09-quality-and-release.md#licensing)).
+
+libva (Linux layout) is MIT (`COPYING`, shipped as `libva/LICENSE-libva.txt`); its source is
+the release tarball the pin names.
+
+No package bundles MKVToolNix or MediaInfo (decisions 0080, 0081).

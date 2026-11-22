@@ -1,4 +1,4 @@
-"""External tool status: which ffmpeg / ffprobe / mkvpropedit / mediainfo is used.
+"""External tool status: which ffmpeg and ffprobe are used.
 
 Produced by :func:`reframe.tools.discover_tools`. A missing, broken or too old tool is data
 (:class:`ToolStatus` plus a reason and fixes), never an exception.
@@ -16,10 +16,20 @@ from reframe.models.base import ReframeModel
 from reframe.models.issues import Fix
 from reframe.models.text import DisplayText
 
-__all__ = ["ToolFetchResult", "ToolInfo", "ToolName", "ToolOrigin", "ToolSet", "ToolStatus"]
+__all__ = [
+    "InstalledToolBuild",
+    "ToolBuildOffer",
+    "ToolBuilds",
+    "ToolFetchResult",
+    "ToolInfo",
+    "ToolName",
+    "ToolOrigin",
+    "ToolSet",
+    "ToolStatus",
+]
 
-#: The external tools Reframe uses. ``mkvpropedit`` and ``mediainfo`` are optional.
-ToolName = Literal["ffmpeg", "ffprobe", "mkvpropedit", "mediainfo"]
+#: The external tools Reframe uses.
+ToolName = Literal["ffmpeg", "ffprobe"]
 
 
 class ToolOrigin(StrEnum):
@@ -83,16 +93,22 @@ class ToolInfo(ReframeModel):
     """The environment variable that overrides this tool (``REFRAME_FFMPEG``)."""
     next_to_ffmpeg: bool = False
     """ffprobe only: it was found next to an overridden ffmpeg (its ``origin`` is the ffmpeg's)."""
+    bundled: bool = False
+    """A bundled build of the tool's family (FFmpeg: ffmpeg and ffprobe) exists, so without a
+    Settings path discovery uses it. Also set while an override is in use."""
     fixes: list[Fix] = Field(default_factory=list)
+
+    @property
+    def usable(self) -> bool:
+        """The tool can be run: its status is ``found`` and it has a path."""
+        return self.status is ToolStatus.FOUND and self.path is not None
 
 
 class ToolSet(ReframeModel):
-    """The discovery result for all four tools."""
+    """The discovery result for every tool."""
 
     ffmpeg: ToolInfo
     ffprobe: ToolInfo
-    mkvpropedit: ToolInfo
-    mediainfo: ToolInfo
 
     def get(self, name: ToolName) -> ToolInfo:
         info: ToolInfo = getattr(self, name)
@@ -115,3 +131,48 @@ class ToolFetchResult(ReframeModel):
     ffprobe: Path
     downloaded: bool = True
     """``False``: the build was already installed and every file still had its hash."""
+
+
+class ToolBuildOffer(ReframeModel):
+    """An FFmpeg build of the manifest that the user may choose to install."""
+
+    name: str
+    """The manifest's build name (``default``, ``compat``)."""
+    label: DisplayText
+    """A short name for the picker ("Recommended")."""
+    summary: DisplayText
+    """One sentence on who the build is for ("For NVIDIA drivers 570 to 609")."""
+    version: str
+    """What ``ffmpeg -version`` prints after ``ffmpeg version``."""
+    release_version: str
+    """The upstream release the build is based on (``9.0.2``)."""
+    license: str
+    """SPDX expression of the build (``GPL-3.0-or-later``)."""
+    source_links: list[str] = Field(default_factory=list)
+    """Where the corresponding source is: the FFmpeg commit and the build scripts."""
+    size: int | None = None
+    """Bytes of this platform's archive; ``None`` when the build has none for this platform."""
+    archive_url: str | None = None
+    """Where this platform's archive is downloaded from, to install it from a file on a
+    computer without a connection; ``None`` when the build has none for this platform."""
+    sha256: str | None = None
+    """The SHA-256 of this platform's archive (64 lowercase hex digits), which an install
+    checks; ``None`` when the build has none for this platform."""
+
+
+class InstalledToolBuild(ReframeModel):
+    """The build that a download or a file install put in ``<data dir>/tools/ffmpeg``."""
+
+    name: str
+    """The manifest's build name it was installed as."""
+    version: str
+    """Its FFmpeg version string."""
+    outdated: bool = False
+    """``True`` when this release's manifest pins another version for that build name."""
+
+
+class ToolBuilds(ReframeModel):
+    """The builds the user may install, and the one installed in the data folder."""
+
+    builds: list[ToolBuildOffer] = Field(default_factory=list)
+    installed: InstalledToolBuild | None = None

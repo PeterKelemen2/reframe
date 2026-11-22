@@ -3,7 +3,7 @@ import InputNumber from 'primevue/inputnumber'
 import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import ToggleSwitch from 'primevue/toggleswitch'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { DimensionSettings } from '@/api/types'
@@ -12,14 +12,18 @@ import Section from '@/components/base/Section.vue'
 import CropSection from '@/components/dimensions/CropSection.vue'
 import PipelineHeader from '@/components/dimensions/PipelineHeader.vue'
 import SizeSection from '@/components/dimensions/SizeSection.vue'
+import { useReveal } from '@/composables/useReveal'
 import { useCropStore } from '@/stores/crop'
 import { useEditorStore } from '@/stores/editor'
 import { useUiStore } from '@/stores/ui'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const crop = useCropStore()
 const editor = useEditorStore()
 const ui = useUiStore()
+const root = useTemplateRef<HTMLElement>('root')
+
+useReveal('dimensions', root)
 
 const dimensions = computed<DimensionSettings | null>(() => editor.job?.dimensions ?? null)
 const locked = computed(() => !crop.pictureEditable)
@@ -82,7 +86,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
 </script>
 
 <template>
-  <section class="editor-tab dimensions-tab" data-tab="dimensions">
+  <section ref="root" class="editor-tab dimensions-tab" data-tab="dimensions">
     <p v-if="dimensions === null" class="dimensions-tab__empty" data-state="empty">
       {{ t('dimensions.noJob') }}
     </p>
@@ -179,6 +183,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
               <div class="dimensions-tab__row">
                 <InputNumber
                   :input-id="id"
+                  :locale="locale"
                   :model-value="dimensions.custom_par?.num ?? null"
                   :min="0"
                   :use-grouping="false"
@@ -191,6 +196,7 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
                 <span aria-hidden="true">:</span>
                 <InputNumber
                   :model-value="dimensions.custom_par?.den ?? null"
+                  :locale="locale"
                   :min="1"
                   :use-grouping="false"
                   :disabled="locked"

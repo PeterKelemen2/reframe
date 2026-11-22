@@ -19,6 +19,7 @@ from reframe.definitions.models import TRACK_FLAGS, TrackFlag
 from reframe.models.job import ExternalSubtitle, JobSettings, TrackMetadata
 from reframe.models.media import AudioStream, MediaSource, SubtitleStream, VideoStream
 from reframe.models.plan import EncodePlan
+from reframe.naming.track_names import expand_track_names
 
 __all__ = [
     "ExpectedStream",
@@ -107,23 +108,12 @@ def _streams(
 
 
 def planned_title(plan: EncodePlan) -> tuple[bool, str | None]:
-    """``(set, title)``: whether the plan's mkvpropedit steps set the segment title
-    (``--edit info --set title=…`` or ``--delete title``), and to what."""
+    """``(set, title)``: whether the plan's header edits set the segment title, and to what
+    (``None``: removed)."""
     found: tuple[bool, str | None] = (False, None)
     for step in plan.steps:
-        if step.kind != "mkvpropedit":
-            continue
-        argv = [a for a in step.argv if isinstance(a, str)]
-        in_info = False
-        for i, arg in enumerate(argv):
-            if arg == "--edit":
-                in_info = i + 1 < len(argv) and argv[i + 1] == "info"
-            elif in_info and i + 1 < len(argv):
-                value = argv[i + 1]
-                if arg == "--set" and value.startswith("title="):
-                    found = (True, value.removeprefix("title=") or None)
-                elif arg == "--delete" and value == "title":
-                    found = (True, None)
+        if step.header_edit is not None and step.header_edit.info is not None:
+            found = (True, step.header_edit.info.title or None)
     return found
 
 
@@ -142,17 +132,11 @@ def metadata_problems(
     fixup: bool,
     title: tuple[bool, str | None] = (False, None),
 ) -> list[str]:
-    """What differs in BCP 47 languages, names and flags. ``in_place``: the source was edited
-    with mkvpropedit; ``fixup``: a post-mux mkvpropedit step ran; ``title``:
+    """What differs in BCP 47 languages, names and flags. ``in_place``: the source's header
+    was edited; ``fixup``: a post-mux ``header_edit`` step ran; ``title``:
     :func:`planned_title`."""
     flags: tuple[TrackFlag, ...] = (
-        TRACK_FLAGS
-        if in_place
-        else tuple(
-            f
-            for f in TRACK_FLAGS
-            if f in container.flags or (fixup and f in container.mkvpropedit_flags)
-        )
+        TRACK_FLAGS if in_place else tuple(f for f in TRACK_FLAGS if f in container.flags)
     )
     expected = expected_streams(job, source, container)
     found = _streams(output)
@@ -205,10 +189,10 @@ def check_output(
     plan: EncodePlan | None = None,
 ) -> list[str]:
     """What differs between the plan and the re-probed ``output`` (empty: it matches). With a
-    ``plan`` that changes metadata with mkvpropedit, the metadata is checked too."""
-    container = definitions.containers.get(job.output.container)
-    if container is None:
-        return [f"unknown container {job.output.container!r}"]
+    ``plan`` that has a ``header_edit`` step, the metadata is checked too. ``job`` is the job
+    as queued: its track name templates are expanded here, as the plan's are."""
+    job = expand_track_names(job, source, definitions)
+    container = definitions.containers[job.output.container]
     expected = expected_streams(job, source, container)
     found = _streams(output)
     problems: list[str] = []
@@ -223,7 +207,7 @@ def check_output(
                 problems.append(f"{kind} track {number}: language {want} expected, {got} found")
     if plan is not None:
         in_place = plan.job_type == "metadata_edit"
-        fixup = not in_place and any(step.kind == "mkvpropedit" for step in plan.steps)
+        fixup = not in_place and any(step.kind == "header_edit" for step in plan.steps)
         if in_place or fixup:
             problems += metadata_problems(
                 job, source, output, container, definitions, in_place=in_place, fixup=fixup,

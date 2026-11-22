@@ -21,11 +21,12 @@ import uvicorn
 from fastapi import FastAPI
 from websockets.asyncio.client import ClientConnection, connect
 
-from reframe.probe import mediainfo
+from reframe.models import JobDraft, MediaSource
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
 from reframe_server.app import create_app
 from reframe_server.config import AuthMode, ServerConfig, ServerMode
+from reframe_server.events import EventHub
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
 
@@ -89,6 +90,11 @@ class Api:
         return reframe
 
     @property
+    def hub(self) -> EventHub:
+        hub: EventHub = self.app.state.hub
+        return hub
+
+    @property
     def token(self) -> str:
         return self.config.secret_token
 
@@ -100,6 +106,29 @@ class Api:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
         return path
+
+    async def add_source(self, name: str = "Show S01E01.mkv") -> str:
+        """Probe a new media file ``name`` and register it as a source; returns its id."""
+        path = self.media_file(name)
+        assert isinstance(await self.reframe.sources.probe(path), MediaSource)
+        source_id: str = self.app.state.sources.add(path)
+        return source_id
+
+    async def draft_job(self, name: str = "Show S01E01.mkv") -> dict[str, Any]:
+        """A job for a new file below the media root, written below the output root, as a
+        client sends it."""
+        source = self.media_file(name)
+        draft = await self.reframe.jobs.draft(source, output=self.output / f"{source.stem}.mkv")
+        assert isinstance(draft, JobDraft)
+        data: dict[str, Any] = draft.job.model_dump(mode="json")
+        return data
+
+    async def add_jobs(self, *names: str, attach: str | None = None) -> list[str]:
+        """Queue a drafted job of each new file; returns their ids."""
+        jobs = [await self.draft_job(name) for name in names]
+        response = await self.client.post("/api/queue", json={"jobs": jobs, "attach": attach})
+        assert response.status_code == 201, response.text
+        return [job["id"] for job in response.json()]
 
     def add_fixture(self, name: str, fixture_media: Callable[[str], Path]) -> Path:
         """A copy of a real fixture file (``fixture_media("multitrack")``) below the media
@@ -160,7 +189,6 @@ def make_api_factory(
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
     monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     (tmp_path / "config").mkdir(exist_ok=True)
     (tmp_path / "config" / "settings.json").write_text(
         json.dumps({"encoders": {"hardware_tests": False}, "queue": {"sleep_inhibit": False}}),

@@ -8,7 +8,7 @@ PowerShell, which reads ``,`` and ``;`` outside quotes.
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Literal
 
 from reframe.models import PlanArg
@@ -20,6 +20,7 @@ __all__ = [
     "display_arg",
     "quote_posix",
     "quote_windows",
+    "quoter",
 ]
 
 Shell = Literal["posix", "windows"]
@@ -90,7 +91,12 @@ def quote_windows(arg: str) -> str:
     return "".join(out)
 
 
+def quoter(shell: Shell) -> Callable[[str], str]:
+    """The quoting function of ``shell``."""
+    return quote_posix if shell == "posix" else quote_windows
+
+
 def command_line(program: str, argv: Sequence[PlanArg], shell: Shell) -> str:
     """One step as a command line: the program and its arguments, quoted for ``shell``."""
-    quote = quote_posix if shell == "posix" else quote_windows
+    quote = quoter(shell)
     return " ".join(quote(display_arg(a)) for a in [program, *argv])

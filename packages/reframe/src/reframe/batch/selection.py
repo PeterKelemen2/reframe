@@ -28,9 +28,9 @@ __all__ = [
     "TrackKind",
     "effective_languages",
     "extra_role",
+    "flag_extra_role",
     "is_forced",
     "is_undetermined",
-    "language_label",
     "language_slot",
     "select_tracks",
     "sort_key",
@@ -148,11 +148,6 @@ def language_slot(
     return None
 
 
-def language_label(language: str | None) -> str:
-    """``Hungarian``, ``Portuguese (Brazil)``, ``Undetermined``."""
-    return languages.english_name(language)
-
-
 def _has_role(stream: AudioStream | SubtitleStream, role: TrackRole) -> bool:
     return any(info.role is role for info in stream.roles)
 
@@ -166,14 +161,21 @@ def extra_role(stream: AudioStream | SubtitleStream) -> tuple[TrackRole, str] | 
     for info in stream.roles:
         if info.role in extras:
             return info.role, info.detail or str(info.evidence)
+    return flag_extra_role(stream)
+
+
+def flag_extra_role(stream: AudioStream | SubtitleStream) -> tuple[TrackRole, str] | None:
+    """The extra role that the disposition flags alone give, with its evidence, for a source
+    built without the prober."""
     d = stream.disposition
+    audio = isinstance(stream, AudioStream)
     if d.comment:
         return TrackRole.COMMENTARY, "disposition comment"
-    if kind == "audio" and d.visual_impaired:
+    if audio and d.visual_impaired:
         return TrackRole.DESCRIPTION, "disposition visual_impaired"
     if d.descriptions:
         return TrackRole.DESCRIPTION, "disposition descriptions"
-    if kind == "audio" and d.clean_effects:
+    if audio and d.clean_effects:
         return TrackRole.MUSIC, "disposition clean_effects"
     return None
 
@@ -264,7 +266,7 @@ def select_tracks[S: (AudioStream, SubtitleStream)](
         return Selection(kind, False, (), picks, tuple(range(len(streams))))
 
     state: _State[S] = _State(streams, {})
-    names = ", ".join(language_label(tag) for tag in listed)
+    names = ", ".join(languages.english_name(tag) for tag in listed)
     tie = _TIE_BREAK_WORDS[selection.tie_break]
     slots = [
         language_slot(effective_language(stream), listed, selection.undetermined)
@@ -284,10 +286,10 @@ def select_tracks[S: (AudioStream, SubtitleStream)](
         slot = slots[position]
         own = effective_language(streams[position])
         if slot is None:
-            return language_label(own)
+            return languages.english_name(own)
         if is_undetermined(own) and not languages.matches(listed[slot], own):
-            return f"Undetermined (treated as {language_label(listed[slot])})"
-        return language_label(listed[slot])
+            return f"Undetermined (treated as {languages.english_name(listed[slot])})"
+        return languages.english_name(listed[slot])
 
     by_language: list[list[int]] = [
         sorted((p for p in main if slots[p] == slot), key=key) for slot in range(len(listed))

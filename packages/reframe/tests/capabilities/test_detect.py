@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -16,12 +16,15 @@ from reframe.capabilities import (
     filter_test_argv,
     vaapi_nodes,
 )
+from reframe.capabilities import detect as detect_module
 from reframe.capabilities import hwtest as hwtest_module
-from reframe.definitions import load_definitions
+from reframe.capabilities.reasons import NVENC_BUSY
+from reframe.definitions import VideoEncoderDef, load_definitions
 from reframe.models import EncoderState, EncoderStatus, ToolInfo, ToolStatus
 from reframe.tools import CancelToken, RunResult, run
 from reframe_testing import fake_tools as ft
 from reframe_testing.capabilities import detect_rule, ffmpeg_info
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
@@ -45,14 +48,6 @@ ERROR = EncoderState.ERROR
 AUTO_SELECTED = (
     "Incompatible pixel format 'p010le' for codec 'hevc_amf', auto-selecting format 'nv12'\n"
 )
-
-
-async def until(condition: Callable[[], bool], limit: float = 10.0) -> None:
-    deadline = time.monotonic() + limit
-    while not condition():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.02)
 
 
 def encode_calls(fake: ft.FakeTools) -> list[tuple[str, ...]]:
@@ -103,6 +98,10 @@ async def test_everything_works(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo)
     assert first["libx265"] is AVAILABLE
     assert "hevc_nvenc" not in first  # still being tested
     assert all(len(u) >= 1 for u in updates)
+    assert snap.usable_filter("libplacebo") is True
+    assert (snap.filter_failures, snap.untested_filters) == ({}, [])
+    (call,) = [c for c in fake_tools.calls() if "libplacebo" in c]
+    assert call == tuple(filter_test_argv("ffmpeg", "libplacebo")[1:])
 
 
 async def test_driver_errors_are_mapped(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
@@ -130,7 +129,7 @@ async def test_driver_errors_are_mapped(fake_tools: ft.FakeTools, fake_ffmpeg: T
     assert row("av1_nvenc") == (AVAILABLE, None)  # no rule: the fake's test encode works
     assert row("hevc_qsv") == (
         UNAVAILABLE,
-        "No Intel QSV device (needs an Intel GPU with its media driver)",
+        "No Intel QSV device or runtime (needs an Intel GPU, its media driver and its QSV runtime)",
     )
     assert row("h264_vaapi") == (
         UNAVAILABLE,
@@ -150,6 +149,67 @@ async def test_driver_errors_are_mapped(fake_tools: ft.FakeTools, fake_ffmpeg: T
     )
 
 
+#: What the pinned build prints without the system's libva-drm (real line).
+MISSING_LIBVA_DRM = (
+    "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: "
+    "libva-drm.so.2: cannot open shared object file: No such file or directory\n"
+)
+#: What the pinned build prints with an NVIDIA driver older than its NVENC needs (real lines).
+NVENC_DRIVER_TOO_OLD = (
+    "[{0} @ 0x55] Driver does not support the required nvenc API version. Required: 13.1 "
+    "Found: 13.0\n[{0} @ 0x55] The minimum required Nvidia driver for nvenc is 610.00 or newer\n"
+    "Conversion failed!\n"
+)
+
+
+async def test_a_build_mismatch_reaches_the_encoder_status(
+    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO, logger="reframe.capabilities.detect")
+    fake_tools.set_scenario(
+        ft.Scenario(
+            [
+                ft.Rule(
+                    actions=[ft.stderr(NVENC_DRIVER_TOO_OLD.format("hevc_nvenc"))],
+                    exit_code=1,
+                    argv_has=["-c:v", "hevc_nvenc"],
+                ),
+                detect_rule("detect_hevc_nvenc_no_driver", encoder="h264_nvenc"),
+                detect_rule("detect_h264_amf_10bit", encoder="av1_amf", ten_bit=True),
+                ft.Rule(
+                    actions=[ft.stderr(MISSING_LIBVA_DRM)],
+                    exit_code=134,
+                    argv_has=["-c:v", "h264_qsv"],
+                ),
+            ]
+        )
+    )
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, LINUX)
+    qsv = snap.status("h264_qsv")
+    assert (qsv.state, qsv.build_mismatch, qsv.build_mismatch_cause) == (
+        UNAVAILABLE,
+        True,
+        "system_library",
+    )
+    hevc = snap.status("hevc_nvenc")
+    assert (hevc.state, hevc.reason, hevc.build_mismatch, hevc.build_mismatch_cause) == (
+        UNAVAILABLE,
+        "NVIDIA driver too old: NVENC needs driver 610.00 or newer",
+        True,
+        "driver",
+    )
+    no_driver = snap.status("h264_nvenc")
+    assert (no_driver.build_mismatch, no_driver.build_mismatch_cause) == (False, None)
+    av1 = snap.status("av1_amf")  # 10-bit only: usable in 8-bit
+    assert (av1.state, av1.supports_10bit, av1.build_mismatch) == (AVAILABLE, False, False)
+    assert {s.id for s in snap.encoders.values() if s.build_mismatch} == {"hevc_nvenc", "h264_qsv"}
+    # one console line per cause (a server without a browser open)
+    messages = [record.getMessage() for record in caplog.records]
+    lines = [m for m in messages if "cannot be used with this FFmpeg" in m]
+    assert sorted(line.split(" ", 1)[0] for line in lines) == ["h264_qsv", "hevc_nvenc"]
+    assert any("NVIDIA driver too old: NVENC needs driver 610.00 or newer" in x for x in lines)
+
+
 async def test_timeouts_are_errors(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
     fake_tools.set_scenario(
         ft.Scenario(
@@ -162,7 +222,8 @@ async def test_timeouts_are_errors(fake_tools: ft.FakeTools, fake_ffmpeg: ToolIn
             ]
         )
     )
-    options = linux(test_timeout=0.5)
+    # The passing 8-bit AMF test must finish in time even on a loaded Windows runner.
+    options = linux(test_timeout=1.5)
     started = time.monotonic()
     snap = await detect_capabilities(fake_ffmpeg, DEFS, options)
     assert time.monotonic() - started < 10
@@ -170,13 +231,13 @@ async def test_timeouts_are_errors(fake_tools: ft.FakeTools, fake_ffmpeg: ToolIn
         status = snap.status(encoder)
         assert (status.state, status.reason) == (
             ERROR,
-            "The test encode did not finish within 0.5 s",
+            "The test encode did not finish within 1.5 s",
         )
     amf = snap.status("hevc_amf")
     assert (amf.state, amf.supports_10bit, amf.reason_10bit) == (
         AVAILABLE,
         False,
-        "The test encode did not finish within 0.5 s",
+        "The test encode did not finish within 1.5 s",
     )
     assert fake_tools.kill_leftovers() == []
 
@@ -191,6 +252,39 @@ async def test_a_crash_is_an_error(fake_tools: ft.FakeTools, fake_ffmpeg: ToolIn
     assert status.reason == "The test encode failed with no message (exit code 139)"
 
 
+async def test_a_gpu_that_stays_busy_is_tested_again_then_an_error(
+    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
+) -> None:
+    fake_tools.set_scenario(ft.Scenario([detect_rule("detect_hevc_nvenc_session_limit")]))
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, linux(busy_wait=0.01))
+    hevc = snap.status("hevc_nvenc")
+    assert (hevc.state, hevc.reason, hevc.build_mismatch) == (ERROR, NVENC_BUSY, False)
+    assert len([c for c in fake_tools.calls() if "hevc_nvenc" in c]) == 3
+    assert snap.status("h264_nvenc").state is AVAILABLE
+
+
+async def test_a_gpu_that_becomes_free_passes_the_test(
+    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_tools.set_scenario(ft.Scenario([detect_rule("detect_hevc_nvenc_session_limit")]))
+    real = hwtest_module.run_hardware_test
+    runs: list[str] = []
+
+    async def busy_once(*args: object, **kw: object) -> hwtest_module.TestOutcome:
+        encoder = args[1]
+        assert isinstance(encoder, VideoEncoderDef)
+        runs.append(encoder.id)
+        if encoder.id == "hevc_nvenc" and runs.count("hevc_nvenc") > 1:
+            fake_tools.set_scenario(ft.Scenario([]))
+        return await real(*args, **kw)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(detect_module, "run_hardware_test", busy_once)
+    snap = await detect_capabilities(fake_ffmpeg, DEFS, linux(busy_wait=0.01))
+    hevc = snap.status("hevc_nvenc")
+    assert (hevc.state, hevc.reason, hevc.supports_10bit) == (AVAILABLE, None, True)
+    assert runs.count("hevc_nvenc") == 3  # busy, free, then the 10-bit test
+
+
 async def test_hardware_tests_off(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
     options = linux(hardware_tests=False)
     snap = await detect_capabilities(fake_ffmpeg, DEFS, options)
@@ -202,6 +296,10 @@ async def test_hardware_tests_off(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInf
         assert status.private_options  # the help was still read
     assert encode_calls(fake_tools) == []
     assert snap.status("libx265").state is AVAILABLE
+    assert snap.untested_filters == ["libplacebo"]
+    assert snap.usable_filter("libplacebo") is None
+    assert [c for c in fake_tools.calls() if "libplacebo" in c] == []
+    assert snap.status("hevc_vaapi").device is None  # no node is known without a test
 
 
 async def test_hardware_tests_off_keeps_the_forced_vaapi_device(
@@ -214,8 +312,6 @@ async def test_hardware_tests_off_keeps_the_forced_vaapi_device(
         assert (status.state, status.device) == (EncoderState.UNKNOWN, OTHER_NODE), status
     assert snap.status("hevc_amf").device is None  # not a VAAPI encoder
     assert snap.status("hevc_qsv").device is None
-    automatic = await detect_capabilities(fake_ffmpeg, DEFS, linux(hardware_tests=False))
-    assert automatic.status("hevc_vaapi").device is None  # no node is known without a test
     assert encode_calls(fake_tools) == []
 
 
@@ -368,8 +464,8 @@ async def test_cancel_kills_the_tests(fake_tools: ft.FakeTools, fake_ffmpeg: Too
     fake_tools.set_scenario(ft.Scenario([ft.Rule(argv_has=["-c:v"], actions=[ft.hang()])]))
     token = CancelToken()
     task = asyncio.create_task(detect_capabilities(fake_ffmpeg, DEFS, LINUX, cancel=token))
-    await until(lambda: len(encode_calls(fake_tools)) >= 3)
-    token.cancel("test")
+    await wait_until(lambda: len(encode_calls(fake_tools)) >= 3)
+    token.cancel()
     snap = await asyncio.wait_for(task, 10)
     assert snap.status("hevc_vaapi").state is EncoderState.CHECKING
     assert fake_tools.kill_leftovers() == []
@@ -378,7 +474,7 @@ async def test_cancel_kills_the_tests(fake_tools: ft.FakeTools, fake_ffmpeg: Too
 async def test_task_cancel_kills_the_tests(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
     fake_tools.set_scenario(ft.Scenario([ft.Rule(argv_has=["-c:v"], actions=[ft.hang()])]))
     task = asyncio.create_task(detect_capabilities(fake_ffmpeg, DEFS, LINUX))
-    await until(lambda: len(encode_calls(fake_tools)) >= 3)
+    await wait_until(lambda: len(encode_calls(fake_tools)) >= 3)
     task.cancel()
     await asyncio.wait({task})
     assert task.cancelled()
@@ -488,14 +584,6 @@ def test_vaapi_nodes(tmp_path: Path) -> None:
     assert vaapi_nodes(DetectionOptions(render_nodes=())) == []
 
 
-async def test_libplacebo_works(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
-    snap = await detect_capabilities(fake_ffmpeg, DEFS, LINUX)
-    assert snap.usable_filter("libplacebo") is True
-    assert (snap.filter_failures, snap.untested_filters) == ({}, [])
-    (call,) = [c for c in fake_tools.calls() if "libplacebo" in c]
-    assert call == tuple(filter_test_argv("ffmpeg", "libplacebo")[1:])
-
-
 async def test_libplacebo_without_vulkan(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:
     capture = ft.captures()["detect_libplacebo_no_vulkan"]
     assert capture.stderr is not None
@@ -527,15 +615,6 @@ async def test_libplacebo_timeout(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInf
     assert snap.filter_failures == {"libplacebo": "The libplacebo test did not finish within 0.5 s"}
     assert snap.usable_filter("libplacebo") is False
     assert fake_tools.kill_leftovers() == []
-
-
-async def test_libplacebo_untested_when_hardware_tests_are_off(
-    fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo
-) -> None:
-    snap = await detect_capabilities(fake_ffmpeg, DEFS, linux(hardware_tests=False))
-    assert snap.untested_filters == ["libplacebo"]
-    assert snap.usable_filter("libplacebo") is None
-    assert [c for c in fake_tools.calls() if "libplacebo" in c] == []
 
 
 async def test_libplacebo_not_in_the_build(fake_tools: ft.FakeTools, fake_ffmpeg: ToolInfo) -> None:

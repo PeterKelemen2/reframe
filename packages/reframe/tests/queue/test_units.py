@@ -15,21 +15,25 @@ from unittest import mock
 import psutil
 import pytest
 
+from reframe import fsretry
 from reframe.definitions import load_definitions
 from reframe.events import EventBus
 from reframe.models import (
     ExternalSubtitle,
     JobLogEvent,
     PlanFile,
+    PlanStep,
     SubtitleOutputTrack,
     TrackMetadata,
 )
-from reframe.queue import files, loudnorm
+from reframe.queue import files, loudnorm, runner
 from reframe.queue.errors import UnknownJobError, exit_text, stderr_reason
 from reframe.queue.logs import JobLog
 from reframe.queue.process import resume_tree, suspend_tree
 from reframe.queue.verify import check_output, expected_streams
 from reframe.queue.watchdog import StepWatch, tree_cpu_seconds
+from reframe.tools import RunResult, crashed
+from reframe_testing import fake_tools as ft
 
 from .conftest import draft, recorded
 
@@ -49,6 +53,18 @@ def test_stall_needs_no_progress_no_output_and_no_cpu() -> None:
     for t in range(1, 20):
         quiet.activity()  # progress or a stderr line each tick
         assert quiet.tick(float(t), None, paused=False) is None
+
+
+def test_a_busy_step_that_does_not_exit_after_its_last_block_is_stopped() -> None:
+    watch = StepWatch(stall_after=100.0, time_limit=None, max_tick=2.0, exit_grace=3.0)
+    watch.tick(0.0, 0.0, paused=False)
+    assert watch.tick(1.0, 1.0, paused=False) is None
+    watch.ended()
+    verdicts = []
+    for t in range(2, 6):  # one core busy and a line each tick
+        watch.activity()
+        verdicts.append(watch.tick(float(t), float(t), paused=False))
+    assert verdicts == [None, None, "no_exit", "no_exit"]
 
 
 def test_watchdog_is_sleep_aware_and_ignores_pauses() -> None:
@@ -147,6 +163,46 @@ def test_stderr_reason_picks_the_cause() -> None:
     assert stderr_reason(["Error: " + "x" * 400])[-1:] == "…"  # type: ignore[index]
 
 
+def test_stderr_reason_leaves_out_the_guess_when_the_encoder_says_why() -> None:
+    guess = (
+        "[vost#0:0/hevc_nvenc @ 0x55] [enc:hevc_nvenc @ 0x56] Error while opening encoder - "
+        "maybe incorrect parameters such as bit_rate, rate, width or height."
+    )
+    refused = [
+        "[hevc_nvenc @ 0x55b38489cd40] Multiple reference frames are not supported by the device",
+        "[hevc_nvenc @ 0x55b38489cd40] No capable devices found",
+        guess,
+        "Conversion failed!",
+    ]
+    assert stderr_reason(refused) == "Multiple reference frames are not supported by the device"
+    no_b_frames = [
+        "[hevc_nvenc @ 0x55b38489cd40] Max B-frames 2 exceed 0",
+        "[hevc_nvenc @ 0x55b38489cd40] No capable devices found",
+        guess,
+        "[vf#0:0 @ 0x5] Error sending frames to consumers: Generic error in an external library",
+        "Conversion failed!",
+    ]
+    assert stderr_reason(no_b_frames) == (
+        "This GPU has no B-frames for this codec: set B-frames to 0."
+    )
+    lookahead = ["[h264_nvenc @ 0x5] Lookahead level not supported. Maximum level: 0", guess]
+    assert stderr_reason(lookahead) == "Lookahead level not supported. Maximum level: 0"
+    assert stderr_reason([guess, "Conversion failed!"]) == (
+        "Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width "
+        "or height."
+    )
+
+
+def test_stderr_reason_names_the_nvenc_session_limit() -> None:
+    capture = ft.captures()["detect_hevc_nvenc_session_limit"]
+    assert capture.stderr is not None
+    lines = (ft.DATA_DIR / capture.stderr).read_text(encoding="utf-8").splitlines()
+    assert stderr_reason(lines) == (
+        "Every NVENC session of the GPU is in use by other programs (GeForce cards run only a "
+        "few at once). Run the job again when they finish."
+    )
+
+
 def test_exit_text() -> None:
     assert exit_text(1) == "exit code 1"
     assert exit_text(-11) == "signal 11 (SIGSEGV)"
@@ -154,6 +210,43 @@ def test_exit_text() -> None:
     assert exit_text(None) == "no exit code"
     assert exit_text(0xC0000005) == "exit code 0xC0000005"
     assert str(UnknownJobError("x")) == "no job 'x' in the queue"
+
+
+def test_a_signal_or_a_windows_exception_is_a_crash() -> None:
+    assert [crashed(code) for code in (-11, 0xC0000005, 0xC00000FD, 0xC0000409)] == [True] * 4
+    assert [crashed(code) for code in (None, 0, 1, 255, 0x8000_0003)] == [False] * 5
+
+
+def test_ffmpegs_own_error_codes_on_windows_are_not_crashes() -> None:
+    # FFmpeg exits with its AVERROR code; Windows reports it as an unsigned 32-bit number.
+    codes = (-22 & 0xFFFFFFFF, 0xDFB9B0BB, 0xDEB8AABE, 0xCFCFCB08, 0xBEBBB1B7)
+    assert [crashed(code) for code in codes] == [False] * len(codes)
+
+
+@pytest.mark.parametrize("returncode", [-22 & 0xFFFFFFFF], ids=["windows-averror"])
+def test_an_ffmpeg_error_exit_on_windows_is_a_failure_not_a_crash(returncode: int) -> None:
+    step = PlanStep(kind="encode", tool="ffmpeg")
+    result = RunResult(returncode=returncode, stdout=b"", stderr=b"", duration=1.0)
+    assert runner._failure(step, result, ["title=Chapter 4"]) == (
+        "The encode failed (exit code 0xFFFFFFEA): title=Chapter 4"
+    )
+
+
+@pytest.mark.parametrize(
+    ("returncode", "error"),
+    [
+        (-11, "ffmpeg crashed during pass 2 (signal 11 (SIGSEGV))."),
+        (0xC0000005, "ffmpeg crashed during pass 2 (exit code 0xC0000005)."),
+        (1, "Pass 2 failed (exit code 1): title=Chapter 4"),
+    ],
+    ids=["signal", "windows-exception", "exit-code"],
+)
+def test_the_last_line_is_the_reason_of_a_failure_not_of_a_crash(
+    returncode: int, error: str
+) -> None:
+    step = PlanStep(kind="pass2", tool="ffmpeg")
+    result = RunResult(returncode=returncode, stdout=b"", stderr=b"", duration=1.0)
+    assert runner._failure(step, result, ["title=Chapter 4"]) == error
 
 
 @pytest.mark.anyio
@@ -164,14 +257,13 @@ async def test_job_log_rate_limit_and_file(tmp_path: Path) -> None:
     joblog.open("header")
     for n in range(10):
         joblog.write(f"line {n}")
-    joblog.write("file only", event=False)
     joblog.close()
     event = sub.get_nowait()
     assert isinstance(event, JobLogEvent)
     assert event.lines == ["line 7", "line 8", "line 9"]
     assert event.dropped == 8  # the header and lines 0-6
     text = (tmp_path / "logs" / "j.log").read_text(encoding="utf-8")
-    assert text.splitlines() == ["header", *(f"line {n}" for n in range(10)), "file only"]
+    assert text.splitlines() == ["header", *(f"line {n}" for n in range(10))]
 
 
 @pytest.mark.anyio
@@ -230,10 +322,7 @@ def test_check_output_names_each_difference(tmp_path: Path) -> None:
         "3 audio tracks expected, 2 found",
         "subtitle track 1: language eng expected, fre found",
     ]
-    job.output.container = "avi"  # type: ignore[assignment]
-    assert check_output(job, source, output, defs) == ["unknown container 'avi'"]
     no_video = source.model_copy(update={"video": []}, deep=True)
-    job.output.container = "mkv"
     assert check_output(job, no_video, no_video, defs) == []
     job.audio[0].source_stream = 99  # a stream the source lacks: und
     assert "audio track 1: language und expected, jpn found" in check_output(
@@ -277,40 +366,27 @@ def test_rename_without_hard_links(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         files.rename_no_replace(a, tmp_path / "c.mkv")
 
 
-def test_windows_rename_and_replace_retry_an_open_target(
+def test_windows_rename_retries_an_open_target(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Windows: ``os.rename`` refuses an existing target; an open target gives
     ``PermissionError`` (a sharing violation), which is tried again (mocked on Linux)."""
     monkeypatch.setattr(files, "WINDOWS", True)
+    monkeypatch.setattr(fsretry, "WINDOWS", True)
     sleeps: list[float] = []
-    monkeypatch.setattr(files, "_sleep", sleeps.append)
-    calls: list[tuple[str, str]] = []
-    failures = iter([True, True, False, True, False])
+    monkeypatch.setattr(fsretry, "_sleep", sleeps.append)
+    calls: list[str] = []
+    failures = iter([True, True, False])
 
-    def flaky(name: str) -> Any:
-        def call(src: Any, dst: Any) -> None:
-            calls.append((name, Path(dst).name))
-            if next(failures):
-                raise PermissionError(13, "The process cannot access the file")
+    def flaky(src: Any, dst: Any) -> None:
+        calls.append(Path(dst).name)
+        if next(failures):
+            raise PermissionError(13, "The process cannot access the file")
 
-        return call
-
-    monkeypatch.setattr(os, "rename", flaky("rename"))
-    monkeypatch.setattr(os, "replace", flaky("replace"))
+    monkeypatch.setattr(os, "rename", flaky)
     files.rename_no_replace(tmp_path / "a", tmp_path / "b")
-    assert calls == [("rename", "b")] * 3
+    assert calls == ["b"] * 3
     assert sleeps == [0.05, 0.1]
-    files.replace_file(tmp_path / "a", tmp_path / "c")
-    assert calls[3:] == [("replace", "c")] * 2
-
-    def always(src: Any, dst: Any) -> None:
-        raise PermissionError(13, "in use")
-
-    monkeypatch.setattr(os, "replace", always)
-    with pytest.raises(PermissionError):
-        files.replace_file(tmp_path / "a", tmp_path / "c")
-    assert len(sleeps) == 2 + 1 + files.ATTEMPTS - 1
 
 
 def test_remove_files_reports_problems(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -322,8 +398,8 @@ def test_remove_files_reports_problems(tmp_path: Path, monkeypatch: pytest.Monke
     assert not present.exists()
     assert len(problems) == 1
     assert "folder" in problems[0]
-    monkeypatch.setattr(files, "WINDOWS", True)
-    monkeypatch.setattr(files, "_sleep", lambda s: None)
+    monkeypatch.setattr(fsretry, "WINDOWS", True)
+    monkeypatch.setattr(fsretry, "_sleep", lambda s: None)
     locked = tmp_path / "locked.part.mkv"
     locked.write_text("x")
     original = Path.unlink

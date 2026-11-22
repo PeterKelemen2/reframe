@@ -1,8 +1,8 @@
 """Audio output tracks: a copy, or an encoder with its bitrate, sample rate and one filter chain.
 
-The chain is the layout, the gain, then ``loudnorm``. The mixdown is in the chain, not ``-ac``,
-so that ``loudnorm`` measures the audio that is encoded. :func:`planned_audio` holds the snapped
-values, so the builder and validation agree.
+The chain is the start alignment, the layout, the gain, then ``loudnorm``. The mixdown is in the
+chain, not ``-ac``, so that ``loudnorm`` measures the audio that is encoded.
+:func:`planned_audio` holds the snapped values, so the builder and validation agree.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ from reframe.models import (
 )
 
 __all__ = [
+    "ALIGN_AUDIO_START",
     "DRC_CODECS",
     "ENCODER_LAYOUTS",
     "FALLBACK_ENCODER",
@@ -50,6 +51,9 @@ __all__ = [
 FALLBACK_ENCODER = "aac"
 #: Source codecs whose decoder applies dynamic range compression (``-drc_scale``).
 DRC_CODECS = frozenset({"ac3", "eac3"})
+#: Align A/V start for an encoded track: silence from the output's time 0 to the first sample
+#: (or the samples before 0 cut). ``async=1`` fills and trims; it never stretches the audio.
+ALIGN_AUDIO_START = "aresample=async=1:first_pts=0"
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,10 +223,7 @@ class PlannedAudio:
 def _container(container: ContainerDef | Container, defs: Definitions) -> ContainerDef:
     if isinstance(container, ContainerDef):
         return container
-    found = defs.containers.get(container)
-    if found is None:
-        raise PlanError(f"unknown container {container!r}")
-    return found
+    return defs.containers[container]
 
 
 def _bitrate(
@@ -305,8 +306,6 @@ class AudioOut:
     index: int
     """Output audio index (``a:N``)."""
     stream: AudioStream
-    copy: bool
-    encoder: AudioEncoderDef | None = None
     args: list[PlanArg] = field(default_factory=list)
     """Per-stream codec arguments (``-c:a:N`` …); the filter is in :attr:`filter`."""
     filter: PlanArg | None = None
@@ -315,12 +314,9 @@ class AudioOut:
     """``-drc_scale`` for the source stream (AC-3 / E-AC-3 that are decoded)."""
     global_args: list[str] = field(default_factory=list)
     """Output options without a stream specifier (``-strict -2``)."""
-    loudness: LoudnessSpec | None = None
     analyse_filter: str | None = None
     """The filter of the ``analyse`` step (the chain up to ``loudnorm``, which prints JSON)."""
     measurement_id: str | None = None
-    fallback: bool = False
-    """A passthru track that is encoded because the container cannot hold its codec."""
 
 
 def loudnorm_analyse_filter(pre: list[str], loudness: LoudnessSpec) -> str:
@@ -350,18 +346,19 @@ def audio_output(
     stream: AudioStream,
     container: ContainerDef,
     definitions: Definitions,
+    *,
+    align_start: bool = False,
 ) -> AudioOut:
-    """The arguments of output audio track ``index`` (``a:index``)."""
+    """The arguments of output audio track ``index`` (``a:index``). ``align_start`` puts
+    :data:`ALIGN_AUDIO_START` first in an encoded track's chain; a copy cannot be filtered."""
     a = f"a:{index}"
     planned, encoder = _plan(track, stream, container, definitions)
     if encoder is None:
-        out = AudioOut(index=index, stream=stream, copy=True)
+        out = AudioOut(index=index, stream=stream)
         out.args = [spec("-c:a", a), "copy"]
         out.global_args = list(container.audio.copy_args.get(stream.codec or "", []))
         return out
-    out = AudioOut(
-        index=index, stream=stream, copy=False, encoder=encoder, fallback=planned.fallback
-    )
+    out = AudioOut(index=index, stream=stream)
     out.args = [spec("-c:a", a), encoder.id]
     if planned.bitrate is not None:
         out.args += [spec("-b:a", a), f"{planned.bitrate}k"]
@@ -371,7 +368,7 @@ def audio_output(
         out.args += [spec("-ar", a), str(planned.samplerate)]
     if (stream.codec or "") in DRC_CODECS:
         out.drc = track.drc
-    pre: list[str] = []
+    pre: list[str] = [ALIGN_AUDIO_START] if align_start else []
     layout_filter = _layout_filter(planned, definitions)
     if layout_filter is not None:
         pre.append(layout_filter)
@@ -380,7 +377,6 @@ def audio_output(
     if track.loudness != "off":
         loudness = LOUDNESS[track.loudness]
         measurement = f"a{index}"
-        out.loudness = loudness
         out.measurement_id = measurement
         out.analyse_filter = loudnorm_analyse_filter(pre, loudness)
         parts = _loudnorm_template(measurement, loudness)

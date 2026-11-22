@@ -10,12 +10,13 @@ from pathlib import Path
 import pytest
 
 from reframe import jobs as jobs_module
-from reframe.cli import EXIT_FAILED, EXIT_NO_FFPROBE, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE
+from reframe.cli import EXIT_FAILED, EXIT_NO_TOOL, EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE
 from reframe.models import EncodePlan, JobDraft
 from reframe_testing import fake_tools as ft
 from reframe_testing.capabilities import detect_rule
+from reframe_testing.cli import invoke
 
-from .conftest import invoke, media_file, replay
+from .conftest import draft_path, media_file, replay
 
 Media = "Movie.2016.1080p.BluRay.x264-GRP"
 
@@ -40,7 +41,8 @@ def test_default_preset_prints_issues_then_the_command(movie: Path, cli_env: ft.
     out = result.stdout
     assert out.startswith("movie.mkv\n")
     assert "  Preset   H.265 MKV 1080p" in out
-    assert f"  Output   {movie.parent / 'Movie.mkv'}" in out
+    output = draft_path(movie, "Movie.mkv")
+    assert f"  Output   {output}" in out
     assert "template {main_title} on the folder name" in out
     assert "  Audio    #1  " in out
     assert out.index("Issues (") < out.index("Command (")
@@ -52,7 +54,7 @@ def test_default_preset_prints_issues_then_the_command(movie: Path, cli_env: ft.
     assert len(command) == 1  # one line, to copy into a terminal
     assert command[0].startswith(f"{cli_env.ffmpeg} -hide_banner")
     assert "-c:v:0 libx265" in command[0]
-    assert str(movie.parent / "Movie.part.mkv") in command[0]
+    assert str(output.with_name(f"{output.stem}.part.mkv")) in command[0]
 
 
 def test_preset_by_name_and_output(movie: Path, tmp_path: Path) -> None:
@@ -134,7 +136,7 @@ def test_missing_file(cli_env: ft.FakeTools, tmp_path: Path) -> None:
 def test_no_ffprobe(movie: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("REFRAME_FFPROBE", str(tmp_path / "no-ffprobe"))
     result = invoke("plan", str(movie))
-    assert result.exit_code == EXIT_NO_FFPROBE
+    assert result.exit_code == EXIT_NO_TOOL
     assert result.stderr.startswith("error: ffprobe is not usable")
 
 
@@ -158,12 +160,10 @@ def test_json_with_errors_has_no_plan(cli_env: ft.FakeTools, tmp_path: Path) -> 
 
 @pytest.mark.needs_ffmpeg
 def test_real_ffmpeg_plan_of_a_fixture(
-    fixture_media: object, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    fixture_media: object, tmp_path: Path, dirs: dict[str, Path]
 ) -> None:
     assert callable(fixture_media)
     source: Path = fixture_media("multitrack")
-    for name in ("config", "data", "cache"):
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     copy = tmp_path / "media" / "multitrack.mkv"
     copy.parent.mkdir()
     shutil.copy2(source, copy)

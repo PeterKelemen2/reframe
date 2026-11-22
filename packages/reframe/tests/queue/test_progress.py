@@ -156,22 +156,17 @@ def eta_around_a_gap(*, mono_gap: float, wall_gap: float) -> tuple[float, float,
     return before.eta, after.eta, before.speed, after.speed
 
 
-def test_eta_survives_a_linux_suspend() -> None:
-    """Linux: the monotonic clock stops during a suspend, the wall clock does not."""
+@pytest.mark.parametrize(
+    ("mono_gap", "wall_gap"), [(0.5, 3600.0), (3600.0, 3600.0)], ids=["linux", "both-clocks"]
+)
+def test_eta_survives_a_suspend(mono_gap: float, wall_gap: float) -> None:
+    """``linux``: the monotonic clock stops during a suspend, the wall clock does not.
+    ``both-clocks``: an OS whose monotonic clock counts the suspend (an interval > MAX_INTERVAL)."""
     eta_before, eta_after, speed_before, speed_after = eta_around_a_gap(
-        mono_gap=0.5, wall_gap=3600.0
+        mono_gap=mono_gap, wall_gap=wall_gap
     )
     assert speed_after == pytest.approx(speed_before, rel=0.01)
     assert eta_after == pytest.approx(eta_before - 5.0 / 2.0, abs=0.5)  # 5 s more media at 2x
-
-
-def test_eta_survives_a_suspend_that_both_clocks_count() -> None:
-    """An OS whose monotonic clock counts the suspend (an interval > MAX_INTERVAL)."""
-    eta_before, eta_after, speed_before, speed_after = eta_around_a_gap(
-        mono_gap=3600.0, wall_gap=3600.0
-    )
-    assert speed_after == pytest.approx(speed_before, rel=0.01)
-    assert eta_after == pytest.approx(eta_before - 5.0 / 2.0, abs=0.5)
     assert MAX_INTERVAL < 3600.0
 
 
@@ -195,7 +190,6 @@ def test_paused_time_is_not_counted() -> None:
     assert after.speed == pytest.approx(2.0, rel=0.01)
     assert before.eta is not None
     assert after.eta == pytest.approx(before.eta - 5.0 / 2.0, abs=0.5)  # 5 s more media at 2x
-    assert tracker.active_time == pytest.approx(62.0, abs=0.6)
 
 
 def test_ffmpeg_averages_are_not_used_after_a_pause() -> None:

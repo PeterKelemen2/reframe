@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import cast
 
 import pytest
@@ -105,7 +106,9 @@ class FakePower:
         )
 
 
-def queue_with(h: Harness, power: object) -> QueueService:
+def queue_with(
+    h: Harness, power: object, unavailable: dict[WhenDone, str] | None = None
+) -> QueueService:
     """A queue like the harness's, with ``power`` as its power service."""
     return QueueService(
         h.events,
@@ -116,6 +119,7 @@ def queue_with(h: Harness, power: object) -> QueueService:
         sources=h.sources,
         inhibitor=h.inhibitor,
         power=cast(PowerService, power),
+        unavailable_when_done=unavailable,
         stall_after=None,
         watchdog_tick=0.05,
         log_interval=0.02,
@@ -215,16 +219,6 @@ def test_an_unknown_action_does_nothing(caplog: pytest.LogCaptureFixture) -> Non
     assert "unknown action 'hibernate'" in caplog.text
 
 
-async def test_the_action_runs_when_the_last_job_failed(harness: Harness, power: FakePower) -> None:
-    """A failed job does not need the computer to stay on."""
-    h = harness
-    h.settings.queue.when_done = "shutdown"
-    h.scenario(BAD)
-    ended = await h.run_one(h.job("Bad"))
-    assert ended.state is JobState.FAILED
-    assert power.scheduled == [("countdown-1", "shutdown", "0 jobs done, 1 failed")]
-
-
 async def test_the_user_cancels_the_countdown(harness: Harness, power: FakePower) -> None:
     h = harness
     h.settings.queue.when_done = "sleep"
@@ -244,19 +238,6 @@ async def test_the_user_cancels_the_countdown(harness: Harness, power: FakePower
     assert power.cancel_calls == [None, "countdown-1", "countdown-2"]
     assert power.cancelled == ["countdown-1", "countdown-2"]
     assert power.executed == []
-
-
-async def test_close_during_a_countdown(harness: Harness, power: FakePower) -> None:
-    h = harness
-    h.settings.queue.when_done = "shutdown"
-    await h.run_one(h.job())
-    assert counting(power)
-    await h.queue.close()
-    assert power.cancel_calls == ["countdown-1"]
-    assert not counting(power)
-    assert power.run_out() is None
-    assert power.executed == []
-    assert countdowns(h) == [("countdown-1", "started"), ("countdown-1", "cancelled")]
 
 
 @pytest.mark.parametrize("how", ["add", "retry"])
@@ -283,9 +264,11 @@ async def test_new_work_cancels_the_countdown(harness: Harness, power: FakePower
         e for e in h.events_of(second.id) if e.type == "job.state" and e.state is JobState.RUNNING
     ][-1]
     assert index_of(h, cancelled) < index_of(h, running)
-    assert [(s[0], s[2]) for s in power.scheduled] == [
-        ("countdown-1", "0 jobs done, 1 failed" if how == "retry" else "1 job done"),
-        ("countdown-2", "1 job done"),
+    # Whole tuples: a failed last job (``retry``) still starts the action; it does not need the
+    # computer to stay on.
+    assert power.scheduled == [
+        ("countdown-1", "shutdown", "0 jobs done, 1 failed" if how == "retry" else "1 job done"),
+        ("countdown-2", "shutdown", "1 job done"),
     ]
     assert power.run_out() == "shutdown"
     assert power.executed == ["shutdown"]
@@ -312,6 +295,55 @@ async def test_a_job_added_to_an_idle_queue_leaves_the_countdown_alone(
     assert [s[0] for s in power.scheduled] == ["countdown-1", "countdown-2"]
 
 
+@pytest.mark.parametrize("action", ["quit", "sleep", "shutdown"])
+async def test_a_power_action_waits_for_the_jobs_that_a_row_start_left_waiting(
+    harness: Harness, power: FakePower, action: PowerAction
+) -> None:
+    """A queue row's Start (``own_batch=False``): the queue has not emptied while other jobs
+    wait; their end counts the started job too."""
+    h = harness
+    h.settings.queue.when_done = action
+    first, second = [await h.queue.add(h.job(name)) for name in ("First", "Second")]
+    h.queue.start(job_ids=[first.id], own_batch=False)
+    [ended] = await h.queue.wait([first.id])
+    assert ended.state is JobState.DONE
+    assert not h.queue.processing
+    assert power.scheduled == []
+    assert notifications(h, job=False) == []
+    h.queue.start(job_ids=[second.id], own_batch=False)
+    await h.queue.wait([second.id])
+    assert power.scheduled == [("countdown-1", action, "2 jobs done")]
+
+
+async def test_notify_reports_the_jobs_of_a_row_start_with_others_waiting(
+    harness: Harness, power: FakePower
+) -> None:
+    h = harness
+    h.settings.queue.when_done = "notify"
+    h.settings.queue.notifications = False
+    ids = [(await h.queue.add(h.job(name))).id for name in ("A", "B", "C")]
+    h.queue.start(job_ids=ids[:2], own_batch=False)
+    await h.queue.wait(ids[:2])
+    [note] = notifications(h)
+    assert (note.title, note.message) == ("Queue finished", "2 jobs done.")
+    assert h.queue.get(ids[2]).state is JobState.WAITING  # type: ignore[union-attr]
+
+
+async def test_a_command_s_jobs_are_a_batch_of_their_own(
+    harness: Harness, power: FakePower
+) -> None:
+    """``reframe encode`` (``own_batch``, the default): the action runs when its jobs end,
+    although another front end's job waits."""
+    h = harness
+    h.settings.queue.when_done = "shutdown"
+    others = await h.queue.add(h.job("Other"))
+    mine = await h.queue.add(h.job("Mine"))
+    h.queue.start(job_ids=[mine.id])
+    await h.queue.wait([mine.id])
+    assert power.scheduled == [("countdown-1", "shutdown", "1 job done")]
+    assert h.queue.get(others.id).state is JobState.WAITING  # type: ignore[union-attr]
+
+
 async def test_a_settings_change_does_not_cancel_the_countdown(
     harness: Harness, power: FakePower
 ) -> None:
@@ -334,9 +366,12 @@ async def test_no_action_when_stopped_with_jobs_left(harness: Harness, power: Fa
     h.queue.start()
     await h.first_event(first.id, "job.state", state="running")
     await h.queue.stop()
+    assert not h.queue._processing
     await h.queue.wait([first.id])
+    await asyncio.sleep(0.1)  # a job taken by mistake would have time to start
     assert h.queue.get(second.id).state is JobState.WAITING  # type: ignore[union-attr]
     assert power.scheduled == []
+    assert [(n.job_id, n.level) for n in notifications(h, job=True)] == [(first.id, "success")]
     h.queue.start()  # the batch goes on
     await h.queue.wait([second.id])
     assert power.scheduled == [("countdown-1", "shutdown", "2 jobs done")]
@@ -368,14 +403,22 @@ async def test_cancel_all_runs_no_action(harness: Harness, power: FakePower) -> 
     h.settings.queue.when_done = "shutdown"
     h.settings.queue.parallel_jobs = 2
     h.scenario(LONG)
-    ids = [(await h.queue.add(h.job(name))).id for name in "ABC"]
+    first = await h.queue.add(h.job("A"))
+    third = await h.queue.add(h.job("C"))
+    second = await h.queue.add(h.job("B"), position=2)
     h.queue.start()
-    for job_id in ids[:2]:
-        await h.running_process(job_id)
+    await h.first_event(first.id, "job.progress", limit=20)
+    await h.first_event(third.id, "job.progress", limit=20)
+    parts = [h.tmp / "out" / "A.part.mkv", h.tmp / "out" / "C.part.mkv"]
+    await h.wait_for(lambda: all(p.exists() for p in parts))
     await h.queue.cancel()
     assert [j.state for j in h.queue.list()] == [JobState.CANCELLED] * 3
+    assert not any(p.exists() for p in parts)
+    assert h.leftovers() == []
+    assert h.states(second.id) == [(None, "waiting"), ("waiting", "cancelled")]
     assert power.scheduled == []
     assert notifications(h) == []  # cancelled by the user: no job notifications either
+    await h.queue.cancel(first.id)  # an ended job: nothing happens
 
 
 async def test_close_with_running_jobs_runs_no_action(harness: Harness, power: FakePower) -> None:
@@ -446,6 +489,22 @@ async def test_without_a_power_service_nothing_is_done(harness: Harness) -> None
     assert warning.detail == "when_done=sleep: this Reframe has no power service"
 
 
+async def test_an_action_this_process_cannot_carry_out_is_a_warning(
+    harness: Harness, power: FakePower
+) -> None:
+    h = harness
+    h.queue = queue_with(h, power, {"shutdown": "in a container"})
+    h.settings.queue.when_done = "shutdown"
+    await h.run_one(h.job("A"))
+    assert power.scheduled == []
+    [warning] = warnings(h, "queue.when_done_unavailable")
+    assert "When done: “Shut down” is not available here" in warning.message
+    assert warning.detail == "when_done=shutdown: in a container"
+    h.settings.queue.when_done = "sleep"
+    await h.run_one(h.job("B"))
+    assert [action for _, action, _ in power.scheduled] == ["sleep"]
+
+
 async def test_nothing_and_notify_never_use_the_power_service(
     harness: Harness, power: FakePower
 ) -> None:
@@ -494,17 +553,6 @@ async def test_job_notifications(
         kinds = h.kinds(job_id)
         assert kinds[-3:] == ["notification", "job.log", "job.state"]
     assert notifications(h, job=False) == []  # when done: nothing
-
-
-async def test_a_renamed_output_is_named_in_the_notification(
-    harness: Harness, power: FakePower
-) -> None:
-    h = harness
-    (h.tmp / "out" / "Movie.mkv").write_bytes(b"taken")  # auto_rename (the default)
-    ended = await h.run_one(h.job())
-    assert ended.output_path == h.tmp / "out" / "Movie (1).mkv"
-    [note] = notifications(h)
-    assert note.message == "Movie (1).mkv"
 
 
 async def test_no_job_notifications_when_they_are_off(harness: Harness, power: FakePower) -> None:

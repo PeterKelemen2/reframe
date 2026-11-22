@@ -17,6 +17,7 @@ from reframe.command.filtergraph import (
     filter_available,
     keeps_hdr,
 )
+from reframe.command.header import edit_line, fixup_edit, in_place_edit, is_empty
 from reframe.command.jobtype import job_type
 from reframe.command.metadata import (
     OutputTrack,
@@ -27,18 +28,11 @@ from reframe.command.metadata import (
     stream_metadata_args,
     tag_args,
 )
-from reframe.command.mkvpropedit import (
-    FixupTrack,
-    InfoEdit,
-    TrackEdit,
-    edit_args,
-    fixup_edits,
-    in_place_edits,
-)
-from reframe.command.quoting import Shell, command_line, default_shell, quote_posix, quote_windows
+from reframe.command.quoting import Shell, command_line, default_shell, quoter
 from reframe.command.subtitles import SubtitlePlan, plan_subtitles
 from reframe.command.video import (
     V0,
+    encoder_and_pix_fmt,
     format_number,
     frame_rate_args,
     pass_log_files,
@@ -46,8 +40,14 @@ from reframe.command.video import (
     spec,
     video_encoder_args,
 )
-from reframe.definitions import ContainerDef, Definitions, VideoEncoderDef, load_definitions
-from reframe.dimensions import compute_geometry, source_geometry
+from reframe.definitions import (
+    DEFAULT_VAAPI_DEVICE,
+    ContainerDef,
+    Definitions,
+    VideoEncoderDef,
+    load_definitions,
+)
+from reframe.dimensions import job_geometry
 from reframe.models import (
     AverageBitrate,
     CapabilitySnapshot,
@@ -56,6 +56,7 @@ from reframe.models import (
     ExternalSubtitle,
     FrameRange,
     Geometry,
+    HeaderEdit,
     JobSettings,
     Measurement,
     MediaSource,
@@ -68,13 +69,12 @@ from reframe.models import (
     TimeRange,
     ToolName,
     ToolSet,
-    ToolStatus,
     VideoSettings,
     VideoStream,
 )
+from reframe.naming.track_names import expand_track_names
 
 __all__ = [
-    "DEFAULT_VAAPI_DEVICE",
     "GLOBAL_ARGS",
     "STEP_WEIGHTS",
     "build_plan",
@@ -83,15 +83,13 @@ __all__ = [
 ]
 
 GLOBAL_ARGS = ("-hide_banner", "-nostdin", "-y", "-progress", "pipe:1", "-nostats")
-#: ``{vaapi_device}`` when the encoder status names no render node (the definitions' default).
-DEFAULT_VAAPI_DEVICE = "/dev/dri/renderD128"
 #: Relative progress weights; the runner normalises them.
 STEP_WEIGHTS: dict[StepKind, float] = {
     "analyse": 0.05,
     "pass1": 0.4,
     "pass2": 0.6,
     "encode": 1.0,
-    "mkvpropedit": 0.01,
+    "header_edit": 0.01,
     "finalize": 0.0,
 }
 _NULL_OUTPUT = ("-f", "null", "-")
@@ -161,12 +159,6 @@ class _Video:
     label: str
 
 
-def _fill(text: str, values: dict[str, str]) -> str:
-    for name, value in values.items():
-        text = text.replace("{" + name + "}", value)
-    return text
-
-
 def _video_plan(
     job: JobSettings,
     video: VideoStream,
@@ -185,37 +177,25 @@ def _video_plan(
         if codec in container.codec_tags:
             args += [spec("-tag:v", V0), container.codec_tags[codec]]
         return _Video({None: args}, None, [], None, False, None, False, "Remux")
-    encoder = defs.video_encoders.get(settings.encoder)
-    if encoder is None:
-        raise PlanError(f"unknown video encoder {settings.encoder!r} (validation reports it)")
+    encoder, pix_fmt = encoder_and_pix_fmt(job, defs)
     if encoder.codec not in container.video.encode:
         raise PlanError(f"{encoder.codec_label} cannot be written into {container.label}")
-    pix_fmt = encoder.pix_fmts.get("10" if settings.bit_depth == 10 else "8")
-    if pix_fmt is None:
-        raise PlanError(f"{encoder.label} has no {settings.bit_depth}-bit mode")
     status = caps.status(encoder.id)
-    geometry_src = source_geometry(video)
-    if "deinterlace" in job.filters.root:
-        geometry_src = geometry_src.model_copy(update={"interlaced": False})
-    geometry = compute_geometry(geometry_src, job.dimensions)
+    geometry = job_geometry(video, job)
     values = {"vaapi_device": status.device or DEFAULT_VAAPI_DEVICE, "sw_pix_fmt": pix_fmt}
     setup = encoder.hardware_setup
-    hw_init = [_fill(a, values) for a in setup.init_args] if setup else []
-    tail = (
-        [_fill(f, values) for f in setup.filter_tail]
-        if setup and setup.filter_tail
-        else [f"format={pix_fmt}"]
-    )
+    hw_init, tail = setup.resolve(values) if setup else ([], [])
     graph = build_video_graph(
         video=video,
         filters=job.filters.root,
         geometry=geometry,
         scaler=job.dimensions.scaler,
-        tail=tail,
+        tail=tail or [f"format={pix_fmt}"],
         definitions=defs,
         available=filter_available(caps, defs),
         text_burn=subs.text_burn,
         bitmap_burn=subs.bitmap_burn,
+        align_start=job.output.align_av_start,
     )
     hdr = keeps_hdr(video, job.filters.root, settings.bit_depth) and not graph.hdr_removed
     rc = settings.rate_control
@@ -268,7 +248,9 @@ def _audio_plan(
         if track.source_stream is None or track.source_stream not in streams:
             raise PlanError(f"audio track {i + 1}: the source has no audio stream "
                             f"{track.source_stream} (validation reports it)")  # fmt: skip
-        outs.append(audio_output(i, track, streams[track.source_stream], container, defs))
+        stream = streams[track.source_stream]
+        align = job.output.align_av_start
+        outs.append(audio_output(i, track, stream, container, defs, align_start=align))
     return outs
 
 
@@ -330,9 +312,8 @@ def build_plan(
     without ``now``).
     """
     defs = definitions if definitions is not None else load_definitions()
-    container = defs.containers.get(job.output.container)
-    if container is None:
-        raise PlanError(f"unknown container {job.output.container!r}")
+    job = expand_track_names(job, source, defs)
+    container = defs.containers[job.output.container]
     if not source.video:
         raise PlanError("the source has no video stream")
     video = source.video[0]
@@ -451,7 +432,7 @@ def build_plan(
     else:
         what = "Remux (copy the streams)" if kind == "remux" else f"Encode ({vplan.label})"
         steps.append(_step("encode", ffmpeg_argv(None), what))
-    fixup = _fixup_step(tracks, container, defs, tools, tmp)
+    fixup = _fixup_step(tracks, container, tmp)
     if fixup is not None:
         steps.append(fixup)
     steps.append(
@@ -497,42 +478,27 @@ def output_chapters(
     return planned
 
 
-def _fixup_step(
-    tracks: list[OutputTrack],
-    container: ContainerDef,
-    defs: Definitions,
-    tools: ToolSet,
-    tmp: Path,
-) -> PlanStep | None:
-    """The post-mux fix-up: mkvpropedit writes what FFmpeg's Matroska muxer does not (the BCP 47
-    languages and the track flags). Only for MKV, and only when mkvpropedit was found: validation
-    warns about what is lost without it."""
-    if container.id != "mkv" or tools.mkvpropedit.status is not ToolStatus.FOUND:
+def _fixup_step(tracks: list[OutputTrack], container: ContainerDef, tmp: Path) -> PlanStep | None:
+    """The post-mux fix-up of an MKV output: the BCP 47 languages (Matroska ``LanguageIETF``)
+    that FFmpeg's muxer does not write."""
+    if container.id != "mkv":
         return None
-    edits = fixup_edits(
-        [FixupTrack(t.type, t.index + 1, t.language, t.metadata) for t in tracks],
-        container,
-        defs,
-    )
-    if not edits:
+    edit = fixup_edit(tmp, tracks)
+    if is_empty(edit):
         return None
-    what = []
-    if any(e.language is not None for e in edits):
-        what.append("the BCP 47 languages (Matroska LanguageIETF)")
-    if any(e.flags for e in edits):
-        what.append("the track flags FFmpeg cannot write")
     return PlanStep(
-        kind="mkvpropedit", tool="mkvpropedit", argv=[str(tmp), *edit_args(edits)],
-        progress_weight=STEP_WEIGHTS["mkvpropedit"], description="Write " + " and ".join(what),
+        kind="header_edit", tool=None, header_edit=edit,
+        progress_weight=STEP_WEIGHTS["header_edit"],
+        description="Write the BCP 47 languages (Matroska LanguageIETF)",
     )  # fmt: skip
 
 
-def _describe_edits(edits: list[TrackEdit | InfoEdit]) -> str:
-    tracks = sum(1 for e in edits if isinstance(e, TrackEdit))
+def _describe_edit(edit: HeaderEdit) -> str:
+    tracks = len(edit.tracks)
     parts = []
     if tracks:
         parts.append(f"the metadata of {tracks} track" + ("" if tracks == 1 else "s"))
-    if any(isinstance(e, InfoEdit) for e in edits):
+    if edit.info is not None:
         parts.append("the title")
     return " and ".join(parts)
 
@@ -546,7 +512,7 @@ def _in_place_plan(
     now: datetime | None,
     shell: Shell,
 ) -> EncodePlan:
-    """The plan of a ``metadata_edit`` job: one mkvpropedit step on the source itself, with no
+    """The plan of a ``metadata_edit`` job: one ``header_edit`` step on the source itself, with no
     ``.part`` file and no rename. ``output_tmp`` and ``output_final`` are the source. No step
     when the source already has every value."""
     target = Path(job.source.path)
@@ -558,15 +524,14 @@ def _in_place_plan(
             now=now, definitions=defs,
         )  # fmt: skip
 
-    edits = in_place_edits(job, source, defs, render_title=render_title)
+    edit = in_place_edit(target, job, source, defs, render_title=render_title)
     steps: list[PlanStep] = []
-    if edits:
+    if not is_empty(edit):
         steps.append(
             PlanStep(
-                kind="mkvpropedit", tool="mkvpropedit", argv=[str(target), *edit_args(edits)],
-                progress_weight=STEP_WEIGHTS["mkvpropedit"],
-                description=f"Edit {_describe_edits(edits)} of {target.name} "
-                "in place",
+                kind="header_edit", tool=None, header_edit=edit,
+                progress_weight=STEP_WEIGHTS["header_edit"],
+                description=f"Edit {_describe_edit(edit)} of {target.name} in place",
             )
         )  # fmt: skip
     return EncodePlan(
@@ -643,8 +608,11 @@ def _program(tools: ToolSet, name: ToolName) -> str:
 
 def _display(steps: list[PlanStep], tools: ToolSet, tmp: Path, final: Path, shell: Shell) -> str:
     lines: list[str] = []
-    quote = quote_posix if shell == "posix" else quote_windows
+    quote = quoter(shell)
     for step in steps:
+        if step.header_edit is not None:
+            lines.append(edit_line(step.header_edit, shell))
+            continue
         if step.tool is None:
             mover = "mv -f --" if shell == "posix" else "move /Y"
             lines.append(f"{mover} {quote(str(tmp))} {quote(str(final))}")

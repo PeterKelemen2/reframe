@@ -32,7 +32,7 @@ def write(path: Path, size: int, used: float) -> Path:
 
 
 def test_digest_is_stable_and_covers_every_part() -> None:
-    assert digest("a", [1, 2], {"b": Path("/x")}) == digest("a", [1, 2], {"b": "/x"})
+    assert digest("a", [1, 2], {"b": Path("/x")}) == digest("a", [1, 2], {"b": str(Path("/x"))})
     assert digest("a", [1, 2]) != digest("a", [2, 1])
     assert digest({"x": 1, "y": 2}) == digest({"y": 2, "x": 1})
     assert len(digest()) == 64

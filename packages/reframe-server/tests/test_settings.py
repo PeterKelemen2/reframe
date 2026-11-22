@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-import time
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +14,7 @@ from reframe.models import AppSettings
 from reframe.service import SettingsUpdate
 from reframe.tools import ENV_VARS
 from reframe_testing.server import Api, ApiFactory
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
@@ -26,14 +25,6 @@ WITH_OPTIONS = "/dev/dri/renderD128,driver=../../tmp/x"
 def _start_with(tmp_path: Path, settings: dict[str, Any]) -> None:
     file = tmp_path / "config" / "settings.json"
     file.write_text(json.dumps(json.loads(file.read_text("utf-8")) | settings), encoding="utf-8")
-
-
-async def _until(check: Callable[[], bool], limit: float = 10.0) -> None:
-    deadline = time.monotonic() + limit
-    while not check():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.01)
 
 
 async def test_get_answers_the_settings_in_effect(api: Api) -> None:
@@ -63,24 +54,11 @@ async def test_an_invalid_patch_is_a_problem_with_its_issues(api: Api) -> None:
 
 
 @pytest.mark.parametrize(
-    "patch",
-    [
-        [{"op": "add", "path": "/tools/ffmpeg", "value": "/bin/sh"}],
-        [{"op": "add", "path": "/tools/extra", "value": "/bin/sh"}],
-    ],
-    ids=["a tool", "an unknown tool key"],
-)
-async def test_a_web_client_cannot_choose_a_program(api: Api, patch: list[dict[str, Any]]) -> None:
-    response = await api.client.put("/api/settings", json=patch)
-    assert (response.status_code, response.json()["code"]) == (403, "settings.tools_forbidden")
-    assert api.reframe.settings.get().tools.model_dump(exclude_none=True) == {}
-
-
-@pytest.mark.parametrize(
     ("tools", "named"),
     [
-        (["mediainfo"], ["REFRAME_MEDIAINFO"]),
-        (["mkvpropedit", "ffmpeg"], ["REFRAME_FFMPEG", "REFRAME_MKVPROPEDIT"]),
+        (["ffprobe"], ["REFRAME_FFPROBE"]),
+        (["ffprobe", "ffmpeg"], ["REFRAME_FFMPEG", "REFRAME_FFPROBE"]),
+        (["extra"], []),
     ],
 )
 async def test_a_refused_program_names_the_variables_of_the_tools_it_sets(
@@ -92,6 +70,7 @@ async def test_a_refused_program_names_the_variables_of_the_tools_it_sets(
     assert (response.status_code, problem["code"]) == (403, "settings.tools_forbidden")
     shown = [variable for variable in ENV_VARS.values() if variable in problem["detail"]]
     assert shown == named
+    assert api.reframe.settings.get().tools.model_dump(exclude_none=True) == {}
 
 
 async def test_a_concurrent_change_cannot_slip_a_program_past_the_check(
@@ -120,13 +99,13 @@ async def test_a_concurrent_change_cannot_slip_a_program_past_the_check(
     monkeypatch.setattr(service, "update", update)
     frames = [{"op": "replace", "path": "/preview/sample_frames", "value": 4}]
     first = asyncio.ensure_future(api.client.put("/api/settings", json=frames))
-    await _until(entered.is_set)
+    await wait_until(entered.is_set)
     program = [
         {"op": "test", "path": "/preview/sample_frames", "value": 4},
         {"op": "add", "path": "/tools/ffmpeg", "value": "/bin/sh"},
     ]
     second = asyncio.ensure_future(api.client.put("/api/settings", json=program))
-    await _until(lambda: len(calls) == 2)  # the second request waits for the store's lock
+    await wait_until(lambda: len(calls) == 2)  # the second request waits for the store's lock
     release.set()
     assert (await first).status_code == 200
     response = await second
@@ -167,17 +146,18 @@ async def test_a_web_client_can_only_choose_a_vaapi_render_node(
 
 
 async def test_a_desktop_client_may_choose_a_program_and_any_device(
-    make_api: ApiFactory,
+    make_api: ApiFactory, tmp_path: Path
 ) -> None:
+    program = str(tmp_path / "opt" / "ffprobe")
     async with make_api(mode="desktop") as api:
         patch = [
-            {"op": "add", "path": "/tools/mediainfo", "value": "/opt/mediainfo"},
+            {"op": "add", "path": "/tools/ffprobe", "value": program},
             {"op": "replace", "path": VAAPI, "value": WITH_OPTIONS},
         ]
         response = await api.client.put("/api/settings", json=patch)
     assert response.status_code == 200
     settings = response.json()["settings"]
-    assert settings["tools"]["mediainfo"] == "/opt/mediainfo"
+    assert settings["tools"]["ffprobe"] == program
     assert settings["encoders"]["vaapi_device"] == WITH_OPTIONS
 
 

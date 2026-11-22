@@ -52,8 +52,6 @@ from reframe.models.defaults import (
 )
 from reframe.models.draft import JobDraft
 from reframe.models.events import (
-    EVENT_ADAPTER,
-    EVENT_TYPES,
     AppWarningEvent,
     CapabilitiesChangedEvent,
     Event,
@@ -171,7 +169,6 @@ from reframe.models.migrations import (
     current_version,
     load_document,
     migrate,
-    register_migration,
 )
 from reframe.models.naming import (
     MediaKind,
@@ -204,12 +201,17 @@ from reframe.models.output import (
 from reframe.models.plan import (
     ArgTemplate,
     EncodePlan,
+    HeaderEdit,
+    HeaderFlag,
+    HeaderTrackType,
+    InfoHeaderEdit,
     JobType,
     Measurement,
     PlanArg,
     PlanFile,
     PlanStep,
     StepKind,
+    TrackHeaderEdit,
     ValueRef,
     resolve_argv,
 )
@@ -227,8 +229,10 @@ from reframe.models.settings import (
     AppearanceSettings,
     AppSettings,
     CollisionPolicy,
+    DiagnosticsSettings,
     EncoderSettings,
     LanguageSettings,
+    LogLevel,
     OutputDefaults,
     PartialFilePolicy,
     PreviewSettings,
@@ -252,6 +256,9 @@ from reframe.models.template import (
 )
 from reframe.models.text import json_text
 from reframe.models.tools import (
+    InstalledToolBuild,
+    ToolBuildOffer,
+    ToolBuilds,
     ToolFetchResult,
     ToolInfo,
     ToolName,
@@ -263,8 +270,6 @@ from reframe.models.tools import (
 __all__ = [
     "BUILT_IN_CATEGORIES",
     "DOCUMENT_MODELS",
-    "EVENT_ADAPTER",
-    "EVENT_TYPES",
     "AddOp",
     "AppSettings",
     "AppWarningEvent",
@@ -313,6 +318,7 @@ __all__ = [
     "CropSample",
     "CropSettings",
     "DataStream",
+    "DiagnosticsSettings",
     "DimensionSettings",
     "Disposition",
     "DocumentModel",
@@ -343,7 +349,12 @@ __all__ = [
     "GroupMember",
     "HdrFormat",
     "HdrInfo",
+    "HeaderEdit",
+    "HeaderFlag",
+    "HeaderTrackType",
     "ImportedChapter",
+    "InfoHeaderEdit",
+    "InstalledToolBuild",
     "JobDraft",
     "JobLogEvent",
     "JobNaming",
@@ -359,6 +370,7 @@ __all__ = [
     "JsonPatchOp",
     "LanguageSettings",
     "LanguageTag",
+    "LogLevel",
     "LoudnessMeasurement",
     "LoudnessTarget",
     "MasteringDisplay",
@@ -455,6 +467,8 @@ __all__ = [
     "TemplateSection",
     "TestOp",
     "TimeRange",
+    "ToolBuildOffer",
+    "ToolBuilds",
     "ToolFetchResult",
     "ToolInfo",
     "ToolName",
@@ -467,6 +481,7 @@ __all__ = [
     "TrackDescriptor",
     "TrackDraft",
     "TrackFlags",
+    "TrackHeaderEdit",
     "TrackMatch",
     "TrackMetadata",
     "TrackMetadataTemplate",
@@ -488,6 +503,5 @@ __all__ = [
     "json_text",
     "load_document",
     "migrate",
-    "register_migration",
     "resolve_argv",
 ]

@@ -6,7 +6,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import time
+import socket
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -20,6 +20,7 @@ from websockets.asyncio.client import ClientConnection
 
 from reframe.models import JobDraft, JobSettings, ServerEndpoint
 from reframe.remote import API_VERSION, Owner, RemoteQueue
+from reframe.remote import owner as owner_module
 from reframe.remote.owner import ENDPOINT_FILE
 from reframe_testing import fake_tools as ft
 from reframe_testing.server import PROBE_RULE, Api, ApiFactory, LiveServer, make_api_factory
@@ -108,13 +109,6 @@ async def server(make_api: ApiFactory) -> AsyncIterator[Server]:
         yield found
 
 
-async def poll(condition: Callable[[], bool], limit: float = 20.0) -> None:
-    deadline = time.monotonic() + limit
-    while not condition():
-        assert time.monotonic() < deadline, "condition not met in time"
-        await asyncio.sleep(0.01)
-
-
 class Requests(httpx.AsyncBaseTransport):
     """The transport of a ``RemoteQueue`` in a test: counts its requests, holds
     ``POST /api/queue/start`` until :attr:`released` is set, holds the answers of
@@ -171,6 +165,20 @@ class Wire:
     change: Callable[[dict[str, Any]], dict[str, Any]] = lambda message: message
     first: list[dict[str, Any] | str] = field(default_factory=list)
     """Messages as objects, or as the text sent."""
+
+
+def free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port: int = sock.getsockname()[1]
+    return port
+
+
+@pytest.fixture
+def short_waits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Short owner-search waits, for tests where no owner comes."""
+    monkeypatch.setattr(owner_module, "START_WAIT", 0.4)
+    monkeypatch.setattr(owner_module, "HELD_WAIT", 0.4)
 
 
 @pytest.fixture

@@ -11,24 +11,25 @@ from dataclasses import dataclass
 from typing import BinaryIO
 
 __all__ = [
+    "BYTE_ORDER_MARKS",
     "ENCODING_SAMPLE",
     "NotARegularFileError",
     "TextCharset",
     "charset_of",
-    "detect_charset",
     "open_regular",
     "read_charset",
 ]
 
 #: Bytes read to tell the character encoding; a subtitle file is rarely larger.
 ENCODING_SAMPLE = 16 * 2**20
-# UTF-32LE's mark starts with UTF-16LE's, so it is tested first.
-_BOMS = (
-    (codecs.BOM_UTF32_LE, "UTF-32LE"),
-    (codecs.BOM_UTF32_BE, "UTF-32BE"),
-    (codecs.BOM_UTF8, "UTF-8"),
-    (codecs.BOM_UTF16_LE, "UTF-16LE"),
-    (codecs.BOM_UTF16_BE, "UTF-16BE"),
+#: Byte order mark, encoding name, and the Python codec that decodes the text after the mark.
+#: UTF-32LE's mark starts with UTF-16LE's, so it is tested first.
+BYTE_ORDER_MARKS = (
+    (codecs.BOM_UTF32_LE, "UTF-32LE", "utf-32"),
+    (codecs.BOM_UTF32_BE, "UTF-32BE", "utf-32"),
+    (codecs.BOM_UTF8, "UTF-8", "utf-8-sig"),
+    (codecs.BOM_UTF16_LE, "UTF-16LE", "utf-16"),
+    (codecs.BOM_UTF16_BE, "UTF-16BE", "utf-16"),
 )
 
 
@@ -46,7 +47,7 @@ class TextCharset:
 def charset_of(data: bytes, *, complete: bool = True) -> TextCharset:
     """The encoding of ``data``. ``complete`` ``False``: ``data`` is the start of a longer file,
     so a character cut at its end does not count."""
-    for bom, name in _BOMS:
+    for bom, name, _ in BYTE_ORDER_MARKS:
         if data.startswith(bom):
             return TextCharset(name, name == "UTF-8" and data[len(bom) :].isascii())
     if data.isascii():
@@ -56,11 +57,6 @@ def charset_of(data: bytes, *, complete: bool = True) -> TextCharset:
     except UnicodeDecodeError:
         return TextCharset(None, False)
     return TextCharset("UTF-8", False)
-
-
-def detect_charset(data: bytes, *, complete: bool = True) -> str | None:
-    """:attr:`TextCharset.name` of :func:`charset_of`."""
-    return charset_of(data, complete=complete).name
 
 
 class NotARegularFileError(OSError):
@@ -76,7 +72,13 @@ def open_regular(path: str | os.PathLike[str]) -> BinaryIO:
     kind of file, at once, and :class:`OSError` as :func:`open` does."""
     # O_NONBLOCK: opening a FIFO waits for a writer without it; the kind is checked after.
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
-    fd = os.open(path, flags)
+    try:
+        fd = os.open(path, flags)
+    except PermissionError:
+        # Windows refuses to open a folder with EACCES.
+        if os.path.isdir(path):
+            raise IsADirectoryError(errno.EISDIR, "Is a directory", os.fspath(path)) from None
+        raise
     try:
         mode = os.fstat(fd).st_mode
         if stat.S_ISDIR(mode):

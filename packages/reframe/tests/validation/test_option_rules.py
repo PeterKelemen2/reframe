@@ -88,7 +88,7 @@ def test_switching_encoders_drops_values_the_new_encoder_does_not_take() -> None
     video = VideoSettings(
         encoder="libx264", advanced={"colormatrix": "GBR", "colorprim": "bt2020", "nr": 100}
     )
-    ops, _note = switch_video_encoder(video, "libx265", DEFS)
+    ops, _note = switch_video_encoder(video, "libx265", DEFS, CAPS)
     advanced = [op for op in ops if op.path == "/video/advanced"]
     assert advanced
     assert advanced[0].value == {"colorprim": "bt2020"}  # type: ignore[union-attr]

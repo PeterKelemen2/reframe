@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from pathlib import Path
 
 import pytest
 
-from reframe.models import AverageBitrate, JobSettings, JobState, QueueJob, Severity
+from reframe.metadata.header import HeaderEditResult
+from reframe.models import (
+    AverageBitrate,
+    HeaderEdit,
+    JobSettings,
+    JobState,
+    QueueJob,
+    Severity,
+    TrackHeaderEdit,
+)
 from reframe.probe import ProbeError, ProbeErrorKind
 from reframe_testing import fake_tools as ft
 
@@ -76,8 +86,7 @@ async def test_crash_mid_encode(harness: Harness, policy: str) -> None:
     if POSIX:
         assert ended.error == "ffmpeg crashed during pass 2 (signal 11 (SIGSEGV))."
     else:
-        assert ended.error is not None
-        assert "0xC0000005" in ended.error
+        assert ended.error == "ffmpeg crashed during pass 2 (exit code 0xC0000005)."
     assert_failed_run(h, ended.id, error_part="pass 2")
     assert part.exists() is (policy == "keep")
     assert not any(p.exists() for p in others)  # files and temp_files: always removed
@@ -166,6 +175,31 @@ async def test_hang_is_stopped_by_the_stall_watchdog(harness: Harness) -> None:
     assert "Step 1/2 ended: stopped" in h.log_text(ended.id)
 
 
+async def test_ffmpeg_that_does_not_exit_after_its_last_block_is_stopped(
+    harness: Harness,
+) -> None:
+    h = harness
+    h.queue._runner._exit_grace = 0.4
+    job = h.job()
+    part = h.plan(job).output_tmp
+    # What FFmpeg printed before it hung (Intel QSV, H.264 low power with ICQ).
+    qsv_error = (
+        "[h264_qsv @ 0x1] Invalid FrameType:0.\n"
+        "[vost#0:0/h264_qsv @ 0x2] [enc:h264_qsv @ 0x3] Error submitting video frame to the "
+        "encoder\n"
+    )
+    h.scenario(
+        encode_rule(ft.stderr(qsv_error), ft.progress(blocks=2), ft.write_output(100), ft.hang())
+    )
+    ended = await h.run_one(job)
+    assert ended.error == (
+        "FFmpeg finished writing but did not exit within 0.4 seconds and was stopped: "
+        "Invalid FrameType:0.; Error submitting video frame to the encoder"
+    )
+    assert_failed_run(h, ended.id, error_part="did not exit")
+    assert not part.exists()
+
+
 async def test_a_slow_step_that_prints_is_not_stalled(harness: Harness) -> None:
     h = harness
     h.queue._runner._stall_after = 0.3
@@ -226,57 +260,108 @@ async def test_silent_track_values_are_clamped_for_the_encode(harness: Harness) 
 
 def ietf_job(h: Harness) -> JobSettings:
     job = h.job()
-    job.audio[1].metadata.language = "pt-BR"  # needs Matroska LanguageIETF: mkvpropedit
+    job.audio[1].metadata.language = "pt-BR"  # needs Matroska LanguageIETF: a header edit
     return job
 
 
-async def test_failing_mkvpropedit_step(harness: Harness) -> None:
+def written_as_portuguese(h: Harness) -> None:
+    """The re-probed output has what the job wrote: the header edit's language, and only the
+    flags that :func:`draft` keeps."""
+    portuguese = h.sources.source.model_copy(deep=True)
+    for stream in [*portuguese.video, *portuguese.audio, *portuguese.subtitles]:
+        for flag in ("hearing_impaired", "visual_impaired", "original"):
+            setattr(stream.disposition, flag, False)
+    portuguese.audio[1].language = "por"
+    portuguese.audio[1].language_ietf = "pt-BR"
+    h.sources.output = lambda path: portuguese
+
+
+async def test_the_fixup_writes_the_part_file_without_any_mkvtoolnix(harness: Harness) -> None:
     h = harness
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     job = ietf_job(h)
     part = h.plan(job).output_tmp
-    h.scenario(
-        ft.Rule(
-            tool="ffmpeg",
-            argv_has=["--edit"],
-            actions=[ft.stderr("Error: The file could not be opened for reading and writing.\n")],
-            exit_code=2,
+    written_as_portuguese(h)
+    ended = await h.run_one(job)
+    assert (ended.state, ended.error) == (JobState.DONE, None)
+    assert h.writer.edits == [
+        HeaderEdit(
+            path=part,
+            tracks=[
+                TrackHeaderEdit(track_type="audio", number=2, language="por", language_ietf="pt-BR")
+            ],
         )
+    ]
+    [encode] = h.fake.calls("ffmpeg")  # the header edit started no program
+    assert "matroska" in encode
+    log = h.log_text(ended.id)
+    assert f"header_edit {part} audio 2: language=por language_ietf=pt-BR" in log
+    assert "Step 2/3 ended: written after" in log
+
+
+async def test_a_failed_fixup_fails_the_job_and_removes_the_part(harness: Harness) -> None:
+    h = harness
+    job = ietf_job(h)
+    part = h.plan(job).output_tmp
+    h.writer.result = HeaderEditResult(
+        "failed", "header.write_error", "No space left on device", file_state="damaged"
     )
     ended = await h.run_one(job)
     assert ended.error == (
-        "mkvpropedit failed (exit code 2): Error: The file could not be opened for reading and "
-        "writing."
+        "Writing the Matroska header of Movie.part.mkv failed: The header of the file may be "
+        "damaged. No space left on device."
     )
-    assert_failed_run(h, ended.id, error_part="mkvpropedit")
+    assert_failed_run(h, ended.id, error_part="Writing the Matroska header")
+    assert "Step 2/3 ended: failed (header.write_error): No space left on device" in h.log_text(
+        ended.id
+    )
     assert not part.exists()
-    [edit] = [call for call in h.fake.calls("ffmpeg") if "--edit" in call]
-    assert edit[0] == str(part)
 
 
-async def test_hanging_mkvpropedit_hits_its_time_limit(harness: Harness) -> None:
-    h = harness
-    h.queue._runner._step_time_limit = 0.3
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
-    h.scenario(ft.Rule(tool="ffmpeg", argv_has=["--edit"], actions=[ft.hang()]))
-    ended = await h.run_one(ietf_job(h))
-    assert ended.error == "A step did not finish within 0.3 seconds and was stopped."
-    assert h.leftovers() == []
-
-
-async def test_mkvpropedit_missing_at_run_time(harness: Harness) -> None:
+async def test_a_refused_fixup_fails_the_job(harness: Harness) -> None:
     h = harness
     job = ietf_job(h)
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
-    portuguese = h.sources.source.model_copy(deep=True)
-    portuguese.audio[1].language = "por"
-    h.sources.output = lambda path: portuguese
+    part = h.plan(job).output_tmp
+    h.writer.result = HeaderEditResult("refused", "header.no_room", "The SeekHead has no room.")
+    ended = await h.run_one(job)
+    assert ended.state is JobState.FAILED
+    assert ended.error == (
+        "Reframe cannot edit the Matroska header of Movie.part.mkv: The SeekHead has no room. "
+        "Nothing was changed in the file."
+    )
+    assert not part.exists()
+
+
+async def test_a_writer_that_raises_is_an_internal_error(harness: Harness) -> None:
+    h = harness
+    h.writer.raises = RuntimeError("a bug")
+    ended = await h.run_one(ietf_job(h))
+    assert ended.state is JobState.FAILED
+    assert ended.error == "Internal error: RuntimeError: a bug"
+
+
+async def test_a_cancel_during_the_fixup_waits_for_the_write(harness: Harness) -> None:
+    """The worker thread cannot be stopped: the ``.part`` file is removed only after the write
+    ended, never under it."""
+    h = harness
+    h.writer.hold = True
+    job = ietf_job(h)
+    part = h.plan(job).output_tmp
     added = await h.queue.add(job)
-    h.tools.tools = tool_set(h.fake.ffmpeg)  # gone before the run: the plan has no such step
     h.queue.start()
-    [ended] = await h.queue.wait([added.id])
-    assert ended.state is JobState.DONE
-    assert not any("--edit" in call for call in h.fake.calls("ffmpeg"))
+    await h.wait_for(h.writer.started.is_set)
+    cancel = asyncio.ensure_future(h.queue.cancel(added.id))
+    await asyncio.sleep(0.2)
+    assert not cancel.done()
+    assert part.exists()
+    h.writer.release()
+    await cancel
+    ended = h.queue.get(added.id)
+    assert ended is not None
+    assert (ended.state, ended.error) == (JobState.CANCELLED, None)
+    assert h.writer.finished.is_set()
+    assert not part.exists()
+    note = "The job is cancelled while Reframe is writing the header of Movie.part.mkv"
+    assert f"{note}: it is let finish" in h.log_text(added.id)
 
 
 async def test_reprobe_mismatch(harness: Harness) -> None:
@@ -318,6 +403,8 @@ async def test_collision_auto_rename(harness: Harness) -> None:
     assert final.read_text() == "the user's file"
     assert [i.code for i in ended.issues if i.code.startswith("output.")] == ["output.renamed"]
     assert "Movie.mkv exists: saved as Movie (2).mkv" in h.log_text(ended.id)
+    [note] = h.of_type("notification")  # the job's own: the harness's when-done is "nothing"
+    assert note.message == "Movie (2).mkv"  # type: ignore[union-attr]
 
 
 async def test_collision_overwrite(harness: Harness) -> None:
@@ -439,6 +526,40 @@ async def test_encoder_unavailable_after_detection(harness: Harness) -> None:
     assert "encoder.unavailable" in [i.code for i in ended.issues]
     assert ended.error is not None
     assert "not in this build" in ended.error
+
+
+async def test_a_job_whose_encoder_became_unavailable_fails_with_its_fixes_and_the_queue_goes_on(
+    harness: Harness,
+) -> None:
+    h = harness
+    from reframe.models import EncoderState
+    from reframe.queue.errors import encoder_unavailable
+
+    from .conftest import all_caps
+
+    h.caps.snapshot = all_caps(state=EncoderState.CHECKING)
+    gone = all_caps()
+    for encoder in ("h264_nvenc", "h264_qsv", "h264_amf", "h264_vaapi"):
+        gone.encoders[encoder] = gone.encoders[encoder].model_copy(
+            update={"state": EncoderState.UNAVAILABLE, "reason": "NVIDIA driver not found"}
+        )
+    h.caps.final = gone
+    first = await h.queue.add(h.job("Nvenc", encoder="h264_nvenc", preset="p4"))
+    second = await h.queue.add(h.job("Software"))
+    h.queue.start()
+    failed, done = await h.queue.wait([first.id, second.id])
+    assert (failed.state, done.state) == (JobState.FAILED, JobState.DONE)
+    issue = encoder_unavailable(failed)
+    assert issue is not None
+    assert issue.path == "video.encoder"
+    assert "NVIDIA driver not found" in issue.message
+    [fix] = issue.fixes
+    assert fix.label.startswith("Use libx264 (closest match")
+    assert fix.target == "job"
+    assert {"op": "replace", "path": "/video/encoder", "value": "libx264"} in [
+        op.model_dump() for op in fix.patch
+    ]
+    assert encoder_unavailable(done) is None
 
 
 async def test_plan_error_is_a_failure(harness: Harness, monkeypatch: pytest.MonkeyPatch) -> None:

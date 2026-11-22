@@ -2,14 +2,9 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-from types import ModuleType
-
 from pydantic import TypeAdapter
 
-from reframe.batch import build_job, group_sources, matrix_columns, resolve, resolve_group
+from reframe.batch import build_job, group_sources, matrix_columns, resolve
 from reframe.batch.report import matrix_lines
 from reframe.batch.resolve import row_status
 from reframe.models import (
@@ -26,20 +21,8 @@ from reframe.models import (
     ValidationIssue,
 )
 
+from . import anime as A
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-A = _load("anime")
 OPS = TypeAdapter(list[JsonPatchOp])
 
 
@@ -78,6 +61,11 @@ def test_the_crop_policy() -> None:
     assert build_job(manual, e01, TrackDraft())[0].dimensions.crop.rect == rect
     none = JobTemplate.model_validate({"dimensions": {"crop": {"mode": "none"}}})
     assert build_job(none, e01, TrackDraft())[0].dimensions.crop == CropSettings(mode="none")
+    # A failed detection belongs to the file it failed in.
+    failed = JobTemplate.model_validate(
+        {"dimensions": {"crop": {"mode": "auto", "detection_error": "Crop detection failed."}}}
+    )
+    assert build_job(failed, e01, TrackDraft())[0].dimensions.crop == CropSettings(mode="auto")
 
 
 def test_chapter_names() -> None:
@@ -133,27 +121,6 @@ def test_resolve_one_file() -> None:
     assert resolution.job.output.path is None
 
 
-def test_resolve_a_group() -> None:
-    sources = A.season(1)
-    (group,) = group_sources(sources, "standard")
-    e02 = str(A.path(1, 2))
-    override = {
-        e02: OPS.validate_python([{"op": "replace", "path": "/video/preset", "value": "veryslow"}])
-    }
-    rows = resolve_group(group, A.example_template(), sources[1:], override)
-    assert [r.path for r in rows] == [m.path for m in group.members]
-    missing = rows[0]
-    assert (missing.status, missing.job) == ("error", None)
-    assert [i.code for i in missing.issues] == ["source.probe_failed"]
-    assert rows[1].job is not None
-    assert rows[1].job.video.preset == "veryslow"
-    assert rows[2].job is not None
-    assert rows[2].job.video.preset != "veryslow"
-    by_path = {s.ref.path: s for s in sources}
-    again = resolve_group(group, A.example_template(), by_path)
-    assert [r.status for r in again] == ["ok"] * 10 + ["error", "ok"]
-
-
 def test_the_columns() -> None:
     assert [c.label for c in matrix_columns(JobTemplate())] == [
         "V",
@@ -196,7 +163,7 @@ def test_an_override_that_changes_the_rule_lists_is_invalid() -> None:
         ],
     ):
         patch = OPS.validate_python(ops)
-        rows = resolve_group(group, template, sources, {e02: patch})
+        rows = [resolve(template, s, patch if str(s.ref.path) == e02 else None) for s in sources]
         row = rows[1]
         assert "batch.override_invalid" in [i.code for i in row.issues], ops
         assert row.job is not None
@@ -212,7 +179,7 @@ def test_an_override_that_changes_the_rule_lists_is_invalid() -> None:
     bitrate = OPS.validate_python(
         [{"op": "replace", "path": "/audio_rules/1/settings/bitrate", "value": 448}]
     )
-    row = resolve_group(group, template, sources, {e02: bitrate})[1]
+    row = resolve(template, sources[1], bitrate)
     assert row.job is not None
     assert [a.bitrate for a in row.job.audio] == [448, 448]
     assert all(i.severity.value != "error" for i in row.issues)
@@ -239,7 +206,7 @@ def test_an_override_that_changes_the_compiled_rules_is_invalid() -> None:
         "A3 other languages (defaults)",
     ]
     override = _replace("/audio_defaults/selection/languages", ["eng", "jpn"])
-    rows = resolve_group(group, template, sources, {str(A.path(1, 2)): override})
+    rows = [resolve(template, sources[0]), resolve(template, sources[1], override)]
     e01, e02 = rows
     (invalid,) = [i for i in e02.issues if i.code == "batch.override_invalid"]
     assert invalid.path == "audio_defaults.selection"

@@ -1,14 +1,15 @@
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
-import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 
-import type { NamingOptions, SourceEntry } from '@/api/types'
+import type { NamingOptions, Preset, SourceEntry } from '@/api/types'
+import { samplePreset } from '@/editor/testing/samples'
+import { usePresetsStore } from '@/stores/presets'
 import { useSourcesStore } from '@/stores/sources'
 
 import OutputSection from './OutputSection.vue'
-import { comboboxName, defaultSettings, mountSettings, refusal } from './testing'
+import { defaultSettings, mountSettings, refusal } from './testing'
 import { NAMING_SAVE_DELAY, namingOps } from './useNamingSetting'
 
 // The naming editor has its own tests; here it only hands over whole objects.
@@ -124,7 +125,7 @@ describe('the Output section', () => {
     ])
   })
 
-  it('gives the editor the open sources that can be named and the default container', async () => {
+  it('gives the editor the open sources that can be named', async () => {
     const { editor } = await mountOutput(() => {
       useSourcesStore().entries = [
         { id: 'a', path: '/media/a.mkv', source: {} },
@@ -132,20 +133,37 @@ describe('the Output section', () => {
       ] as SourceEntry[]
     })
     expect(editor().props('sourceIds')).toEqual(['a'])
+  })
+
+  it('previews the names with the default preset’s container', async () => {
+    const preset = samplePreset()
+    const mp4 = { ...preset, id: 'mine', output: { ...preset.output, container: 'mp4' } }
+    const { editor } = await mountOutput(() => {
+      const presets = usePresetsStore()
+      presets.presets = [preset, mp4 as Preset]
+      presets.defaultId = 'mine'
+      presets.loaded = true
+    })
+    expect(editor().props('container')).toBe('mp4')
+    usePresetsStore().defaultId = preset.id
+    await flushPromises()
+    expect(editor().props('container')).toBe(preset.output?.container)
+  })
+
+  it('reads the presets for the preview, and names with Matroska without them', async () => {
+    const { editor, server } = await mountOutput()
+    expect(server.count('GET /api/presets')).toBe(1)
     expect(editor().props('container')).toBe('mkv')
   })
 
-  it('names the container list by its label, not by its value', async () => {
-    await mountOutput()
-    expect(comboboxName('default-container')).toBe('Default container')
+  it('offers no default container: the preset decides', async () => {
+    const { wrapper } = await mountOutput()
+    expect(wrapper.find('[data-field="default-container"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Default container')
   })
 
-  it('saves the default container, collision and partial-file behaviour at once', async () => {
+  it('saves the collision and partial-file behaviour at once', async () => {
     const { wrapper, server } = await mountOutput()
-    wrapper
-      .findAllComponents(Select)
-      .find((c) => c.attributes('data-field') === 'default-container')
-      ?.vm.$emit('update:modelValue', 'mp4')
     const buttons = wrapper.findAllComponents(SelectButton)
     buttons
       .find((c) => c.attributes('data-field') === 'collision')
@@ -155,7 +173,6 @@ describe('the Output section', () => {
       ?.vm.$emit('update:modelValue', 'keep')
     await flushPromises()
     expect(server.patches).toEqual([
-      [{ op: 'replace', path: '/output/default_container', value: 'mp4' }],
       [{ op: 'replace', path: '/output/collision', value: 'ask' }],
       [{ op: 'replace', path: '/output/partial_file', value: 'keep' }],
     ])

@@ -11,7 +11,7 @@ import stat
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -22,12 +22,15 @@ import httpx
 import pytest
 from websockets.sync.client import connect
 
-from reframe import settings as settings_module
+from reframe import fsretry
 from reframe.models import ServerEndpoint
 from reframe.queue.lock import LOCK_FILE, StoreLock
+from reframe.tools.discovery import ALLOW_SCRIPT_TOOLS_ENV
 from reframe_server import owner
 from reframe_testing import fake_tools as ft
+from reframe_testing.processes import interpreter
 from reframe_testing.server import PROBE_RULE, ApiFactory
+from reframe_testing.waiting import wait_until_sync
 
 pytestmark = pytest.mark.anyio
 
@@ -70,7 +73,11 @@ class Home:
 def home(tmp_path: Path, fake_tools: ft.FakeTools) -> Home:
     """No token is given: the server's token is random, so only ``server.json`` can tell it."""
     path = tmp_path / "home"
-    env = {name: value for name, value in os.environ.items() if not name.startswith("REFRAME_")}
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith("REFRAME_") or name == ALLOW_SCRIPT_TOOLS_ENV
+    }
     for name in ("config", "data", "cache"):
         env[f"REFRAME_{name.upper()}_DIR"] = str(path / name)
     (path / "config").mkdir(parents=True)
@@ -104,7 +111,7 @@ def wait_for_endpoint(
     while True:
         try:
             endpoint = ServerEndpoint.model_validate_json(home.endpoint.read_bytes())
-        except FileNotFoundError:
+        except (FileNotFoundError, PermissionError):  # Windows: the owner is replacing it
             pass
         else:
             if endpoint.instance != replacing:
@@ -112,14 +119,6 @@ def wait_for_endpoint(
         assert server.poll() is None, f"the server exited with {server.returncode}"
         assert time.monotonic() < deadline, "no endpoint file in time"
         time.sleep(0.01)
-
-
-def wait_until(check: Callable[[], Any], limit: float = 30.0) -> Any:
-    deadline = time.monotonic() + limit
-    while not (result := check()):
-        assert time.monotonic() < deadline, "not in time"
-        time.sleep(0.02)
-    return result
 
 
 def start_hanging_job(client: httpx.Client, source: Path, output: Path) -> str:
@@ -131,12 +130,12 @@ def start_hanging_job(client: httpx.Client, source: Path, output: Path) -> str:
         task = client.get(f"/api/tasks/{accepted['task_id']}").json()
         return task["result"] if task["state"] == "done" else None
 
-    source_id = wait_until(probed)["sources"][0]["id"]
+    source_id = wait_until_sync(probed)["sources"][0]["id"]
     job = client.post("/api/jobs/draft", json={"source_id": source_id}).json()["job"]
     job["output"]["path"] = str(output)
     [added] = client.post("/api/queue", json={"jobs": [job]}).json()
     assert client.post("/api/queue/start").status_code == 204
-    wait_until(lambda: client.get("/api/queue").json()["jobs"][0]["state"] == "running")
+    wait_until_sync(lambda: client.get("/api/queue").json()["jobs"][0]["state"] == "running")
     job_id: str = added["id"]
     return job_id
 
@@ -170,12 +169,12 @@ def test_the_endpoint_file_names_the_listening_server_until_it_stops(home: Home)
 def test_a_file_left_by_kill_9_is_replaced_by_the_next_owner(home: Home) -> None:
     with running_server(home) as first:
         stale = wait_for_endpoint(home, first)
-        first.kill()
+        interpreter(first.pid).kill()
         first.wait()
     assert ServerEndpoint.model_validate_json(home.endpoint.read_bytes()) == stale
     with running_server(home) as second:
         fresh = wait_for_endpoint(home, second, replacing=stale.instance)
-        assert fresh.pid == second.pid
+        assert fresh.pid == interpreter(second.pid).pid
         health = httpx.get(f"http://127.0.0.1:{fresh.port}/api/health", timeout=10)
         assert health.json()["instance"] == fresh.instance
 
@@ -369,7 +368,7 @@ async def test_on_windows_publish_waits_for_a_client_that_has_the_file_open(
             raise PermissionError(13, "Access is denied", str(target))
         replace(source, target)
 
-    monkeypatch.setattr(settings_module, "WINDOWS", True)
+    monkeypatch.setattr(fsretry, "WINDOWS", True)
     monkeypatch.setattr(os, "replace", open_elsewhere)
     async with make_api() as api:
         assert owner.publish(api.app, 8000) == endpoint

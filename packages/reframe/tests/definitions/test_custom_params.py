@@ -17,6 +17,7 @@ from reframe.definitions.custom_params import (
     library_key_forms,
     own_option_allowed,
     split_custom_params,
+    whole_param,
 )
 
 
@@ -31,6 +32,31 @@ def test_the_split_keeps_the_typed_text() -> None:
         ("vstats_file", "a:b", r"vs\tats_file=a\:b "),
         ("x", "1", "x"),
     ]
+    params = split_custom_params(" ref=4 :bogus:path=C\\:/x::")
+    assert [(p.name, p.value) for p in params] == [("ref", "4"), ("bogus", "1"), ("path", "C:/x")]
+    assert [p.raw for p in params] == ["ref=4 ", "bogus", "path=C\\:/x"]
+    assert split_custom_params("") == []
+
+
+def test_a_quoted_colon_or_a_drive_colon_continues_the_parameter() -> None:
+    params = split_custom_params(r"a=3:csv=C:\u\x.csv:b='1:2:3':c=D:/y:d=C::\z:e=CC:\w")
+    assert [(p.raw, p.continues) for p in params] == [
+        ("a=3", False),
+        ("csv=C", False),
+        (r"\u\x.csv", True),
+        ("b='1", False),
+        ("2", True),
+        ("3'", True),
+        ("c=D", False),
+        ("/y", True),
+        ("d=C", False),
+        (r"\z", False),
+        ("e=CC", False),
+        (r"\w", False),
+    ]
+    assert [p.raw for p in whole_param(params, params[1])] == ["csv=C", r"\u\x.csv"]
+    assert [p.raw for p in whole_param(params, params[4])] == ["b='1", "2", "3'"]
+    assert [p.raw for p in whole_param(params, params[0])] == ["a=3"]
 
 
 def test_dict_pairs_split_like_ffmpeg() -> None:

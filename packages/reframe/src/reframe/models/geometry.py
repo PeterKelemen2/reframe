@@ -62,6 +62,9 @@ class CropSettings(DocumentModel):
 
     mode: CropMode = "auto"
     rect: CropRect | None = None
+    detection_error: str | None = None
+    """Why crop detection failed in this job's file (``auto`` and ``conservative`` without
+    ``rect``): the picture is not cropped. ``None``: detection did not fail."""
 
 
 class SameAsSource(DocumentModel):

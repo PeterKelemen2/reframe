@@ -9,6 +9,7 @@
     "gib": "{value} GiB",
     "kbps": "{value} kb/s",
     "mbps": "{value} Mb/s",
+    "aspect": "{ratio}:1",
     "fps": "{rate} fps",
     "fpsVariable": "{rate} fps (variable)"
   },
@@ -26,8 +27,11 @@
     "tracks": "Tracks",
     "audioTracks": "no audio | {n} audio track | {n} audio tracks",
     "subtitleTracks": "no subtitles | {n} subtitle track | {n} subtitle tracks",
+    "trackCounts": "{audio} · {subtitles}",
     "chapters": "Chapters",
     "noChapters": "None",
+    "range": "Range",
+    "rangeValue": "{range} ({length})",
     "changed": "The file changed after it was probed. Open it again to see its details.",
     "notOpen": "The source is not open in this window."
   },
@@ -58,7 +62,7 @@
     "updating": "Updating…",
     "failed": "The job type cannot be found: {reason}",
     "editInPlace": "Edit in place",
-    "editInPlaceHelp": "mkvpropedit writes the new languages, names and flags into the MKV source itself, in seconds, and no new file is written. This works only when nothing but metadata changes.",
+    "editInPlaceHelp": "Reframe writes the new track languages, names and flags, and the title, into the MKV source itself, in seconds, and no new file is written. This works only when nothing but metadata changes.",
     "inPlace": "The source file itself is changed: {path}. No new file is written, so the output name and folder are not used.",
     "canEditInPlace": "Only metadata changes: with Edit in place, {name} itself is changed in seconds instead of a new file being written.",
     "blocked": "Edit in place is not possible because:",
@@ -79,6 +83,7 @@
     "par": "pixel aspect {par}",
     "upscaled": "The picture is enlarged: it gains no detail.",
     "filters": "Filters",
+    "filter": "{label}: {value}",
     "off": "off"
   },
   "video": {
@@ -87,8 +92,8 @@
     "rateControl": "Quality",
     "quality": "Constant quality {value}",
     "bitrate": "Average bitrate {kbps} kb/s",
-    "twoPass": "2-pass",
-    "twoPassTurbo": "2-pass, turbo first pass",
+    "bitrateTwoPass": "Average bitrate {kbps} kb/s · 2-pass",
+    "bitrateTwoPassTurbo": "Average bitrate {kbps} kb/s · 2-pass, turbo first pass",
     "speed": "Speed preset",
     "encoderDefault": "Encoder default",
     "bitDepth": "Bit depth",
@@ -130,6 +135,8 @@
     "dependsOnContent": "Depends on content",
     "qualityHint": "In constant quality mode the size follows the picture; choose an average bitrate for a size you can plan.",
     "noVideoBitrate": "Cannot be estimated: the bitrate of the copied video is not known",
-    "noDuration": "Cannot be estimated: the duration of the source is not known"
+    "noDuration": "Cannot be estimated: the duration of the source is not known",
+    "range": "Range: {range} ({length})",
+    "rangeNoLength": "Range: {range}"
   }
 }

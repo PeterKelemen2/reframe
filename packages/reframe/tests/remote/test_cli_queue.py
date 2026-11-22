@@ -8,26 +8,22 @@ import json
 import os
 import sqlite3
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from reframe import cli
-from reframe.models import JobState, QueueJob
+from reframe.models import Fix, JobState, QueueJob, ReplaceOp, Severity, ValidationIssue
 from reframe.queue import lock as lock_module
 from reframe.queue.logs import log_file
 from reframe.queue.store import STORE_FILE
-from reframe.remote import owner as owner_module
 from reframe_testing.server import ApiFactory
+from reframe_testing.waiting import wait_until
 
-from .conftest import HANG, Server, poll
+from .conftest import HANG, Server
 
 pytestmark = pytest.mark.anyio
-
-
-@pytest.fixture
-def short_waits(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(owner_module, "HELD_WAIT", 0.3)
 
 
 async def add(server: Server, name: str = "Show.mkv", *, start: bool = False) -> QueueJob:
@@ -43,7 +39,7 @@ def state(server: Server, job_id: str) -> JobState | None:
 
 
 async def running(server: Server, job_id: str) -> None:
-    await poll(lambda: state(server, job_id) is JobState.RUNNING)
+    await wait_until(lambda: state(server, job_id) is JobState.RUNNING)
 
 
 async def test_list_through_the_owner(server: Server, capsys: pytest.CaptureFixture[str]) -> None:
@@ -169,19 +165,33 @@ async def test_a_job_that_is_not_in_the_queue(
     assert capsys.readouterr().err == "error: name a job by its id or the start of it.\n"
 
 
+@pytest.mark.parametrize(
+    ("name", "shown"),
+    [
+        pytest.param(
+            "Evil\x1b]0;title\x07.mkv",
+            "Evil�]0;title�.mkv",
+            id="C0",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32", reason="Windows file names cannot hold C0 controls"
+            ),
+        ),
+        pytest.param("Evil\x9b2J.mkv", "Evil�2J.mkv", id="C1"),
+    ],
+)
 async def test_queue_output_shows_no_control_characters(
-    server: Server, capsys: pytest.CaptureFixture[str]
+    server: Server, capsys: pytest.CaptureFixture[str], name: str, shown: str
 ) -> None:
     """A source named with an escape sequence, and a log line with one, reach the terminal as
     U+FFFD: they cannot change the terminal."""
-    job = await add(server, "Evil\x1b]0;title\x07.mkv")
+    job = await add(server, name)
     log = log_file(server.data_dir, job.id)
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_bytes(b"frame=1 \x1b[2J\x1b[31mred\n")
     server.publish()
     assert await cli.run_queue_list(as_json=False) == cli.EXIT_OK
     listed = capsys.readouterr().out
-    assert "Evil�]0;title�.mkv" in listed
+    assert shown in listed
     assert await cli.run_queue_log(job.id, follow=False) == cli.EXIT_OK
     assert capsys.readouterr().out == "frame=1 �[2J�[31mred\n"
 
@@ -326,6 +336,42 @@ async def test_the_list_says_why_a_job_failed(
     lines = capsys.readouterr().out.splitlines()
     assert lines[1].split()[:3] == ["1", failed.id[:8], "failed"]
     assert lines[2].strip().startswith("failed: The job has errors: ")
+
+
+async def test_the_list_marks_a_job_whose_encoder_is_unavailable_and_gives_its_fixes(
+    server: Server,
+) -> None:
+    settings = await server.job("Gpu.mkv")
+    issue = ValidationIssue(
+        severity=Severity.ERROR,
+        code="encoder.unavailable",
+        path="video.encoder",
+        message="hevc_nvenc is not available: NVIDIA driver not found.",
+        fixes=[
+            Fix(
+                label="Use libx265 (closest match)",
+                patch=[ReplaceOp(path="/video/encoder", value="libx265")],
+            ),
+            Fix(label="Save in the preset", patch=[], target="template"),
+        ],
+    )
+    job = QueueJob(
+        id="0123456789abcdef",
+        position=0,
+        state=JobState.FAILED,
+        settings=settings,
+        issues=[issue],
+        created_at=datetime.now(UTC),
+        error=f"The job has errors: {issue.message}",
+    )
+    lines = [line.strip() for line in cli.queue_rows([job])]
+    assert lines[1].split()[:3] == ["1", "01234567", "failed"]
+    assert lines[2:5] == [
+        "failed — encoder unavailable: hevc_nvenc is not available: NVIDIA driver not found.",
+        "fix: Use libx265 (closest match)",
+        "or choose another encoder (edit the job in the app), or check again: reframe "
+        "encoders, then reframe queue retry 01234567",
+    ]
 
 
 def saved_queue(api_data: Path, sql: str, *params: object) -> None:

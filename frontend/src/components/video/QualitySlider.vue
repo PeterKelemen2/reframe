@@ -4,6 +4,8 @@ import Slider from 'primevue/slider'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import { decimals } from '@/components/summary/format'
+
 import { type QualityBand, type QualityMode, roundToStep } from './encoders'
 
 /**
@@ -24,15 +26,15 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ 'update:modelValue': [value: number]; commit: [] }>()
 
-const { t } = useI18n()
+const { t, n, locale } = useI18n()
 
 const digits = computed(() => {
-  const decimals = String(props.mode.step).split('.')[1]
-  return decimals === undefined ? 0 : decimals.length
+  const fraction = String(props.mode.step).split('.')[1]
+  return fraction === undefined ? 0 : fraction.length
 })
 
 function format(value: number): string {
-  return value.toFixed(digits.value)
+  return decimals(value, digits.value, n)
 }
 
 function percent(value: number): number {
@@ -151,6 +153,7 @@ function typed(value: number | null | undefined): void {
         :min-fraction-digits="digits"
         :max-fraction-digits="digits"
         :prefix="`${mode.label} `"
+        :locale="locale"
         :invalid="invalid"
         :disabled="disabled"
         @update:model-value="typed"

@@ -23,6 +23,7 @@ from reframe.models import (
     FieldOrder,
     FitWithin,
     Geometry,
+    JobSettings,
     Rational,
     Rotation,
     SizeSettings,
@@ -40,6 +41,8 @@ __all__ = [
     "compute_geometry",
     "crop_agreement",
     "detect_crop_consensus",
+    "job_geometry",
+    "job_source_geometry",
     "natural_size",
     "oriented_box",
     "rotate_crop",
@@ -137,8 +140,7 @@ def source_geometry(stream: VideoStream) -> SourceGeometry:
 
     Unknown or invalid values fall back to square pixels and to 4:2:0 chroma
     (``chroma_assumed``). The rotation is the display matrix's, clockwise. An ``unknown``
-    field order counts as progressive. A job that deinterlaces before the crop passes a copy
-    with ``interlaced=False``.
+    field order counts as progressive. :func:`job_source_geometry` is the job's view.
     """
     steps = chroma_steps(stream.pix_fmt)
     step_x, step_y = steps if steps is not None else ASSUMED_CHROMA_STEPS
@@ -157,6 +159,20 @@ def source_geometry(stream: VideoStream) -> SourceGeometry:
         interlaced=stream.field_order in (FieldOrder.TOP_FIRST, FieldOrder.BOTTOM_FIRST),
         chroma_assumed=steps is None,
     )
+
+
+def job_source_geometry(stream: VideoStream, job: JobSettings) -> SourceGeometry:
+    """:func:`source_geometry` as the job's encode sees it. Deinterlace runs before the crop, so a
+    job that deinterlaces crops on the frame's chroma grid, not the field's."""
+    geometry = source_geometry(stream)
+    if "deinterlace" in job.filters.root:
+        return geometry.model_copy(update={"interlaced": False})
+    return geometry
+
+
+def job_geometry(stream: VideoStream, job: JobSettings) -> Geometry:
+    """The geometry of the job's encoded picture."""
+    return compute_geometry(job_source_geometry(stream, job), job.dimensions)
 
 
 def _edges(rect: CropRect) -> tuple[int, int, int, int]:

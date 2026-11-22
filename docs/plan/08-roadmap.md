@@ -177,7 +177,7 @@ validation error from the dry run.
 
 ## M10 — Hardening and v1.0 release
 
-| Steps | `Q-1.4` (the Windows testing phase), `S-6`, `D-7`, `D-8`, `D-9`, `F-16`, `F-17` (all four flows in Chromium and WebKit), `Q-3`, `Q-4`, `Q-5` |
+| Steps | `Q-1.4` (the Windows testing phase), `C-18` (Reframe's own Matroska header writer, [decision 0080](../decisions/0080-own-matroska-header-writer.md); before the release checklist), `C-19` (the probe without MediaInfo, [decision 0081](../decisions/0081-probe-without-mediainfo.md); before the release checklist), `C-20` (a generated language table, [decision 0082](../decisions/0082-own-language-data-table.md); before the release checklist), `S-6`, `D-7`, `D-8`, `D-9`, `F-19` (the Range selector, [decision 0074](../decisions/0074-range-selector-in-m10.md); before F-16), `F-16`, `F-17` (all five flows in Chromium and WebKit), `Q-3`, `Q-4`, `Q-5`, `Q-6` (simplification of the core and the server, [decision 0083](../decisions/0083-simplification-step-before-v1.md); Tier A steps before the release checklist), `Q-7` (test trimming, [decision 0091](../decisions/0091-test-trimming-step.md); does not block the release), `C-21`, `S-8`, `F-20`, `D-10` (the desktop app downloads FFmpeg, a build picker and the build-mismatch warning, [decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md); before the release checklist) |
 |-------|---|
 
 `S-6` is built early, on the branch `server-complete`
@@ -201,8 +201,25 @@ A failure is fixed in the phase or recorded as a known limit in `docs/status.md`
 that changes the desktop shell gets a new decision record that supersedes 0001. The release
 checklist below is done only after this phase.
 
+### Simplification
+
+After the Windows testing phase and C-18 to C-20, and before the release checklist: the Tier A
+steps of [Q-6](09-quality-and-release.md#q-6-simplification) (`Q-6.1` to `Q-6.10`). The Tier B
+steps (`Q-6.11` to `Q-6.19`) follow if there is time; a Tier B step that is not done moves to
+after v1 and does not block the release
+([decision 0083](../decisions/0083-simplification-step-before-v1.md)).
+
+### Owner decisions before the release checklist
+
+The changes of [decision 0103](../decisions/0103-owner-decisions-before-v1.md) (items 1–13: NVENC constant quality, the 4K NVENC
+preset, `default_container` removed, Align A/V start, batch crop per file, track name
+templates, no power actions in Docker, the queue's fix actions, AMF pre-analysis, Start for
+one job, help texts, the AppImage's GStreamer plugins and desktop entry). Then the first push
+to GitHub and a `v1.0.0-rc.1` tag, before the user docs.
+
 ### Release checklist
 
+- [x] The Tier A steps of `Q-6` are done.
 - [ ] Every "Must-have for v1" item in [01-scope.md](01-scope.md#must-have-for-v1) is checked off
       against its demo.
 - [ ] Docker image published. The compose example works with VAAPI, and with NVENC when an
@@ -213,10 +230,18 @@ checklist below is done only after this phase.
 - [ ] The updater picks up a test release.
 - [ ] Performance budgets ([09 §Q-3](09-quality-and-release.md#q-3-performance-budgets)) are met.
 - [ ] Third-party licence notices are bundled ([09 §Licensing](09-quality-and-release.md#licensing)).
-- [ ] User docs: quick start, presets, batch mode, keyboard shortcuts.
+- [ ] The release's notices name its sources release, and that release has the corresponding
+      source of every GPL and LGPL part (no artefact contains FFmpeg:
+      [decisions 0093](../decisions/0093-ffmpeg-download-and-build-choice.md),
+      [0094](../decisions/0094-docker-image-without-ffmpeg.md))
+      ([decision 0073](../decisions/0073-gpl-corresponding-source-per-tool-pin.md)).
+- [ ] User docs: quick start, presets, batch mode, keyboard shortcuts; getting FFmpeg
+      (`docs/user/ffmpeg.md`: the first-run choice, install from a file, your own build, the
+      `compat` build for older NVIDIA drivers, Docker's `/data` and `REFRAME_FFMPEG_BUILD`, what
+      the server log says; [decision 0094](../decisions/0094-docker-image-without-ffmpeg.md)).
 
 ## After v1
 
 In rough priority order: Blu-ray/DVD folder input · HandBrake preset import · HDR10+/Dolby
 Vision tooling · VMAF/SSIM after encode · watch folders (web) · subtitle OCR · chunked encoding
-· macOS build. See [01-scope.md §Later](01-scope.md#later-post-v1).
+· macOS build · a layout for windows below 1100×700 ([decision 0103](../decisions/0103-owner-decisions-before-v1.md) item 15). See [01-scope.md §Later](01-scope.md#later-post-v1).

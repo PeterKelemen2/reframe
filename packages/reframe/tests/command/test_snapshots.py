@@ -3,15 +3,17 @@ plans do not depend on the machine. Update with ``--snapshot-update`` and review
 
 from __future__ import annotations
 
+import os
+import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
-from reframe.command import build_plan
+from reframe.command import Shell, build_plan, quote_posix, quote_windows
 from reframe.metadata import remux_job
 from reframe.models import (
     AudioOutputTrack,
@@ -38,6 +40,7 @@ from reframe.models import (
     SubtitleOutputTrack,
     TagSettings,
     TimeRange,
+    ToolName,
     ToolSet,
     TrackMetadata,
 )
@@ -46,6 +49,8 @@ from .conftest import caps, draft, recorded, tools
 
 Case = tuple[JobSettings, MediaSource, CapabilitySnapshot, ToolSet, dict[str, Any]]
 CASES: dict[str, Callable[[], Case]] = {}
+TOOL_NAMES: tuple[ToolName, ...] = get_args(ToolName)
+win32 = sys.platform == "win32"
 
 
 def case(fn: Callable[[], Case]) -> Callable[[], Case]:
@@ -405,6 +410,32 @@ def external_srt_into_mp4_with_range() -> Case:
 
 
 @case
+def align_av_start_passthru_loudnorm_and_range() -> Case:
+    src = recorded("multitrack.mkv")
+    job = draft(src, output_settings={"align_av_start": True}, video={"encoder": "libx264"})
+    job.audio[0].action = "passthru"
+    job.audio[1].loudness = "ebu_r128"
+    job.range = TimeRange(start=0.5, end=3.5)
+    return plain(job, src)
+
+
+@case
+def align_av_start_bitmap_burn_vaapi() -> Case:
+    src = recorded("vobsub.mkv")
+    video = {"encoder": "hevc_vaapi", "rate_control": AverageBitrate(kbps=2000)}
+    job = draft(src, output_settings={"align_av_start": True}, video=video)
+    job.subtitles[1].action = "burn"
+    return plain(job, src)
+
+
+@case
+def align_av_start_video_passthrough() -> Case:
+    src = recorded("multitrack.mkv")
+    job = draft(src, output_settings={"align_av_start": True}, video={"passthrough": True})
+    return plain(job, src)
+
+
+@case
 def time_range_copies_chapters() -> Case:
     src = recorded("chapters.mkv")
     job = draft(src, video={"encoder": "libx264"})
@@ -634,11 +665,11 @@ def stale_stats_source() -> Case:
 
 
 @case
-def eac3_atmos_without_mkvpropedit() -> Case:
+def eac3_atmos_with_a_bcp47_subtitle() -> Case:
     src = recorded("eac3-atmos")
     job = draft(src, audio="passthru", video={"encoder": "libx264"})
     job.subtitles[0].metadata = TrackMetadata(language="pt-BR")
-    return plain(job, src, tools=tools(mkvpropedit=False))
+    return plain(job, src)
 
 
 def _in_place(path: Path = Path("/media/multitrack.mkv")) -> tuple[JobSettings, MediaSource]:
@@ -706,9 +737,60 @@ def test_there_are_at_least_40_fixture_jobs() -> None:
     assert len(CASES) >= 40
 
 
-@pytest.mark.parametrize("name", sorted(CASES))
+def _case_paths(job: JobSettings, tool_set: ToolSet) -> list[Path]:
+    paths = [
+        job.source.path,
+        *(t.source.path for t in job.subtitles if not isinstance(t.source, int)),
+    ]
+    paths += [p for p in (job.output.path, *(tool_set.get(n).path for n in TOOL_NAMES)) if p]
+    return paths
+
+
+def as_recorded(plan: EncodePlan, job: JobSettings, tool_set: ToolSet, shell: Shell) -> Any:
+    """The plan as the snapshots hold it, with ``/`` in the paths. Windows writes the cases'
+    POSIX paths with ``\\`` (``\\media\\x.mkv``): a plan string that starts with a case path's
+    folder, and that string quoted in ``display``, get ``/`` back."""
+    data = plan.model_dump(mode="json")
+    if os.sep == "/":
+        return data
+    folders = tuple({str(p.parent) + os.sep for p in _case_paths(job, tool_set)})
+    native = {str(p): p.as_posix() for p in _case_paths(job, tool_set)}
+
+    def posix(value: Any, key: str = "") -> Any:
+        if isinstance(value, dict):
+            return {k: posix(v, k) for k, v in value.items()}
+        if isinstance(value, list):
+            return [posix(v) for v in value]
+        if isinstance(value, str) and key != "display" and value.startswith(folders):
+            native[value] = value.replace(os.sep, "/")
+            return native[value]
+        return value
+
+    data = posix(data)
+    quote = quote_posix if shell == "posix" else quote_windows
+    for text in sorted(native, key=len, reverse=True):
+        data["display"] = data["display"].replace(quote(text), quote(native[text]))
+    return data
+
+
+#: A subtitle file name that Windows cannot hold (``\``, ``:`` and ``"``).
+_POSIX_NAMES = {"burn_external_srt_special_characters_windows_display"}
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param(name, marks=pytest.mark.skipif(win32, reason="not a Windows name"))
+        if name in _POSIX_NAMES
+        else name
+        for name in sorted(CASES)
+    ],
+)
 def test_plan_snapshot(name: str, snapshot: SnapshotAssertion) -> None:
+    """Both platforms check the same snapshots: the display style is the case's (POSIX unless
+    it asks for Windows), and Windows paths get ``/`` back (:func:`as_recorded`)."""
     job, source, capabilities, tool_set, kwargs = CASES[name]()
+    shell: Shell = kwargs.setdefault("shell", "posix")
     plan = build_plan(job, source, capabilities, tool_set, **kwargs)
-    assert plan.model_dump(mode="json") == snapshot
+    assert as_recorded(plan, job, tool_set, shell) == snapshot
     assert EncodePlan.model_validate_json(plan.model_dump_json()) == plan

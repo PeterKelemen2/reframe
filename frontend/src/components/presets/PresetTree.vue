@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ChevronRight, CircleDot, Lock, Star } from '@lucide/vue'
-import { computed, nextTick, ref, useId, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { Preset } from '@/api/types'
+import { createTypeahead } from '@/components/shell/typeahead'
 import type { PresetCategory } from '@/stores/presets'
 
 /**
@@ -24,12 +25,12 @@ const emit = defineEmits<{
   remove: [id: string]
 }>()
 
-const { t } = useI18n()
-const id = useId()
+const { t, n } = useI18n()
 
+/** `position` and `size`: the item's place among its siblings; the tree is not nested. */
 type Item =
-  | { key: string; kind: 'category'; name: string; labelId: string }
-  | { key: string; kind: 'preset'; preset: Preset; parent: string }
+  | { key: string; kind: 'category'; name: string; count: number; position: number; size: number }
+  | { key: string; kind: 'preset'; preset: Preset; parent: string; position: number; size: number }
 
 const collapsed = ref(new Set<string>())
 const focusKey = ref<string | null>(null)
@@ -43,11 +44,25 @@ const visible = computed<Item[]>(() => {
   const items: Item[] = []
   props.categories.forEach((category, index) => {
     const key = categoryKey(category.name)
-    items.push({ key, kind: 'category', name: category.name, labelId: `${id}-c${index}` })
+    items.push({
+      key,
+      kind: 'category',
+      name: category.name,
+      count: category.presets.length,
+      position: index + 1,
+      size: props.categories.length,
+    })
     if (collapsed.value.has(category.name)) return
-    for (const preset of category.presets) {
-      items.push({ key: presetKey(preset.id), kind: 'preset', preset, parent: key })
-    }
+    category.presets.forEach((preset, place) => {
+      items.push({
+        key: presetKey(preset.id),
+        kind: 'preset',
+        preset,
+        parent: key,
+        position: place + 1,
+        size: category.presets.length,
+      })
+    })
   })
   return items
 })
@@ -96,6 +111,12 @@ async function focus(item: Item): Promise<void> {
   elements.get(item.key)?.focus()
 }
 
+const typeahead = createTypeahead()
+
+function itemName(item: Item): string {
+  return item.kind === 'category' ? item.name : item.preset.name
+}
+
 function onKeydown(event: KeyboardEvent): void {
   const items = visible.value
   const index = items.findIndex((item) => item.key === tabKey.value)
@@ -139,6 +160,10 @@ function onKeydown(event: KeyboardEvent): void {
       event.preventDefault()
       emit('remove', item.preset.id)
       return
+    default: {
+      const found = typeahead(event, items.map(itemName), index)
+      if (found !== null) move(items[found])
+    }
   }
 }
 
@@ -152,8 +177,8 @@ function clickCategory(name: string): void {
   setCollapsed(name, !collapsed.value.has(name))
 }
 
-function clickPreset(preset: Preset): void {
-  void focus({ key: presetKey(preset.id), kind: 'preset', preset, parent: '' })
+function clickPreset(item: Item): void {
+  void focus(item)
 }
 
 /** Moves the focus to a preset's item, once the tree shows it. */
@@ -168,74 +193,82 @@ defineExpose({ focusPreset })
 </script>
 
 <template>
+  <!-- Not nested: a category's name would be all the text of its presets. Levels and places
+       stand for the nesting, as WAI-ARIA allows. -->
   <ul class="preset-tree" role="tree" :aria-label="t('presets.tree.label')" @keydown="onKeydown">
-    <li
-      v-for="(category, index) in categories"
-      :key="category.name"
-      :ref="(element) => register(categoryKey(category.name), element)"
-      class="preset-tree__category"
-      role="treeitem"
-      :aria-expanded="!collapsed.has(category.name)"
-      :aria-labelledby="`${id}-c${index}`"
-      :tabindex="tabKey === categoryKey(category.name) ? 0 : -1"
-      :data-category="category.name"
-      @focus.self="focusKey = categoryKey(category.name)"
-    >
-      <div
-        class="preset-tree__row preset-tree__row--category"
-        @click="clickCategory(category.name)"
+    <template v-for="item in visible" :key="item.key">
+      <li
+        v-if="item.kind === 'category'"
+        :ref="(element) => register(item.key, element)"
+        class="preset-tree__category"
+        role="treeitem"
+        aria-level="1"
+        :aria-setsize="item.size"
+        :aria-posinset="item.position"
+        :aria-expanded="!collapsed.has(item.name)"
+        :tabindex="tabKey === item.key ? 0 : -1"
+        :data-category="item.name"
+        @focus="focusKey = item.key"
       >
-        <ChevronRight class="preset-tree__chevron" :size="16" aria-hidden="true" />
-        <span :id="`${id}-c${index}`">{{ category.name }}</span>
-        <span class="preset-tree__count">{{ category.presets.length }}</span>
-      </div>
-      <ul v-if="!collapsed.has(category.name)" role="group" class="preset-tree__group">
-        <li
-          v-for="preset in category.presets"
-          :key="preset.id"
-          :ref="(element) => register(presetKey(preset.id), element)"
-          class="preset-tree__preset"
-          :class="{ 'preset-tree__preset--selected': preset.id === selectedId }"
-          role="treeitem"
-          :aria-selected="preset.id === selectedId"
-          :tabindex="tabKey === presetKey(preset.id) ? 0 : -1"
-          :data-preset="preset.id"
-          @focus.self="focusKey = presetKey(preset.id)"
-          @click.stop="clickPreset(preset)"
-          @dblclick.stop="emit('apply', preset.id)"
-        >
-          <div class="preset-tree__row">
-            <span class="preset-tree__name">{{ preset.name }}</span>
-            <CircleDot
-              v-if="preset.id === currentId"
-              class="preset-tree__mark preset-tree__mark--current"
-              :size="14"
-              aria-hidden="true"
-            />
-            <span v-if="preset.id === currentId" class="rf-sr-only">{{
-              t('presets.tree.current')
-            }}</span>
-            <Lock v-if="preset.built_in" class="preset-tree__mark" :size="14" aria-hidden="true" />
-            <span v-if="preset.built_in" class="rf-sr-only">{{ t('presets.builtIn') }}</span>
-            <Star
-              v-if="preset.id === defaultId"
-              class="preset-tree__mark preset-tree__mark--default"
-              :size="14"
-              aria-hidden="true"
-            />
-            <span v-if="preset.id === defaultId" class="rf-sr-only">{{
-              t('presets.default')
-            }}</span>
-          </div>
-        </li>
-      </ul>
-    </li>
+        <div class="preset-tree__row preset-tree__row--category" @click="clickCategory(item.name)">
+          <ChevronRight class="preset-tree__chevron" :size="16" aria-hidden="true" />
+          <span>{{ item.name }}</span>
+          <!-- The spaces keep the name's words apart: the template drops the plain ones. -->
+          <span class="preset-tree__count" aria-hidden="true">&nbsp;{{ n(item.count) }}</span>
+          <span class="rf-sr-only">&nbsp;{{ t('presets.tree.count', item.count) }}</span>
+        </div>
+      </li>
+      <li
+        v-else
+        :ref="(element) => register(item.key, element)"
+        class="preset-tree__preset"
+        :class="{ 'preset-tree__preset--selected': item.preset.id === selectedId }"
+        role="treeitem"
+        aria-level="2"
+        :aria-setsize="item.size"
+        :aria-posinset="item.position"
+        :aria-selected="item.preset.id === selectedId"
+        :tabindex="tabKey === item.key ? 0 : -1"
+        :data-preset="item.preset.id"
+        @focus="focusKey = item.key"
+        @click="clickPreset(item)"
+        @dblclick="emit('apply', item.preset.id)"
+      >
+        <div class="preset-tree__row">
+          <span class="preset-tree__name">{{ item.preset.name }}</span>
+          <CircleDot
+            v-if="item.preset.id === currentId"
+            class="preset-tree__mark preset-tree__mark--current"
+            :size="14"
+            aria-hidden="true"
+          />
+          <span v-if="item.preset.id === currentId" class="rf-sr-only">{{
+            t('presets.tree.current')
+          }}</span>
+          <Lock
+            v-if="item.preset.built_in"
+            class="preset-tree__mark"
+            :size="14"
+            aria-hidden="true"
+          />
+          <span v-if="item.preset.built_in" class="rf-sr-only">{{ t('presets.builtIn') }}</span>
+          <Star
+            v-if="item.preset.id === defaultId"
+            class="preset-tree__mark preset-tree__mark--default"
+            :size="14"
+            aria-hidden="true"
+          />
+          <span v-if="item.preset.id === defaultId" class="rf-sr-only">{{
+            t('presets.default')
+          }}</span>
+        </div>
+      </li>
+    </template>
   </ul>
 </template>
 
 <style scoped>
-.preset-tree,
-.preset-tree__group {
+.preset-tree {
   margin: 0;
   padding: 0;
   list-style: none;

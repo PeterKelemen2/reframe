@@ -10,9 +10,9 @@ from reframe.tools.discovery import (
     ToolLocation,
     check_tool,
     discover_tools,
-    discover_tools_sync,
     locate_tools,
 )
+from reframe.tools.exitcodes import crashed
 from reframe.tools.runner import (
     CancelToken,
     LineCallback,
@@ -26,8 +26,6 @@ from reframe.tools.versions import (
     MIN_FFMPEG,
     FfmpegVersion,
     parse_ffmpeg_version,
-    parse_mediainfo_version,
-    parse_mkvpropedit_version,
 )
 
 __all__ = [
@@ -40,14 +38,12 @@ __all__ = [
     "RunResult",
     "ToolLocation",
     "check_tool",
+    "crashed",
     "discover_tools",
-    "discover_tools_sync",
     "kill_leftovers",
     "kill_process_tree",
     "locate_tools",
     "parse_ffmpeg_version",
-    "parse_mediainfo_version",
-    "parse_mkvpropedit_version",
     "run",
     "run_streaming",
 ]

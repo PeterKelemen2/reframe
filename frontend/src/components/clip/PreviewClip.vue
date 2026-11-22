@@ -20,6 +20,8 @@ import { TaskLostError, useTasksStore } from '@/stores/tasks'
 import ClipCompare from './ClipCompare.vue'
 import { absoluteUrl, CLIP_LENGTHS, reason } from './clip'
 
+// `MediaError.MEDIA_ERR_DECODE`: the decoder failed, which a new link cannot fix.
+const DECODE = 3
 // `MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED`: the browser cannot decode the format.
 const SRC_NOT_SUPPORTED = 4
 
@@ -49,6 +51,12 @@ const linkError = ref<string | null>(null)
 /** Why the player could not play the clip; the frame compare shows instead. */
 const playError = ref<string | null>(null)
 const comparing = ref(false)
+/** `null` until the platform answers; a `<video>` is made only once it says `true`. */
+const playable = ref<boolean | null>(null)
+async function askPlayable(): Promise<void> {
+  playable.value = await platform.canPlayVideo()
+}
+void askPlayable()
 // Cancel came before the server named the task.
 const stopAsked = ref(false)
 // A clip link works for an hour: the first failure asks for a new one before giving up.
@@ -89,7 +97,7 @@ const summary = computed(() => {
     duration: time(clip.duration),
     start: time(clip.start),
     codec: clip.video_codec ?? clip.container,
-    size: formatBytes(clip.size, t),
+    size: formatBytes(clip.size, t, n),
   })
 })
 
@@ -184,30 +192,51 @@ async function loadLink(): Promise<void> {
   }
 }
 
-function played(): void {
+function played(event: Event): void {
   linkRetried = false
+  // A webview without the codec's decoder can still play the audio of a clip and report
+  // no error; a picture without width is the only sign.
+  if ((event.target as HTMLVideoElement).videoWidth === 0) unplayable()
+}
+
+function unplayable(): void {
+  const clip = (made.value as Made).clip
+  playError.value = t('clip.playback.unsupported', { codec: clip.video_codec ?? clip.container })
+  comparing.value = true
 }
 
 function playFailed(event: Event): void {
+  const error = (event.target as HTMLVideoElement).error
+  // A webview without a working decoder for the codec can fail after it showed a picture.
+  if (error?.code === DECODE) {
+    unplayable()
+    return
+  }
   if (!linkRetried) {
     linkRetried = true
     link.value = null
     void loadLink()
     return
   }
-  const error = (event.target as HTMLVideoElement).error
-  const clip = (made.value as Made).clip
-  const codec = clip.video_codec ?? clip.container
-  playError.value =
-    error?.code === SRC_NOT_SUPPORTED
-      ? t('clip.playback.unsupported', { codec })
-      : t('clip.playback.failed', { reason: error?.message || String(error?.code ?? '') })
+  if (error?.code === SRC_NOT_SUPPORTED) {
+    unplayable()
+    return
+  }
+  playError.value = t('clip.playback.failed', {
+    reason: error?.message || String(error?.code ?? ''),
+  })
   comparing.value = true
 }
 
 function openExternal(): void {
   if (link.value !== null) void platform.openExternal(link.value)
 }
+
+watch([made, playable], ([clip, value]) => {
+  if (clip === null || value !== false) return
+  playError.value = t('clip.playback.noPlayer')
+  comparing.value = true
+})
 
 // Another file drops the clip and stops an encode of the last one.
 watch(
@@ -339,9 +368,10 @@ watch(running, async (now) => {
       </div>
       <ClipCompare v-if="comparing" :clip="made.clip" :source-id="made.sourceId" :job="made.job" />
       <video
-        v-else-if="link !== null"
+        v-else-if="link !== null && playable === true"
         class="preview-clip__video"
         :src="link"
+        :aria-label="t('clip.player')"
         controls
         preload="metadata"
         data-field="clip-video"

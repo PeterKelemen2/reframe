@@ -35,21 +35,10 @@ from reframe.models import (
 )
 from reframe.naming import VARIABLES, FileTimes, resolve_output_name
 from reframe.naming.context import audio_channels_label, hdr_label, resolution_label
-from reframe.naming.variables import HANDBRAKE_VARIABLES
+from reframe_testing.naming import FakeFs
 
 FILE = Path("/media/Hacksaw.Ridge.2016.2160p.UHD.BluRay.HEVC-GRP/hacksawridge.mkv")
 NOW = datetime(2026, 10, 11, 14, 30, 5).astimezone()
-
-
-class _Fs:
-    def __init__(self, times: FileTimes | None = None) -> None:
-        self.times = times
-
-    def list_files(self, folder: Path) -> list[str] | None:
-        return None
-
-    def file_times(self, file: Path) -> FileTimes | None:
-        return self.times
 
 
 def _job(**kwargs: Any) -> JobSettings:
@@ -61,17 +50,17 @@ def _source(**kwargs: Any) -> MediaSource:
     return MediaSource(ref=SourceRef(path=FILE), **{"video": [video], **kwargs})
 
 
-def render(template: str, *, fs: _Fs | None = None, **kwargs: Any) -> str:
+def render(template: str, *, fs: FakeFs | None = None, **kwargs: Any) -> str:
     """The rendered name of ``FILE`` for ``template`` (without ``.mkv``)."""
     options = NamingOptions(movie_template=template, episode_template=template)
-    result = resolve_output_name(FILE, options, fs=fs or _Fs(), now=NOW, **kwargs)
+    result = resolve_output_name(FILE, options, fs=fs or FakeFs(), now=NOW, **kwargs)
     assert not result.issues, result.issues
     assert result.extension in ("mkv", "mp4", "m4v", "webm")
     return result.relative_path.removesuffix("." + result.extension)
 
 
 def test_there_are_17_handbrake_variables() -> None:
-    assert HANDBRAKE_VARIABLES == (
+    assert tuple(v.name for v in VARIABLES if v.group == "handbrake") == (
         "source",
         "title",
         "chapters",
@@ -96,14 +85,14 @@ def test_hb_source_is_the_chosen_name_source() -> None:
     assert render("{source}") == "Hacksaw.Ridge.2016.2160p.UHD.BluRay.HEVC-GRP"
     assert render("{source}", root=None) == render("{source}")
     file_only = resolve_output_name(
-        Path("/Movie.2016.1080p.mkv"), NamingOptions(movie_template="{source}"), fs=_Fs()
+        Path("/Movie.2016.1080p.mkv"), NamingOptions(movie_template="{source}"), fs=FakeFs()
     )
     assert file_only.relative_path == "Movie.2016.1080p.mkv"
 
 
 def test_hb_title_is_the_file_index() -> None:
     assert render("{source}-{title}").endswith("-1")
-    assert render("{title:02}", title_index=3) == "03"
+    assert render("{title:02}") == "01"
 
 
 def test_hb_chapters() -> None:
@@ -139,14 +128,20 @@ def test_hb_creation_date_from_the_container() -> None:
 
 def test_hb_creation_date_falls_back_to_the_file_system() -> None:
     times = FileTimes(modified=NOW, created=datetime(2019, 5, 6, 7, 8).astimezone())
-    assert render("{creation-date} {creation-time}", fs=_Fs(times)) == "2019-05-06 07-08"
+    assert (
+        render("{creation-date} {creation-time}", fs=FakeFs(times={FILE: times}))
+        == "2019-05-06 07-08"
+    )
     # Linux reports no creation time: the variable is empty.
-    assert render("x<{creation-date}>", fs=_Fs(FileTimes(modified=NOW))) == "x"
+    assert render("x<{creation-date}>", fs=FakeFs(times={FILE: FileTimes(modified=NOW)})) == "x"
 
 
 def test_hb_modification_date_and_time() -> None:
     times = FileTimes(modified=datetime(2021, 12, 24, 18, 0).astimezone())
-    assert render("{modification-date} {modification-time}", fs=_Fs(times)) == "2021-12-24 18-00"
+    assert (
+        render("{modification-date} {modification-time}", fs=FakeFs(times={FILE: times}))
+        == "2021-12-24 18-00"
+    )
     assert render("x<{modification-date}>") == "x"  # the file does not exist
 
 
@@ -211,7 +206,7 @@ def test_name_parts() -> None:
         "{name}|{main_title}|{sub_title}|{season:02}|{episode:02}|{episode_code}|{source_type}|"
         "{release_group}|{file_name}|{folder_name}"
     )
-    result = resolve_output_name(episode, NamingOptions(episode_template=template), fs=_Fs())
+    result = resolve_output_name(episode, NamingOptions(episode_template=template), fs=FakeFs())
     assert result.variables["name"] == "The.Sopranos"
     assert result.variables["main_title"] == "The.Sopranos.S03E02.Proshai.Livushka"
     assert result.variables["sub_title"] == "Proshai.Livushka"
@@ -231,7 +226,7 @@ def test_name_parts() -> None:
 def test_year_and_edition() -> None:
     movie = Path("/m/Blade.Runner.1982.The.Final.Cut.REMASTERED.1080p.BluRay.x265-RARBG.mp4")
     result = resolve_output_name(
-        movie, NamingOptions(movie_template="{name} ({year}) {edition}"), fs=_Fs()
+        movie, NamingOptions(movie_template="{name} ({year}) {edition}"), fs=FakeFs()
     )
     assert result.relative_path == "Blade.Runner (1982) REMASTERED.mkv"
 
@@ -246,13 +241,13 @@ def test_word_separator_applies_to_text_from_the_name_only() -> None:
     options = NamingOptions(
         movie_template="{name} {source_type} {release_group} {file_name}", word_separator="space"
     )
-    result = resolve_output_name(FILE, options, fs=_Fs())
+    result = resolve_output_name(FILE, options, fs=FakeFs())
     assert result.relative_path == "Hacksaw Ridge UHD BluRay GRP hacksawridge.mkv"
 
 
 def test_handbrake_clean_up_applies_to_source() -> None:
     options = NamingOptions(movie_template="{source}", title_case=True, remove_punctuation=True)
-    result = resolve_output_name(Path("/hacksaw_ridge-2016.mkv"), options, fs=_Fs())
+    result = resolve_output_name(Path("/hacksaw_ridge-2016.mkv"), options, fs=FakeFs())
     assert result.relative_path == "Hacksaw_Ridge2016.mkv"
 
 
@@ -386,7 +381,7 @@ def test_container() -> None:
 
 
 def test_every_variable_is_in_the_result() -> None:
-    result = resolve_output_name(FILE, NamingOptions(), fs=_Fs(), now=NOW)
+    result = resolve_output_name(FILE, NamingOptions(), fs=FakeFs(), now=NOW)
     assert list(result.variables) == [v.name for v in VARIABLES]
     assert len({v.name for v in VARIABLES}) == len(VARIABLES)
 

@@ -1,4 +1,5 @@
-"""Track drafts from recorded probes, so the result does not depend on the local FFmpeg."""
+"""Track drafts (``resolve_tracks``) from recorded probes, so the result does not depend on
+the local FFmpeg."""
 
 from __future__ import annotations
 
@@ -8,12 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from reframe.batch import draft_tracks, first_of_language
+from reframe.batch import resolve_tracks
 from reframe.models import (
     AudioCodecRule,
     AudioDefaults,
     AudioOutputTrack,
-    AudioStream,
+    BitrateInfo,
+    BitrateSource,
     JobTemplate,
     MediaSource,
     OutputOptions,
@@ -91,7 +93,7 @@ MULTITRACK_REASONS = [
 
 
 def check_multitrack(source: MediaSource) -> None:
-    draft = draft_tracks(source, JobTemplate())
+    draft = resolve_tracks(JobTemplate(), source).draft
     assert draft.audio == MULTITRACK_AUDIO
     assert draft.subtitles == MULTITRACK_SUBTITLES
     assert [(d.source_stream, d.rule, d.reason, d.measure) for d in draft.decisions] == (
@@ -111,6 +113,13 @@ async def test_multitrack_probed_live(fixture_media: Callable[[str], Path]) -> N
     tools = await discover_tools()
     source = await Prober(tools.ffprobe).probe(fixture_media("multitrack"))
     assert isinstance(source, MediaSource)
+    assert [a.bitrate.source for a in source.audio] == [
+        BitrateSource.STREAM,
+        BitrateSource.ESTIMATED,
+        BitrateSource.ESTIMATED,
+    ]
+    for audio in source.audio[1:]:
+        audio.bitrate = BitrateInfo()  # the recorded JSON is parsed without the sample
     check_multitrack(source)
 
 
@@ -119,7 +128,7 @@ def test_season() -> None:
     counts = []
     for path in SEASON:
         source = recorded(f"season/{path.name}")
-        draft = draft_tracks(source, JobTemplate())
+        draft = resolve_tracks(JobTemplate(), source).draft
         counts.append(len(draft.audio))
         assert [t.source_stream for t in draft.audio] == [a.index for a in source.audio]
         assert [d.source_stream for d in draft.decisions] == [a.index for a in source.audio]
@@ -130,12 +139,12 @@ def test_season() -> None:
             assert track.metadata.default == stream.disposition.default
             assert track.metadata.commentary == stream.disposition.comment
     assert counts == [3, 3, 3, 3, 4, 3, 3, 3, 2, 3, 3, 3]
-    e05 = draft_tracks(recorded("season/Show.S01E05.Title.mkv.json"), JobTemplate())
+    e05 = resolve_tracks(JobTemplate(), recorded("season/Show.S01E05.Title.mkv.json")).draft
     commentary = e05.audio[3]
     assert (commentary.metadata.name, commentary.metadata.commentary) == ("Commentary", True)
     assert commentary.action == "passthru"
     assert e05.decisions[3].reason == "AC-3, 2.0, 96 ≤ 256: passthru"
-    e09 = draft_tracks(recorded("season/Show.S01E09.Title.mkv.json"), JobTemplate())
+    e09 = resolve_tracks(JobTemplate(), recorded("season/Show.S01E09.Title.mkv.json")).draft
     assert [t.metadata.name for t in e09.audio] == ["Japanese 5.1", "Director's Commentary"]
 
 
@@ -151,7 +160,7 @@ def test_container_and_rules_of_the_template() -> None:
             ]
         ),
     )
-    draft = draft_tracks(source, template)
+    draft = resolve_tracks(template, source).draft
     assert [(t.action, t.encoder, t.mixdown, t.bitrate) for t in draft.audio] == [
         ("encode", "libopus", None, 192),
         ("encode", "libopus", "stereo", 96),
@@ -164,22 +173,3 @@ def test_container_and_rules_of_the_template() -> None:
     )
     # Subtitles are copied whatever the container.
     assert [s.action for s in draft.subtitles] == ["copy", "copy", "copy"]
-
-
-def test_first_track_of_language_in_source_order() -> None:
-    def audio(index: int, language: str | None, ietf: str | None = None) -> AudioStream:
-        return AudioStream(index=index, language=language, language_ietf=ietf, channels=2)
-
-    streams = [
-        audio(1, "jpn"),
-        audio(2, "eng"),
-        audio(3, "eng"),
-        audio(4, "ger"),
-        audio(5, "deu"),
-        audio(6, None),
-        audio(7, "und"),
-        audio(8, "por", "pt-BR"),
-        audio(9, "por"),
-    ]
-    assert first_of_language(streams) == [True, True, False, True, False, True, False, True, False]
-    assert first_of_language([]) == []

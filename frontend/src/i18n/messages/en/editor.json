@@ -21,6 +21,8 @@
     "nearMember": "{file}'s tracks do not match the group's",
     "nearMemberDetail": "Nothing was changed. The group's tracks still follow the defaults, so an edit here would make the group's tracks from {file} alone, and the other files would lose the tracks it does not have. Show {representative} to edit the group's tracks.",
     "editFailed": "An edit did not reach the group",
+    "detectionCancelled": "The crop detection was cancelled",
+    "detectionFailed": "The crop of the group's files could not be detected",
     "sourceStale": "A file of the group changed on disk since it was opened: remove it from the sources and open it again.",
     "fields": {
       "range": "The range",

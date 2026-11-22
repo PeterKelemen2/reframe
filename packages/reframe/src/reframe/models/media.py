@@ -67,7 +67,7 @@ class SourceFingerprint(DocumentModel):
     size: NonNegativeInt
     mtime: float
     probe_hash: str | None = None
-    """A hash of the probe result (stream layout); ``None`` before the file is probed."""
+    """Not written by this version; older documents may carry a value."""
 
 
 class SourceRef(DocumentModel):
@@ -149,7 +149,8 @@ class BitrateSource(StrEnum):
     """ffprobe stream ``bit_rate``."""
     STATS_TAG = "stats_tag"
     """Matroska statistics tags (``BPS``, ``NUMBER_OF_BYTES`` / ``DURATION``)."""
-    MEDIAINFO = "mediainfo"
+    ESTIMATED = "estimated"
+    """Matroska and WebM: estimated from a sample of clusters (``BitrateInfo.samples``)."""
     MEASURED = "measured"
     """A packet-size scan."""
     UNKNOWN = "unknown"
@@ -162,11 +163,15 @@ class BitrateInfo(DocumentModel):
     value: NonNegativeInt | None = None
     """Bits per second."""
     source: BitrateSource = BitrateSource.UNKNOWN
+    samples: PositiveInt | None = None
+    """``estimated`` only: the number of clusters the estimate was made from."""
 
     @model_validator(mode="after")
     def _value_matches_source(self) -> BitrateInfo:
         if (self.value is None) != (self.source is BitrateSource.UNKNOWN):
             raise ValueError("value must be None exactly when source is 'unknown'")
+        if self.samples is not None and self.source is not BitrateSource.ESTIMATED:
+            raise ValueError("samples is set only for an estimated bit rate")
         return self
 
 
@@ -187,6 +192,19 @@ class HdrFormat(StrEnum):
     HDR10_PLUS = "hdr10plus"
     HLG = "hlg"
     DOLBY_VISION = "dolby_vision"
+
+    @property
+    def label(self) -> str:
+        """The display name: ``HDR10``, ``HDR10+``, ``HLG``, ``Dolby Vision``."""
+        return _HDR_LABELS[self]
+
+
+_HDR_LABELS = {
+    HdrFormat.HDR10: "HDR10",
+    HdrFormat.HDR10_PLUS: "HDR10+",
+    HdrFormat.HLG: "HLG",
+    HdrFormat.DOLBY_VISION: "Dolby Vision",
+}
 
 
 class MasteringDisplay(DocumentModel):
@@ -260,10 +278,10 @@ class _StreamBase(DocumentModel):
     """The language tag as ffprobe reports it (``eng``, ``hun``; for Matroska the legacy
     ISO 639-2 ``Language`` element); ``None`` if absent."""
     language_ietf: LanguageTag | None = None
-    """The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
-    ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
-    Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
-    MediaInfo's value when MediaInfo is available. ``None`` when there is none.
+    """The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: with a
+    Matroska ``LanguageIETF`` of ``pt-BR`` ffprobe still says ``por``. A Matroska track that
+    Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take the
+    BCP 47 form of their ISO 639 code (``por`` → ``pt``). ``None`` when there is none.
 
     The effective language, which track rules match, is ``language_ietf`` if set, else
     ``language``."""
@@ -417,7 +435,7 @@ class MediaSource(DocumentModel):
     Streams are read across all programs.
     """
 
-    schema_version: PositiveInt = 1
+    schema_version: PositiveInt = 2
     ref: SourceRef
     container: ContainerInfo = Field(default_factory=ContainerInfo)
     video: list[VideoStream] = Field(default_factory=list)

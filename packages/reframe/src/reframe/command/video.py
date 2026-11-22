@@ -14,12 +14,14 @@ from fractions import Fraction
 from pathlib import Path, PureWindowsPath
 
 from reframe.command.errors import PlanError
-from reframe.command.filtergraph import escape_value, filter_path
+from reframe.command.filtergraph import escape_value, filter_path, known_colour
 from reframe.definitions import (
     ChoiceSetting,
+    Definitions,
     EncoderOption,
     OptionMapping,
     VideoEncoderDef,
+    fill_placeholders,
     mapping_supported,
     option_context,
     option_default,
@@ -28,6 +30,7 @@ from reframe.definitions.hdr import content_light_text, svt_mastering_display, x
 from reframe.models import (
     ConstantQuality,
     EncoderStatus,
+    JobSettings,
     OptionValue,
     Rational,
     VideoSettings,
@@ -35,12 +38,16 @@ from reframe.models import (
 )
 
 __all__ = [
+    "NVENC_QUALITY_RATE_LIMITS",
     "PassMode",
     "VideoArgs",
+    "encoder_and_pix_fmt",
     "format_number",
     "frame_rate_args",
     "hdr_params",
+    "nvenc_quality_rate_limit",
     "pass_log_files",
+    "sets_rate_buffer",
     "spec",
     "split_params",
     "video_encoder_args",
@@ -102,10 +109,39 @@ def split_params(text: str) -> list[tuple[str, str]]:
     return result
 
 
-def _fill(template: str, values: Mapping[str, str]) -> str:
-    for name, value in values.items():
-        template = template.replace("{" + name + "}", value)
-    return template
+def _sets(custom_params: str, *names: str) -> bool:
+    return any(name.casefold() in names for name, _ in split_params(custom_params))
+
+
+def sets_rate_buffer(custom_params: str) -> bool:
+    """Whether the custom parameters set ``maxrate`` or ``bufsize``."""
+    return _sets(custom_params, "maxrate", "bufsize")
+
+
+#: ``-maxrate`` and ``-bufsize`` of an NVENC constant quality without a level. Without them NVENC
+#: picks the lowest level that fits the picture and holds the bitrate under that level's limit,
+#: in CQ mode too. These are the highest values at which it still picks H.265 level 5.1 and
+#: H.264 level 5.0 (5.1 and 5.2 where the picture needs it).
+NVENC_QUALITY_RATE_LIMITS: dict[str, tuple[str, str]] = {
+    "h264_nvenc": ("200M", "400M"),
+    "hevc_nvenc": ("160M", "320M"),
+}
+
+
+def nvenc_quality_rate_limit(encoder_id: str, video: VideoSettings) -> list[str]:
+    """``["-maxrate", …, "-bufsize", …]`` for a constant quality of an encoder of
+    :data:`NVENC_QUALITY_RATE_LIMITS` with no level (in the settings or the custom parameters)
+    and no rate buffer in the custom parameters; ``[]`` otherwise."""
+    limits = NVENC_QUALITY_RATE_LIMITS.get(encoder_id)
+    if (
+        limits is None
+        or not isinstance(video.rate_control, ConstantQuality)
+        or video.level is not None
+        or _sets(video.custom_params, "maxrate", "bufsize", "level")
+    ):
+        return []
+    maxrate, bufsize = limits
+    return ["-maxrate", maxrate, "-bufsize", bufsize]
 
 
 @dataclass(slots=True)
@@ -121,11 +157,11 @@ class VideoArgs:
         """Pairs of ``-option value`` with placeholders; options get the ``v:0`` specifier."""
         for i in range(0, len(setting_args), 2):
             option, value = setting_args[i], setting_args[i + 1]
-            self.args += [spec(option, V0), _fill(value, values)]
+            self.args += [spec(option, V0), fill_placeholders(value, values)]
 
     def add_params(self, params: Mapping[str, str], values: Mapping[str, str]) -> None:
         for name, value in params.items():
-            self.params[name] = _fill(value, values)
+            self.params[name] = fill_placeholders(value, values)
 
     def mapped(self, mapping: OptionMapping, value: str) -> None:
         if mapping.kind == "x26x_param":
@@ -232,10 +268,6 @@ def _options(
         out.params[name] = ",".join(values)
 
 
-def encoder_option_keys(encoder: VideoEncoderDef) -> list[str]:
-    return [o.key for o in encoder.options]
-
-
 def _choice_value(option: EncoderOption, value: OptionValue) -> str:
     if option.choices is not None and isinstance(value, str):
         found = next((c for c in option.choices if c.value == value), None)
@@ -248,16 +280,12 @@ def _choice_value(option: EncoderOption, value: OptionValue) -> str:
 _SVT_MATRIX = {"bt2020nc": "bt2020-ncl", "bt2020c": "bt2020-cl", "smpte170m": "bt601"}
 _SVT_TRANSFER = {"arib-std-b67": "hlg", "smpte170m": "bt601", "iec61966-2-1": "srgb"}
 _SVT_PRIMARIES = {"smpte170m": "bt601"}
-_UNKNOWN = frozenset({"unknown", "unspecified", "reserved", ""})
 
 
 def hdr_params(encoder: VideoEncoderDef, stream: VideoStream) -> dict[str, str]:
     """Colour and HDR10 metadata for the params argument when the output stays HDR."""
     c = stream.color
-    colour = [
-        (v if v not in _UNKNOWN else None)
-        for v in (c.primaries, c.transfer, c.matrix)
-    ]  # fmt: skip
+    colour = [known_colour(v) for v in (c.primaries, c.transfer, c.matrix)]
     hdr = stream.hdr
     md = hdr.mastering_display if hdr is not None else None
     cll = hdr.content_light if hdr is not None else None
@@ -363,6 +391,18 @@ def frame_rate_args(
     return []
 
 
+def encoder_and_pix_fmt(job: JobSettings, defs: Definitions) -> tuple[VideoEncoderDef, str]:
+    """The job's video encoder and the pixel format of its bit depth."""
+    settings = job.video
+    encoder = defs.video_encoders.get(settings.encoder)
+    if encoder is None:
+        raise PlanError(f"unknown video encoder {settings.encoder!r} (validation reports it)")
+    pix_fmt = encoder.pix_fmts.get("10" if settings.bit_depth == 10 else "8")
+    if pix_fmt is None:
+        raise PlanError(f"{encoder.label} has no {settings.bit_depth}-bit mode")
+    return encoder, pix_fmt
+
+
 def video_encoder_args(
     encoder: VideoEncoderDef,
     video: VideoSettings,
@@ -387,6 +427,7 @@ def video_encoder_args(
             values[name] = format_number(derived.compute(rc.value), integer=derived.integer)
         out.add(mode.args, values)
         out.add_params(mode.params, values)
+        out.add(nvenc_quality_rate_limit(encoder.id, video), {})
     else:
         bitrate = encoder.rate_control.bitrate
         if bitrate is None:
@@ -413,7 +454,10 @@ def video_encoder_args(
                 out.add_params(two_pass.turbo_params if turbo else two_pass.full_params, values)
     _choice(encoder.presets, video.preset, "speed preset", out)
     _tune(encoder, video, out)
-    _choice(encoder.profiles, video.profile, "profile", out)
+    profile = video.profile
+    if profile is None and encoder.profiles is not None and encoder.profiles.write_default:
+        profile = encoder.profiles.default_for(video.bit_depth)
+    _choice(encoder.profiles, profile, "profile", out)
     _choice(encoder.levels, video.level, "level", out)
     if hdr:
         for name, value in hdr_params(encoder, stream).items():

@@ -18,7 +18,8 @@ from reframe.preview.cache import PreviewCache
 from reframe.tasks import TaskContext
 from reframe_server.sources import source_id
 from reframe_testing import fake_tools as ft
-from reframe_testing.server import PROBE_RULE, Api
+from reframe_testing.server import PROBE_RULE, Api, ApiFactory
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
@@ -31,14 +32,6 @@ def _lifetime(url: str, path: str) -> float:
     parts = urlsplit(url)
     assert parts.path == path
     return int(parse_qs(parts.query)["exp"][0]) - time.time()
-
-
-async def _until(check: Callable[[], bool], limit: float = 10.0) -> None:
-    deadline = time.monotonic() + limit
-    while not check():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.02)
 
 
 async def _source(api: Api, file: Path) -> str:
@@ -135,7 +128,7 @@ async def test_a_frames_task_cancelled_elsewhere_is_a_conflict(api: Api) -> None
     sid = await _source(api, api.media_file())
     body = {"source_id": sid, "count": 1}
     request = asyncio.ensure_future(api.client.post("/api/preview/frames", json=body))
-    await _until(lambda: any("-frames:v" in call for call in api.fake.calls("ffmpeg")))
+    await wait_until(lambda: any("-frames:v" in call for call in api.fake.calls("ffmpeg")))
     task = _frames_task(api)
     assert task is not None
     assert api.reframe.tasks.cancel(task.id)
@@ -148,7 +141,7 @@ async def test_shutdown_while_frames_are_made_is_503(api: Api) -> None:
     sid = await _source(api, api.media_file())
     body = {"source_id": sid, "count": 1}
     request = asyncio.ensure_future(api.client.post("/api/preview/frames", json=body))
-    await _until(lambda: any("-frames:v" in call for call in api.fake.calls("ffmpeg")))
+    await wait_until(lambda: any("-frames:v" in call for call in api.fake.calls("ffmpeg")))
     await api.reframe.close()
     response = await request
     assert (response.status_code, response.json()["code"]) == (503, "server.closing")
@@ -212,26 +205,6 @@ async def test_clip_starts_the_task_with_the_job_and_window(
 
 
 @pytest.mark.needs_ffmpeg
-async def test_a_clip_task_result_leads_to_a_playable_url(
-    api: Api, fixture_media: FixtureMedia
-) -> None:
-    file = api.add_fixture("multitrack", fixture_media)
-    await _source(api, file)
-    body = {"job": await _job(api, file), "start": 0.0, "seconds": 1.0}
-    response = await api.client.post("/api/preview/clip", json=body)
-    info = await api.reframe.tasks.wait(response.json()["task_id"])
-    assert info.state is TaskState.DONE, info.error
-    clip_id = PreviewClip.model_validate(info.result).id
-    link = await api.client.get(f"/api/preview/clips/{clip_id}/link")
-    assert link.status_code == 200
-    assert str(api.reframe.cache_dir) not in link.text
-    url = link.json()["url"]
-    assert 3590 < _lifetime(url, f"/api/preview/clips/{clip_id}") <= 3600
-    part = await api.anonymous.get(url, headers={"range": "bytes=0-9"})
-    assert (part.status_code, len(part.content)) == (206, 10)
-
-
-@pytest.mark.needs_ffmpeg
 async def test_frames_of_a_clip_are_decoded_from_the_clip(
     api: Api, fixture_media: FixtureMedia
 ) -> None:
@@ -260,6 +233,13 @@ async def test_frames_of_a_clip_are_decoded_from_the_clip(
     ]
     png = await api.anonymous.get(frames[1]["url"])
     assert (png.status_code, png.headers["content-type"]) == (200, "image/png")
+    link = await api.client.get(f"/api/preview/clips/{clip_id}/link")
+    assert link.status_code == 200
+    assert str(api.reframe.cache_dir) not in link.text
+    url = link.json()["url"]
+    assert 3590 < _lifetime(url, f"/api/preview/clips/{clip_id}") <= 3600
+    part = await api.anonymous.get(url, headers={"range": "bytes=0-9"})
+    assert (part.status_code, len(part.content)) == (206, 10)
 
 
 async def test_frames_of_a_clip_not_in_the_cache_is_404(api: Api) -> None:
@@ -271,6 +251,30 @@ async def test_frames_of_a_clip_not_in_the_cache_is_404(api: Api) -> None:
 async def test_the_link_of_a_clip_not_in_the_cache_is_404(api: Api) -> None:
     response = await api.client.get(f"/api/preview/clips/{'a' * 32}/link")
     assert (response.status_code, response.json()["code"]) == (404, "preview.unknown_clip")
+
+
+def _cached_clip(api: Api) -> Path:
+    clip = PreviewCache(api.reframe.cache_dir).clip("c" * 32, ".mkv")
+    clip.parent.mkdir(parents=True, exist_ok=True)
+    clip.write_bytes(b"x" * 100)
+    return clip
+
+
+async def test_the_desktop_app_gets_the_file_of_a_clip(make_api: ApiFactory) -> None:
+    async with make_api(mode="desktop") as api:
+        clip = _cached_clip(api)
+        response = await api.client.get(f"/api/preview/clips/{'c' * 32}/file")
+        assert response.status_code == 200, response.text
+        assert Path(response.json()["path"]) == clip
+        missing = await api.client.get(f"/api/preview/clips/{'a' * 32}/file")
+        assert (missing.status_code, missing.json()["code"]) == (404, "preview.unknown_clip")
+
+
+async def test_a_web_client_gets_no_file_of_a_clip(api: Api) -> None:
+    clip = _cached_clip(api)
+    response = await api.client.get(f"/api/preview/clips/{'c' * 32}/file")
+    assert (response.status_code, response.json()["code"]) == (404, "preview.no_clip_file")
+    assert str(clip) not in response.text
 
 
 async def test_cache_size_and_clear(api: Api) -> None:

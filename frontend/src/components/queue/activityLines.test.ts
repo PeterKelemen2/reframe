@@ -170,7 +170,6 @@ describe('the activity lines', () => {
   it('names every kind of task the server starts', () => {
     const kinds = [
       'probe_sources',
-      'probe_folder',
       'encoders_rescan',
       'tools_fetch',
       'bitrate_scan',
@@ -187,7 +186,6 @@ describe('the activity lines', () => {
     )
     expect(texts).toEqual([
       'Reading sources: cancelled',
-      'Reading a folder: cancelled',
       'Encoder detection: cancelled',
       'FFmpeg download: cancelled',
       'Bitrate measurement: cancelled',
@@ -245,16 +243,14 @@ describe('the activity lines', () => {
     const tools = {
       ffmpeg: tool('ffmpeg', 'found', '9.0.2'),
       ffprobe: tool('ffprobe', 'found'),
-      mkvpropedit: tool('mkvpropedit', 'too_old'),
-      mediainfo: tool('mediainfo', 'missing'),
     }
     const found = line({ type: 'tools.changed', tools } as ReframeEvent)
     expect(found).toMatchObject({ kind: 'system', tone: 'ok' })
-    expect(found.detail).toBe(
-      'ffmpeg 9.0.2 · ffprobe found · mkvpropedit too old · mediainfo missing',
-    )
-    const broken = { ...tools, ffprobe: tool('ffprobe', 'broken') }
-    expect(line({ type: 'tools.changed', tools: broken } as ReframeEvent).tone).toBe('error')
+    expect(found.detail).toBe('ffmpeg 9.0.2 · ffprobe found')
+    const broken = { ...tools, ffprobe: tool('ffprobe', 'too_old') }
+    const old = line({ type: 'tools.changed', tools: broken } as ReframeEvent)
+    expect(old.tone).toBe('error')
+    expect(old.detail).toBe('ffmpeg 9.0.2 · ffprobe too old')
   })
 
   it('lists the encoders whose status changed with their state', () => {
@@ -269,5 +265,20 @@ describe('the activity lines', () => {
       text: 'Encoder status changed (2)',
       detail: 'libx265: available · hevc_nvenc: unavailable',
     })
+  })
+
+  it('words an encoder and its state with one message, which a translation may reorder', () => {
+    const i18n = createAppI18n()
+    i18n.global.mergeLocaleMessage('en', {
+      queue: { activity: { encoderLine: '{state} ({encoder})' } },
+    })
+    const event = {
+      type: 'capabilities.changed',
+      encoders: [{ id: 'libx265', state: 'available', hardware: false }],
+    } as ReframeEvent
+    const reordered = i18n.global.t as (key: string, named?: Record<string, unknown>) => string
+    expect(describeEntry({ id: 1, at: new Date(), event }, reordered, jobName)?.detail).toBe(
+      'available (libx265)',
+    )
   })
 })

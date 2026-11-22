@@ -14,7 +14,7 @@ type ToolInfo = Schemas['ToolInfo']
 export function defaultSettings(): AppSettings {
   return {
     schema_version: 1,
-    tools: { ffmpeg: null, ffprobe: null, mkvpropedit: null, mediainfo: null },
+    tools: { ffmpeg: null, ffprobe: null },
     encoders: { hardware_tests: true, vaapi_device: null },
     output: {
       naming: {
@@ -29,7 +29,6 @@ export function defaultSettings(): AppSettings {
         output_folder_mode: 'fixed',
         output_folder: '/media/out',
       },
-      default_container: 'mkv',
       collision: 'auto_rename',
       partial_file: 'delete',
     },
@@ -47,8 +46,45 @@ export function tool(name: ToolInfo['name'], extra: Partial<ToolInfo> = {}): Too
     version: '9.0.2',
     env_var: `REFRAME_${name.toUpperCase()}`,
     next_to_ffmpeg: false,
+    bundled: false,
     ...extra,
   } as ToolInfo
+}
+
+/** The offered builds as the server lists them on linux-x64, none installed. */
+export function toolBuilds(extra: Partial<Schemas['ToolBuilds']> = {}): Schemas['ToolBuilds'] {
+  return {
+    builds: [
+      {
+        name: 'default',
+        label: 'Recommended',
+        summary: 'The build Reframe is tested with. NVIDIA NVENC needs driver 610 or newer.',
+        version: 'n9.0.2-17-g2a571b6068-20260930',
+        release_version: '9.0.2',
+        license: 'GPL-3.0-or-later',
+        source_links: ['https://github.com/FFmpeg/FFmpeg/commit/2a571b6'],
+        size: 68_653_636,
+        archive_url:
+          'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n9.0.2-17-g2a571b6068-linux64-gpl-shared-9.0.tar.xz',
+        sha256: '01a9764d0b5364b66cfeb4617557c64321b0e232e172ec73f0a701c5f7694326',
+      },
+      {
+        name: 'compat',
+        label: 'Older NVIDIA drivers',
+        summary: 'For NVIDIA drivers 570 to 609 (a GeForce 10 series card with driver 580).',
+        version: 'n8.1.3-9-g29e619e767-20260930',
+        release_version: '8.1.3',
+        license: 'GPL-3.0-or-later',
+        source_links: ['https://github.com/FFmpeg/FFmpeg/commit/29e619e'],
+        size: 66_000_000,
+        archive_url:
+          'https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-09-30-13-08/ffmpeg-n8.1.3-9-g29e619e767-linux64-gpl-shared-8.1.tar.xz',
+        sha256: '5d0c5c5b2c1d8a2b3e8f0f4b3b2d7c0e9a1f6b8c4d2e0a9f8b7c6d5e4f3a2b1c',
+      },
+    ],
+    installed: null,
+    ...extra,
+  }
 }
 
 export function systemInfo(
@@ -59,14 +95,10 @@ export function systemInfo(
     mode: 'web',
     auth: 'token',
     platform: 'linux',
+    container: false,
     problems: [],
     settings_read_only: false,
-    tools: {
-      ffmpeg: tool('ffmpeg', tools.ffmpeg),
-      ffprobe: tool('ffprobe', tools.ffprobe),
-      mkvpropedit: tool('mkvpropedit', tools.mkvpropedit),
-      mediainfo: tool('mediainfo', tools.mediainfo),
-    },
+    tools: { ffmpeg: tool('ffmpeg', tools.ffmpeg), ffprobe: tool('ffprobe', tools.ffprobe) },
     ...extra,
   } as SystemInfo
 }
@@ -77,11 +109,13 @@ export function systemInfo(
  */
 export class SettingsServer extends FakeServer {
   document = defaultSettings()
+  builds = toolBuilds()
   refuse: (ops: JsonPatchOp[]) => Response | undefined = () => undefined
 
   constructor() {
     super()
     this.on('GET /api/settings', () => structuredClone(this.document))
+    this.on('GET /api/system/tools/builds', () => structuredClone(this.builds))
     this.on('PUT /api/settings', ({ body }) => {
       const ops = body as JsonPatchOp[]
       const refused = this.refuse(ops)

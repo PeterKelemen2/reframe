@@ -2,32 +2,14 @@
 
 from __future__ import annotations
 
-import importlib.util
-import itertools
-import sys
-from pathlib import Path
-from types import ModuleType
-from typing import Any, get_args
+from typing import Any
 
 import pytest
 
-from reframe.definitions import channels_mixdown
 from reframe.models import AudioOutputTrack, CropSettings, Mixdown, ReplaceOp, Severity
 
+from . import scenario as sc
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 DEFS = sc.DEFS
 AUDIO_CODES = (
     "audio.mixdown_unsupported",
@@ -39,7 +21,7 @@ AUDIO_CODES = (
 LAYOUTS = {1: "mono", 2: "stereo", 3: "3.0", 6: "5.1(side)", 8: "7.1"}
 #: One encoder of each mixdown kind.
 MIXDOWN_ENCODERS = ("aac", "ac3", "libmp3lame", "libopus")
-#: For bitrates and sample rates also a lossless encoder (FLAC: no bitrate).
+#: For sample rates also a lossless encoder (FLAC).
 VALUE_ENCODERS = (*MIXDOWN_ENCODERS, "flac")
 
 
@@ -245,59 +227,6 @@ def test_audio_values_never_block_the_queue() -> None:
         "audio.samplerate_unsupported",
     }
     assert all(i.severity is not Severity.ERROR for i in issues), issues
-
-
-REQUESTS: list[Mixdown | None] = [None, *get_args(Mixdown)]
-
-
-@pytest.mark.parametrize(
-    ("encoder_id", "requested", "channels"),
-    list(itertools.product(MIXDOWN_ENCODERS, REQUESTS, [0, 1, 2, 3, 6, 8])),
-)
-def test_mixdown_issues_follow_the_helper(
-    encoder_id: str, requested: Mixdown | None, channels: int
-) -> None:
-    encoder = DEFS.audio_encoders[encoder_id]
-    written = encoder.snap_mixdown(requested, channels, DEFS.mixdowns)
-    track = AudioOutputTrack(encoder=encoder_id, mixdown=requested)
-    s = one_track(track, channels=channels)
-    issues = [
-        i for i in s.validate() if i.code in ("audio.mixdown_unsupported", "audio.mixdown_upmix")
-    ]
-    if written == requested:
-        assert issues == []
-        return
-    [issue] = issues
-    assert issue.severity is Severity.INFO
-    [fix] = issue.fixes
-    [op] = fix.patch
-    assert isinstance(op, ReplaceOp)
-    assert op.value == written
-    assert op.value != "dpl2"
-    if op.value is not None and channels > 0:
-        assert DEFS.mixdowns[op.value].channels <= channels  # never an upmix
-    shown = "the source layout" if written is None else DEFS.mixdowns[written].label
-    assert shown in issue.message
-
-
-@pytest.mark.parametrize("encoder_id", VALUE_ENCODERS)
-@pytest.mark.parametrize("kbps", [8, 100, 250, 700, 5000])
-@pytest.mark.parametrize("channels", [1, 2, 6, 8])
-def test_bitrate_issues_follow_the_helper(encoder_id: str, kbps: int, channels: int) -> None:
-    encoder = DEFS.audio_encoders[encoder_id]
-    s = one_track(AudioOutputTrack(encoder=encoder_id, bitrate=kbps), channels=channels)
-    found = [i for i in s.validate() if i.code == "audio.bitrate_out_of_range"]
-    if encoder.bitrate is None:
-        [issue] = found
-        assert issue.message.endswith(f"is written without one ({kbps} kb/s is not used).")
-        return
-    layout = encoder.snap_mixdown(None, channels, DEFS.mixdowns) or channels_mixdown(channels)
-    snapped = encoder.bitrate.snap(kbps, layout, "down")
-    if snapped == kbps:
-        assert found == []
-        return
-    [issue] = found
-    assert issue.message.endswith(f"is written at {snapped} kb/s.")
 
 
 @pytest.mark.parametrize("encoder_id", VALUE_ENCODERS)

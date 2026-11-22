@@ -162,10 +162,15 @@ async function revealActive(): Promise<void> {
   if (option) document.getElementById(optionId(option))?.scrollIntoView?.({ block: 'nearest' })
 }
 
-watch(query, () => {
-  active.value = 0
-  void revealActive()
-})
+// Sync: `show` clears the query and then marks the chosen language, which this must not undo.
+watch(
+  query,
+  () => {
+    active.value = 0
+    void revealActive()
+  },
+  { flush: 'sync' },
+)
 
 function moveActive(by: number): void {
   const last = options.value.length - 1
@@ -307,6 +312,7 @@ function onDialogKey(event: KeyboardEvent): void {
           :id="listId"
           class="language-picker__list"
           role="listbox"
+          tabindex="-1"
           :aria-label="t('language.picker.list')"
         >
           <div
@@ -403,11 +409,11 @@ function onDialogKey(event: KeyboardEvent): void {
   border-color: var(--p-inputtext-hover-border-color);
 }
 
+/* The app's focus ring: a field's own ring has no width, and its border change alone is faint. */
 .language-picker__trigger:focus-visible {
   border-color: var(--p-inputtext-focus-border-color);
-  outline: var(--p-inputtext-focus-ring-width) var(--p-inputtext-focus-ring-style)
-    var(--p-inputtext-focus-ring-color);
-  outline-offset: var(--p-inputtext-focus-ring-offset);
+  outline: var(--p-focus-ring-width) var(--p-focus-ring-style) var(--p-focus-ring-color);
+  outline-offset: var(--p-focus-ring-offset);
 }
 
 .language-picker__trigger--invalid {

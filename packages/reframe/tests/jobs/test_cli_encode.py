@@ -30,11 +30,13 @@ from reframe.models import (
     Severity,
 )
 from reframe.models import ValidationIssue as Issue
+from reframe.platform import longpath
 from reframe.queue import UnknownJobError
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
+from reframe_testing.cli import invoke
 
-from .conftest import Queues, invoke, media_file, replay
+from .conftest import Queues, draft_path, media_file, replay
 from .fake_queue import Behaviour, FakeQueue
 
 SEASON = "Show.S01.1080p.BluRay.x264-GRP"
@@ -60,6 +62,7 @@ def outputs(folder: Path) -> list[str]:
 
 def test_a_season_folder_and_a_file(season: Path, queues: Queues, tmp_path: Path) -> None:
     movie = media_file(tmp_path / "media" / "Movie.2016.1080p.BluRay-GRP", "movie.mkv")
+    movie_output = draft_path(movie, "Movie.mkv")
     result = invoke("encode", str(season), str(movie))
     assert result.exit_code == EXIT_OK, result.output
     out = result.stdout.splitlines()
@@ -68,7 +71,7 @@ def test_a_season_folder_and_a_file(season: Path, queues: Queues, tmp_path: Path
     assert out[1] == f"[1/4] {EPISODES[0]} → {season / 'Show.S01E01.Title.1.mkv'}"
     assert out[2] == f"[2/4] {EPISODES[1]} → {season / 'Show.S01E02.Title.2.mkv'}"
     assert out[3] == f"[3/4] {EPISODES[2]} → {season / 'Show.S01E10.Title.10.mkv'}"
-    assert out[4] == f"[4/4] movie.mkv → {movie.parent / 'Movie.mkv'}"
+    assert out[4] == f"[4/4] movie.mkv → {movie_output}"
     assert "Queued 4 jobs." in out
     assert "[1/4] running" in out
     assert "[1/4] 25.0% · 48.0 fps · 2.00x · ETA 0:00:06 · 244.1 KiB" in out
@@ -79,7 +82,7 @@ def test_a_season_folder_and_a_file(season: Path, queues: Queues, tmp_path: Path
         "Show.S01E02.Title.2.mkv",
         "Show.S01E10.Title.10.mkv",
     ]
-    assert (movie.parent / "Movie.mkv").exists()
+    assert movie_output.exists()
     # Our jobs go first in the queue, and the runner takes only them.
     calls = queues.queue.calls
     assert calls == ["add"] * 4 + ["start job-1 job-2 job-3 job-4"]
@@ -122,6 +125,12 @@ def test_a_file_that_cannot_be_probed_is_not_queued(
     assert result.exit_code == EXIT_FAILED, result.output
     assert "broken.mkv: not queued" in result.stdout
     assert "Summary: 1 done, 0 failed, 0 cancelled, 1 not queued." in result.stdout
+
+
+def test_a_reframe_in_process_value_that_is_no_truth_value_is_a_usage_error() -> None:
+    result = invoke("encode", "x.mkv", env={cli.IN_PROCESS_ENV: "garbage"})
+    assert result.exit_code == EXIT_USAGE
+    assert "'garbage' is not a valid boolean" in result.output
 
 
 def test_output_with_several_files_is_refused(season: Path, queues: Queues, tmp_path: Path) -> None:
@@ -205,7 +214,7 @@ async def test_cancelling_the_command_cancels_the_jobs(
     running = asyncio.Event()
     queues.behaviour = lambda _job: "hang"
     queues.on_running = lambda _job: running.set()
-    task = asyncio.create_task(cli.run_encode([season], preset=None, output=None))
+    task = asyncio.create_task(cli.run_encode([season], preset=None, output=None, in_process=True))
     await asyncio.wait_for(running.wait(), 30)
     await asyncio.sleep(0.05)  # the 10 % progress event
     assert partial_files(season)
@@ -213,6 +222,16 @@ async def test_cancelling_the_command_cancels_the_jobs(
     assert await task == EXIT_INTERRUPTED
     assert not partial_files(season)
     assert {job.state for job in queues.queue.list()} == {JobState.CANCELLED}
+
+
+def test_a_path_windows_refuses_is_named_as_too_long(
+    cli_env: ft.FakeTools, queues: Queues, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(longpath, "long_paths_enabled", lambda: False)
+    result = invoke("encode", str(tmp_path / ("x" * 250) / "nope.mkv"))
+    assert result.exit_code == EXIT_NOT_FOUND
+    assert "Windows refuses this path" in result.stderr
+    assert queues.made == []
 
 
 def test_missing_path(cli_env: ft.FakeTools, queues: Queues, tmp_path: Path) -> None:
@@ -303,14 +322,15 @@ def test_live_mode_on_a_terminal() -> None:
     view.state("a", JobState.RUNNING)
     view.progress("a", JobProgress(percent=50.0, fps=30.0, eta=10.0))
     view.progress("b", JobProgress(percent=5.0))  # a bar appears for it too
-    view.state("a", JobState.DONE, output=Path("/out/a.mkv"))
-    view.state("b", JobState.FAILED, error="boom", log=Path("/logs/b.log"))
+    output, log = Path("/out/a.mkv"), Path("/logs/b.log")
+    view.state("a", JobState.DONE, output=output)
+    view.state("b", JobState.FAILED, error="boom", log=log)
     view.state("b", JobState.INTERRUPTED)
     view.close()
     text = buffer.getvalue()
-    assert "[1/2] done in 0:00:00: /out/a.mkv" in text
+    assert f"[1/2] done in 0:00:00: {output}" in text
     assert "[2/2] failed: boom" in text
-    assert "log: /logs/b.log" in text
+    assert f"log: {log}" in text
     assert "[2/2] interrupted" in text
 
 
@@ -447,7 +467,9 @@ async def test_a_start_that_the_owner_refuses_is_sent_again_for_the_jobs_still_t
 
     monkeypatch.setattr(cli, "get_queue", make)
     files = [season / name for name in EPISODES[:2]]
-    code = await asyncio.wait_for(cli.run_encode(files, preset=None, output=None), 30)
+    code = await asyncio.wait_for(
+        cli.run_encode(files, preset=None, output=None, in_process=True), 30
+    )
     lines = capsys.readouterr().out.splitlines()
     assert code == EXIT_FAILED
     assert [call for call in made[0].calls if "start" in call] == [
@@ -473,7 +495,9 @@ async def test_a_start_that_the_owner_keeps_refusing_ends_the_command(
 
     monkeypatch.setattr(cli, "get_queue", make)
     files = [season / name for name in EPISODES[:2]]
-    code = await asyncio.wait_for(cli.run_encode(files, preset=None, output=None), 30)
+    code = await asyncio.wait_for(
+        cli.run_encode(files, preset=None, output=None, in_process=True), 30
+    )
     captured = capsys.readouterr()
     assert code == EXIT_FAILED
     assert captured.err == "error: the jobs cannot be queued: no job 'job-1' in the queue\n"
@@ -504,7 +528,9 @@ async def test_a_job_removed_while_the_command_waits_for_its_jobs(
 
     monkeypatch.setattr(cli, "get_queue", make)
     files = [season / name for name in EPISODES[:2]]
-    code = await asyncio.wait_for(cli.run_encode(files, preset=None, output=None), 30)
+    code = await asyncio.wait_for(
+        cli.run_encode(files, preset=None, output=None, in_process=True), 30
+    )
     lines = capsys.readouterr().out.splitlines()
     assert code == EXIT_OK
     assert lines[-1] == "Summary: 2 done, 0 failed, 0 cancelled, 0 not queued."
@@ -543,7 +569,9 @@ async def test_ctrl_c_leaves_a_job_that_ended_and_was_retried_before_the_command
 
     monkeypatch.setattr(cli, "get_queue", make)
     files = [season / name for name in EPISODES[:2]]
-    code = await asyncio.wait_for(cli.run_encode(files, preset=None, output=None), 30)
+    code = await asyncio.wait_for(
+        cli.run_encode(files, preset=None, output=None, in_process=True), 30
+    )
     assert code == EXIT_INTERRUPTED
     assert "cancel job-1" not in made[0].calls
     assert "cancel job-2" in made[0].calls

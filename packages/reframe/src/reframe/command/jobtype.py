@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import PurePath
 
+from reframe.command.metadata import TAG_KEYS
 from reframe.definitions import ContainerDef, Definitions, load_definitions
 from reframe.models import (
     AudioStream,
@@ -39,12 +40,9 @@ def is_matroska_source(source: MediaSource) -> bool:
     return "matroska" in formats and suffix != ".webm"
 
 
-#: The tags an in-place edit cannot set (the title can be set).
-OTHER_TAGS = ("actors", "director", "release_date", "comment", "genre", "description", "plot")
-
-
 def _tags_besides_title(tags: TagSettings) -> list[str]:
-    return [name for name in OTHER_TAGS if getattr(tags, name) is not None]
+    """The set tags an in-place edit cannot write (it can write the title)."""
+    return [n for n in TAG_KEYS if n != "title" and getattr(tags, n) is not None]
 
 
 def _audio_blockers(
@@ -153,7 +151,7 @@ def _typed(
     if job.output.edit_in_place:
         if not blockers:
             return "metadata_edit", (
-                "Metadata edit: only the track metadata changes, so mkvpropedit edits "
+                "Metadata edit: only the track metadata changes, so Reframe edits "
                 f"{PurePath(source.ref.path).name} in place, in seconds."
             )
         kind, reason = _copy_type(job, source, defs)

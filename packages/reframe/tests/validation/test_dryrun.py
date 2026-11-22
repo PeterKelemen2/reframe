@@ -1,12 +1,8 @@
-"""The dry run without FFmpeg: the custom-parameter split, the reduced job and command, and the
-reading of FFmpeg's log."""
+"""The dry run without FFmpeg: the reduced job and command, and the reading of FFmpeg's log."""
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
@@ -17,7 +13,6 @@ from reframe.models import (
     CapabilitySnapshot,
     ChapterSettings,
     JobSettings,
-    MediaSource,
     Severity,
     SourceRef,
     ToolInfo,
@@ -32,26 +27,12 @@ from reframe.validation.dryrun import (
     dry_run_job,
     failure_detail,
     parse_dry_run,
-    split_custom_params,
 )
 from reframe.validation.video import video_option_rule_issues
 
+from . import scenario as sc
+
 pytestmark = pytest.mark.anyio
-
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 
 
 def _job(**video: object) -> JobSettings:
@@ -63,13 +44,6 @@ def _job(**video: object) -> JobSettings:
 
 def _codes(issues: list) -> list[tuple[str, str, Severity]]:  # type: ignore[type-arg]
     return [(i.code, i.path, i.severity) for i in issues]
-
-
-def test_split_custom_params_keeps_the_typed_text() -> None:
-    params = split_custom_params(" ref=4 :bogus:path=C\\:/x::")
-    assert [(p.name, p.value) for p in params] == [("ref", "4"), ("bogus", "1"), ("path", "C:/x")]
-    assert [p.raw for p in params] == ["ref=4 ", "bogus", "path=C\\:/x"]
-    assert split_custom_params("") == []
 
 
 def test_the_dry_run_job_is_video_only() -> None:
@@ -295,6 +269,40 @@ def test_exit_code_zero_without_output_is_a_failure() -> None:
     assert "Resolution incorrect for alignment mode" in issues[0].message
 
 
+#: hevc_amf on the RX 7600 with ``-preanalysis 1`` at 320x180 (exit 190).
+AMF_PREANALYSIS_TOO_SMALL = (
+    "[hevc_amf @ 0x55] [warning] VBAQ is not supported by cqp Rate Control Method, "
+    "automatically disabled\n"
+    "0126-10-20 16:27:28 577F26C0 [AMFEncoderCorePAImpl] Warning: PA has already been created!\n"
+    "0126-10-20 16:27:38 FC93B6C0 [AMFPreAnalysisImpl]   Error: ../../../../../runtime/src/"
+    "components/EncodeSDK/AMFPreAnalysisImpl.cpp(1376):Assertion failed:Init() - height (180) "
+    "not in [200, 4352]\n"
+    "0126-10-20 16:27:38 FC93B6C0 [AMFEncoderCorePAImpl]   Error: ../../../../../runtime/src/"
+    "components/EncoderCore/EncoderCorePAImpl.cpp(669):AMF_ERROR 4 : AMF_INVALID_ARG: "
+    "m_spPreAnalysis->Init failed\n"
+    "[hevc_amf @ 0x55] [error] encoder->Init() failed with error 4\n"
+    "[vost#0:0/hevc_amf @ 0x56] [enc:hevc_amf @ 0x57] [error] Error while opening encoder - "
+    "maybe incorrect parameters such as bit_rate, rate, width or height.\n"
+    "[info] Conversion failed!\n"
+)
+
+
+def test_an_amf_start_failure_names_the_runtimes_error_not_a_warning() -> None:
+    assert failure_detail(AMF_PREANALYSIS_TOO_SMALL, "hevc_amf") == (
+        "AMFPreAnalysisImpl: Assertion failed:Init() - height (180) not in [200, 4352]"
+    )
+    job = _job(encoder="hevc_amf", custom_params="preanalysis=1")
+    issues = parse_dry_run(job, AMF_PREANALYSIS_TOO_SMALL, 190)
+    assert _codes(issues) == [("encoder.dry_run_failed", "video.custom_params", Severity.ERROR)]
+    assert "height (180) not in [200, 4352]" in issues[0].message
+    assert "VBAQ" not in issues[0].message
+    # Without the runtime's line, the encoder's error line, not its warning.
+    ffmpeg_only = "\n".join(
+        line for line in AMF_PREANALYSIS_TOO_SMALL.splitlines() if "[AMF" not in line
+    )
+    assert failure_detail(ffmpeg_only, "hevc_amf") == "encoder->Init() failed with error 4"
+
+
 def test_libvpx_failure_detail_has_the_additional_information() -> None:
     stderr = (
         "[libvpx-vp9 @ 0x1] v1.17.0\n"
@@ -323,38 +331,33 @@ def _tools(status: ToolStatus, path: Path | None = None) -> ToolSet:
     return ToolSet(
         ffmpeg=info("ffmpeg"),
         ffprobe=info("ffprobe"),
-        mkvpropedit=info("mkvpropedit"),
-        mediainfo=info("mediainfo"),
     )
 
 
-def _source() -> MediaSource:
-    source: MediaSource = sc.make_source()
-    return source
-
-
 async def test_without_ffmpeg_the_dry_run_is_skipped() -> None:
-    issues = await dry_run(_job(), _source(), CapabilitySnapshot(), _tools(ToolStatus.MISSING))
+    issues = await dry_run(
+        _job(), sc.make_source(), CapabilitySnapshot(), _tools(ToolStatus.MISSING)
+    )
     assert _codes(issues) == [("encoder.dry_run_skipped", "video.encoder", Severity.WARNING)]
 
 
 async def test_passthrough_has_nothing_to_test() -> None:
     job = _job(passthrough=True)
-    found = _tools(ToolStatus.FOUND, Path("/usr/bin/ffmpeg"))
-    assert await dry_run(job, _source(), CapabilitySnapshot(), found) == []
+    found = sc.make_tools()
+    assert await dry_run(job, sc.make_source(), CapabilitySnapshot(), found) == []
 
 
 async def test_a_job_that_cannot_be_planned() -> None:
-    found = _tools(ToolStatus.FOUND, Path("/usr/bin/ffmpeg"))
-    issues = await dry_run(_job(encoder="nope"), _source(), CapabilitySnapshot(), found)
+    found = sc.make_tools()
+    issues = await dry_run(_job(encoder="nope"), sc.make_source(), CapabilitySnapshot(), found)
     assert _codes(issues) == [("encoder.dry_run_failed", "video.encoder", Severity.ERROR)]
 
 
 def test_the_command_ends_with_one_frame_to_null() -> None:
-    found = _tools(ToolStatus.FOUND, Path("/usr/bin/ffmpeg"))
+    found = sc.make_tools()
     job = _job(custom_params="ref=3")
     job.output.path = Path("/out/x.mkv")
-    argv = dry_run_argv(job, _source(), CapabilitySnapshot(), found)
+    argv = dry_run_argv(job, sc.make_source(), CapabilitySnapshot(), found)
     assert argv[:2] == ["-loglevel", "+level+info"]
     assert argv.count("-loglevel") == 1
     assert argv[-5:] == ["-frames:v", "1", "-f", "null", "-"]

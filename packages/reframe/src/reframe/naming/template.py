@@ -16,7 +16,6 @@ import unicodedata
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
-from functools import lru_cache
 
 from reframe.jsonpatch import format_pointer
 from reframe.models.issues import AddOp, Fix, FixTarget, Severity, ValidationIssue
@@ -124,7 +123,6 @@ class _Builder:
         self.stack[-1][0].append(node)
 
 
-@lru_cache(maxsize=512)
 def parse_template(text: str) -> Template:
     """Parse a template. Syntax errors are collected; the parse goes on after each one."""
     errors: list[TemplateError] = []

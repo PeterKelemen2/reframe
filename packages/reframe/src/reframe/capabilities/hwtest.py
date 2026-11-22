@@ -10,32 +10,27 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from reframe.capabilities.reasons import Failure, TestContext, explain_failure, normalise_line
-from reframe.definitions import VideoEncoderDef
+from reframe.definitions import DEFAULT_VAAPI_DEVICE, VideoEncoderDef
+from reframe.definitions.models import BitDepth
 from reframe.models.capabilities import EncoderState
 from reframe.tools import CancelToken, run
 
 __all__ = [
-    "DEFAULT_VAAPI_DEVICE",
     "FILTER_TESTS",
     "TEST_FRAMES",
     "TEST_MAX_OUTPUT",
     "TEST_SOURCE",
     "TEST_TIMEOUT",
-    "BitDepth",
-    "DefinitionError",
     "TestOutcome",
     "filter_test_argv",
     "hardware_test_argv",
-    "resolve_placeholders",
     "run_filter_test",
     "run_hardware_test",
     "uses_vaapi_device",
 ]
 
-DEFAULT_VAAPI_DEVICE = "/dev/dri/renderD128"
 TEST_SOURCE = "color=size=640x360"
 TEST_FRAMES = 3
 #: Seconds for one test encode.
@@ -43,8 +38,6 @@ TEST_TIMEOUT = 10.0
 #: Bytes of output kept from a test encode.
 TEST_MAX_OUTPUT = 2**20
 
-BitDepth = Literal["8", "10"]
-_PLACEHOLDER = re.compile(r"\{(\w+)\}")
 _VAAPI_PLACEHOLDER = "{vaapi_device}"
 #: FFmpeg replaced a ``-pix_fmt`` that the encoder does not take (and then exits 0).
 _AUTO_SELECTED = re.compile(
@@ -52,26 +45,9 @@ _AUTO_SELECTED = re.compile(
     r"auto-selecting format '(?P<picked>[^']+)'"
 )
 
-#: Filters that ``ffmpeg -filters`` lists but that need a run test, with the ``-vf`` value of
-#: the test: ``libplacebo`` needs a working Vulkan device.
-FILTER_TESTS: Mapping[str, str] = {"libplacebo": "libplacebo"}
-
-
-class DefinitionError(ValueError):
-    """The encoder definition cannot make a test command: an unknown placeholder, or no pixel
-    format for the bit depth."""
-
-
-def resolve_placeholders(arg: str, values: Mapping[str, str]) -> str:
-    """Replace ``{name}`` in ``arg``; an unknown name raises :class:`DefinitionError`."""
-
-    def replace(match: re.Match[str]) -> str:
-        name = match[1]
-        if name not in values:
-            raise DefinitionError(f"unknown placeholder {{{name}}} in {arg!r}")
-        return values[name]
-
-    return _PLACEHOLDER.sub(replace, arg)
+#: Filters that ``ffmpeg -filters`` lists but that need a run test: ``libplacebo`` needs a
+#: working Vulkan device.
+FILTER_TESTS = ("libplacebo",)
 
 
 def uses_vaapi_device(encoder: VideoEncoderDef) -> bool:
@@ -90,13 +66,10 @@ def hardware_test_argv(
     vaapi_device: str = DEFAULT_VAAPI_DEVICE,
 ) -> list[str]:
     """The test encode command for ``encoder`` at ``bit_depth``. Pure."""
-    sw_pix_fmt = encoder.pix_fmts.get(bit_depth)
-    if sw_pix_fmt is None:
-        raise DefinitionError(f"{encoder.id} has no pixel format for {bit_depth}-bit")
+    sw_pix_fmt = encoder.pix_fmts[bit_depth]
     values = {"vaapi_device": vaapi_device, "sw_pix_fmt": sw_pix_fmt}
     setup = encoder.hardware_setup
-    init_args = [resolve_placeholders(a, values) for a in setup.init_args] if setup else []
-    tail = [resolve_placeholders(f, values) for f in setup.filter_tail] if setup else []
+    init_args, tail = setup.resolve(values) if setup else ([], [])
     frames = ["-vf", ",".join(tail)] if tail else ["-pix_fmt", sw_pix_fmt]
     return [
         str(ffmpeg),
@@ -128,12 +101,13 @@ class TestOutcome:
     failure: Failure | None = None
     """Why it failed (``None`` when it worked, or when it was cancelled)."""
     cancelled: bool = False
-    duration: float = 0.0
     argv: tuple[str, ...] = ()
 
 
 def filter_test_argv(ffmpeg: str | Path, name: str) -> list[str]:
-    """The run test of the filter ``name`` (a key of :data:`FILTER_TESTS`). Pure."""
+    """The run test of the filter ``name`` (one of :data:`FILTER_TESTS`). Pure."""
+    if name not in FILTER_TESTS:
+        raise ValueError(f"no run test for the filter {name!r}")
     return [
         str(ffmpeg),
         "-hide_banner",
@@ -145,7 +119,7 @@ def filter_test_argv(ffmpeg: str | Path, name: str) -> list[str]:
         "-frames:v",
         "1",
         "-vf",
-        FILTER_TESTS[name],
+        name,
         "-f",
         "null",
         "-",
@@ -184,7 +158,7 @@ async def _run_test(
 
     def outcome(failure: Failure | None = None, *, cancelled: bool = False) -> TestOutcome:
         ok = failure is None and not cancelled
-        return TestOutcome(ok, failure, cancelled, result.duration, tuple(argv))
+        return TestOutcome(ok, failure, cancelled, tuple(argv))
 
     if result.cancelled:
         return outcome(cancelled=True)
@@ -212,11 +186,7 @@ async def run_hardware_test(
 ) -> TestOutcome:
     """Run one test encode and explain a failure. Never raises for FFmpeg problems. The
     10-bit test also fails when FFmpeg replaced the 10-bit pixel format (exit code 0)."""
-    try:
-        argv = hardware_test_argv(ffmpeg, encoder, bit_depth, vaapi_device=vaapi_device)
-    except DefinitionError as exc:
-        reason = f"The encoder definition is broken: {exc}"
-        return TestOutcome(ok=False, failure=Failure(EncoderState.ERROR, reason))
+    argv = hardware_test_argv(ffmpeg, encoder, bit_depth, vaapi_device=vaapi_device)
     ctx = TestContext(
         encoder=encoder.id,
         family=encoder.family,

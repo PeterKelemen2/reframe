@@ -6,12 +6,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import struct
 import subprocess
-from collections.abc import Callable, Iterable, Sequence
-from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Callable, Sequence
+from fractions import Fraction
 from functools import cache
 from pathlib import Path
 from typing import Any, cast
@@ -19,6 +18,7 @@ from typing import Any, cast
 import pytest
 
 from reframe.capabilities.parse import parse_encoder_help
+from reframe.command.video import nvenc_quality_rate_limit
 from reframe.definitions import (
     ChoiceSetting,
     CodecSupport,
@@ -29,19 +29,26 @@ from reframe.definitions import (
     load_definitions,
     supported_presets,
 )
-from reframe.definitions.models import TRACK_FLAGS, OptionMapping
+from reframe.definitions.models import TRACK_FLAGS
 from reframe.models.capabilities import EncoderStatus
-from reframe.models.job import Container, OptionValue
+from reframe.models.job import ConstantQuality, Container, OptionValue, VideoSettings
 from reframe.tools.versions import parse_ffmpeg_version
+from reframe.validation.levels import AMF_PREANALYSIS_MIN_SIZE, h264_level_fits, x265_level_fits
+from reframe_testing.encoders import (
+    LAVFI_VIDEO,
+    encode_args,
+    mapping_args,
+    parallel,
+    run_ffmpeg_capture,
+    sei_options,
+    written_text,
+)
 
 pytestmark = pytest.mark.needs_ffmpeg
 
 DEFS = load_definitions()
 VIDEO = DEFS.video_encoders
 SOFTWARE = [e for e in VIDEO if not VIDEO[e].hardware]
-_LAVFI_VIDEO = ["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25"]
-#: Small enough for every level (H.265 level 1 allows 36 864 luma samples per picture).
-_LAVFI_SMALL = ["-f", "lavfi", "-i", "testsrc2=size=160x96:rate=15"]
 _GENERIC_ARGS = frozenset(
     {
         "-b:v",
@@ -69,17 +76,6 @@ def _tools() -> tuple[str, str]:
     return ffmpeg, ffprobe
 
 
-def _ffmpeg(args: Sequence[str], timeout: float = 120) -> subprocess.CompletedProcess[str]:
-    ffmpeg, _ = _tools()
-    return subprocess.run(
-        [ffmpeg, "-hide_banner", "-nostdin", "-y", *args],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-    )
-
-
 def _probe(path: Path, *entries: str) -> dict[str, Any]:
     _, ffprobe = _tools()
     out = subprocess.run(
@@ -91,12 +87,6 @@ def _probe(path: Path, *entries: str) -> dict[str, Any]:
     )
     result: dict[str, Any] = json.loads(out.stdout)
     return result
-
-
-def _parallel[T](jobs: Iterable[T], run: Callable[[T], str | None]) -> list[str]:
-    """Run ``run`` for every job in a thread pool; the problems it returns, in order."""
-    with ThreadPoolExecutor(max_workers=min(8, os.cpu_count() or 2)) as pool:
-        return [p for p in pool.map(run, list(jobs)) if p]
 
 
 _PARAM_ERRORS = re.compile(r"Error parsing option|Unknown option|Invalid value|bad parameter")
@@ -115,7 +105,7 @@ def _fail_text(result: subprocess.CompletedProcess[str]) -> str:
 @cache
 def _encoders_in_build() -> frozenset[str]:
     names = set()
-    for line in _ffmpeg(["-encoders"]).stdout.splitlines():
+    for line in run_ffmpeg_capture(["-encoders"]).stdout.splitlines():
         parts = line.split()
         if len(parts) >= 2 and re.fullmatch(r"[VAS][F.][S.][X.][B.][D.]", parts[0]):
             names.add(parts[1])
@@ -125,7 +115,7 @@ def _encoders_in_build() -> frozenset[str]:
 @cache
 def _series() -> tuple[int, int]:
     """``(major, minor)`` of the FFmpeg build under test (``(8, 1)`` for n8.1.3)."""
-    version = parse_ffmpeg_version(_ffmpeg(["-version"]).stdout)
+    version = parse_ffmpeg_version(run_ffmpeg_capture(["-version"]).stdout)
     assert version is not None
     assert version.series is not None
     return version.series
@@ -141,7 +131,7 @@ _ADDED_IN: dict[tuple[str, str, str], tuple[int, int]] = {
 
 @cache
 def _help_text(encoder: str) -> str:
-    return _ffmpeg(["-h", f"encoder={encoder}"]).stdout
+    return run_ffmpeg_capture(["-h", f"encoder={encoder}"]).stdout
 
 
 @cache
@@ -175,49 +165,6 @@ def _help(encoder: str) -> dict[str, set[str]]:
 def _need_encoder(encoder: str) -> None:
     if encoder not in _encoders_in_build():
         pytest.skip(f"{encoder} is not in this FFmpeg build")
-
-
-def _mapping_args(mapping: OptionMapping, value: str) -> tuple[list[str], dict[str, str]]:
-    if mapping.kind == "x26x_param":
-        return [], {mapping.name: value}
-    if mapping.kind == "ffmpeg_arg":
-        return [mapping.arg, value], {}
-    return [f"-{mapping.name}", value], {}
-
-
-def _written(value: OptionValue) -> str:
-    if isinstance(value, bool):
-        return "1" if value else "0"
-    if isinstance(value, float) and value.is_integer():
-        return str(int(value))
-    return str(value)
-
-
-def _encode_args(
-    encoder: VideoEncoderDef,
-    args: Sequence[str] = (),
-    params: dict[str, str] | None = None,
-    depth: int = 8,
-    frames: int = 3,
-    small: bool = False,
-) -> list[str]:
-    params_args: list[str] = []
-    source = _LAVFI_SMALL if small else _LAVFI_VIDEO
-    if params:
-        assert encoder.params_arg is not None
-        params_args = [encoder.params_arg, ":".join(f"{k}={v}" for k, v in params.items())]
-    return [
-        *source,
-        "-frames:v",
-        str(frames),
-        "-pix_fmt",
-        encoder.pix_fmts[str(depth)],  # type: ignore[index]
-        "-c:v",
-        encoder.id,
-        *encoder.extra_args,
-        *args,
-        *params_args,
-    ]
 
 
 @pytest.mark.parametrize("encoder_id", sorted(VIDEO))
@@ -302,7 +249,7 @@ def test_private_options_and_choices_exist_in_the_build(encoder_id: str) -> None
 @pytest.mark.parametrize("encoder_id", ["libx264", "libx265"])
 def test_x26x_lists_match_the_library(encoder_id: str) -> None:
     enc = VIDEO[encoder_id]
-    out = _ffmpeg([*_encode_args(enc, ["-preset", "bogus"]), "-f", "null", "-"]).stderr
+    out = run_ffmpeg_capture([*encode_args(enc, ["-preset", "bogus"]), "-f", "null", "-"]).stderr
     presets = re.search(r"Possible presets: (.+)", out)
     tunes = re.search(r"Possible tunes: (.+)", out)
     assert presets is not None
@@ -312,28 +259,11 @@ def test_x26x_lists_match_the_library(encoder_id: str) -> None:
     assert enc.presets.values() == presets.group(1).split()
     library_tunes = set(tunes.group(1).split())
     assert set(enc.tunes.values()) | {"fastdecode"} <= library_tunes
-    out = _ffmpeg([*_encode_args(enc, ["-profile", "bogus"]), "-f", "null", "-"]).stderr
+    out = run_ffmpeg_capture([*encode_args(enc, ["-profile", "bogus"]), "-f", "null", "-"]).stderr
     profiles = re.search(r"Possible profiles: (.+)", out)
     assert profiles is not None
     assert enc.profiles is not None
     assert set(enc.profiles.values()) <= set(profiles.group(1).split())
-
-
-def _sei_options(path: Path) -> dict[str, str]:
-    match = re.search(rb"options: ([ -~]+)", path.read_bytes())
-    assert match is not None, "no encoder settings SEI"
-    out: dict[str, str] = {}
-    for token in match.group(1).decode().split():
-        if "=" in token:
-            key, value = token.split("=", 1)
-            out[key] = value
-        elif token.startswith("no-"):
-            out[token[3:]] = "0"
-        else:
-            out[token] = "1"
-    if out.get("rskip") == "1" and "rskip-edge-threshold" in out:
-        out["rskip"] = "2"
-    return out
 
 
 def _part(value: str, index: int, sep: str = ":") -> str:
@@ -548,19 +478,19 @@ def test_per_preset_defaults_match_the_library(encoder_id: str, tmp_path: Path) 
 
     def check(preset: str) -> str | None:
         out = tmp_path / f"{preset}.{_EXT[encoder_id]}"
-        result = _ffmpeg([*_encode_args(enc, ["-preset", preset]), str(out)])
+        result = run_ffmpeg_capture([*encode_args(enc, ["-preset", preset]), str(out)])
         if result.returncode:
             return f"{preset}: {_fail_text(result)}"
-        options = _sei_options(out)
+        options = sei_options(out)
         options_720p: dict[str, str] = {}
         if any(o.key in _SEI_720P for o in enc.options):
             big = tmp_path / f"{preset}-720p.{_EXT[encoder_id]}"
             source = ["-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=25"]
-            args = [*source, *_encode_args(enc, ["-preset", preset])[len(_LAVFI_VIDEO) :]]
-            result = _ffmpeg([*args, str(big)])
+            args = [*source, *encode_args(enc, ["-preset", preset])[len(LAVFI_VIDEO) :]]
+            result = run_ffmpeg_capture([*args, str(big)])
             if result.returncode:
                 return f"{preset} 720p: {_fail_text(result)}"
-            options_720p = _sei_options(big)
+            options_720p = sei_options(big)
         wrong = []
         for option in enc.options:
             if option.default.kind == "fixed" and option.key in sei:
@@ -577,7 +507,7 @@ def test_per_preset_defaults_match_the_library(encoder_id: str, tmp_path: Path) 
                 wrong.append(f"{option.key}: library {actual!r}, table {expected!r}")
         return f"{preset}: {wrong}" if wrong else None
 
-    assert _parallel(enc.presets.values(), check) == []
+    assert parallel(enc.presets.values(), check) == []
 
 
 def _build_params(
@@ -591,9 +521,9 @@ def _build_params(
             continue
         name, part = option.mapping.name, option.mapping.part
         if option.key in values:
-            value = _written(values[option.key])
+            value = written_text(values[option.key])
         elif part is not None and option.default.kind == "preset":
-            value = _written(option.default.values[preset])
+            value = written_text(option.default.values[preset])
         else:
             continue
         if part is None:
@@ -791,13 +721,13 @@ def test_every_x26x_option_reaches_the_library(encoder_id: str, tmp_path: Path) 
         params = _build_params(enc, {**checked, **extra}, "medium")
         if encoder_id == "libx265" and "colorprim" not in params:
             params |= {"colorprim": "bt2020", "transfer": "smpte2084", "colormatrix": "bt2020nc"}
-        args = _encode_args(enc, ["-preset", "medium"], params, depth=10)
+        args = encode_args(enc, ["-preset", "medium"], params, depth=10)
         if "lookahead-slices" in checked:
             args = ["-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=25", *args[4:]]
-        result = _ffmpeg([*args, str(out)])
+        result = run_ffmpeg_capture([*args, str(out)])
         assert result.returncode == 0, _fail_text(result)
         assert _param_error(result) is None
-        options = _sei_options(out)
+        options = sei_options(out)
         stream: dict[str, Any] = {}
         if any(key in vui for key in checked):
             stream = _probe(out, "-show_streams")["streams"][0]
@@ -822,9 +752,9 @@ def test_x265_level_idc_reaches_the_library(tmp_path: Path) -> None:
     enc = VIDEO["libx265"]
     assert enc.levels is not None
     out = tmp_path / "o.hevc"
-    result = _ffmpeg([*_encode_args(enc, [], {"level-idc": "4.1"}), str(out)])
+    result = run_ffmpeg_capture([*encode_args(enc, [], {"level-idc": "4.1"}), str(out)])
     assert result.returncode == 0, _fail_text(result)
-    assert _sei_options(out)["level-idc"] == "41"
+    assert sei_options(out)["level-idc"] == "41"
 
 
 def _choice_jobs(enc: VideoEncoderDef) -> list[tuple[str, list[str], dict[str, str], int]]:
@@ -838,7 +768,7 @@ def _choice_jobs(enc: VideoEncoderDef) -> list[tuple[str, list[str], dict[str, s
             for depth in depths:
                 if str(depth) not in enc.pix_fmts:
                     continue
-                args, params = _mapping_args(setting.mapping, choice.written)
+                args, params = mapping_args(setting.mapping, choice.written)
                 jobs.append((f"{name}={choice.value}@{depth}", args, params, depth))
     if enc.fast_decode is not None:
         fd = enc.fast_decode
@@ -853,15 +783,15 @@ def test_every_software_choice_encodes(encoder_id: str) -> None:
 
     def run(job: tuple[str, list[str], dict[str, str], int]) -> str | None:
         label, args, params, depth = job
-        result = _ffmpeg(
-            [*_encode_args(enc, args, params, depth=depth, frames=2, small=True), "-f", "null", "-"]
+        result = run_ffmpeg_capture(
+            [*encode_args(enc, args, params, depth=depth, frames=2, small=True), "-f", "null", "-"]
         )
         if result.returncode:
             return f"{label}: {_fail_text(result)}"
         error = _param_error(result)
         return f"{label}: {error}" if error else None
 
-    assert _parallel(_choice_jobs(enc), run) == []
+    assert parallel(_choice_jobs(enc), run) == []
 
 
 def test_svtav1_options_parse(tmp_path: Path) -> None:
@@ -908,12 +838,12 @@ def test_svtav1_options_parse(tmp_path: Path) -> None:
     }
     assert set(values) == {o.key for o in enc.options}
     params = {
-        o.mapping.name: _written(values[o.key])
+        o.mapping.name: written_text(values[o.key])
         for o in enc.options
         if o.mapping.kind == "x26x_param"
     }
     out = tmp_path / "o.ivf"
-    result = _ffmpeg([*_encode_args(enc, ["-preset", "10"], params, depth=10), str(out)])
+    result = run_ffmpeg_capture([*encode_args(enc, ["-preset", "10"], params, depth=10), str(out)])
     assert result.returncode == 0, _fail_text(result)
     assert _param_error(result) is None
     log = result.stderr
@@ -941,13 +871,13 @@ def test_svtav1_options_parse(tmp_path: Path) -> None:
 
 def test_svtav1_option_defaults_in_the_log() -> None:
     enc = VIDEO["libsvtav1"]
-    plain = _ffmpeg([*_encode_args(enc, ["-preset", "10"]), "-f", "null", "-"]).stderr
+    plain = run_ffmpeg_capture([*encode_args(enc, ["-preset", "10"]), "-f", "null", "-"]).stderr
     assert re.search(r"AQ mode / Variance Boost\s*:\s*2 / 0", plain)
     assert re.search(r"sharpness / luminance-based QP bias\s*:\s*0 / 0", plain)
     assert re.search(r"QP scale compress strength\s*:\s*0", plain)
     assert re.search(r"key-frame type\s*:\s*\d+ / 16 / key frame", plain)
-    boost = _ffmpeg(
-        [*_encode_args(enc, ["-preset", "10"], {"enable-variance-boost": "1"}), "-f", "null", "-"]
+    boost = run_ffmpeg_capture(
+        [*encode_args(enc, ["-preset", "10"], {"enable-variance-boost": "1"}), "-f", "null", "-"]
     ).stderr
     assert re.search(
         r"AQ mode / Variance Boost strength / octile / curve\s*:\s*2 / 2 / 5 / 0", boost
@@ -981,22 +911,22 @@ def test_option_range_ends_encode(encoder_id: str) -> None:
         assert option.min is not None
         assert option.max is not None
         for value in (option.min, option.max):
-            args, params = _mapping_args(option.mapping, _written(value))
+            args, params = mapping_args(option.mapping, written_text(value))
             params = _RANGE_COMPANIONS.get((encoder_id, option.key), {}) | params
             args = [*_RANGE_ARGS.get(encoder_id, []), *args]
-            jobs.append((f"{option.key}={_written(value)}", args, params))
+            jobs.append((f"{option.key}={written_text(value)}", args, params))
 
     def run(job: tuple[str, list[str], dict[str, str]]) -> str | None:
         label, args, params = job
-        result = _ffmpeg(
-            [*_encode_args(enc, args, params, frames=2, small=True), "-f", "null", "-"]
+        result = run_ffmpeg_capture(
+            [*encode_args(enc, args, params, frames=2, small=True), "-f", "null", "-"]
         )
         if result.returncode:
             return f"{label}: {_fail_text(result)}"
         error = _param_error(result)
         return f"{label}: {error}" if error else None
 
-    assert _parallel(jobs, run) == []
+    assert parallel(jobs, run) == []
 
 
 def test_recorded_cross_option_rules(tmp_path: Path) -> None:
@@ -1004,7 +934,9 @@ def test_recorded_cross_option_rules(tmp_path: Path) -> None:
     x265, x264 = VIDEO["libx265"], VIDEO["libx264"]
 
     def x265_run(params: dict[str, str]) -> subprocess.CompletedProcess[str]:
-        return _ffmpeg([*_encode_args(x265, [], params, frames=2, small=True), "-f", "null", "-"])
+        return run_ffmpeg_capture(
+            [*encode_args(x265, [], params, frames=2, small=True), "-f", "null", "-"]
+        )
 
     for bframes, lookahead, ok in (("4", "4", False), ("4", "5", True), ("0", "0", True)):
         result = x265_run({"bframes": bframes, "rc-lookahead": lookahead})
@@ -1019,17 +951,19 @@ def test_recorded_cross_option_rules(tmp_path: Path) -> None:
     for trellis, written in (("1", "9"), ("2", "10")):
         out = tmp_path / f"t{trellis}.h264"
         params = {"subme": "10", "trellis": trellis}
-        result = _ffmpeg([*_encode_args(x264, [], params, frames=2, small=True), str(out)])
+        result = run_ffmpeg_capture(
+            [*encode_args(x264, [], params, frames=2, small=True), str(out)]
+        )
         assert result.returncode == 0, _fail_text(result)
-        assert _sei_options(out)["subme"] == written
+        assert sei_options(out)["subme"] == written
     svt = VIDEO["libsvtav1"]
-    result = _ffmpeg(
-        [*_encode_args(svt, ["-preset", "10"], {"lookahead": "-1"}, small=True), "-f", "null", "-"]
+    result = run_ffmpeg_capture(
+        [*encode_args(svt, ["-preset", "10"], {"lookahead": "-1"}, small=True), "-f", "null", "-"]
     )
     assert result.returncode == 0
     assert "Error parsing option lookahead: -1." in result.stderr
-    result = _ffmpeg(
-        [*_encode_args(svt, ["-preset", "10"], {"lookahead": "121"}, small=True), "-f", "null", "-"]
+    result = run_ffmpeg_capture(
+        [*encode_args(svt, ["-preset", "10"], {"lookahead": "121"}, small=True), "-f", "null", "-"]
     )
     assert result.returncode != 0
     assert "The lookahead distance must be [0 - 120]" in result.stderr
@@ -1044,7 +978,7 @@ def test_software_rate_control_encodes(encoder_id: str, tmp_path: Path) -> None:
     assert b is not None
     runs: list[tuple[str, list[str], dict[str, str]]] = []
     for value in (q.min, q.default, q.max):
-        text = _written(value)
+        text = written_text(value)
         runs.append(
             (
                 f"quality {text}",
@@ -1056,13 +990,13 @@ def test_software_rate_control_encodes(encoder_id: str, tmp_path: Path) -> None:
 
     def run(job: tuple[str, list[str], dict[str, str]]) -> str | None:
         label, args, params = job
-        result = _ffmpeg([*_encode_args(enc, args, params, frames=5), "-f", "null", "-"])
+        result = run_ffmpeg_capture([*encode_args(enc, args, params, frames=5), "-f", "null", "-"])
         if result.returncode:
             return f"{label}: {_fail_text(result)}"
         error = _param_error(result)
         return f"{label}: {error}" if error else None
 
-    assert _parallel(runs, run) == []
+    assert parallel(runs, run) == []
     tp = b.two_pass
     assert tp is not None
     assert tp.mode == "two_runs"
@@ -1081,7 +1015,7 @@ def test_software_rate_control_encodes(encoder_id: str, tmp_path: Path) -> None:
                 params |= tp.turbo_params if turbo else tp.full_params
             args = [a.replace("{kbps}", "500") for a in args]
             target = ["-f", "null", "-"] if number == "1" else [str(out)]
-            result = _ffmpeg([*_encode_args(enc, args, params, frames=10), *target])
+            result = run_ffmpeg_capture([*encode_args(enc, args, params, frames=10), *target])
             assert result.returncode == 0, f"pass {number}: {_fail_text(result)}"
             assert _param_error(result) is None
         assert out.stat().st_size > 0
@@ -1098,9 +1032,9 @@ def _quality_args(q: QualityMode, value: float | None) -> tuple[list[str], dict[
         return args, {k: v for k, v in q.params.items() if "{" not in v}
 
     def fill(text: str) -> str:
-        text = text.replace("{value}", _written(value))
+        text = text.replace("{value}", written_text(value))
         for name, derived in q.derived.items():
-            text = text.replace("{" + name + "}", _written(derived.compute(value)))
+            text = text.replace("{" + name + "}", written_text(derived.compute(value)))
         return text
 
     return [fill(a) for a in q.args], {k: fill(v) for k, v in q.params.items()}
@@ -1135,7 +1069,9 @@ def _check_quality_points(results: dict[str, tuple[int, str]]) -> list[str]:
 
 def _encode_digest(args: Sequence[str], out: Path, timeout: float = 120) -> tuple[int, str] | str:
     """Encode to ``out`` (bit-exact Matroska): ``(size, md5)``, or the error text."""
-    result = _ffmpeg([*args, "-fflags", "+bitexact", "-f", "matroska", str(out)], timeout)
+    result = run_ffmpeg_capture(
+        [*args, "-fflags", "+bitexact", "-f", "matroska", str(out)], timeout
+    )
     if result.returncode:
         return _fail_text(result)
     data = out.read_bytes()
@@ -1152,13 +1088,13 @@ def test_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Path) -> Non
 
     def run(label: str) -> str | None:
         args, params = _quality_args(q, points[label])
-        got = _encode_digest(_encode_args(enc, args, params, frames=5), tmp_path / f"{label}.mkv")
+        got = _encode_digest(encode_args(enc, args, params, frames=5), tmp_path / f"{label}.mkv")
         if isinstance(got, str):
             return f"{label}: {got}"
         results[label] = got
         return None
 
-    assert _parallel(points, run) == []
+    assert parallel(points, run) == []
     assert _check_quality_points(results) == []
 
 
@@ -1186,7 +1122,7 @@ def _audio_encode(
 ) -> subprocess.CompletedProcess[str]:
     """Encode noise; ``-ar`` forces the output rate (without it FFmpeg would negotiate a rate
     the encoder supports)."""
-    return _ffmpeg(
+    return run_ffmpeg_capture(
         [
             "-f",
             "lavfi",
@@ -1222,7 +1158,7 @@ def test_audio_bitrates_and_sample_rates_encode(encoder_id: str) -> None:
     if enc.quality is not None:
         q = enc.quality
         jobs += [
-            (f"quality {v}", "stereo", [q.arg, _written(v)], 48000)
+            (f"quality {v}", "stereo", [q.arg, written_text(v)], 48000)
             for v in (q.min, q.default, q.max)
         ]
 
@@ -1231,7 +1167,7 @@ def test_audio_bitrates_and_sample_rates_encode(encoder_id: str) -> None:
         result = _audio_encode(encoder_id, layout, args, rate)
         return f"{label}: {_fail_text(result)}" if result.returncode else None
 
-    assert _parallel(jobs, run) == []
+    assert parallel(jobs, run) == []
 
 
 def test_recorded_audio_encoder_behaviour(tmp_path: Path) -> None:
@@ -1247,14 +1183,14 @@ def test_recorded_audio_encoder_behaviour(tmp_path: Path) -> None:
         "150k",
         str(out),
     ]
-    assert _ffmpeg(ffmpeg_args).returncode == 0
+    assert run_ffmpeg_capture(ffmpeg_args).returncode == 0
     assert _probe(out, "-show_streams")["streams"][0]["bit_rate"] == "160000"
     assert _audio_encode("libopus", "stereo", [], 44100).returncode != 0
     assert _audio_encode("ac3", "stereo", [], 96000).returncode != 0
     assert _audio_encode("libopus", "stereo", ["-b:a", "600k"]).returncode != 0
     out71 = tmp_path / "b.ac3"
     assert (
-        _ffmpeg(
+        run_ffmpeg_capture(
             [
                 "-f",
                 "lavfi",
@@ -1327,15 +1263,15 @@ def stream_sources(
     def make(job: tuple[str, list[str]]) -> str | None:
         name, args = job
         out = folder / f"{name}.mkv"
-        result = _ffmpeg([*args, str(out)])
+        result = run_ffmpeg_capture([*args, str(out)])
         if result.returncode:
             return f"{name}: {_fail_text(result)}"
         sources[name] = out
         return None
 
-    assert _parallel(jobs, make) == []
+    assert parallel(jobs, make) == []
     mov_text = folder / "mov_text.mp4"
-    assert _ffmpeg(["-i", str(srt), "-c:s", "mov_text", str(mov_text)]).returncode == 0
+    assert run_ffmpeg_capture(["-i", str(srt), "-c:s", "mov_text", str(mov_text)]).returncode == 0
     sources["mov_text"] = mov_text
     return sources
 
@@ -1354,7 +1290,7 @@ def _container(name: str) -> ContainerDef:
 def _copy_into(
     source: Path, container: str, out: Path, extra: Sequence[str] = ()
 ) -> subprocess.CompletedProcess[str]:
-    return _ffmpeg(
+    return run_ffmpeg_capture(
         [
             "-i",
             str(source),
@@ -1397,7 +1333,7 @@ def test_listed_codecs_can_be_copied_in(
         got = _probe(out, "-show_streams")["streams"][0]["codec_name"]
         return None if got == name else f"{name}: read back as {got}"
 
-    assert _parallel(jobs, run) == []
+    assert parallel(jobs, run) == []
 
 
 @pytest.mark.parametrize(
@@ -1584,11 +1520,11 @@ def test_mkv_copy_except_matches_the_muxer(tmp_path: Path) -> None:
         allowed = (mkv.audio if "/" in spec else mkv.video).can_copy(codec)
         out = tmp_path / f"{codec}.out.mkv"
         if muxer == "direct":
-            result = _ffmpeg([*make, "-f", "matroska", str(out)])
+            result = run_ffmpeg_capture([*make, "-f", "matroska", str(out)])
             refused = result.returncode != 0 and "No wav codec tag found" in result.stderr
             return None if refused and not allowed else f"{codec}: {_fail_text(result)}"
         src = tmp_path / f"{codec}.src"
-        result = _ffmpeg([*make, "-f", muxer, str(src)])
+        result = run_ffmpeg_capture([*make, "-f", muxer, str(src)])
         if result.returncode or _codec_back(src) != codec:
             return f"{codec}: no source ({_fail_text(result)}, read as {_codec_back(src)})"
         result = _copy_into(src, "mkv", out, ["-strict", "-2"])
@@ -1606,7 +1542,7 @@ def test_mkv_copy_except_matches_the_muxer(tmp_path: Path) -> None:
             )
         return None if ok else f"{codec}: denied, but rc {result.returncode}, read as {back}"
 
-    problems = _parallel(sorted(_MKV_SOURCES), run)
+    problems = parallel(sorted(_MKV_SOURCES), run)
     for lsb_first, codec in ((True, "dsd_lsbf_planar"), (False, "dsd_msbf_planar")):
         source = _dsf(tmp_path / f"{codec}.dsf", lsb_first)
         assert _codec_back(source) == codec
@@ -1625,7 +1561,7 @@ def test_subtitle_encode_targets(
     srt = fixture_media("text-subs").with_name("text-subs.en.srt")
     for target in ("srt", "ass", "webvtt", "mov_text"):
         out = tmp_path / f"{target}{cont.extensions[0]}"
-        result = _ffmpeg(["-i", str(srt), "-c:s", target, "-f", cont.muxer, str(out)])
+        result = run_ffmpeg_capture(["-i", str(srt), "-c:s", target, "-f", cont.muxer, str(out)])
         assert (result.returncode == 0) == (target in cont.subtitles.encode), (
             target,
             _fail_text(result),
@@ -1639,7 +1575,7 @@ def test_flags_the_muxer_writes(container: str, tmp_path: Path) -> None:
     for flag in TRACK_FLAGS:
         disposition = DEFS.track_flags[flag].disposition
         out = tmp_path / f"{flag}{cont.extensions[0]}"
-        result = _ffmpeg(
+        result = run_ffmpeg_capture(
             [
                 "-f",
                 "lavfi",
@@ -1672,7 +1608,7 @@ def test_default_flag_without_a_default_track(container: str, tmp_path: Path) ->
     cont = _container(container)
     codec = {"mkv": "aac", "mp4": "aac", "webm": "libopus"}[container]
     out = tmp_path / f"d{cont.extensions[0]}"
-    result = _ffmpeg(
+    result = run_ffmpeg_capture(
         [
             "-f",
             "lavfi",
@@ -1697,7 +1633,7 @@ def test_default_flag_without_a_default_track(container: str, tmp_path: Path) ->
     )
     assert result.returncode == 0
     first = _probe(out, "-show_streams")["streams"][0]["disposition"]["default"]
-    assert bool(first) == cont.default_always_set
+    assert bool(first) == (container == "mp4")
 
 
 @pytest.mark.parametrize("container", ["mkv", "mp4", "webm"])
@@ -1711,13 +1647,13 @@ def test_chapters_and_attachments(
         else ["-c:v", "libx264"]
     )
     out = tmp_path / f"c{cont.extensions[0]}"
-    result = _ffmpeg(
+    result = run_ffmpeg_capture(
         ["-i", str(fixture_media("chapters")), "-map", "0:v", *video, "-frames:v", "5", str(out)]
     )
     assert result.returncode == 0, _fail_text(result)
     assert (len(_probe(out, "-show_chapters")["chapters"]) == 4) == cont.chapters
     out = tmp_path / f"a{cont.extensions[0]}"
-    result = _ffmpeg(
+    result = run_ffmpeg_capture(
         [
             "-i",
             str(fixture_media("text-subs")),
@@ -1742,7 +1678,9 @@ def test_mp4_codec_tags_and_format_flags(tmp_path: Path) -> None:
     mp4 = DEFS.containers["mp4"]
     out = tmp_path / "h.mp4"
     args = ["-tag:v", mp4.codec_tags["hevc"], *mp4.format_flags["web_optimized"]]
-    result = _ffmpeg([*_LAVFI_VIDEO, "-frames:v", "3", "-c:v", "libx265", *args, str(out)])
+    result = run_ffmpeg_capture(
+        [*LAVFI_VIDEO, "-frames:v", "3", "-c:v", "libx265", *args, str(out)]
+    )
     assert result.returncode == 0, _fail_text(result)
     assert _probe(out, "-show_streams")["streams"][0]["codec_tag_string"] == "hvc1"
     data = out.read_bytes()
@@ -1772,7 +1710,7 @@ _COLOUR_FILTERS = frozenset({"tonemap", "colorspace"})
 @cache
 def _filters_in_build() -> frozenset[str]:
     names = set()
-    for line in _ffmpeg(["-filters"]).stdout.splitlines():
+    for line in run_ffmpeg_capture(["-filters"]).stdout.splitlines():
         parts = line.split()
         if len(parts) >= 3 and re.fullmatch(r"[T.][S.][C.]", parts[0]):
             names.add(parts[1])
@@ -1812,22 +1750,24 @@ def test_every_filter_chain_runs(fixture_media: Callable[[str], Path]) -> None:
             ["-i", str(hdr)] if colour else ["-f", "lavfi", "-i", "testsrc2=size=320x240:rate=25"]
         )
         tail = ",format=yuv420p" if colour else ""
-        result = _ffmpeg([*source, "-vf", chain + tail, "-frames:v", "2", "-f", "null", "-"])
+        result = run_ffmpeg_capture(
+            [*source, "-vf", chain + tail, "-frames:v", "2", "-f", "null", "-"]
+        )
         if result.returncode == 0:
             return None
         if impls[impl_id].needs_vulkan and "Generic error in an external library" in result.stderr:
             return None  # no Vulkan driver on this machine: libplacebo cannot run here
         return f"{label}: {chain}: {_fail_text(result)}"
 
-    assert _parallel(_filter_jobs(), run) == []
+    assert parallel(_filter_jobs(), run) == []
 
 
 def test_zscale_needs_tagged_input() -> None:
     chain = "zscale=p=bt709:t=bt709:m=bt709,format=yuv420p"
-    untagged = _ffmpeg([*_LAVFI_VIDEO, "-vf", chain, "-frames:v", "2", "-f", "null", "-"])
-    tagged = _ffmpeg(
+    untagged = run_ffmpeg_capture([*LAVFI_VIDEO, "-vf", chain, "-frames:v", "2", "-f", "null", "-"])
+    tagged = run_ffmpeg_capture(
         [
-            *_LAVFI_VIDEO,
+            *LAVFI_VIDEO,
             "-vf",
             "setparams=color_primaries=bt470bg:color_trc=smpte170m:colorspace=bt470bg," + chain,
             "-frames:v",
@@ -1844,7 +1784,7 @@ def test_zscale_needs_tagged_input() -> None:
 def test_idet_flags_interlaced_frames(fixture_media: Callable[[str], Path]) -> None:
     """``setfield=prog`` clears the source flag first."""
     src = fixture_media("interlaced")
-    result = _ffmpeg(
+    result = run_ffmpeg_capture(
         ["-i", str(src), "-vf", "setfield=prog,idet,showinfo", "-frames:v", "12", "-f", "null", "-"]
     )
     assert result.returncode == 0
@@ -1856,7 +1796,9 @@ def test_idet_flags_interlaced_frames(fixture_media: Callable[[str], Path]) -> N
 @pytest.mark.parametrize("encoder_id", ["libx264", "libx265", "libsvtav1"])
 def test_a_bad_params_entry_does_not_fail_the_encode(encoder_id: str) -> None:
     enc = VIDEO[encoder_id]
-    result = _ffmpeg([*_encode_args(enc, [], {"bogus": "1"}, small=True), "-f", "null", "-"])
+    result = run_ffmpeg_capture(
+        [*encode_args(enc, [], {"bogus": "1"}, small=True), "-f", "null", "-"]
+    )
     assert result.returncode == 0
     assert _param_error(result) is not None
 
@@ -1871,7 +1813,7 @@ def _hw_args(enc: VideoEncoderDef, depth: int) -> list[str]:
     if enc.family == "vaapi":
         return [
             *_HW_SETUP["vaapi"],
-            *_LAVFI_VIDEO,
+            *LAVFI_VIDEO,
             "-frames:v",
             "5",
             "-vf",
@@ -1879,28 +1821,84 @@ def _hw_args(enc: VideoEncoderDef, depth: int) -> list[str]:
             "-c:v",
             enc.id,
         ]
-    return [*_LAVFI_VIDEO, "-frames:v", "5", "-pix_fmt", pix, "-c:v", enc.id]
+    return [*LAVFI_VIDEO, "-frames:v", "5", "-pix_fmt", pix, "-c:v", enc.id]
 
 
-def _hw_usable(enc: VideoEncoderDef) -> bool:
-    if enc.id not in _encoders_in_build():
+def _hw_usable(enc: VideoEncoderDef, depth: int = 8) -> bool:
+    return _hw_usable_id(enc.id, depth)
+
+
+@cache
+def _hw_usable_id(encoder_id: str, depth: int) -> bool:
+    if encoder_id not in _encoders_in_build():
         return False
-    return _ffmpeg([*_hw_args(enc, 8), "-f", "null", "-"], timeout=30).returncode == 0
+    args = [*_hw_args(VIDEO[encoder_id], depth), "-f", "null", "-"]
+    return run_ffmpeg_capture(args, timeout=30).returncode == 0
 
 
-def _option_test_value(option: EncoderOption) -> str:
+#: Test values where the generic one does not fit: the machine may have one GPU only, and
+#: NVENC needs a keyframe interval larger than the B-frames plus 1.
+_OPTION_TEST_VALUES = {("nvenc", "gpu"): "0", ("nvenc", "g"): "30"}
+
+
+def _option_test_value(option: EncoderOption, family: str = "") -> str:
+    fixed = _OPTION_TEST_VALUES.get((family, option.key))
+    if fixed is not None:
+        return fixed
     if option.type == "bool":
         return "1"
     if option.type == "enum":
         return (option.choices or [])[-1].value
     assert option.min is not None
     assert option.max is not None
-    return _written(min(option.max, max(option.min, 2)))
+    return written_text(min(option.max, max(option.min, 2)))
+
+
+#: QSV options that are features of the GPU generation: an Intel UHD 620 refuses them.
+_QSV_GPU_FEATURES = frozenset({"low_power", "tile_cols", "tile_rows"})
+
+#: NVENC choices and options that are features of the GPU generation: a GeForce 10 series
+#: (Pascal) GPU refuses them at run time ("… not supported …"; testdata/README.md).
+_NVENC_GPU_FEATURES = frozenset(
+    {
+        ("h264_nvenc", "option lookahead_level"),
+        ("h264_nvenc", "option refs"),
+        ("h264_nvenc", "option tf_level"),
+        ("hevc_nvenc", "option lookahead_level"),
+        ("hevc_nvenc", "option refs"),
+        ("hevc_nvenc", "option tf_level"),
+        ("hevc_nvenc", "option bf"),
+        ("hevc_nvenc", "option b_ref_mode"),
+        ("hevc_nvenc", "option temporal-aq"),
+        ("hevc_nvenc", "option unidir_b"),
+        ("hevc_nvenc", "tunes=uhq@8"),
+        ("hevc_nvenc", "tunes=uhq@10"),
+    }
+)
+_GPU_LACKS = re.compile(r"not supported|exceed 0\b")
+
+#: VAAPI values that an Intel UHD 620 (iHD) refuses and an AMD GPU takes: they may fail on an
+#: Intel GPU only. Its H.265 encoder takes the quality levels 1, 4 and 7 only.
+_INTEL_VAAPI_LIMITS = frozenset(
+    {
+        ("h264_vaapi", "levels=6.0@8"),
+        ("h264_vaapi", "levels=6.1@8"),
+        ("h264_vaapi", "levels=6.2@8"),
+        ("hevc_vaapi", "option compression_level"),
+    }
+)
+
+
+@cache
+def _render_node_vendor() -> str:
+    path = Path("/sys/class/drm/renderD128/device/vendor")
+    return path.read_text(encoding="utf-8").strip() if path.exists() else ""
 
 
 @pytest.mark.needs_gpu
 @pytest.mark.parametrize(
-    "encoder_id", sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi"))
+    "encoder_id",
+    sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi", "qsv", "nvenc")),
 )
 def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> None:
     """Choices that an older build lacks (``_ADDED_IN``) must fail on that build and work on
@@ -1916,31 +1914,55 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
     }
     jobs: list[tuple[str, list[str], int]] = []
     absent: list[tuple[str, list[str], int]] = []
-    for label, args, _params, depth in _choice_jobs(enc):
-        if enc.family == "amf" and enc.codec == "h264" and depth == 10:
-            continue
-        (absent if label.split("@", 1)[0] in missing else jobs).append((label, args, depth))
-    assert len({label.split("@", 1)[0] for label, _a, _d in absent}) == len(missing)
     q, b = enc.rate_control.quality, enc.rate_control.bitrate
     assert q is not None
     assert b is not None
+    # NVENC checks a level against the bitrate: give it the rate control of a job.
+    rate = _quality_args(q, q.default)[0] if enc.family == "nvenc" else []
+    refused: list[tuple[str, list[str], int]] = []  # levels too low for the test picture
+    for label, args, _params, depth in _choice_jobs(enc):
+        if depth == 10 and not _hw_usable(enc, 10):
+            continue
+        job = (label, [*rate, *args], depth)
+        if label.split("@", 1)[0] in missing:
+            absent.append(job)
+        elif enc.family == "nvenc" and label.startswith("levels=") and not _fits(enc, label):
+            refused.append(job)
+        else:
+            jobs.append(job)
+    assert len({label.split("@", 1)[0] for label, _a, _d in absent}) == len(missing)
     for value in (q.min, q.default, q.max):
         args = []
         for arg in q.args:
-            text = arg.replace("{value}", _written(value))
+            text = arg.replace("{value}", written_text(value))
             for name, derived in q.derived.items():
-                text = text.replace("{" + name + "}", _written(derived.compute(value)))
+                text = text.replace("{" + name + "}", written_text(derived.compute(value)))
             args.append(text)
         jobs.append((f"quality {value}", args, 8))
     jobs.append(("bitrate", [a.replace("{kbps}", "2000") for a in b.args], 8))
+    # As in a job, which always has a rate control: QSV look-ahead fails without one.
+    quality, _ = _quality_args(q, q.default)
+    options = {option.key: option for option in enc.options}
     for option in enc.options:
-        args, _ = _mapping_args(option.mapping, _option_test_value(option))
-        jobs.append((f"option {option.key}", args, 8))
+        if enc.family == "qsv" and option.key in _QSV_GPU_FEATURES:
+            continue
+        args, _ = mapping_args(option.mapping, _option_test_value(option, enc.family))
+        for need in option.requires:  # an option that needs another one set to a value
+            other = options.get(need.field.removeprefix("option:"))
+            if need.op == "eq" and other is not None and not isinstance(need.value, list):
+                args += mapping_args(other.mapping, written_text(need.value))[0]
+        jobs.append((f"option {option.key}", [*quality, *args], 8))
 
     def run(job: tuple[str, list[str], int]) -> str | None:
         label, args, depth = job
-        result = _ffmpeg([*_hw_args(enc, depth), *args, "-f", "null", "-"], timeout=60)
-        return f"{label}: {_fail_text(result)}" if result.returncode else None
+        result = run_ffmpeg_capture([*_hw_args(enc, depth), *args, "-f", "null", "-"], timeout=60)
+        if not result.returncode:
+            return None
+        if (encoder_id, label) in _INTEL_VAAPI_LIMITS and _render_node_vendor() == "0x8086":
+            return None
+        if (encoder_id, label) in _NVENC_GPU_FEATURES and _GPU_LACKS.search(result.stderr):
+            return None
+        return f"{label}: {_fail_text(result)}"
 
     problems: list[str] = []
     for job in jobs:  # one at a time: the GPU sessions are limited
@@ -1950,27 +1972,106 @@ def test_hardware_choices_rate_control_and_options_encode(encoder_id: str) -> No
     for job in absent:  # the older build refuses the value
         if run(job) is None:
             problems.append(f"{job[0]}: works on {series}, expected to fail")
+    for job in refused:  # encoder.level_too_low agrees with NVENC
+        if run(job) is None:
+            problems.append(f"{job[0]}: works, expected NVENC to refuse the level")
     assert problems == []
+
+
+def _fits(enc: VideoEncoderDef, label: str) -> bool:
+    """The level of a choice job fits the 320x240 25 fps test picture (encoder.level_too_low)."""
+    level = label.removeprefix("levels=").split("@", 1)[0]
+    if enc.codec == "h264":
+        return h264_level_fits(level, 320, 240, Fraction(25)) is None
+    return x265_level_fits(level, 320, 240, Fraction(25), None, min_cu=8) is None
 
 
 @pytest.mark.needs_gpu
 @pytest.mark.parametrize(
-    "encoder_id", sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi"))
+    "encoder_id",
+    sorted(e for e, d in VIDEO.items() if d.family in ("amf", "vaapi", "qsv", "nvenc")),
 )
 def test_hardware_quality_range_ends_are_honoured(encoder_id: str, tmp_path: Path) -> None:
-    """As ``test_quality_range_ends_are_honoured``, on the GPU."""
+    """As ``test_quality_range_ends_are_honoured``, on the GPU. NVENC gets the rate buffer of
+    the command builder, and a grainy picture: on the plain one CQ 1 and 2 give the same file
+    even at level 6.2, and without the buffer they do on the grainy one too."""
     enc = VIDEO[encoder_id]
     if not _hw_usable(enc):
         pytest.skip(f"{encoder_id} does not work on this machine")
     q = enc.rate_control.quality
     assert q is not None
+    quality = VideoSettings(encoder=enc.id, rate_control=ConstantQuality(value=q.default))
+    limit = nvenc_quality_rate_limit(enc.id, quality)
+    grain = ["-vf", "noise=alls=8:allf=t"] if enc.family == "nvenc" else []
     results: dict[str, tuple[int, str]] = {}
     for label, value in _quality_points(q).items():  # one at a time: GPU sessions are limited
         args, _ = _quality_args(q, value)
-        got = _encode_digest([*_hw_args(enc, 8), *args], tmp_path / f"{label}.mkv", timeout=60)
+        out = tmp_path / f"{label}.mkv"
+        got = _encode_digest([*_hw_args(enc, 8), *grain, *args, *limit], out, timeout=60)
         assert not isinstance(got, str), f"{label}: {got}"
         results[label] = got
     assert _check_quality_points(results) == []
+
+
+@pytest.mark.needs_gpu
+@pytest.mark.parametrize("encoder_id", ["h264_amf", "hevc_amf", "av1_amf"])
+def test_amf_preanalysis_needs_the_smallest_picture_of_the_rule(encoder_id: str) -> None:
+    """``encoder.preanalysis_picture_too_small``: below the size the encoder does not start;
+    the QVBR rate controls start the pre-analysis themselves."""
+    enc = VIDEO[encoder_id]
+    if not _hw_usable(enc):
+        pytest.skip(f"{encoder_id} does not work on this machine")
+    min_width, min_height = AMF_PREANALYSIS_MIN_SIZE
+
+    def encode(width: int, height: int, *args: str) -> subprocess.CompletedProcess[str]:
+        size = f"testsrc2=size={width}x{height}:rate=25"
+        return run_ffmpeg_capture(
+            ["-f", "lavfi", "-i", size, "-frames:v", "2", "-pix_fmt", "nv12", "-c:v", enc.id,
+             *args, "-f", "null", "-"],
+            timeout=60,
+        )  # fmt: skip
+
+    works = encode(min_width, min_height, "-preanalysis", "1")
+    assert works.returncode == 0, _fail_text(works)
+    low = encode(min_width, min_height - 2, "-preanalysis", "1")
+    assert low.returncode != 0
+    assert f"height ({min_height - 2}) not in [{min_height}," in low.stderr
+    narrow = encode(min_width - 2, 240, "-preanalysis", "1")
+    assert narrow.returncode != 0
+    assert f"width ({min_width - 2}) not in [{min_width}," in narrow.stderr
+    plain = encode(min_width, 180)
+    assert plain.returncode == 0, _fail_text(plain)
+    if enc.codec != "av1":
+        qvbr = encode(min_width, 180, "-rc", "qvbr")
+        assert qvbr.returncode != 0
+        assert "height (180) not in" in qvbr.stderr
+
+
+@pytest.mark.needs_gpu
+def test_amf_reads_the_preanalysis_spellings_of_the_rule() -> None:
+    """The spellings of ``test_amf_preanalysis_custom_params_are_read_as_ffmpeg_reads_them``:
+    FFmpeg's boolean words in any case but ``auto``, and any integer; only 1 is on."""
+    enc = VIDEO["h264_amf"]
+    if not _hw_usable(enc):
+        pytest.skip("h264_amf does not work on this machine")
+    spellings = {
+        **dict.fromkeys(("disabled", "DISABLE", "N", "00", "-1", "auto"), False),
+        **dict.fromkeys(("enabled", "Yes", "01", "+1"), True),
+    }
+    for value, on in spellings.items():
+        result = run_ffmpeg_capture(
+            ["-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25", "-frames:v", "2",
+             "-pix_fmt", "nv12", "-c:v", enc.id, "-preanalysis", value, "-f", "null", "-"],
+            timeout=60,
+        )  # fmt: skip
+        assert (result.returncode != 0) is on, (value, _fail_text(result))
+        assert ("height (180) not in" in result.stderr) is on, value
+    refused = run_ffmpeg_capture(
+        ["-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25", "-frames:v", "2",
+         "-c:v", enc.id, "-preanalysis", "AUTO", "-f", "null", "-"],
+        timeout=60,
+    )  # fmt: skip
+    assert 'Unable to parse "preanalysis" option value "AUTO" as boolean' in refused.stderr
 
 
 @pytest.mark.needs_gpu
@@ -1982,7 +2083,9 @@ def test_av1_amf_pads_the_picture(tmp_path: Path) -> None:
     for size in ("1920x1080", "720x480", "1280x720", "640x360"):
         out = tmp_path / f"{size}.mkv"
         args = ["-f", "lavfi", "-i", f"testsrc2=size={size}:rate=25", "-frames:v", "2"]
-        result = _ffmpeg([*args, "-pix_fmt", "nv12", "-c:v", "av1_amf", str(out)], timeout=60)
+        result = run_ffmpeg_capture(
+            [*args, "-pix_fmt", "nv12", "-c:v", "av1_amf", str(out)], timeout=60
+        )
         assert result.returncode == 0, _fail_text(result)
         stream = _probe(out, "-show_streams")["streams"][0]
         sizes[size] = (stream["width"], stream["height"])

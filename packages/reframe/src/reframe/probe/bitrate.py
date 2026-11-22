@@ -1,14 +1,15 @@
 """The bitrate of a probed stream: the first source that gives a value wins.
 
-The order is ffprobe's stream ``bit_rate``, then the Matroska statistics tags, then MediaInfo
-(applied by :func:`reframe.probe.probe_file`, since it needs the file). When none gives one,
-the bitrate is unknown.
+The order is ffprobe's stream ``bit_rate``, then the Matroska statistics tags, then for Matroska
+an estimate from a sample of the clusters (:mod:`reframe.probe.sampling`, applied by
+:class:`reframe.probe.Prober`, since it reads the file). When none gives one, the bitrate is
+unknown.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -129,6 +130,10 @@ def _has_stats(tags: Mapping[str, Any]) -> bool:
     return any(tag_value(tags, name) is not None for name in STATS_TAG_NAMES)
 
 
+def _index(stream: Mapping[str, Any]) -> int:
+    return positive_int(stream.get("index")) or 0
+
+
 def _finite(value: Any) -> float | None:
     try:
         number = float(value)
@@ -137,12 +142,16 @@ def _finite(value: Any) -> float | None:
     return number if abs(number) < float("inf") else None  # also False for NaN
 
 
-def check_stats_tags(data: Mapping[str, Any]) -> StatsCheck:
+def check_stats_tags(data: Mapping[str, Any], *, compressed: Collection[int] = ()) -> StatsCheck:
     """Check every stream's statistics tags against the container.
 
     A re-encode can leave stale tags, since FFmpeg copies stream tags, so a re-encoded file
     can carry its source's statistics. The ``ENCODER`` tag cannot tell who wrote the file
     (mkvmerge copies a source's), so it is no test.
+
+    The streams in ``compressed`` (stream indexes) store fewer bytes than their
+    ``NUMBER_OF_BYTES``: they are left out of the size check, and only the other checks apply
+    to their own tags.
     """
     raw = data.get("streams")
     streams = [s for s in raw if isinstance(s, Mapping)] if isinstance(raw, list) else []
@@ -153,16 +162,18 @@ def check_stats_tags(data: Mapping[str, Any]) -> StatsCheck:
 
     with_stats = [s for s in streams if _has_stats(_mapping(s.get("tags")))]
     byte_sum = sum(
-        positive_int(tag_value(_mapping(s.get("tags")), "NUMBER_OF_BYTES")) or 0 for s in with_stats
+        positive_int(tag_value(_mapping(s.get("tags")), "NUMBER_OF_BYTES")) or 0
+        for s in with_stats
+        if _index(s) not in compressed
     )
     stale: dict[int, str] = {}
     for stream in with_stats:
-        index = positive_int(stream.get("index")) or 0
+        index = _index(stream)
         tags = _mapping(stream.get("tags"))
         bps = positive_int(tag_value(tags, "BPS"))
         tag_duration = parse_duration_tag(tag_value(tags, "DURATION"))
         reason: str | None = None
-        if size is not None and byte_sum > size:
+        if size is not None and byte_sum > size and index not in compressed:
             reason = (
                 f"the tracks' NUMBER_OF_BYTES add up to {byte_sum} bytes, more than the "
                 f"file's {size} bytes"

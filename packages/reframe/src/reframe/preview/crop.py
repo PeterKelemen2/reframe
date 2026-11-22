@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import re
 from pathlib import Path
+from typing import Protocol
 
 from reframe.command.video import format_number
 from reframe.dimensions import crop_agreement, detect_crop_consensus
@@ -15,10 +16,27 @@ from reframe.mediatask import MediaTaskContext, TaskFailed, require_source, requ
 from reframe.models import CropRect
 from reframe.models.preview import CropDetection, CropSample
 from reframe.preview.common import displayed_size, failure_text, sample_times
-from reframe.tasks import TaskContext
-from reframe.tools import run
+from reframe.tools import CancelToken, run
 
-__all__ = ["CROPDETECT", "RUN_TIMEOUT", "detect_crop", "parse_cropdetect"]
+__all__ = ["CROPDETECT", "RUN_TIMEOUT", "CropTask", "detect_crop", "parse_cropdetect"]
+
+
+class CropTask(Protocol):
+    """What :func:`detect_crop` needs of the task that runs it (a
+    :class:`~reframe.tasks.TaskContext`, or a batch's own)."""
+
+    @property
+    def cancel(self) -> CancelToken: ...
+
+    def progress(
+        self,
+        percent: float | None = None,
+        message: str | None = None,
+        *,
+        done: int | None = None,
+        total: int | None = None,
+    ) -> None: ...
+
 
 CROPDETECT = "cropdetect=limit=0.094118:round=2:skip=0"
 #: Seconds one sample may take.
@@ -52,7 +70,7 @@ def _edges(rect: CropRect) -> str:
 
 
 async def detect_crop(
-    tctx: TaskContext, ctx: MediaTaskContext, path: Path, *, count: int | None
+    tctx: CropTask, ctx: MediaTaskContext, path: Path, *, count: int | None
 ) -> CropDetection:
     """Detect the crop of ``path`` from its sample frames; expected failures raise
     :class:`TaskFailed`."""

@@ -5,7 +5,6 @@ from __future__ import annotations
 import itertools
 import os
 import shutil
-from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -23,7 +22,6 @@ from reframe.models import (
     AppSettings,
     BitrateInfo,
     BitrateSource,
-    CapabilitySnapshot,
     MediaSource,
     ToolInfo,
     ToolSet,
@@ -32,7 +30,7 @@ from reframe.models import (
 from reframe.probe import ProbeError, ProbeErrorKind
 from reframe.service import Reframe
 from reframe.tasks import TaskManager
-from reframe.tools import CancelToken
+from reframe_testing.capabilities import FixedCaps, StubSources, StubTools
 
 pytestmark = pytest.mark.anyio
 
@@ -60,46 +58,6 @@ def test_timestamps_are_rounded_to_milliseconds() -> None:
     assert all(0 < s < 1 / 3 for s in stamps)
 
 
-class _Tools:
-    def __init__(self, tools: ToolSet) -> None:
-        self.tools = tools
-
-    async def status(self) -> ToolSet:
-        return self.tools
-
-
-class _Sources:
-    def __init__(self, outcome: MediaSource | ProbeError) -> None:
-        self.outcome = outcome
-        self.stored: list[MediaSource] = []
-
-    async def probe(
-        self,
-        path: str | os.PathLike[str],
-        *,
-        use_cache: bool = True,
-        cancel: CancelToken | None = None,
-    ) -> MediaSource | ProbeError:
-        return self.outcome
-
-    async def store(self, source: MediaSource) -> None:
-        self.stored.append(source)
-
-    async def update(
-        self, source: MediaSource, change: Callable[[MediaSource], MediaSource]
-    ) -> None:
-        self.stored.append(change(source))
-
-
-class _Caps:
-    @property
-    def snapshot(self) -> CapabilitySnapshot:
-        return CapabilitySnapshot()
-
-    async def wait(self) -> CapabilitySnapshot:
-        return CapabilitySnapshot()
-
-
 def _info(name: str, status: ToolStatus, reason: str | None = None) -> ToolInfo:
     path = Path(f"/opt/{name}") if status is ToolStatus.FOUND else None
     return ToolInfo(name=name, status=status, path=path, reason=reason)  # type: ignore[arg-type]
@@ -109,33 +67,31 @@ def _toolset(ffmpeg: ToolInfo) -> ToolSet:
     return ToolSet(
         ffmpeg=ffmpeg,
         ffprobe=_info("ffprobe", ToolStatus.FOUND),
-        mkvpropedit=_info("mkvpropedit", ToolStatus.MISSING, "not found"),
-        mediainfo=_info("mediainfo", ToolStatus.MISSING, "not found"),
     )
 
 
-def _context(tmp_path: Path, tools: ToolSet, sources: _Sources) -> MediaTaskContext:
-    events = EventBus()
+def _context(tmp_path: Path, tools: ToolSet, sources: StubSources) -> MediaTaskContext:
     return MediaTaskContext(
-        tasks=TaskManager(events),
-        tools=_Tools(tools),
+        tasks=TaskManager(EventBus()),
+        tools=StubTools(tools),
         sources=sources,
-        capabilities=_Caps(),
+        capabilities=FixedCaps(),
         settings=AppSettings,
-        events=events,
         cache_dir=tmp_path,
         definitions=load_definitions,
     )
 
 
 async def test_require_tool(tmp_path: Path) -> None:
-    sources = _Sources(ProbeError(tmp_path, ProbeErrorKind.NOT_FOUND, "x"))
+    sources = StubSources(ProbeError(tmp_path, ProbeErrorKind.NOT_FOUND, "x"))
     found = _info("ffmpeg", ToolStatus.FOUND)
     ctx = _context(tmp_path, _toolset(found), sources)
     assert await require_tool(ctx, "ffmpeg") == found
     assert (await require_tool(ctx, "ffprobe")).name == "ffprobe"
-    with pytest.raises(TaskFailed, match="mkvpropedit cannot be used: not found"):
-        await require_tool(ctx, "mkvpropedit")
+    missing = ToolSet(ffmpeg=found, ffprobe=_info("ffprobe", ToolStatus.MISSING, "not found"))
+    ctx = _context(tmp_path, missing, sources)
+    with pytest.raises(TaskFailed, match="ffprobe cannot be used: not found"):
+        await require_tool(ctx, "ffprobe")
     old = _info("ffmpeg", ToolStatus.TOO_OLD)
     ctx = _context(tmp_path, _toolset(old), sources)
     with pytest.raises(TaskFailed, match="ffmpeg cannot be used: too_old"):
@@ -144,7 +100,7 @@ async def test_require_tool(tmp_path: Path) -> None:
 
 async def test_require_source_gives_the_probe_error_as_the_message(tmp_path: Path) -> None:
     error = ProbeError(tmp_path / "a.mkv", ProbeErrorKind.FAILED, "a.mkv is not media.", "EBML")
-    ctx = _context(tmp_path, _toolset(_info("ffmpeg", ToolStatus.FOUND)), _Sources(error))
+    ctx = _context(tmp_path, _toolset(_info("ffmpeg", ToolStatus.FOUND)), StubSources(error))
     with pytest.raises(TaskFailed, match=r"^a\.mkv is not media\. \(EBML\)$"):
         await require_source(ctx, tmp_path / "a.mkv")
 

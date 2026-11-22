@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
@@ -16,6 +13,7 @@ from reframe.dimensions import compute_geometry, source_geometry
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     AverageBitrate,
+    BitrateSource,
     ChapterRange,
     ConstantQuality,
     CropRect,
@@ -38,27 +36,16 @@ from reframe.models import (
 from reframe.validation import (
     JOB_RULES,
     JobContext,
+    TemplateContext,
     estimate_output_bytes,
     switch_video_encoder,
     validate,
 )
 from reframe.validation.range import frame_count, range_duration
-from reframe.validation.registry import AREAS, Rule, job_rule, ordered
+from reframe.validation.registry import AREAS, Rule, job_rule, ordered, shared_rule
 
+from . import scenario as sc
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 DEFS = sc.DEFS
 
 
@@ -94,13 +81,14 @@ def test_issues_are_listed_in_area_order() -> None:
     ]
 
 
-def test_a_failing_rule_is_an_issue_not_an_exception() -> None:
+def test_a_failing_rule_is_an_issue_not_an_exception(monkeypatch: Any) -> None:
     def broken(ctx: JobContext) -> list[ValidationIssue]:
         raise RuntimeError("boom")
 
     rule = Rule("output", "broken", broken, ())
+    monkeypatch.setattr("reframe.validation.JOB_RULES", [rule, *JOB_RULES])
     s = sc.base()
-    issues = validate(s.job, s.source, s.caps, s.tools, s.fs, rules=[rule, *JOB_RULES])
+    issues = validate(s.job, s.source, s.caps, s.tools, s.fs)
     assert [(i.code, i.severity.value) for i in issues] == [("validation.rule_failed", "error")]
     assert "broken: RuntimeError: boom" in issues[0].message
 
@@ -114,6 +102,21 @@ def test_job_rule_decorator_registers(monkeypatch: Any) -> None:
         return []
 
     assert [(r.area, r.name, r.codes) for r in registered] == [("range", "example", ("x.y",))]
+
+
+def test_shared_rule_decorator_registers_for_jobs_and_templates(monkeypatch: Any) -> None:
+    jobs: list[Rule[JobContext]] = []
+    templates: list[Rule[TemplateContext]] = []
+    monkeypatch.setattr("reframe.validation.registry.JOB_RULES", jobs)
+    monkeypatch.setattr("reframe.validation.registry.TEMPLATE_RULES", templates)
+
+    @shared_rule("filters", "x.y")
+    def example(ctx: JobContext | TemplateContext) -> list[ValidationIssue]:
+        return []
+
+    expected = [("filters", "example", ("x.y",))]
+    assert [(r.area, r.name, r.codes) for r in jobs] == expected
+    assert [(r.area, r.name, r.codes) for r in templates] == expected
 
 
 def test_defaults_without_settings_and_definitions() -> None:
@@ -147,7 +150,7 @@ def test_video_passthrough_skips_picture_rules() -> None:
 
 
 def switch(video: VideoSettings, new: str) -> VideoSettings:
-    ops, _ = switch_video_encoder(video, new, DEFS)
+    ops, _ = switch_video_encoder(video, new, DEFS, sc.make_caps())
     job = JobSettings(source=sc.make_source().ref, video=video)
     data = apply_patch(job.model_dump(mode="json"), ops)
     return JobSettings.model_validate(data).video
@@ -163,7 +166,7 @@ def test_switch_converts_quality_and_resets_what_the_new_encoder_lacks() -> None
         bit_depth=10,
         advanced={"b_ref_mode": "each", "bf": 3},
     )
-    _, note = switch_video_encoder(video, "libx265", DEFS)
+    _, note = switch_video_encoder(video, "libx265", DEFS, sc.make_caps())
     assert note is not None
     assert note.startswith("quality CQ 27 → RF ")
     new = switch(video, "libx265")
@@ -195,11 +198,11 @@ def test_switch_to_an_encoder_without_the_mode() -> None:
     defs.video_encoders["libx265"].rate_control.quality = None
     defs.video_encoders["libx264"].rate_control.bitrate = None
     quality = VideoSettings(encoder="libx264", rate_control=ConstantQuality(value=20))
-    ops, note = switch_video_encoder(quality, "libx265", defs)
+    ops, note = switch_video_encoder(quality, "libx265", defs, sc.make_caps())
     assert note is None
     assert ops[1].value == AverageBitrate().model_dump(mode="json")  # type: ignore[union-attr]
     bitrate = VideoSettings(encoder="libx265", rate_control=AverageBitrate())
-    ops, _ = switch_video_encoder(bitrate, "libx264", defs)
+    ops, _ = switch_video_encoder(bitrate, "libx264", defs, sc.make_caps())
     assert ops[1].value == {"mode": "quality", "value": 22.0}  # type: ignore[union-attr]
 
 
@@ -229,7 +232,7 @@ def test_estimate_passthrough_and_quality() -> None:
     s.job.range = TimeRange(start=0, end=60)
     assert estimate_output_bytes(context(s)) == int((8_000_000 + 160_000 + 128_000) * 60 / 8 * 1.02)
     s.source.video[0].bitrate.value = None
-    s.source.video[0].bitrate.source = "unknown"
+    s.source.video[0].bitrate.source = BitrateSource.UNKNOWN
     assert estimate_output_bytes(context(s)) == 6 * sc.GB // 10  # a tenth of the file
     s.source.container.size = None
     assert estimate_output_bytes(context(s)) is None
@@ -243,7 +246,7 @@ def test_range_duration_and_frames() -> None:
     s.job.range = ChapterRange(start=3, end=3)
     assert range_duration(context(s)) is None
     s.job.range = FrameRange(start=0, end=2400)
-    assert range_duration(context(s)) == 2400 * 1001 / 24000
+    assert range_duration(context(s)) == 2400 / (24000 / 1001)
     s.job.range = TimeRange(start=10)
     s.source.container.duration = None
     assert range_duration(context(s)) is None
@@ -252,7 +255,7 @@ def test_range_duration_and_frames() -> None:
     s.source.video[0].frame_count = 1000
     assert frame_count(context(s)) == 1000
     s.job.range = FrameRange(start=0)
-    assert range_duration(context(s)) == 1000 * 1001 / 24000
+    assert range_duration(context(s)) == 1000 / (24000 / 1001)
     s.source.video[0].frame_rate = None
     s.source.video[0].avg_frame_rate = None
     assert range_duration(context(s)) is None

@@ -20,6 +20,7 @@ import reframe.command
 from reframe.command import PlanError, build_plan
 from reframe.definitions import Definitions, load_definitions
 from reframe.models import (
+    AppSettings,
     AudioOutputTrack,
     AverageBitrate,
     CapabilitySnapshot,
@@ -40,7 +41,10 @@ from reframe.models import (
     ValidationIssue,
 )
 from reframe.textfile import TextCharset
-from reframe.validation import validate
+from reframe.validation import JobContext, validate
+from reframe.validation.range import range_duration
+
+from . import scenario as sc
 
 _COMMAND_TESTS = Path(__file__).resolve().parents[1] / "command"
 
@@ -64,20 +68,7 @@ def _load_command_tests() -> tuple[ModuleType, ModuleType]:
     )
 
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 cmd_tests, snapshots = _load_command_tests()
-sc = _load("scenario")
 DEFS = load_definitions()
 
 
@@ -263,11 +254,9 @@ BURN = SubtitleOutputTrack(source=SRT, action="burn")
 REFUSALS: list[Refusal] = [
     Refusal("no output path", "output path is not set", "output.no_path",
             multitrack(setter(output__path=None))),
-    Refusal("unknown container", "unknown container", "container.unknown",
-            multitrack(setter(output__container="avi"))),
     Refusal("source without video", "no video stream", "source.no_video",
             source_without_video),
-    Refusal("video passthrough the container cannot hold", "cannot be copied into WebM",
+    Refusal("video passthrough the container cannot hold", "h264 video cannot be copied into WebM",
             "container.codec_unsupported",
             multitrack(both(setter(video__passthrough=True), subtitles()), container="webm",
                        audio="passthru")),
@@ -471,8 +460,12 @@ def test_composite_parts_have_defaults(encoder: str, key: str, preset: str | Non
 
 
 #: Snapshot jobs that test the builder with a value validation refuses on purpose:
-#: job → the error codes it has.
-KNOWN_ERRORS: dict[str, set[str]] = {}
+#: job → the error codes it has. A Windows output name cannot hold ``:``.
+KNOWN_ERRORS: dict[str, set[str]] = (
+    {"x265_two_pass_stats_path_with_colon_windows_display": {"output.name_not_portable"}}
+    if sys.platform == "win32"
+    else {}
+)
 
 
 def test_snapshot_jobs_are_imported() -> None:
@@ -500,3 +493,28 @@ def test_deinterlaced_crop_is_on_the_frame_grid() -> None:
     plan = build_plan(s.job, s.source, s.caps, s.tools)
     argv = [str(a) for step in plan.steps for a in step.argv]
     assert any("crop=1920:1076:0:2" in a for a in argv), argv
+
+
+@pytest.mark.parametrize(
+    "probe", ["vfr", "mkvmerge-vfr", "chapters.mkv", "multitrack.mkv", "vfr.mkv", "vfr.mp4"]
+)
+def test_frame_range_lasts_what_the_builder_cuts(probe: str) -> None:
+    """The length that validation, the estimate and the UI give a frame range is the cut of the
+    plan, with and without an average frame rate in the source (``vfr`` has none)."""
+    src = cmd_tests.recorded(probe)
+    job = cmd_tests.draft(src, video={"encoder": "libx264"})
+    job.range = FrameRange(start=10, end=50)
+    caps, tools = cmd_tests.caps(), cmd_tests.tools()
+    plan = build_plan(job, src, caps, tools)
+    settings = AppSettings()
+    ctx = JobContext(
+        job=job,
+        source=src,
+        caps=caps,
+        tools=tools,
+        fs=file_system(job, src),
+        settings=settings,
+        definitions=DEFS,
+        naming=settings.output.naming,
+    )
+    assert range_duration(ctx) == pytest.approx(plan.expected_duration, abs=1e-6)

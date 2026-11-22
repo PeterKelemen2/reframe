@@ -1,4 +1,5 @@
-"""The track headers of a Matroska file, read directly: ffprobe does not show ``LanguageIETF``.
+"""The track headers of a Matroska file, read directly: ffprobe does not show ``LanguageIETF``,
+``ContentEncodings`` or the ``TimestampScale``.
 
 Only the start of the file is read, and every read is bounded by the ``MAX_*`` limits, so a
 damaged or hostile file costs little time and memory. A damaged header, or one beyond the
@@ -8,13 +9,16 @@ limits, raises :class:`MatroskaError`.
 from __future__ import annotations
 
 import itertools
+import math
 import os
+import struct
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO, Literal
 
 __all__ = [
+    "DEFAULT_TIMESTAMP_SCALE",
     "MAX_CHILDREN",
     "MAX_ELEMENT",
     "MAX_ELEMENTS",
@@ -24,6 +28,7 @@ __all__ = [
     "MatroskaError",
     "MatroskaFile",
     "MatroskaTrack",
+    "read_exactly",
     "read_matroska",
     "tracks_by_kind",
 ]
@@ -55,12 +60,29 @@ _SEEK_ID = 0x53AB
 _SEEK_POSITION = 0x53AC
 _INFO = 0x1549A966
 _TITLE = 0x7BA9
+_TIMESTAMP_SCALE = 0x2AD7B1
+_DURATION = 0x4489
 _TRACKS = 0x1654AE6B
 _CLUSTER = 0x1F43B675
+_ATTACHMENTS = 0x1941A469
+_CHAPTERS = 0x1043A770
+_TAGS = 0x1254C367
+_CUES = 0x1C53BB6B
 _TRACK_ENTRY = 0xAE
+_CONTENT_ENCODINGS = 0x6D80
+_CONTENT_ENCODING = 0x6240
+_CONTENT_ENCODING_TYPE = 0x5033
+_CONTENT_COMPRESSION = 0x5034
+_VOID = 0xEC
+_CRC32 = 0xBF
 
+#: The ``TimestampScale`` when ``Info`` has none (nanoseconds per tick).
+DEFAULT_TIMESTAMP_SCALE = 1_000_000
+
+#: Top-level elements that hold no blocks and can be large (after the clusters, too).
+_NOT_BLOCKS = frozenset({_ATTACHMENTS, _CHAPTERS, _TAGS, _CUES})
 #: The ``SeekHead`` targets that are kept.
-_SEEK_TARGETS = frozenset({_TRACKS, _INFO, _SEEK_HEAD})
+_SEEK_TARGETS = frozenset({_TRACKS, _INFO, _SEEK_HEAD}) | _NOT_BLOCKS
 
 _KINDS: dict[int, TrackKind] = {1: "video", 2: "audio", 0x11: "subtitle"}
 _UINTS = {
@@ -103,6 +125,9 @@ class MatroskaTrack:
     text_descriptions: bool = False
     original: bool = False
     commentary: bool = False
+    compressed: bool = False
+    """``ContentEncodings`` compress the blocks (mkvmerge zlib-compresses PGS), so the bytes in
+    the file are fewer than the track's ``NUMBER_OF_BYTES``."""
 
 
 @dataclass(slots=True)
@@ -111,10 +136,22 @@ class MatroskaFile:
     """``matroska`` or ``webm``."""
     title: str | None = None
     tracks: list[MatroskaTrack] = field(default_factory=list)
+    timestamp_scale: int = DEFAULT_TIMESTAMP_SCALE
+    """Nanoseconds per timestamp tick, as stored (``0`` in a damaged file)."""
+    duration: float | None = None
+    """The segment's ``Duration`` in seconds."""
+    # Positions, not values: a header edit that moves an element grows the segment.
+    segment: int = field(default=0, compare=False)
+    """The file position of the Segment's data."""
+    segment_size: int | None = field(default=None, compare=False)
+    """``None`` for a Segment of unknown size."""
+    other_bytes: int = field(default=0, compare=False)
+    """Bytes of the top-level elements that hold no blocks (attachments, cues, tags…) that the
+    reader saw or the ``SeekHead`` lists."""
 
 
 def tracks_by_kind(info: MatroskaFile) -> dict[TrackKind, list[MatroskaTrack]]:
-    """The tracks of each kind, in file order (the order of mkvpropedit's ``track:a1``…)."""
+    """The tracks of each kind, in file order: the order ffprobe gives the streams of a kind."""
     result: dict[TrackKind, list[MatroskaTrack]] = {
         "video": [],
         "audio": [],
@@ -200,6 +237,8 @@ def _children(data: bytes, budget: _Budget, what: str) -> list[tuple[int, bytes]
 
 
 def _uint(data: bytes) -> int:
+    if len(data) > 8:
+        raise MatroskaError(f"an unsigned integer of {len(data)} bytes, over 8 bytes")
     return int.from_bytes(data, "big") if data else 0
 
 
@@ -221,7 +260,24 @@ def _track(data: bytes, budget: _Budget) -> MatroskaTrack:
                 setattr(track, key, bool(value))
         elif element_id in _STRINGS:
             setattr(track, _STRINGS[element_id], _string(payload))
+        elif element_id == _CONTENT_ENCODINGS:
+            track.compressed = _compressed(payload, budget)
     return track
+
+
+def _compressed(payload: bytes, budget: _Budget) -> bool:
+    for element_id, encoding in _children(payload, budget, "ContentEncodings"):
+        if element_id != _CONTENT_ENCODING:
+            continue
+        kind = 0
+        for child_id, data in _children(encoding, budget, "a ContentEncoding"):
+            if child_id == _CONTENT_ENCODING_TYPE:
+                kind = _uint(data)
+            elif child_id == _CONTENT_COMPRESSION:
+                return True
+        if kind == 0:
+            return True
+    return False
 
 
 def _tracks(payload: bytes, budget: _Budget) -> list[MatroskaTrack]:
@@ -239,10 +295,32 @@ def _title(payload: bytes, budget: _Budget) -> str | None:
     return None
 
 
+def _float(data: bytes) -> float | None:
+    if len(data) == 4:
+        return float(struct.unpack(">f", data)[0])
+    if len(data) == 8:
+        return float(struct.unpack(">d", data)[0])
+    return 0.0 if not data else None
+
+
+def _info(info: MatroskaFile, payload: bytes, budget: _Budget) -> None:
+    info.title = _title(payload, budget)
+    ticks: float | None = None
+    for element_id, data in _children(payload, budget, "Info"):
+        if element_id == _TIMESTAMP_SCALE:
+            info.timestamp_scale = _uint(data)
+        elif element_id == _DURATION:
+            ticks = _float(data)
+    if ticks is not None and ticks > 0:
+        duration = ticks * info.timestamp_scale / 1e9
+        if math.isfinite(duration):
+            info.duration = duration
+
+
 def _seek_entries(payload: bytes, budget: _Budget, room: int) -> dict[int, int]:
-    """``{element ID: position}`` of the ``Tracks``, ``Info`` and ``SeekHead`` entries inside the
-    file. Positions are relative to the segment's data, and ``room`` is the number of bytes
-    after it. The first usable entry of each ID wins."""
+    """``{element ID: position}`` of the :data:`_SEEK_TARGETS` entries inside the file.
+    Positions are relative to the segment's data, and ``room`` is the number of bytes after
+    it. The first usable entry of each ID wins."""
     entries: dict[int, int] = {}
     for element_id, seek in itertools.islice(_iter_children(payload, budget), MAX_CHILDREN):
         if element_id != _SEEK:
@@ -264,6 +342,20 @@ def _seek_entries(payload: bytes, budget: _Budget, room: int) -> dict[int, int]:
     return entries
 
 
+def read_exactly(handle: BinaryIO, pos: int, count: int) -> bytes:
+    """``count`` bytes from ``pos``, fewer only at the end of the file."""
+    handle.seek(pos)
+    chunks: list[bytes] = []
+    # An unbuffered file returns short reads.
+    while count > 0:
+        chunk = handle.read(count)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        count -= len(chunk)
+    return b"".join(chunks)
+
+
 class _Reader:
     def __init__(self, handle: BinaryIO, size: int) -> None:
         self.handle = handle
@@ -277,8 +369,7 @@ class _Reader:
             raise MatroskaError(f"truncated file: no element at byte {pos}")
         count = min(count, self.size - pos)
         self.budget.read(count)
-        self.handle.seek(pos)
-        return self.handle.read(count)
+        return read_exactly(self.handle, pos, count)
 
     def header(self, pos: int) -> tuple[int, int | None, int]:
         self.budget.element()
@@ -308,13 +399,15 @@ def _doc_type(reader: _Reader) -> tuple[str, int]:
 
 
 def read_matroska(path: str | os.PathLike[str]) -> MatroskaFile:
-    """The track headers and the title of the Matroska file ``path`` (blocking).
+    """The track headers, the title and the timing of the Matroska file ``path`` (blocking).
 
     :raises MatroskaError: not a Matroska file, or a damaged header (also one beyond the
         ``MAX_*`` limits).
     :raises OSError: the file cannot be read.
     """
-    with open(Path(path), "rb") as handle:
+    # Unbuffered: a network share's large block size would make every header read after a
+    # seek fetch a whole buffer.
+    with open(Path(path), "rb", buffering=0) as handle:
         reader = _Reader(handle, os.fstat(handle.fileno()).st_size)
         try:
             return _read(reader)
@@ -324,15 +417,16 @@ def read_matroska(path: str | os.PathLike[str]) -> MatroskaFile:
 
 def _read(reader: _Reader) -> MatroskaFile:
     doc_type, pos = _doc_type(reader)
-    segment_id, _, header = reader.header(pos)
+    segment_id, segment_size, header = reader.header(pos)
     if segment_id != _SEGMENT:
         raise MatroskaError("no Segment after the EBML header")
     base = pos + header
     room = reader.size - base
-    info = MatroskaFile(doc_type=doc_type)
+    info = MatroskaFile(doc_type=doc_type, segment=base, segment_size=segment_size)
     found_tracks = found_info = False
     seeks: dict[int, int] = {}
     first_seek_head: int | None = None
+    sizes: dict[int, int] = {}
     pos = base
     for _ in range(MAX_TOP_LEVEL):
         if pos >= reader.size or (found_tracks and found_info):
@@ -340,11 +434,12 @@ def _read(reader: _Reader) -> MatroskaFile:
         element_id, element_size, header = reader.header(pos)
         if element_id == _CLUSTER or element_size is None:
             break
+        sizes[pos] = min(header + element_size, reader.size - pos)
         if element_id == _TRACKS:
             info.tracks = _tracks(reader.payload(pos)[1], reader.budget)
             found_tracks = True
         elif element_id == _INFO:
-            info.title = _title(reader.payload(pos)[1], reader.budget)
+            _info(info, reader.payload(pos)[1], reader.budget)
             found_info = True
         elif element_id == _SEEK_HEAD and first_seek_head is None:
             first_seek_head = pos - base
@@ -367,7 +462,22 @@ def _read(reader: _Reader) -> MatroskaFile:
     if not found_info and _INFO in seeks:
         element_id, payload = reader.payload(base + seeks[_INFO])
         if element_id == _INFO:
-            info.title = _title(payload, reader.budget)
+            _info(info, payload, reader.budget)
     if not found_tracks:
         raise MatroskaError("no Tracks element found")
+    for target in _NOT_BLOCKS & seeks.keys():
+        _add_size(reader, base + seeks[target], target, sizes)
+    info.other_bytes = sum(sizes.values())
     return info
+
+
+def _add_size(reader: _Reader, pos: int, target: int, sizes: dict[int, int]) -> None:
+    """Add the size of the ``target`` element at ``pos``; a damaged one is left out."""
+    if pos in sizes:
+        return
+    try:
+        element_id, size, header = reader.header(pos)
+    except MatroskaError:
+        return
+    if element_id == target and size is not None:
+        sizes[pos] = min(header + size, reader.size - pos)

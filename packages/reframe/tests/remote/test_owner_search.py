@@ -9,7 +9,6 @@ import functools
 import json
 import logging
 import os
-import socket
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
@@ -34,7 +33,7 @@ from reframe.remote.owner import (
     server_log,
 )
 
-from .conftest import Server
+from .conftest import Server, free_port
 
 pytestmark = pytest.mark.anyio
 
@@ -66,13 +65,6 @@ async def search(server: Server, launch: FakeStart, **options: Any) -> Owner | N
     )
 
 
-def free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        port: int = sock.getsockname()[1]
-    return port
-
-
 def write_endpoint(server: Server, **fields: Any) -> None:
     data = json.loads(server.owner().endpoint.model_dump_json())
     data.update(fields)
@@ -84,12 +76,6 @@ async def unowned(server: Server) -> Server:
     """The test's server answers its health route, but ``queue.lock`` is free."""
     await server.api.reframe.queue.close()
     return server
-
-
-@pytest.fixture
-def short_waits(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(owner_module, "START_WAIT", 0.4)
-    monkeypatch.setattr(owner_module, "HELD_WAIT", 0.4)
 
 
 async def test_the_server_that_the_endpoint_file_names_is_used(server: Server) -> None:
@@ -480,5 +466,36 @@ def test_a_started_owner_leaves_out_every_option_of_the_server() -> None:
     """A server option added later would reach the owners that clients start."""
     from reframe_server.config import ServerConfig
 
-    kept = {"CONFIG_DIR", "DATA_DIR", "ENDPOINT_FILE"}
+    # A started owner in a container is in that container too.
+    kept = {"CONFIG_DIR", "DATA_DIR", "ENDPOINT_FILE", "CONTAINER"}
     assert {name.upper() for name in ServerConfig.model_fields} - kept == SERVER_OPTIONS
+    environ = {"REFRAME_CONTAINER": "1", "REFRAME_MODE": "web"}
+    assert owner_environment(Path("data"), environ)["REFRAME_CONTAINER"] == "1"
+    assert "REFRAME_MODE" not in owner_environment(Path("data"), environ)
+
+
+def test_an_owner_started_by_a_frozen_cli_gets_the_users_library_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The frozen owner's bootloader would keep the CLI's ``_internal`` as the user's path, and
+    its tools would load the CLI's libraries."""
+    created: list[dict[str, Any]] = []
+
+    class Process:
+        pid = 4242
+        returncode = None
+
+        def __init__(self, argv: list[str], **kwargs: Any) -> None:
+            created.append(kwargs)
+
+        def wait(self) -> int:
+            return 0
+
+    monkeypatch.setattr(subprocess, "Popen", Process)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/app/_internal:/opt/mine/lib")
+    monkeypatch.setenv("LD_LIBRARY_PATH_ORIG", "/opt/mine/lib")
+    owner_module._start(["reframe-server"], tmp_path, "linux", launcher=detached)
+    [options] = created
+    assert options["env"]["LD_LIBRARY_PATH"] == "/opt/mine/lib"
+    assert options["env"]["REFRAME_DATA_DIR"] == str(tmp_path.absolute())

@@ -8,14 +8,15 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 
+from reframe.command.filtergraph import is_hdr
 from reframe.definitions import Definitions, FilterDef, FilterImplementation
 from reframe.models.capabilities import CapabilitySnapshot
-from reframe.models.issues import Fix, FixTarget, ValidationIssue
+from reframe.models.issues import Fix, ValidationIssue
 from reframe.models.job import FilterConfig, FilterSettings
 from reframe.models.media import HdrFormat, VideoStream
 from reframe.validation.common import add, error, fix, remove, replace, warning
 from reframe.validation.context import JobContext, TemplateContext
-from reframe.validation.registry import job_rule, template_rule
+from reframe.validation.registry import job_rule, shared_rule
 from reframe.validation.video import ten_bit_patch
 
 CODES = (
@@ -31,14 +32,6 @@ CODES = (
 )
 #: Colorspace presets that convert to an SDR transfer (BT.2020 uses ``bt2020-10``, SDR).
 _SDR_PRESETS = frozenset({"bt709", "bt2020", "bt601-6-525", "bt601-6-625"})
-_HDR_LABELS = {
-    HdrFormat.HDR10: "HDR10",
-    HdrFormat.HDR10_PLUS: "HDR10+",
-    HdrFormat.HLG: "HLG",
-    HdrFormat.DOLBY_VISION: "Dolby Vision",
-}
-#: Transfer characteristics of HDR video (ffprobe ``color_transfer``).
-_HDR_TRANSFERS = frozenset({"smpte2084", "arib-std-b67"})
 
 
 def _available(caps: CapabilitySnapshot, definitions: Definitions) -> dict[str, bool] | None:
@@ -66,13 +59,12 @@ def _check_preset(
     filter_id: str,
     config: FilterConfig,
     impl: FilterImplementation,
-    target: FixTarget,
     off: Fix,
 ) -> Iterator[ValidationIssue]:
     base = f"filters.{filter_id}"
     plain = _plain_preset(impl)
     use_plain = (
-        fix(f"Use the {plain} preset", replace(f"{base}.preset", plain), target=target)
+        fix(f"Use the {plain} preset", replace(f"{base}.preset", plain))
         if plain is not None
         else off
     )
@@ -91,11 +83,11 @@ def _check_preset(
             "filter.tune_unknown",
             f"{base}.tune",
             f"{impl.label} has no tune {config.tune!r}.",
-            fix("No tune", replace(f"{base}.tune", None), target=target),
+            fix("No tune", replace(f"{base}.tune", None)),
         )
     elif preset.chain_for(config.tune) is None:
         tune = next((t for t in tune_ids if t in preset.tune_chains), None)
-        fixes = [fix(f"Use the {tune} tune", replace(f"{base}.tune", tune), target=target)]
+        fixes = [fix(f"Use the {tune} tune", replace(f"{base}.tune", tune))]
         yield error(
             "filter.tune_required",
             f"{base}.tune",
@@ -117,10 +109,9 @@ def _check_filter(
     definition: FilterDef,
     caps: CapabilitySnapshot,
     available: dict[str, bool] | None,
-    target: FixTarget,
 ) -> Iterator[ValidationIssue]:
     base = f"filters.{filter_id}"
-    remove_filter = fix(f"Turn off {definition.label}", remove(base), target=target)
+    remove_filter = fix(f"Turn off {definition.label}", remove(base))
     if config.implementation is not None:
         impl = definition.implementation(config.implementation)
         if impl is None:
@@ -132,7 +123,6 @@ def _check_filter(
                 fix(
                     "Use the default implementation",
                     replace(f"{base}.implementation", None),
-                    target=target,
                 ),
             )
             return
@@ -145,7 +135,7 @@ def _check_filter(
         use_default: list[Fix] = []
         if fallback is not None and fallback.id != impl.id:
             use_default.append(
-                fix(f"Use {fallback.label}", replace(f"{base}.implementation", None), target=target)
+                fix(f"Use {fallback.label}", replace(f"{base}.implementation", None))
             )
         if failed and available is not None:
             reasons = "; ".join(
@@ -169,16 +159,16 @@ def _check_filter(
                 "it cannot run.",
                 *use_default,
             )
-        yield from _check_preset(filter_id, config, impl, target, remove_filter)
+        yield from _check_preset(filter_id, config, impl, remove_filter)
         return
     impl = definition.implementation_for(config, available)
     if impl is not None:
-        yield from _check_preset(filter_id, config, impl, target, remove_filter)
+        yield from _check_preset(filter_id, config, impl, remove_filter)
         return
     with_preset = [i for i in definition.implementations if i.preset(config.preset) is not None]
     if not with_preset:
         default = definition.implementations[0]
-        yield from _check_preset(filter_id, config, default, target, remove_filter)
+        yield from _check_preset(filter_id, config, default, remove_filter)
         return
     yield error(
         "filter.unavailable",
@@ -193,8 +183,6 @@ def filter_issues(
     filters: FilterSettings,
     caps: CapabilitySnapshot,
     definitions: Definitions,
-    *,
-    target: FixTarget,
 ) -> Iterator[ValidationIssue]:
     available = _available(caps, definitions)
     for filter_id, config in filters.root.items():
@@ -204,37 +192,23 @@ def filter_issues(
                 "filter.unknown",
                 f"filters.{filter_id}",
                 f"Unknown filter {filter_id!r}.",
-                fix(f"Remove {filter_id}", remove(f"filters.{filter_id}"), target=target),
+                fix(f"Remove {filter_id}", remove(f"filters.{filter_id}")),
             )
             continue
-        yield from _check_filter(filter_id, config, definition, caps, available, target)
+        yield from _check_filter(filter_id, config, definition, caps, available)
 
 
-@job_rule("filters", *CODES)
-def filters(ctx: JobContext) -> Iterator[ValidationIssue]:
-    if ctx.job.video.passthrough:
+@shared_rule("filters", *CODES)
+def filters(ctx: JobContext | TemplateContext) -> Iterator[ValidationIssue]:
+    if ctx.doc.video.passthrough:
         return
-    yield from filter_issues(ctx.job.filters, ctx.caps, ctx.definitions, target=ctx.target)
-
-
-@template_rule("filters", *CODES)
-def template_filters(ctx: TemplateContext) -> Iterator[ValidationIssue]:
-    if ctx.template.video.passthrough:
-        return
-    yield from filter_issues(ctx.template.filters, ctx.caps, ctx.definitions, target=ctx.target)
-
-
-def is_hdr(stream: VideoStream) -> bool:
-    """PQ (HDR10, HDR10+, Dolby Vision with a PQ base layer) or HLG."""
-    if stream.hdr is not None and stream.hdr.formats:
-        return True
-    return stream.color.transfer in _HDR_TRANSFERS
+    yield from filter_issues(ctx.doc.filters, ctx.caps, ctx.definitions)
 
 
 def _hdr_label(stream: VideoStream) -> str:
     """``HDR10``, ``HDR10, Dolby Vision``; ``HDR (PQ)`` when only the transfer says it."""
     if stream.hdr is not None and stream.hdr.formats:
-        return ", ".join(_HDR_LABELS[f] for f in stream.hdr.formats)
+        return ", ".join(f.label for f in stream.hdr.formats)
     return f"HDR ({_transfer(stream)})"
 
 
@@ -262,9 +236,7 @@ def hdr_to_sdr(ctx: JobContext) -> Iterator[ValidationIssue]:
         "filters.colorspace",
         f"Colorspace converts HDR ({_transfer(stream)}) to SDR without tone mapping: the "
         "picture will look washed out.",
-        fix(
-            "Enable tone mapping", add("filters.tonemap", {"preset": "default"}), target=ctx.target
-        ),
+        fix("Enable tone mapping", add("filters.tonemap", {"preset": "default"})),
     )
 
 
@@ -290,12 +262,11 @@ def hdr_to_8bit(ctx: JobContext) -> Iterator[ValidationIssue]:
             fix(
                 "Turn on tone mapping (SDR output)",
                 add("filters.tonemap", {"preset": "default"}),
-                target=ctx.target,
             )
         )
     ten_bit = ten_bit_patch(video, ctx.caps, ctx.definitions)
     if ten_bit is not None:
-        fixes.append(fix("Encode 10-bit (keep HDR)", *ten_bit, target=ctx.target))
+        fixes.append(fix("Encode 10-bit (keep HDR)", *ten_bit))
     yield warning(
         "filter.hdr_8bit",
         "video.bit_depth",

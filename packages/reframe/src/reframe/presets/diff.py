@@ -7,8 +7,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from pydantic import JsonValue
-
+from reframe.jsonpatch import json_equal
 from reframe.models.preset import FieldChange
 from reframe.models.template import JobTemplate
 
@@ -35,7 +34,7 @@ def diff(template: JobTemplate, preset: JobTemplate) -> list[FieldChange]:
         _walk(name, before.get(name), after.get(name), name in before, name in after, changes)
     if _crop_mode(after) in DETECTED_CROP_MODES and _crop_mode(after) == _crop_mode(before):
         changes = [c for c in changes if not c.path.startswith("dimensions.crop.rect")]
-    return changes
+    return [c for c in changes if c.path != "dimensions.crop.detection_error"]
 
 
 def _crop_mode(template: Mapping[str, Any]) -> Any:
@@ -57,12 +56,12 @@ def _walk(
     path: str, old: Any, new: Any, has_old: bool, has_new: bool, out: list[FieldChange]
 ) -> None:
     if not has_old:
-        out.append(FieldChange(path=path, kind="added", value=_json(new)))
+        out.append(FieldChange(path=path, kind="added", value=new))
     elif not has_new:
-        out.append(FieldChange(path=path, kind="removed", preset_value=_json(old)))
+        out.append(FieldChange(path=path, kind="removed", preset_value=old))
     elif isinstance(old, dict) and isinstance(new, dict):
         if any(key in old and key in new and old[key] != new[key] for key in DISCRIMINATORS):
-            out.append(FieldChange(path=path, preset_value=_json(old), value=_json(new)))
+            out.append(FieldChange(path=path, preset_value=old, value=new))
         else:
             _walk_object(path, old, new, out)
     elif isinstance(old, list) and isinstance(new, list):
@@ -75,8 +74,8 @@ def _walk(
                 index < len(new),
                 out,
             )
-    elif not _same(old, new):
-        out.append(FieldChange(path=path, preset_value=_json(old), value=_json(new)))
+    elif not json_equal(old, new):
+        out.append(FieldChange(path=path, preset_value=old, value=new))
 
 
 def _walk_object(
@@ -85,14 +84,3 @@ def _walk_object(
     keys = list(old) + [key for key in new if key not in old]
     for key in keys:
         _walk(_join(prefix, key), old.get(key), new.get(key), key in old, key in new, out)
-
-
-def _same(a: Any, b: Any) -> bool:
-    """JSON equality: ``1 == 1.0``, but ``True`` is not ``1``."""
-    if isinstance(a, bool) or isinstance(b, bool):
-        return type(a) is type(b) and a == b
-    return bool(a == b)
-
-
-def _json(value: Any) -> JsonValue:
-    return value  # type: ignore[no-any-return]

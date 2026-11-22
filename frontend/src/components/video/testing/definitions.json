@@ -1601,10 +1601,7 @@
         "8": "nv12",
         "10": "p010le"
       },
-      "hardware_setup": {
-        "init_args": ["-init_hw_device", "qsv=hw", "-filter_hw_device", "hw"],
-        "filter_tail": ["format={sw_pix_fmt}", "hwupload=extra_hw_frames=64", "format=qsv"]
-      },
+      "hardware_setup": null,
       "fallback": ["hevc_nvenc", "hevc_amf", "hevc_vaapi", "libx265"],
       "params_arg": null,
       "rate_control": {

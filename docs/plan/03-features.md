@@ -4,7 +4,7 @@ This is the functional spec. Each section says what HandBrake does, what Reframe
 how it should behave. The core implements the logic ([05-core.md](05-core.md)). The frontend
 renders it ([06-web-app.md](06-web-app.md)).
 
-Contents: [App layout](#app-layout) · [Summary](#summary) · [Dimensions](#dimensions) ·
+Contents: [App layout](#app-layout) · [Summary](#summary) · [Range](#range) · [Dimensions](#dimensions) ·
 [Filters](#filters) · [Video](#video) · [Advanced encoder options](#advanced-encoder-options) ·
 [Audio](#audio) · [Subtitles](#subtitles) · [Track metadata & languages](#track-metadata--languages) ·
 [Chapters](#chapters) · [Tags](#tags) · [Output naming](#output-naming) · [Preview](#preview) · [Presets](#presets) ·
@@ -60,6 +60,33 @@ Batch / season editing has its own document: [04-batch-mode.md](04-batch-mode.md
 
 Done when: every card updates live while you edit other tabs, and every chip and issue links
 to the field it describes.
+
+---
+
+## Range
+
+HandBrake encodes a range of chapters, seconds or frames. Reframe does the same, with the
+selector in the source header ([decision 0074](../decisions/0074-range-selector-in-m10.md)).
+
+- A button between the duration and the preset picker shows the range ("Whole source",
+  "Chapters 2–3", "0:01:30 – 0:45:00", "Frames 0 – 1440") and the length it covers. It opens a
+  popover with the modes **Whole source**, **Chapters**, **Seconds** and **Frames**.
+- **Chapters**: *From* and *To* list each chapter's number, name and start time, 1-based and
+  inclusive. Disabled, with the reason, when the source has no chapters.
+- **Seconds**: *Start* and *End* accept `H:MM:SS.mmm`, `MM:SS` or seconds. An empty *End* means
+  to the end.
+- **Frames**: *From frame* (0-based) and *To frame (not included)*. Disabled, with the reason,
+  when the video has no frame rate.
+- Changing the mode keeps the span when the source gives the data (chapter times, the frame
+  rate).
+- A range outside the source is a validation issue with a fix ("Encode the whole source", "End
+  at the end of the source"). It is not a blocked input.
+- A range is part of the job, not of a preset, so picking a preset keeps it. In a batch group
+  the range is always the shown file's own override (a group's template has no range).
+- The Summary, the `{chapters}` naming variable, the estimate and the command follow the range.
+
+Done when: picking chapters 2–3 of a source updates the header, the Summary, the output name
+and the command at once, and the encoded file lasts as long as those chapters.
 
 ---
 
@@ -231,7 +258,9 @@ The UI never waits for detection.
 | Detection still running | The picker shows `checking…`. A preset or job can be edited. Queueing waits until the encoder's status is known |
 | A preset or queued job uses an encoder that is now unavailable | A non-modal **error banner** on the Video tab and a Summary issue: "Preset *H.265 NVENC 1080p* uses `hevc_nvenc`, which is not available: *no NVIDIA device found*". Buttons: **Use `libx265` (closest match)** · **Choose encoder** · **Check again** |
 | Queue reaches a job whose encoder became unavailable | The job is marked `Failed — encoder unavailable` with the same fix actions. The queue continues with the next job |
-| The bundled FFmpeg is damaged, or an override points to a missing, broken or too old binary | A repair screen shows the reason and where the binary came from (environment, settings, bundled). Buttons: **Use bundled FFmpeg** · **Choose path** · **Check again**. The rest of the UI stays usable for browsing presets and settings |
+| The bundled FFmpeg is damaged, or an override points to a missing, broken or too old binary | A repair screen shows the reason and where the binary came from (environment, settings, bundled). Buttons: **Use bundled FFmpeg** · **Choose path** · **Check again** (with an environment override only **Check again**: the variable decides, [0103](../decisions/0103-owner-decisions-before-v1.md) item 17). The rest of the UI stays usable for browsing presets and settings |
+| No FFmpeg yet (the desktop app's first run: the packages contain none) | The same screen offers the builds: **Download** (the `default` build preselected), **Install from file** (an archive downloaded elsewhere, checked against the manifest), **Choose path**. Without a network it says that the download server cannot be reached and points to the other two ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)) |
+| An encoder is unavailable because this FFmpeg build needs newer system software (an NVIDIA driver older than the build's NVENC needs; a system library too old for the build) | The reason, plus a hint: update the driver, or use another FFmpeg build. The banner and the Summary issue add **Use another FFmpeg…** (opens Settings → Tools), and Settings → Tools names these encoders with the other offered builds, **Install from file** and the path. A 10-bit-only limit is not such a case: the encoder stays usable in 8-bit ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)) |
 
 "Closest match" mapping lives in the encoder definitions (for example `hevc_nvenc → libx265`,
 `h264_qsv → libx264`, `av1_amf → libsvtav1`). Quality values are converted with a mapping
@@ -289,7 +318,7 @@ Option coverage for v1:
 | x264 | rate control (crf, vbv-maxrate/bufsize, qcomp, aq-mode/strength, mbtree), frames (bframes, b-adapt, b-pyramid, ref, keyint, min-keyint, scenecut, rc-lookahead, weightp), analysis (me, subme, merange, trellis, partitions, direct), psy (psy-rd, psy-trellis), deblock, colour (colorprim, transfer, colormatrix; not range: FFmpeg's libx264 wrapper overrides it with the input's range), threads |
 | x265 | all x264 equivalents, plus ctu, rd, rdoq-level, psy-rdoq, limit-refs, limit-modes, rect, amp, tu-intra/inter-depth, sao / limit-sao / selective-sao, strong-intra-smoothing, hdr10, hdr10-opt, master-display, max-cll, repeat-headers, pools, frame-threads, wpp |
 | SVT-AV1 | preset, crf, tune, film-grain, film-grain-denoise, keyint, scd, lookahead, enable-overlays, enable-qm, qm-min/max, variance-boost, sharpness, enable-tf |
-| NVENC | preset p1–p7, tune (hq/uhq/ll), rc (vbr/constqp), cq, multipass, bf, b_ref_mode, refs, spatial/temporal AQ, aq-strength, rc-lookahead |
+| NVENC | preset p1–p7, tune (hq/uhq/ll), rate control from the quality mode (CQ: `vbr` with `-cq` and, without a level, a high `-maxrate`/`-bufsize` so that the level does not cap the quality; bitrate: `vbr`; `constqp` is not offered, [0103](../decisions/0103-owner-decisions-before-v1.md) items 1, 17), cq, multipass (constant quality only), bf, b_ref_mode, refs, spatial/temporal AQ, aq-strength, rc-lookahead |
 | QSV / AMF / VAAPI | preset/quality, rc mode, bf, refs, lookahead (when supported), profile/level (QSV: no levels, not verifiable without Intel hardware) |
 | VP9 (libvpx) | keyframes (g, keyint_min), lag-in-frames, auto-alt-ref, alt-ref noise reduction, aq-mode, sharpness, qmin/qmax, under/overshoot, enable-tpl, tiles, frame-parallel, threads |
 
@@ -308,11 +337,12 @@ tracks (DTS-HD MA) often show no bitrate.
 | 2 | eng | English Dub | **DTS-HD MA** | 5.1 | 48 kHz / 24-bit | 2 104 kb/s | |
 | 3 | eng | Director's Commentary | AC-3 | 2.0 | 48 kHz | 192 kb/s | `Commentary` |
 
-- **Codec** uses the commercial name (DTS-HD MA, DTS:X, TrueHD Atmos, E-AC-3 JOC, AAC-LC, HE-AAC,
-  FLAC, PCM), from the FFprobe profile with MediaInfo as a fallback.
+- **Codec** uses the commercial name (DTS-HD MA, DTS:X, TrueHD Atmos, E-AC-3 Atmos, AAC-LC, HE-AAC,
+  FLAC, PCM), from the FFprobe profile.
 - **Bitrate** comes from, in order: the stream's `bit_rate` → Matroska statistics tags (`BPS`,
-  `NUMBER_OF_BYTES`/`DURATION`) → MediaInfo → `—` with a **Measure** button that runs a
-  packet-size scan as a cancellable background task.
+  `NUMBER_OF_BYTES`/`DURATION`) → for Matroska, an estimate from 32 sampled clusters, shown
+  as `≈` → `—`. A **Measure** button runs a packet-size scan as a cancellable background task
+  for the exact value ([decision 0081](../decisions/0081-probe-without-mediainfo.md)).
 - **Role badges**: `Commentary`, `Audio description`, `Music only`, `Main`. A badge is solid
   when the file's disposition flag sets it. It is outlined when a heuristic sets it (title
   keywords in several languages, or a 2.0 low-bitrate track in the same language as a main
@@ -477,8 +507,9 @@ rule does.
   audio is in another language, the first subtitle in the viewer's language
   ([0031](../decisions/0031-audio-and-subtitle-selection-stage.md)).
 - **External subtitles**: add `.srt`, `.ass`, `.ssa`, `.vtt` or `.sup` files. Settings:
-  language, name, flags, time offset (ms), and character encoding (auto-detected, can be
-  changed).
+  language, name, flags, time offset (ms), and character encoding (UTF-8 and UTF-16 are
+  detected; another encoding is chosen by the user, [0065](../decisions/0065-m6-tracks-and-metadata.md)
+  item 6).
 - **Default track policy**: none / first output track / forced track.
 - **Subtitle defaults** (HandBrake parity, stored in the preset): the same track selection
   part as [Audio defaults](#audio-defaults-stored-in-the-preset) (languages, first/all
@@ -495,7 +526,7 @@ block:
 | Field | Control | Written as |
 |-------|---------|------------|
 | Language | Language picker (below) | MKV: `language` (ISO 639-2/B) + `LanguageIETF` (BCP 47). MP4: ISO 639-2/T |
-| Name | Text, or a name template such as `{lang_name} {channels} {codec}` → `Japanese 5.1 Opus` | `title` |
+| Name | Text, or a name template such as `{lang_name} {channels} {codec}` → `Japanese 5.1 Opus`. A name with a brace that parses and uses only the track variables (`lang`, `lang_name`, `lang_native`, `channels`, `codec`, `bitrate`, `title`, `source_codec`) is a template, expanded when the job is planned; `{{` and `}}` write a brace, `<…>` is an optional group; any other name is written as typed ([0103](../decisions/0103-owner-decisions-before-v1.md) item 6) | `title` |
 | Default | Toggle. Usually one track per type is default; more than one is allowed, with a warning that offers to keep only the first ([0044](../decisions/0044-code-review-follow-ups.md)) | disposition / FlagDefault |
 | Forced | Toggle | FlagForced |
 | Commentary | Toggle | FlagCommentary |
@@ -503,8 +534,9 @@ block:
 | Visual impaired | Toggle | FlagVisualImpaired |
 | Original language | Toggle | FlagOriginal |
 
-Flags that the installed FFmpeg cannot write go through a `mkvpropedit` step after muxing.
-If `mkvpropedit` is missing, a warning explains which flags will be lost.
+FFmpeg writes the language, the name and all six flags. `LanguageIETF`, which FFmpeg never
+writes, is added after muxing by Reframe's own Matroska header writer, so nothing else needs to
+be installed ([decision 0080](../decisions/0080-own-matroska-header-writer.md)).
 
 **Language picker** (like mkvtoolnix):
 
@@ -582,7 +614,7 @@ fields recognised, file name: 3".
 | `{title}` | Title number (disc input, post-v1), or the file's index, as in HandBrake. Use `{main_title}` for the name |
 | `{chapters}` | Selected chapter range, for example `1-12` |
 | `{date}` · `{time}` | Current date and time |
-| `{creation-date}` · `{creation-time}` | Creation date/time from the source metadata (container `creation_time`, else the file system) |
+| `{creation-date}` · `{creation-time}` | Creation date/time from the source metadata (container `creation_time`, else the file system's creation time where the system reports one: Windows, not Linux) |
 | `{modification-date}` · `{modification-time}` | The source file's modification date/time |
 | `{preset}` | Preset name |
 | `{width}` · `{height}` | Output storage width and height |
@@ -696,7 +728,8 @@ It is in Settings → Output, in the preset editor, and on the Summary tab's Out
 - A **parsed name** panel: the chosen name source and why, the name with coloured spans (title,
   year, episode, resolution, source, group), and editable fields. An edit is a per-file
   override, for when the parser gets a name wrong.
-- A live preview of the result. In a batch group, it shows every file.
+- A live preview of the result. In a batch group, it shows the shown file; the Check group
+  matrix shows every file's name ([0103](../decisions/0103-owner-decisions-before-v1.md) item 17).
 
 ---
 
@@ -760,7 +793,9 @@ Same behaviour as HandBrake:
   whose output is the output or the source of another waiting or running job is added as
   failed (`queue.output_claimed`,
   [decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)).
-- **When done**: nothing · notify · quit · sleep · shut down (desktop and bare-metal only).
+- **When done**: nothing · notify · quit · sleep · shut down (desktop and bare-metal only). A server in a
+  container (the Docker image) offers neither sleep nor shut down, a web server no quit; the API
+  refuses them (`queue.when_done_unavailable`, [0103](../decisions/0103-owner-decisions-before-v1.md) item 7).
 - **Sleep inhibit** while encoding (Windows `SetThreadExecutionState`, Linux the desktop
   session's inhibit and logind over D-Bus). It stops automatic (idle) sleep only: the user's own Sleep, the
   power button and the lid always work, and the encode then pauses with the system and
@@ -777,7 +812,7 @@ These cover the "I only want to fix languages and flags" case, without re-encodi
 | Condition | Job type | Speed |
 |-----------|----------|-------|
 | Video passthrough + all audio and subtitle tracks copied | **Remux** (FFmpeg `-c copy`) | Disk speed |
-| Source is MKV, track set and order unchanged, only metadata changed, "Edit in place" chosen | **Metadata edit** (`mkvpropedit`) | Seconds |
+| Source is MKV, track set and order unchanged, only metadata changed, "Edit in place" chosen | **Metadata edit** (Reframe's Matroska header writer) | Seconds |
 
 The Summary tab shows which job type you will get, and why.
 
@@ -787,9 +822,9 @@ The Summary tab shows which job type you will get, and why.
 
 | Section | Contents |
 |---------|----------|
-| Tools | ffmpeg, ffprobe, mkvpropedit, mediainfo. Each shows its version and where it comes from (bundled, settings, environment). A path override field, **Test** and **Use bundled** buttons. Overrides from environment variables are read-only |
+| Tools | ffmpeg, ffprobe. Each shows its version and where it comes from (bundled or downloaded, settings, environment). The offered builds with their summary and licence, **Download**, **Install from file**, and a notice when the downloaded build is not this release's pin or when an encoder has a build mismatch ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)). A path override field, **Test** and **Use bundled** buttons. Overrides from environment variables are read-only |
 | Encoders | Table of all known encoders: status, reason, last check time. **Re-scan** button. Hardware test encodes on / off. VAAPI device (automatic, or one `/dev/dri/renderD*` node; [decision 0020](../decisions/0020-m2-wave-1-product-decisions.md)) |
-| Output | Default folder, [naming](#output-naming) templates and options, default container, collision behaviour, partial file behaviour |
+| Output | Default folder, [naming](#output-naming) templates and options, collision behaviour, partial file behaviour |
 | Languages | Favourite languages. Preferred audio and subtitle languages (used by preset rules) |
 | Preview | Number of sample frames, cache size limit, clear cache |
 | Queue | Parallel jobs, when done, sleep inhibit, notifications |

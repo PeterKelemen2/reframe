@@ -29,6 +29,24 @@ button {
   outline-offset: var(--p-focus-ring-offset);
 }
 
+/* Firefox makes a box that scrolls a Tab stop of its own. Its ring goes inside the box: outside,
+   a clipping ancestor cuts it away. Controls, media with controls (a ring inside would lie on
+   the picture) and elements given a tabindex keep theirs. */
+:focus-visible:not(
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  summary,
+  video,
+  audio,
+  [tabindex],
+  [contenteditable]
+) {
+  outline-offset: calc(-1 * var(--p-focus-ring-width));
+}
+
 /* Read by screen readers, not shown. Pinned to a corner of its containing block: left at its
    place in a scrolled column, it would make the page taller than the one-window shell. */
 .rf-sr-only {
@@ -66,10 +84,18 @@ button {
   opacity: 1;
 }
 
-/* The option under the keyboard or the pointer: its tint alone is 1.1:1 on the list. */
+/* The option or menu item under the keyboard or the pointer: its tint alone is 1.1:1 on the list. */
 .p-select-option.p-focus,
-.p-listbox-option.p-focus {
+.p-listbox-option.p-focus,
+.p-menu-item.p-focus > .p-menu-item-content,
+.p-contextmenu-item.p-focus > .p-contextmenu-item-content {
   box-shadow: inset 0 0 0 2px var(--p-primary-color);
+}
+
+/* PrimeVue's scroller takes the focus from Tab and removes its outline. */
+.p-virtualscroller:focus-visible {
+  outline: var(--p-focus-ring-width) var(--p-focus-ring-style) var(--p-focus-ring-color);
+  outline-offset: calc(-1 * var(--p-focus-ring-width));
 }
 
 /* The target of `ui.reveal(path)` (useReveal), for a moment. */

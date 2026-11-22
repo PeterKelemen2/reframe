@@ -1,4 +1,431 @@
 # serializer version: 1
+# name: test_plan_snapshot[align_av_start_bitmap_burn_vaapi]
+  dict({
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va -i /media/vobsub.mkv -map \'[v]\' -map 0:1 -filter_complex \'[0:0][0:2]overlay=eof_action=pass,scale=720:480:flags=lanczos,setsar=1/1,setpts=\'"\'"\'if(eq(N,0),0,PTS)\'"\'"\',format=nv12,hwupload[v]\' -c:v:0 hevc_vaapi -rc_mode:v:0 VBR -b:v:0 2000k -c:s:0 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/vobsub.part.mkv && mv -f -- /out/vobsub.part.mkv /out/vobsub.mkv',
+    'expected_duration': 4.0,
+    'files': list([
+    ]),
+    'job_type': 'encode',
+    'output_final': '/out/vobsub.mkv',
+    'output_tmp': '/out/vobsub.part.mkv',
+    'steps': list([
+      dict({
+        'argv': list([
+          '-hide_banner',
+          '-nostdin',
+          '-y',
+          '-progress',
+          'pipe:1',
+          '-nostats',
+          '-init_hw_device',
+          'vaapi=va:/dev/dri/renderD128',
+          '-filter_hw_device',
+          'va',
+          '-i',
+          '/media/vobsub.mkv',
+          '-map',
+          '[v]',
+          '-map',
+          '0:1',
+          '-filter_complex',
+          "[0:0][0:2]overlay=eof_action=pass,scale=720:480:flags=lanczos,setsar=1/1,setpts='if(eq(N,0),0,PTS)',format=nv12,hwupload[v]",
+          '-c:v:0',
+          'hevc_vaapi',
+          '-rc_mode:v:0',
+          'VBR',
+          '-b:v:0',
+          '2000k',
+          '-c:s:0',
+          'copy',
+          '-map_metadata:s',
+          '-1',
+          '-metadata:s:v:0',
+          'language=und',
+          '-disposition:v:0',
+          'default',
+          '-metadata:s:s:0',
+          'language=eng',
+          '-metadata:s:s:0',
+          'title=English',
+          '-disposition:s:0',
+          'default',
+          '-map_chapters',
+          '-1',
+          '-map_metadata',
+          '0',
+          '-f',
+          'matroska',
+          '/out/vobsub.part.mkv',
+        ]),
+        'description': 'Encode (VAAPI H.265)',
+        'header_edit': None,
+        'kind': 'encode',
+        'measures': list([
+        ]),
+        'progress_weight': 1.0,
+        'tool': 'ffmpeg',
+      }),
+      dict({
+        'argv': list([
+        ]),
+        'description': 'Rename vobsub.part.mkv to vobsub.mkv',
+        'header_edit': None,
+        'kind': 'finalize',
+        'measures': list([
+        ]),
+        'progress_weight': 0.0,
+        'tool': None,
+      }),
+    ]),
+    'temp_files': list([
+    ]),
+  })
+# ---
+# name: test_plan_snapshot[align_av_start_passthru_loudnorm_and_range]
+  dict({
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -ss 0.5 -i /media/multitrack.mkv -map 0:2 -t 3 -filter:a:0 aresample=async=1:first_pts=0,loudnorm=I=-23:TP=-1:LRA=20:print_format=json -f null - && ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -ss 0.5 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -ss 0 -t 3 -filter:v:0 \'scale=320:180:flags=lanczos,setsar=1/1,setpts=\'"\'"\'if(eq(N,0),0,PTS)\'"\'"\',format=yuv420p\' -filter:a:1 \'aresample=async=1:first_pts=0,loudnorm=I=-23:TP=-1:LRA=20:measured_I=<a1.input_i>:measured_TP=<a1.input_tp>:measured_LRA=<a1.input_lra>:measured_thresh=<a1.input_thresh>:offset=<a1.target_offset>:linear=true:print_format=summary\' -filter:a:2 aresample=async=1:first_pts=0 -c:v:0 libx264 -crf:v:0 22 -c:a:0 copy -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
+    'expected_duration': 3.0,
+    'files': list([
+    ]),
+    'job_type': 'encode',
+    'output_final': '/out/multitrack.mkv',
+    'output_tmp': '/out/multitrack.part.mkv',
+    'steps': list([
+      dict({
+        'argv': list([
+          '-hide_banner',
+          '-nostdin',
+          '-y',
+          '-progress',
+          'pipe:1',
+          '-nostats',
+          '-ss',
+          '0.5',
+          '-i',
+          '/media/multitrack.mkv',
+          '-map',
+          '0:2',
+          '-t',
+          '3',
+          '-filter:a:0',
+          'aresample=async=1:first_pts=0,loudnorm=I=-23:TP=-1:LRA=20:print_format=json',
+          '-f',
+          'null',
+          '-',
+        ]),
+        'description': 'Measure the loudness of audio track 2 (English Stereo)',
+        'header_edit': None,
+        'kind': 'analyse',
+        'measures': list([
+          dict({
+            'id': 'a1',
+            'parser': 'loudnorm',
+          }),
+        ]),
+        'progress_weight': 0.05,
+        'tool': 'ffmpeg',
+      }),
+      dict({
+        'argv': list([
+          '-hide_banner',
+          '-nostdin',
+          '-y',
+          '-progress',
+          'pipe:1',
+          '-nostats',
+          '-ss',
+          '0.5',
+          '-i',
+          '/media/multitrack.mkv',
+          '-map',
+          '0:0',
+          '-map',
+          '0:1',
+          '-map',
+          '0:2',
+          '-map',
+          '0:3',
+          '-map',
+          '0:4',
+          '-map',
+          '0:5',
+          '-map',
+          '0:6',
+          '-ss',
+          '0',
+          '-t',
+          '3',
+          '-filter:v:0',
+          "scale=320:180:flags=lanczos,setsar=1/1,setpts='if(eq(N,0),0,PTS)',format=yuv420p",
+          '-filter:a:1',
+          dict({
+            'parts': list([
+              'aresample=async=1:first_pts=0,loudnorm=I=-23:TP=-1:LRA=20',
+              ':measured_I=',
+              dict({
+                'ref': 'a1.input_i',
+              }),
+              ':measured_TP=',
+              dict({
+                'ref': 'a1.input_tp',
+              }),
+              ':measured_LRA=',
+              dict({
+                'ref': 'a1.input_lra',
+              }),
+              ':measured_thresh=',
+              dict({
+                'ref': 'a1.input_thresh',
+              }),
+              ':offset=',
+              dict({
+                'ref': 'a1.target_offset',
+              }),
+              ':linear=true:print_format=summary',
+            ]),
+          }),
+          '-filter:a:2',
+          'aresample=async=1:first_pts=0',
+          '-c:v:0',
+          'libx264',
+          '-crf:v:0',
+          '22',
+          '-c:a:0',
+          'copy',
+          '-c:a:1',
+          'aac',
+          '-b:a:1',
+          '160k',
+          '-ar:a:1',
+          '48000',
+          '-c:a:2',
+          'aac',
+          '-b:a:2',
+          '160k',
+          '-ar:a:2',
+          '48000',
+          '-c:s:0',
+          'copy',
+          '-c:s:1',
+          'copy',
+          '-c:s:2',
+          'copy',
+          '-map_metadata:s',
+          '-1',
+          '-metadata:s:v:0',
+          'language=und',
+          '-disposition:v:0',
+          'default',
+          '-metadata:s:a:0',
+          'language=jpn',
+          '-metadata:s:a:0',
+          'title=Japanese 5.1',
+          '-disposition:a:0',
+          'default',
+          '-metadata:s:a:1',
+          'language=eng',
+          '-metadata:s:a:1',
+          'title=English Stereo',
+          '-disposition:a:1',
+          '0',
+          '-metadata:s:a:2',
+          'language=eng',
+          '-metadata:s:a:2',
+          "title=Director's Commentary",
+          '-disposition:a:2',
+          'comment',
+          '-metadata:s:s:0',
+          'language=eng',
+          '-metadata:s:s:0',
+          'title=English',
+          '-disposition:s:0',
+          'default',
+          '-metadata:s:s:1',
+          'language=eng',
+          '-metadata:s:s:1',
+          'title=English SDH',
+          '-disposition:s:1',
+          'hearing_impaired',
+          '-metadata:s:s:2',
+          'language=eng',
+          '-metadata:s:s:2',
+          'title=Signs & Songs',
+          '-disposition:s:2',
+          'forced',
+          '-map_chapters',
+          '-1',
+          '-map_metadata',
+          '0',
+          '-f',
+          'matroska',
+          '/out/multitrack.part.mkv',
+        ]),
+        'description': 'Encode (x264)',
+        'header_edit': None,
+        'kind': 'encode',
+        'measures': list([
+        ]),
+        'progress_weight': 1.0,
+        'tool': 'ffmpeg',
+      }),
+      dict({
+        'argv': list([
+        ]),
+        'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
+        'kind': 'finalize',
+        'measures': list([
+        ]),
+        'progress_weight': 0.0,
+        'tool': None,
+      }),
+    ]),
+    'temp_files': list([
+    ]),
+  })
+# ---
+# name: test_plan_snapshot[align_av_start_video_passthrough]
+  dict({
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:a:0 aresample=async=1:first_pts=0,aresample=out_chlayout=5.1 -filter:a:1 aresample=async=1:first_pts=0 -filter:a:2 aresample=async=1:first_pts=0 -c:v:0 copy -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
+    'expected_duration': 4.021,
+    'files': list([
+    ]),
+    'job_type': 'encode',
+    'output_final': '/out/multitrack.mkv',
+    'output_tmp': '/out/multitrack.part.mkv',
+    'steps': list([
+      dict({
+        'argv': list([
+          '-hide_banner',
+          '-nostdin',
+          '-y',
+          '-progress',
+          'pipe:1',
+          '-nostats',
+          '-drc_scale:1',
+          '0',
+          '-i',
+          '/media/multitrack.mkv',
+          '-map',
+          '0:0',
+          '-map',
+          '0:1',
+          '-map',
+          '0:2',
+          '-map',
+          '0:3',
+          '-map',
+          '0:4',
+          '-map',
+          '0:5',
+          '-map',
+          '0:6',
+          '-filter:a:0',
+          'aresample=async=1:first_pts=0,aresample=out_chlayout=5.1',
+          '-filter:a:1',
+          'aresample=async=1:first_pts=0',
+          '-filter:a:2',
+          'aresample=async=1:first_pts=0',
+          '-c:v:0',
+          'copy',
+          '-c:a:0',
+          'aac',
+          '-b:a:0',
+          '384k',
+          '-ar:a:0',
+          '48000',
+          '-c:a:1',
+          'aac',
+          '-b:a:1',
+          '160k',
+          '-ar:a:1',
+          '48000',
+          '-c:a:2',
+          'aac',
+          '-b:a:2',
+          '160k',
+          '-ar:a:2',
+          '48000',
+          '-c:s:0',
+          'copy',
+          '-c:s:1',
+          'copy',
+          '-c:s:2',
+          'copy',
+          '-map_metadata:s',
+          '-1',
+          '-metadata:s:v:0',
+          'language=und',
+          '-disposition:v:0',
+          'default',
+          '-metadata:s:a:0',
+          'language=jpn',
+          '-metadata:s:a:0',
+          'title=Japanese 5.1',
+          '-disposition:a:0',
+          'default',
+          '-metadata:s:a:1',
+          'language=eng',
+          '-metadata:s:a:1',
+          'title=English Stereo',
+          '-disposition:a:1',
+          '0',
+          '-metadata:s:a:2',
+          'language=eng',
+          '-metadata:s:a:2',
+          "title=Director's Commentary",
+          '-disposition:a:2',
+          'comment',
+          '-metadata:s:s:0',
+          'language=eng',
+          '-metadata:s:s:0',
+          'title=English',
+          '-disposition:s:0',
+          'default',
+          '-metadata:s:s:1',
+          'language=eng',
+          '-metadata:s:s:1',
+          'title=English SDH',
+          '-disposition:s:1',
+          'hearing_impaired',
+          '-metadata:s:s:2',
+          'language=eng',
+          '-metadata:s:s:2',
+          'title=Signs & Songs',
+          '-disposition:s:2',
+          'forced',
+          '-map_chapters',
+          '-1',
+          '-map_metadata',
+          '0',
+          '-f',
+          'matroska',
+          '/out/multitrack.part.mkv',
+        ]),
+        'description': 'Encode (Remux)',
+        'header_edit': None,
+        'kind': 'encode',
+        'measures': list([
+        ]),
+        'progress_weight': 1.0,
+        'tool': 'ffmpeg',
+      }),
+      dict({
+        'argv': list([
+        ]),
+        'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
+        'kind': 'finalize',
+        'measures': list([
+        ]),
+        'progress_weight': 0.0,
+        'tool': None,
+      }),
+    ]),
+    'temp_files': list([
+    ]),
+  })
+# ---
 # name: test_plan_snapshot[anamorphic_dvd_square_pixels]
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/anamorphic.mkv -map 0:0 -filter:v:0 scale=854:480:flags=spline,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 0 -map_chapters -1 -map_metadata 0 -f matroska /out/anamorphic.part.mkv && mv -f -- /out/anamorphic.part.mkv /out/anamorphic.mkv',
@@ -42,6 +469,7 @@
           '/out/anamorphic.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -52,6 +480,7 @@
         'argv': list([
         ]),
         'description': 'Rename anamorphic.part.mkv to anamorphic.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -106,6 +535,7 @@
           '/out/anamorphic.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -116,6 +546,7 @@
         'argv': list([
         ]),
         'description': 'Rename anamorphic.part.mkv to anamorphic.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -242,6 +673,7 @@
           '/out/movie-truehd-atmos.part.mkv',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -252,6 +684,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-truehd-atmos.part.mkv to movie-truehd-atmos.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -358,6 +791,7 @@
           '/out/anime-ass-fonts.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -368,6 +802,7 @@
         'argv': list([
         ]),
         'description': 'Rename anime-ass-fonts.part.mkv to anime-ass-fonts.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -500,6 +935,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -510,6 +946,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -642,6 +1079,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (AMD AMF AV1)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -652,6 +1090,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -792,6 +1231,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (NVIDIA NVENC AV1)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -802,6 +1242,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -815,7 +1256,7 @@
 # ---
 # name: test_plan_snapshot[av1_qsv]
   dict({
-    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -init_hw_device qsv=hw -filter_hw_device hw -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=nv12,hwupload=extra_hw_frames=64,format=qsv -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 av1_qsv -b:v:0 4000k -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=nv12 -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 av1_qsv -b:v:0 4000k -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
     'files': list([
     ]),
@@ -831,10 +1272,6 @@
           '-progress',
           'pipe:1',
           '-nostats',
-          '-init_hw_device',
-          'qsv=hw',
-          '-filter_hw_device',
-          'hw',
           '-drc_scale:1',
           '0',
           '-i',
@@ -854,7 +1291,7 @@
           '-map',
           '0:6',
           '-filter:v:0',
-          'scale=320:180:flags=lanczos,setsar=1/1,format=nv12,hwupload=extra_hw_frames=64,format=qsv',
+          'scale=320:180:flags=lanczos,setsar=1/1,format=nv12',
           '-filter:a:0',
           'aresample=out_chlayout=5.1',
           '-c:v:0',
@@ -936,6 +1373,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (Intel QSV AV1)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -946,6 +1384,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -1006,6 +1445,7 @@
           '/out/anamorphic.part.mkv',
         ]),
         'description': 'Encode (VAAPI AV1)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -1016,6 +1456,7 @@
         'argv': list([
         ]),
         'description': 'Rename anamorphic.part.mkv to anamorphic.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -1137,6 +1578,7 @@
           '/out/anime-ass-fonts.part.mkv',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -1147,6 +1589,7 @@
         'argv': list([
         ]),
         'description': 'Rename anime-ass-fonts.part.mkv to anime-ass-fonts.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -1251,6 +1694,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -1261,6 +1705,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -1337,6 +1782,7 @@
           '/out/movie-pgs.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -1347,6 +1793,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-pgs.part.mkv to movie-pgs.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -1447,6 +1894,7 @@
           '/out/movie-pgs.part.mkv',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -1457,6 +1905,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-pgs.part.mkv to movie-pgs.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -1577,6 +2026,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -1587,6 +2037,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -1651,6 +2102,7 @@
           '/out/vobsub.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -1661,6 +2113,7 @@
         'argv': list([
         ]),
         'description': 'Rename vobsub.part.mkv to vobsub.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -1755,6 +2208,7 @@
           '/out/chapters.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -1765,6 +2219,7 @@
         'argv': list([
         ]),
         'description': 'Rename chapters.part.mkv to chapters.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -1831,6 +2286,7 @@
           '/out/chapters.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -1841,6 +2297,7 @@
         'argv': list([
         ]),
         'description': 'Rename chapters.part.mkv to chapters.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -1897,6 +2354,7 @@
           '/out/movie-dv-p8.part.mkv',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -1907,6 +2365,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-dv-p8.part.mkv to movie-dv-p8.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -2005,6 +2464,7 @@
           '/out/dvd-title-interlaced.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -2015,6 +2475,7 @@
         'argv': list([
         ]),
         'description': 'Rename dvd-title-interlaced.part.mkv to dvd-title-interlaced.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -2026,9 +2487,9 @@
     ]),
   })
 # ---
-# name: test_plan_snapshot[eac3_atmos_without_mkvpropedit]
+# name: test_plan_snapshot[eac3_atmos_with_a_bcp47_subtitle]
   dict({
-    'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/show-eac3-atmos.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -c:a:0 copy -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -metadata:s:a:0 title=English -disposition:a:0 default -metadata:s:s:0 language=por -metadata:s:s:0 title=English -disposition:s:0 0 -metadata:s:s:1 language=eng -metadata:s:s:1 'title=English [SDH]' -disposition:s:1 0 -metadata:s:s:2 language=eng -metadata:s:s:2 'title=English [Forced]' -disposition:s:2 0 -map_chapters -1 -map_metadata 0 -f matroska /out/show-eac3-atmos.part.mkv && mv -f -- /out/show-eac3-atmos.part.mkv /out/show-eac3-atmos.mkv",
+    'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/show-eac3-atmos.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -c:a:0 copy -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -metadata:s:a:0 title=English -disposition:a:0 default -metadata:s:s:0 language=por -metadata:s:s:0 title=English -disposition:s:0 0 -metadata:s:s:1 language=eng -metadata:s:s:1 'title=English [SDH]' -disposition:s:1 0 -metadata:s:s:2 language=eng -metadata:s:s:2 'title=English [Forced]' -disposition:s:2 0 -map_chapters -1 -map_metadata 0 -f matroska /out/show-eac3-atmos.part.mkv && header_edit /out/show-eac3-atmos.part.mkv subtitle 1: language=por language_ietf=pt-BR && mv -f -- /out/show-eac3-atmos.part.mkv /out/show-eac3-atmos.mkv",
     'expected_duration': 4.004,
     'files': list([
     ]),
@@ -2109,6 +2570,7 @@
           '/out/show-eac3-atmos.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -2118,7 +2580,34 @@
       dict({
         'argv': list([
         ]),
+        'description': 'Write the BCP 47 languages (Matroska LanguageIETF)',
+        'header_edit': dict({
+          'info': None,
+          'path': '/out/show-eac3-atmos.part.mkv',
+          'tracks': list([
+            dict({
+              'delete_name': False,
+              'flags': dict({
+              }),
+              'language': 'por',
+              'language_ietf': 'pt-BR',
+              'name': None,
+              'number': 1,
+              'track_type': 'subtitle',
+            }),
+          ]),
+        }),
+        'kind': 'header_edit',
+        'measures': list([
+        ]),
+        'progress_weight': 0.01,
+        'tool': None,
+      }),
+      dict({
+        'argv': list([
+        ]),
         'description': 'Rename show-eac3-atmos.part.mkv to show-eac3-atmos.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -2239,6 +2728,7 @@
           '/out/multitrack.part.mp4',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -2249,6 +2739,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mp4 to multitrack.mp4',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -2415,6 +2906,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -2425,6 +2917,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -2561,6 +3054,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -2571,6 +3065,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -2639,6 +3134,7 @@
           '/out/phone-vfr.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -2649,6 +3145,7 @@
         'argv': list([
         ]),
         'description': 'Rename phone-vfr.part.mkv to phone-vfr.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -2707,6 +3204,7 @@
           '/out/vfr.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -2717,6 +3215,7 @@
         'argv': list([
         ]),
         'description': 'Rename vfr.part.mkv to vfr.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -2853,6 +3352,7 @@
           '/out/movie-truehd-atmos.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -2863,6 +3363,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-truehd-atmos.part.mkv to movie-truehd-atmos.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -3001,6 +3502,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (AMD AMF H.264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -3011,6 +3513,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -3024,7 +3527,7 @@
 # ---
 # name: test_plan_snapshot[h264_nvenc_mp4]
   dict({
-    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 h264_nvenc -rc:v:0 vbr -cq:v:0 22 -b:v:0 0 -init_qpI:v:0 20 -init_qpP:v:0 22 -init_qpB:v:0 24 -preset:v:0 p5 -tune:v:0 hq -bf:v:0 3 -b_ref_mode:v:0 middle -spatial-aq:v:0 1 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 mov_text -c:s:1 mov_text -c:s:2 mov_text -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f mp4 /out/multitrack.part.mp4 && mv -f -- /out/multitrack.part.mp4 /out/multitrack.mp4',
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 h264_nvenc -rc:v:0 vbr -cq:v:0 22 -b:v:0 0 -init_qpI:v:0 20 -init_qpP:v:0 22 -init_qpB:v:0 24 -maxrate:v:0 200M -bufsize:v:0 400M -preset:v:0 p5 -tune:v:0 hq -profile:v:0 high -bf:v:0 3 -b_ref_mode:v:0 middle -spatial-aq:v:0 1 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 mov_text -c:s:1 mov_text -c:s:2 mov_text -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f mp4 /out/multitrack.part.mp4 && mv -f -- /out/multitrack.part.mp4 /out/multitrack.mp4',
     'expected_duration': 4.021,
     'files': list([
     ]),
@@ -3076,10 +3579,16 @@
           '22',
           '-init_qpB:v:0',
           '24',
+          '-maxrate:v:0',
+          '200M',
+          '-bufsize:v:0',
+          '400M',
           '-preset:v:0',
           'p5',
           '-tune:v:0',
           'hq',
+          '-profile:v:0',
+          'high',
           '-bf:v:0',
           '3',
           '-b_ref_mode:v:0',
@@ -3161,6 +3670,7 @@
           '/out/multitrack.part.mp4',
         ]),
         'description': 'Encode (NVIDIA NVENC H.264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -3171,6 +3681,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mp4 to multitrack.mp4',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -3184,7 +3695,7 @@
 # ---
 # name: test_plan_snapshot[h264_qsv]
   dict({
-    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -init_hw_device qsv=hw -filter_hw_device hw -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=nv12,hwupload=extra_hw_frames=64,format=qsv -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 h264_qsv -global_quality:v:0 22 -preset:v:0 slow -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=nv12 -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 h264_qsv -global_quality:v:0 22 -preset:v:0 slow -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
     'files': list([
     ]),
@@ -3200,10 +3711,6 @@
           '-progress',
           'pipe:1',
           '-nostats',
-          '-init_hw_device',
-          'qsv=hw',
-          '-filter_hw_device',
-          'hw',
           '-drc_scale:1',
           '0',
           '-i',
@@ -3223,7 +3730,7 @@
           '-map',
           '0:6',
           '-filter:v:0',
-          'scale=320:180:flags=lanczos,setsar=1/1,format=nv12,hwupload=extra_hw_frames=64,format=qsv',
+          'scale=320:180:flags=lanczos,setsar=1/1,format=nv12',
           '-filter:a:0',
           'aresample=out_chlayout=5.1',
           '-c:v:0',
@@ -3307,6 +3814,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (Intel QSV H.264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -3317,6 +3825,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -3455,6 +3964,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (VAAPI H.264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -3465,6 +3975,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -3519,6 +4030,7 @@
           '/out/movie-hdr10-sei.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -3529,6 +4041,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-hdr10-sei.part.mkv to movie-hdr10-sei.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -3601,6 +4114,7 @@
           '/out/movie-hdr10-2160p.part.mkv',
         ]),
         'description': 'Encode (SVT-AV1)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -3611,6 +4125,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-hdr10-2160p.part.mkv to movie-hdr10-2160p.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -3681,6 +4196,7 @@
           '/out/movie-hdr10-2160p.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -3691,6 +4207,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-hdr10-2160p.part.mkv to movie-hdr10-2160p.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -3761,6 +4278,7 @@
           '/out/movie-hdr10-2160p.part.mkv',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -3771,6 +4289,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-hdr10-2160p.part.mkv to movie-hdr10-2160p.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -3843,6 +4362,7 @@
           '/out/movie-hdr10-2160p.part.mkv',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -3853,6 +4373,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-hdr10-2160p.part.mkv to movie-hdr10-2160p.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -3911,6 +4432,7 @@
           '/out/hdr10.part.mkv',
         ]),
         'description': 'Encode (AMD AMF H.265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -3921,6 +4443,7 @@
         'argv': list([
         ]),
         'description': 'Rename hdr10.part.mkv to hdr10.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -3934,7 +4457,7 @@
 # ---
 # name: test_plan_snapshot[hevc_nvenc_10bit_hdr10]
   dict({
-    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/movie-hdr10-2160p.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 hevc_nvenc -rc:v:0 vbr -cq:v:0 22 -b:v:0 0 -init_qpI:v:0 20 -init_qpP:v:0 22 -init_qpB:v:0 24 -profile:v:0 main10 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/movie-hdr10-2160p.part.mkv && mv -f -- /out/movie-hdr10-2160p.part.mkv /out/movie-hdr10-2160p.mkv',
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/movie-hdr10-2160p.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 hevc_nvenc -rc:v:0 vbr -cq:v:0 22 -b:v:0 0 -init_qpI:v:0 20 -init_qpP:v:0 22 -init_qpB:v:0 24 -maxrate:v:0 160M -bufsize:v:0 320M -profile:v:0 main10 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/movie-hdr10-2160p.part.mkv && mv -f -- /out/movie-hdr10-2160p.part.mkv /out/movie-hdr10-2160p.mkv',
     'expected_duration': 1.005,
     'files': list([
     ]),
@@ -3976,6 +4499,10 @@
           '22',
           '-init_qpB:v:0',
           '24',
+          '-maxrate:v:0',
+          '160M',
+          '-bufsize:v:0',
+          '320M',
           '-profile:v:0',
           'main10',
           '-c:a:0',
@@ -4003,6 +4530,7 @@
           '/out/movie-hdr10-2160p.part.mkv',
         ]),
         'description': 'Encode (NVIDIA NVENC H.265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -4013,6 +4541,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-hdr10-2160p.part.mkv to movie-hdr10-2160p.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -4026,7 +4555,7 @@
 # ---
 # name: test_plan_snapshot[hevc_qsv_10bit]
   dict({
-    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -init_hw_device qsv=hw -filter_hw_device hw -i /media/broadcast-hlg.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le,hwupload=extra_hw_frames=64,format=qsv -c:v:0 hevc_qsv -global_quality:v:0 22 -c:a:0 aac -b:a:0 160k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/broadcast-hlg.part.mkv && mv -f -- /out/broadcast-hlg.part.mkv /out/broadcast-hlg.mkv',
+    'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/broadcast-hlg.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le -c:v:0 hevc_qsv -global_quality:v:0 22 -c:a:0 aac -b:a:0 160k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/broadcast-hlg.part.mkv && mv -f -- /out/broadcast-hlg.part.mkv /out/broadcast-hlg.mkv',
     'expected_duration': 1.021,
     'files': list([
     ]),
@@ -4042,10 +4571,6 @@
           '-progress',
           'pipe:1',
           '-nostats',
-          '-init_hw_device',
-          'qsv=hw',
-          '-filter_hw_device',
-          'hw',
           '-i',
           '/media/broadcast-hlg.mkv',
           '-map',
@@ -4053,7 +4578,7 @@
           '-map',
           '0:1',
           '-filter:v:0',
-          'scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le,hwupload=extra_hw_frames=64,format=qsv',
+          'scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le',
           '-c:v:0',
           'hevc_qsv',
           '-global_quality:v:0',
@@ -4083,6 +4608,7 @@
           '/out/broadcast-hlg.part.mkv',
         ]),
         'description': 'Encode (Intel QSV H.265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -4093,6 +4619,7 @@
         'argv': list([
         ]),
         'description': 'Rename broadcast-hlg.part.mkv to broadcast-hlg.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -4153,6 +4680,7 @@
           '/out/hdr10.part.mkv',
         ]),
         'description': 'Encode (VAAPI H.265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -4163,6 +4691,7 @@
         'argv': list([
         ]),
         'description': 'Rename hdr10.part.mkv to hdr10.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -4231,6 +4760,7 @@
           '/out/broadcast-hlg.part.mkv',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -4241,6 +4771,7 @@
         'argv': list([
         ]),
         'description': 'Rename broadcast-hlg.part.mkv to broadcast-hlg.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -4295,6 +4826,7 @@
           '/out/interlaced.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -4305,6 +4837,7 @@
         'argv': list([
         ]),
         'description': 'Rename interlaced.part.mkv to interlaced.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -4318,7 +4851,7 @@
 # ---
 # name: test_plan_snapshot[languages_flags_and_ietf]
   dict({
-    'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=jpn -metadata:s:v:0 title=Main -disposition:v:0 default -metadata:s:a:0 language=por -metadata:s:a:0 'title=Japanese 5.1' -disposition:a:0 default+original -metadata:s:a:1 language=chi -metadata:s:a:1 'title=English Stereo' -disposition:a:1 visual_impaired -metadata:s:a:2 language=chi -disposition:a:2 comment -metadata:s:s:0 language=srp -metadata:s:s:0 title=English -disposition:s:0 default+forced+comment+hearing_impaired+visual_impaired+original -metadata:s:s:1 language=eng -metadata:s:s:1 'title=English SDH' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 'title=Signs & Songs' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mkvpropedit /out/multitrack.part.mkv --edit track:a1 --set language=por --set language-ietf=pt-BR --edit track:a2 --set language=chi --set language-ietf=yue --edit track:a3 --set language=chi --set language-ietf=zh-Hant --edit track:s1 --set language=srp --set language-ietf=sr-Latn && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv",
+    'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=jpn -metadata:s:v:0 title=Main -disposition:v:0 default -metadata:s:a:0 language=por -metadata:s:a:0 'title=Japanese 5.1' -disposition:a:0 default+original -metadata:s:a:1 language=chi -metadata:s:a:1 'title=English Stereo' -disposition:a:1 visual_impaired -metadata:s:a:2 language=chi -disposition:a:2 comment -metadata:s:s:0 language=srp -metadata:s:s:0 title=English -disposition:s:0 default+forced+comment+hearing_impaired+visual_impaired+original -metadata:s:s:1 language=eng -metadata:s:s:1 'title=English SDH' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 'title=Signs & Songs' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && header_edit /out/multitrack.part.mkv audio 1: language=por language_ietf=pt-BR audio 2: language=chi language_ietf=yue audio 3: language=chi language_ietf=zh-Hant subtitle 1: language=srp language_ietf=sr-Latn && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv",
     'expected_duration': 4.021,
     'files': list([
     ]),
@@ -4435,6 +4968,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -4443,43 +4977,65 @@
       }),
       dict({
         'argv': list([
-          '/out/multitrack.part.mkv',
-          '--edit',
-          'track:a1',
-          '--set',
-          'language=por',
-          '--set',
-          'language-ietf=pt-BR',
-          '--edit',
-          'track:a2',
-          '--set',
-          'language=chi',
-          '--set',
-          'language-ietf=yue',
-          '--edit',
-          'track:a3',
-          '--set',
-          'language=chi',
-          '--set',
-          'language-ietf=zh-Hant',
-          '--edit',
-          'track:s1',
-          '--set',
-          'language=srp',
-          '--set',
-          'language-ietf=sr-Latn',
         ]),
         'description': 'Write the BCP 47 languages (Matroska LanguageIETF)',
-        'kind': 'mkvpropedit',
+        'header_edit': dict({
+          'info': None,
+          'path': '/out/multitrack.part.mkv',
+          'tracks': list([
+            dict({
+              'delete_name': False,
+              'flags': dict({
+              }),
+              'language': 'por',
+              'language_ietf': 'pt-BR',
+              'name': None,
+              'number': 1,
+              'track_type': 'audio',
+            }),
+            dict({
+              'delete_name': False,
+              'flags': dict({
+              }),
+              'language': 'chi',
+              'language_ietf': 'yue',
+              'name': None,
+              'number': 2,
+              'track_type': 'audio',
+            }),
+            dict({
+              'delete_name': False,
+              'flags': dict({
+              }),
+              'language': 'chi',
+              'language_ietf': 'zh-Hant',
+              'name': None,
+              'number': 3,
+              'track_type': 'audio',
+            }),
+            dict({
+              'delete_name': False,
+              'flags': dict({
+              }),
+              'language': 'srp',
+              'language_ietf': 'sr-Latn',
+              'name': None,
+              'number': 1,
+              'track_type': 'subtitle',
+            }),
+          ]),
+        }),
+        'kind': 'header_edit',
         'measures': list([
         ]),
         'progress_weight': 0.01,
-        'tool': 'mkvpropedit',
+        'tool': None,
       }),
       dict({
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -4610,6 +5166,7 @@
           '/out/multitrack.part.mp4',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -4620,6 +5177,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mp4 to multitrack.mp4',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -4674,6 +5232,7 @@
           '/out/letterbox.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -4684,6 +5243,7 @@
         'argv': list([
         ]),
         'description': 'Rename letterbox.part.mkv to letterbox.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -4726,6 +5286,7 @@
           '-',
         ]),
         'description': 'Measure the loudness of audio track 1 (Japanese 5.1)',
+        'header_edit': None,
         'kind': 'analyse',
         'measures': list([
           dict({
@@ -4840,6 +5401,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -4850,6 +5412,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -4896,6 +5459,7 @@
           '-',
         ]),
         'description': 'Measure the loudness of audio track 1 (Japanese 5.1)',
+        'header_edit': None,
         'kind': 'analyse',
         'measures': list([
           dict({
@@ -4929,6 +5493,7 @@
           '-',
         ]),
         'description': 'Measure the loudness of audio track 2 (English Stereo)',
+        'header_edit': None,
         'kind': 'analyse',
         'measures': list([
           dict({
@@ -4974,6 +5539,7 @@
           '-',
         ]),
         'description': 'Pass 1 of 2: analyse the video (x264)',
+        'header_edit': None,
         'kind': 'pass1',
         'measures': list([
         ]),
@@ -5151,6 +5717,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Pass 2 of 2: encode (x264)',
+        'header_edit': None,
         'kind': 'pass2',
         'measures': list([
         ]),
@@ -5161,6 +5728,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -5178,7 +5746,7 @@
 # ---
 # name: test_plan_snapshot[metadata_edit_in_place]
   dict({
-    'display': "mkvpropedit /media/Show.S01E02.Title.mkv --edit track:a1 --set language=hun --set language-ietf=hu --set 'name=Magyar 5.1' --set flag-default=0 --set flag-original=1 --edit track:a2 --set language=por --set language-ietf=pt-BR --set flag-default=1 --edit track:a3 --delete name --edit track:s2 --set flag-visual-impaired=1 --edit track:s3 --set flag-forced=0 --edit info --set 'title=Show – S01E02'",
+    'display': "header_edit /media/Show.S01E02.Title.mkv audio 1: language=hun language_ietf=hu name='Magyar 5.1' default=0 original=1 audio 2: language=por language_ietf=pt-BR default=1 audio 3: delete_name subtitle 2: visual_impaired=1 subtitle 3: forced=0 title='Show – S01E02'",
     'expected_duration': 0.0,
     'files': list([
     ]),
@@ -5188,50 +5756,76 @@
     'steps': list([
       dict({
         'argv': list([
-          '/media/Show.S01E02.Title.mkv',
-          '--edit',
-          'track:a1',
-          '--set',
-          'language=hun',
-          '--set',
-          'language-ietf=hu',
-          '--set',
-          'name=Magyar 5.1',
-          '--set',
-          'flag-default=0',
-          '--set',
-          'flag-original=1',
-          '--edit',
-          'track:a2',
-          '--set',
-          'language=por',
-          '--set',
-          'language-ietf=pt-BR',
-          '--set',
-          'flag-default=1',
-          '--edit',
-          'track:a3',
-          '--delete',
-          'name',
-          '--edit',
-          'track:s2',
-          '--set',
-          'flag-visual-impaired=1',
-          '--edit',
-          'track:s3',
-          '--set',
-          'flag-forced=0',
-          '--edit',
-          'info',
-          '--set',
-          'title=Show – S01E02',
         ]),
         'description': 'Edit the metadata of 5 tracks and the title of Show.S01E02.Title.mkv in place',
-        'kind': 'mkvpropedit',
+        'header_edit': dict({
+          'info': dict({
+            'title': 'Show – S01E02',
+          }),
+          'path': '/media/Show.S01E02.Title.mkv',
+          'tracks': list([
+            dict({
+              'delete_name': False,
+              'flags': dict({
+                'default': False,
+                'original': True,
+              }),
+              'language': 'hun',
+              'language_ietf': 'hu',
+              'name': 'Magyar 5.1',
+              'number': 1,
+              'track_type': 'audio',
+            }),
+            dict({
+              'delete_name': False,
+              'flags': dict({
+                'default': True,
+              }),
+              'language': 'por',
+              'language_ietf': 'pt-BR',
+              'name': None,
+              'number': 2,
+              'track_type': 'audio',
+            }),
+            dict({
+              'delete_name': True,
+              'flags': dict({
+              }),
+              'language': None,
+              'language_ietf': None,
+              'name': None,
+              'number': 3,
+              'track_type': 'audio',
+            }),
+            dict({
+              'delete_name': False,
+              'flags': dict({
+                'visual_impaired': True,
+              }),
+              'language': None,
+              'language_ietf': None,
+              'name': None,
+              'number': 2,
+              'track_type': 'subtitle',
+            }),
+            dict({
+              'delete_name': False,
+              'flags': dict({
+                'forced': False,
+              }),
+              'language': None,
+              'language_ietf': None,
+              'name': None,
+              'number': 3,
+              'track_type': 'subtitle',
+            }),
+          ]),
+        }),
+        'kind': 'header_edit',
         'measures': list([
         ]),
         'progress_weight': 0.01,
-        'tool': 'mkvpropedit',
+        'tool': None,
       }),
     ]),
     'temp_files': list([
@@ -5255,7 +5849,7 @@
 # ---
 # name: test_plan_snapshot[metadata_edit_windows_display]
   dict({
-    'display': 'mkvpropedit "C:/Media/Movie & Co.mkv" --edit track:s1 --set "name=English \\"full\\" 100%"',
+    'display': 'header_edit "C:/Media/Movie & Co.mkv" subtitle 1: name="English \\"full\\" 100%"',
     'expected_duration': 0.0,
     'files': list([
     ]),
@@ -5265,18 +5859,29 @@
     'steps': list([
       dict({
         'argv': list([
-          'C:/Media/Movie & Co.mkv',
-          '--edit',
-          'track:s1',
-          '--set',
-          'name=English "full" 100%',
         ]),
         'description': 'Edit the metadata of 1 track of Movie & Co.mkv in place',
-        'kind': 'mkvpropedit',
+        'header_edit': dict({
+          'info': None,
+          'path': 'C:/Media/Movie & Co.mkv',
+          'tracks': list([
+            dict({
+              'delete_name': False,
+              'flags': dict({
+              }),
+              'language': None,
+              'language_ietf': None,
+              'name': 'English "full" 100%',
+              'number': 1,
+              'track_type': 'subtitle',
+            }),
+          ]),
+        }),
+        'kind': 'header_edit',
         'measures': list([
         ]),
         'progress_weight': 0.01,
-        'tool': 'mkvpropedit',
+        'tool': None,
       }),
     ]),
     'temp_files': list([
@@ -5384,6 +5989,7 @@
           '/out/movie-dts-hd-ma.part.mkv',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -5394,6 +6000,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-dts-hd-ma.part.mkv to movie-dts-hd-ma.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -5480,6 +6087,7 @@
           '/out/movie-truehd-atmos.part.mp4',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -5490,6 +6098,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-truehd-atmos.part.mp4 to movie-truehd-atmos.mp4',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -5564,6 +6173,7 @@
           '/out/vobsub.part.mp4',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -5574,6 +6184,7 @@
         'argv': list([
         ]),
         'description': 'Rename vobsub.part.mp4 to vobsub.mp4',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -5700,6 +6311,7 @@
           '/out/multitrack.part.mp4',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -5710,6 +6322,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mp4 to multitrack.mp4',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -5844,6 +6457,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (NVIDIA NVENC H.265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -5854,6 +6468,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -5920,6 +6535,7 @@
           '/out/phone-rotated.part.mkv',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -5930,6 +6546,7 @@
         'argv': list([
         ]),
         'description': 'Rename phone-rotated.part.mkv to phone-rotated.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -6060,6 +6677,7 @@
           "/out/It's here (2024).part.mkv",
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -6070,6 +6688,7 @@
         'argv': list([
         ]),
         'description': "Rename It's here (2024).part.mkv to It's here (2024).mkv",
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -6180,6 +6799,7 @@
           '/out/multitrack.part.mp4',
         ]),
         'description': 'Remux (copy the streams)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -6190,6 +6810,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mp4 to multitrack.mp4',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -6286,6 +6907,7 @@
           '/out/anime-ass-fonts.part.mkv',
         ]),
         'description': 'Remux (copy the streams)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -6296,6 +6918,7 @@
         'argv': list([
         ]),
         'description': 'Rename anime-ass-fonts.part.mkv to anime-ass-fonts.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -6350,6 +6973,7 @@
           '/out/movie-stale-stats.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -6360,6 +6984,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-stale-stats.part.mkv to movie-stale-stats.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -6494,6 +7119,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (SVT-AV1)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -6504,6 +7130,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -6554,6 +7181,7 @@
           '-',
         ]),
         'description': 'Pass 1 of 2: analyse the video (SVT-AV1)',
+        'header_edit': None,
         'kind': 'pass1',
         'measures': list([
         ]),
@@ -6673,6 +7301,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Pass 2 of 2: encode (SVT-AV1)',
+        'header_edit': None,
         'kind': 'pass2',
         'measures': list([
         ]),
@@ -6683,6 +7312,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -6833,6 +7463,7 @@
           '/out/Show.S01E02.Title.part.mkv',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -6843,6 +7474,7 @@
         'argv': list([
         ]),
         'description': 'Rename Show.S01E02.Title.part.mkv to Show.S01E02.Title.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -6915,6 +7547,7 @@
           '/out/chapters.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -6925,6 +7558,7 @@
         'argv': list([
         ]),
         'description': 'Rename chapters.part.mkv to chapters.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -6993,6 +7627,7 @@
           '/out/movie-hdr10-2160p.part.mp4',
         ]),
         'description': 'Encode (Remux)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -7003,6 +7638,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-hdr10-2160p.part.mp4 to movie-hdr10-2160p.mp4',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -7141,6 +7777,7 @@
           '/out/multitrack.part.webm',
         ]),
         'description': 'Encode (VP9)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -7151,6 +7788,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.webm to multitrack.webm',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -7255,6 +7893,7 @@
           '/out/movie-truehd-atmos.part.webm',
         ]),
         'description': 'Encode (SVT-AV1)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -7265,6 +7904,7 @@
         'argv': list([
         ]),
         'description': 'Rename movie-truehd-atmos.part.webm to movie-truehd-atmos.webm',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -7401,6 +8041,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -7411,6 +8052,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -7549,6 +8191,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (x264)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -7559,6 +8202,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -7611,6 +8255,7 @@
           '-',
         ]),
         'description': 'Pass 1 of 2: analyse the video (x264)',
+        'header_edit': None,
         'kind': 'pass1',
         'measures': list([
         ]),
@@ -7730,6 +8375,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Pass 2 of 2: encode (x264)',
+        'header_edit': None,
         'kind': 'pass2',
         'measures': list([
         ]),
@@ -7740,6 +8386,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -7878,6 +8525,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -7888,6 +8536,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -8020,6 +8669,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Encode (x265)',
+        'header_edit': None,
         'kind': 'encode',
         'measures': list([
         ]),
@@ -8030,6 +8680,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -8078,6 +8729,7 @@
           '-',
         ]),
         'description': 'Pass 1 of 2: analyse the video (x265)',
+        'header_edit': None,
         'kind': 'pass1',
         'measures': list([
         ]),
@@ -8195,6 +8847,7 @@
           '/out/multitrack.part.mkv',
         ]),
         'description': 'Pass 2 of 2: encode (x265)',
+        'header_edit': None,
         'kind': 'pass2',
         'measures': list([
         ]),
@@ -8205,6 +8858,7 @@
         'argv': list([
         ]),
         'description': 'Rename multitrack.part.mkv to multitrack.mkv',
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),
@@ -8257,6 +8911,7 @@
           '-',
         ]),
         'description': 'Pass 1 of 2: analyse the video (x265)',
+        'header_edit': None,
         'kind': 'pass1',
         'measures': list([
         ]),
@@ -8374,6 +9029,7 @@
           "/out/Show: S01E01 'Pilot'.part.mkv",
         ]),
         'description': 'Pass 2 of 2: encode (x265)',
+        'header_edit': None,
         'kind': 'pass2',
         'measures': list([
         ]),
@@ -8384,6 +9040,7 @@
         'argv': list([
         ]),
         'description': "Rename Show: S01E01 'Pilot'.part.mkv to Show: S01E01 'Pilot'.mkv",
+        'header_edit': None,
         'kind': 'finalize',
         'measures': list([
         ]),

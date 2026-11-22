@@ -113,8 +113,8 @@ describe('the defaults dialog against a real server', () => {
       'AC-3, 5.1, 224 ≤ 384: passthru',
       'Rule 2 needs 5.1 or more. Rule 3 matches. The rule says re-encode, 192 > 160 → encode at the max',
     ])
-    // The DTS-HD MA track has no bitrate in the file: the preview offers Measure.
-    expect(decisions.map((decision) => decision.measure)).toEqual([true, false, false])
+    // The DTS-HD MA track's bitrate is estimated from its clusters: no rule waits for Measure.
+    expect(decisions.map((decision) => decision.measure)).toEqual([false, false, false])
     expect(useDefaultsStore().issues).toEqual([])
   })
 

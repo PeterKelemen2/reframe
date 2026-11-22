@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from collections.abc import Callable
-from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from reframe.batch import draft_tracks, effective_language, effective_languages
+from reframe.batch import effective_language, effective_languages, resolve_tracks
 from reframe.batch.selection import extra_role, language_slot
 from reframe.definitions import load_definitions
 from reframe.models import (
@@ -31,23 +26,9 @@ from reframe.models import (
     TrackSelection,
 )
 
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-T = _load("defaults_tracks")
-make_audio: Callable[..., AudioStream] = T.audio
-make_subtitle: Callable[..., SubtitleStream] = T.subtitle
-make_source: Callable[..., MediaSource] = T.source
+from .defaults_tracks import audio as make_audio
+from .defaults_tracks import source as make_source
+from .defaults_tracks import subtitle as make_subtitle
 
 DEFS = load_definitions()
 
@@ -258,5 +239,5 @@ def _check(draft: TrackDraft, media: MediaSource, template: JobTemplate, langs: 
 @given(cases())
 def test_defaults_properties(case: tuple[MediaSource, JobTemplate, LanguageSettings]) -> None:
     media, template, langs = case
-    draft = draft_tracks(media, template, definitions=DEFS, languages=langs)
+    draft = resolve_tracks(template, media, definitions=DEFS, languages=langs).draft
     _check(draft, media, template, langs)

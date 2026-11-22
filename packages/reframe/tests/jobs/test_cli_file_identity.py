@@ -16,13 +16,13 @@ import pytest
 
 from reframe import jobs
 from reframe.batch import service as batch_service
-from reframe.cli import EXIT_FAILED, EXIT_OK, IN_PROCESS_ENV
+from reframe.cli import EXIT_FAILED, EXIT_OK
 from reframe.models.issues import ReplaceOp
-from reframe.probe import mediainfo
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
+from reframe_testing.cli import invoke
 
-from .conftest import Queues, invoke, media_file, recorded, replay
+from .conftest import Queues, media_file, recorded, replay
 from .test_cli_output_names import (
     E01,
     E01_OUT,
@@ -228,18 +228,15 @@ def test_the_file_keys_are_computed_off_the_event_loop(
 async def test_the_batch_service_keys_files_off_the_event_loop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``Reframe.batch.resolve`` (with a group and overrides) and ``resolve_batch``: the keys
+    """``Reframe.batch.resolve`` (with overrides) and ``resolve_batch``: the keys
     are computed in worker threads."""
     folder = tmp_path / S01
     files = [media_file(folder, media.anime_file_name(1, n)) for n in (1, 2)]
     stubs = BatchStubs({f: recorded(anime(1, n), f) for f, n in zip(files, (1, 2), strict=True)})
     batch = make_batch(stubs)
-    grouping = await batch.group(files)
     spy = LoopSpy(monkeypatch)
     op = ReplaceOp.model_validate({"op": "replace", "path": "/video/preset", "value": "slow"})
-    resolution = await batch.resolve(
-        None, files, overrides={str(files[1]): [op]}, group=grouping.groups[0]
-    )
+    resolution = await batch.resolve(None, files, overrides={str(files[1]): [op]})
     assert [row.path for row in resolution.rows] == files
     _grouping, resolutions = await batch.resolve_batch(None, [*files, *files])
     assert [row.path for r in resolutions for row in r.rows] == files
@@ -249,16 +246,12 @@ async def test_the_batch_service_keys_files_off_the_event_loop(
 
 @pytest.mark.needs_ffmpeg
 def test_a_user_file_reached_through_a_link_is_never_overwritten_by_the_real_queue(
-    fixture_media: Media, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    fixture_media: Media, tmp_path: Path, dirs: dict[str, Path]
 ) -> None:
     """``real/`` holds E01 and a user file named as E01's output (a copy of ``multitrack.mkv``),
     ``link`` → ``real``, the collision setting *overwrite*. ``reframe encode real/E01
     link/<E01's output>`` and ``reframe batch`` of the same files leave the user file as it was
     (its SHA-256)."""
-    for name in ("config", "data", "cache"):
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
-    monkeypatch.setenv(IN_PROCESS_ENV, "1")  # the in-process real queue
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     write_settings(tmp_path, collision="overwrite")
     settings = json.loads((tmp_path / "config" / "settings.json").read_text(encoding="utf-8"))
     assert settings["queue"]["when_done"] == "nothing"

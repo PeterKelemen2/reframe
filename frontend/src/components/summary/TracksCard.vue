@@ -15,6 +15,7 @@ import { useValidationStore } from '@/stores/validation'
 
 import { audioChips, type Flag, subtitleChips } from './tracks'
 import { useJobSource } from './useJobSource'
+import { useTrackNames } from './useTrackNames'
 
 const { t } = useI18n()
 const severityLabel = useSeverityLabel()
@@ -23,6 +24,7 @@ const system = useSystemStore()
 const ui = useUiStore()
 const validation = useValidationStore()
 const { source } = useJobSource()
+const { names } = useTrackNames()
 
 /** The most severe issue of the track or one of its fields marks its chip. */
 function severityOf(path: string): Severity | null {
@@ -32,14 +34,14 @@ function severityOf(path: string): Severity | null {
 const audio = computed(() =>
   editor.job === null
     ? []
-    : audioChips(editor.job, source.value, system.definitions).map((chip) =>
+    : audioChips(editor.job, source.value, system.definitions, names.value?.audio).map((chip) =>
         Object.assign(chip, { severity: severityOf(chip.path) }),
       ),
 )
 const subtitles = computed(() =>
   editor.job === null
     ? []
-    : subtitleChips(editor.job, source.value).map((chip) =>
+    : subtitleChips(editor.job, source.value, names.value?.subtitles).map((chip) =>
         Object.assign(chip, { severity: severityOf(chip.path) }),
       ),
 )

@@ -34,6 +34,7 @@
   dict({
     '$defs': list([
       'AppearanceSettings',
+      'DiagnosticsSettings',
       'EncoderSettings',
       'LanguageSettings',
       'NamingOptions',
@@ -46,6 +47,9 @@
     'properties': dict({
       'appearance': dict({
         '$ref': '#/$defs/AppearanceSettings',
+      }),
+      'diagnostics': dict({
+        '$ref': '#/$defs/DiagnosticsSettings',
       }),
       'encoders': dict({
         '$ref': '#/$defs/EncoderSettings',
@@ -63,7 +67,7 @@
         '$ref': '#/$defs/QueueSettings',
       }),
       'schema_version': dict({
-        'default': 1,
+        'default': 3,
         'minimum': 1,
         'title': 'Schema Version',
         'type': 'integer',
@@ -1034,10 +1038,10 @@
         ]),
         'default': None,
         'description': '''
-          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
-          ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
-          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
-          MediaInfo's value when MediaInfo is available. ``None`` when there is none.
+          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: with a
+          Matroska ``LanguageIETF`` of ``pt-BR`` ffprobe still says ``por``. A Matroska track that
+          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take the
+          BCP 47 form of their ISO 639 code (``por`` → ``pt``). ``None`` when there is none.
           
           The effective language, which track rules match, is ``language_ietf`` if set, else
           ``language``.
@@ -1397,6 +1401,20 @@
       (a rule treats an unknown bit rate as above every maximum).
     ''',
     'properties': dict({
+      'samples': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 1,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '``estimated`` only: the number of clusters the estimate was made from.',
+        'title': 'Samples',
+      }),
       'source': dict({
         '$ref': '#/$defs/BitrateSource',
         'default': 'unknown',
@@ -1491,7 +1509,7 @@
     'enum': list([
       'stream',
       'stats_tag',
-      'mediainfo',
+      'estimated',
       'measured',
       'unknown',
     ]),
@@ -2423,6 +2441,22 @@
       - ``manual``: ``rect`` as the user set it.
     ''',
     'properties': dict({
+      'detection_error': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Why crop detection failed in this job's file (``auto`` and ``conservative`` without
+          ``rect``): the picture is not cropped. ``None``: detection did not fail.
+        ''',
+        'title': 'Detection Error',
+      }),
       'mode': dict({
         'default': 'auto',
         'enum': list([
@@ -2509,6 +2543,28 @@
       'index',
     ]),
     'title': 'DataStream',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[DiagnosticsSettings]
+  dict({
+    '$defs': list([
+    ]),
+    'properties': dict({
+      'log_level': dict({
+        'default': 'info',
+        'description': 'The lowest level written to ``<data>/logs/reframe.log``.',
+        'enum': list([
+          'error',
+          'warning',
+          'info',
+          'debug',
+        ]),
+        'title': 'Log Level',
+        'type': 'string',
+      }),
+    }),
+    'title': 'DiagnosticsSettings',
     'type': 'object',
   })
 # ---
@@ -2816,9 +2872,12 @@
   dict({
     '$defs': list([
       'ArgTemplate',
+      'HeaderEdit',
+      'InfoHeaderEdit',
       'Measurement',
       'PlanFile',
       'PlanStep',
+      'TrackHeaderEdit',
       'ValueRef',
     ]),
     'additionalProperties': False,
@@ -2954,6 +3013,39 @@
     'additionalProperties': False,
     'description': 'The detection result of one encoder.',
     'properties': dict({
+      'build_mismatch': dict({
+        'default': False,
+        'description': '''
+          ``True`` when the encoder is unavailable because this FFmpeg build needs newer system
+          software than the computer has (an NVIDIA driver older than the build's NVENC needs, a
+          system library too old for the build): a driver update or another FFmpeg build can make it
+          available. Never set by a 10-bit-only limit.
+        ''',
+        'title': 'Build Mismatch',
+        'type': 'boolean',
+      }),
+      'build_mismatch_cause': dict({
+        'anyOf': list([
+          dict({
+            'enum': list([
+              'driver',
+              'system_library',
+            ]),
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          What the build needs when ``build_mismatch`` is ``True``: ``driver``, a newer GPU driver
+          (another build can help), or ``system_library``, a system library that is missing or too
+          old, such as libva (install or update it, or use an FFmpeg that does not need it). ``None``
+          otherwise.
+        ''',
+        'title': 'Build Mismatch Cause',
+      }),
       'checked_at': dict({
         'anyOf': list([
           dict({
@@ -4081,6 +4173,77 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[HeaderEdit]
+  dict({
+    '$defs': list([
+      'InfoHeaderEdit',
+      'TrackHeaderEdit',
+    ]),
+    'additionalProperties': False,
+    'description': '''
+      The Matroska header changes of one ``header_edit`` step, written into ``path`` in
+      place (``reframe.metadata.header``).
+    ''',
+    'properties': dict({
+      'info': dict({
+        'anyOf': list([
+          dict({
+            '$ref': '#/$defs/InfoHeaderEdit',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+      }),
+      'path': dict({
+        'description': 'The file to edit: the source of a ``metadata_edit`` job, else the ``.part`` file.',
+        'format': 'path',
+        'title': 'Path',
+        'type': 'string',
+      }),
+      'tracks': dict({
+        'items': dict({
+          '$ref': '#/$defs/TrackHeaderEdit',
+        }),
+        'title': 'Tracks',
+        'type': 'array',
+      }),
+    }),
+    'required': list([
+      'path',
+    ]),
+    'title': 'HeaderEdit',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[HeaderFlag]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'default',
+      'forced',
+      'commentary',
+      'hearing_impaired',
+      'visual_impaired',
+      'original',
+    ]),
+    'type': 'string',
+  })
+# ---
+# name: test_json_schema_snapshot[HeaderTrackType]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'video',
+      'audio',
+      'subtitle',
+    ]),
+    'type': 'string',
+  })
+# ---
 # name: test_json_schema_snapshot[ImportedChapter]
   dict({
     '$defs': list([
@@ -4112,6 +4275,65 @@
       'name',
     ]),
     'title': 'ImportedChapter',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[InfoHeaderEdit]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'The change to the segment ``Info``.',
+    'properties': dict({
+      'title': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'description': 'The new ``Title``; ``None`` removes it.',
+        'title': 'Title',
+      }),
+    }),
+    'required': list([
+      'title',
+    ]),
+    'title': 'InfoHeaderEdit',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[InstalledToolBuild]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'The build that a download or a file install put in ``<data dir>/tools/ffmpeg``.',
+    'properties': dict({
+      'name': dict({
+        'description': "The manifest's build name it was installed as.",
+        'title': 'Name',
+        'type': 'string',
+      }),
+      'outdated': dict({
+        'default': False,
+        'description': "``True`` when this release's manifest pins another version for that build name.",
+        'title': 'Outdated',
+        'type': 'boolean',
+      }),
+      'version': dict({
+        'description': 'Its FFmpeg version string.',
+        'title': 'Version',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'name',
+      'version',
+    ]),
+    'title': 'InstalledToolBuild',
     'type': 'object',
   })
 # ---
@@ -4469,7 +4691,7 @@
               'pass1',
               'pass2',
               'encode',
-              'mkvpropedit',
+              'header_edit',
               'finalize',
             ]),
             'type': 'string',
@@ -5010,6 +5232,19 @@
     'type': 'string',
   })
 # ---
+# name: test_json_schema_snapshot[LogLevel]
+  dict({
+    '$defs': list([
+    ]),
+    'enum': list([
+      'error',
+      'warning',
+      'info',
+      'debug',
+    ]),
+    'type': 'string',
+  })
+# ---
 # name: test_json_schema_snapshot[LoudnessMeasurement]
   dict({
     '$defs': list([
@@ -5421,7 +5656,7 @@
         '$ref': '#/$defs/SourceRef',
       }),
       'schema_version': dict({
-        'default': 1,
+        'default': 2,
         'minimum': 1,
         'title': 'Schema Version',
         'type': 'integer',
@@ -6171,16 +6406,6 @@
         'title': 'Collision',
         'type': 'string',
       }),
-      'default_container': dict({
-        'default': 'mkv',
-        'enum': list([
-          'mkv',
-          'mp4',
-          'webm',
-        ]),
-        'title': 'Default Container',
-        'type': 'string',
-      }),
       'naming': dict({
         '$ref': '#/$defs/NamingOptions',
       }),
@@ -6272,7 +6497,7 @@
       }),
       'edit_in_place': dict({
         'default': False,
-        'description': 'Remux-only jobs on MKV: edit metadata in place with mkvpropedit.',
+        'description': 'Remux-only jobs on MKV: edit the metadata of the source in place, with no new file.',
         'title': 'Edit In Place',
         'type': 'boolean',
       }),
@@ -6701,7 +6926,10 @@
   dict({
     '$defs': list([
       'ArgTemplate',
+      'HeaderEdit',
+      'InfoHeaderEdit',
       'Measurement',
+      'TrackHeaderEdit',
       'ValueRef',
     ]),
     'additionalProperties': False,
@@ -6727,13 +6955,25 @@
         'title': 'Description',
         'type': 'string',
       }),
+      'header_edit': dict({
+        'anyOf': list([
+          dict({
+            '$ref': '#/$defs/HeaderEdit',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The edits of a ``header_edit`` step, and only of one.',
+      }),
       'kind': dict({
         'enum': list([
           'analyse',
           'pass1',
           'pass2',
           'encode',
-          'mkvpropedit',
+          'header_edit',
           'finalize',
         ]),
         'title': 'Kind',
@@ -6759,7 +6999,6 @@
             'enum': list([
               'ffmpeg',
               'ffprobe',
-              'mkvpropedit',
             ]),
             'type': 'string',
           }),
@@ -6767,7 +7006,10 @@
             'type': 'null',
           }),
         ]),
-        'description': '``None`` for ``finalize`` (rename ``.part`` → final name, done in Python).',
+        'description': '''
+          ``None`` for ``finalize`` (rename ``.part`` → final name, done in Python) and
+          ``header_edit`` (Reframe's own Matroska writer).
+        ''',
         'title': 'Tool',
       }),
     }),
@@ -7313,6 +7555,8 @@
       'Fix',
       'FrameRange',
       'FullRange',
+      'HeaderEdit',
+      'InfoHeaderEdit',
       'JobNaming',
       'JobProgress',
       'JobSettings',
@@ -7335,6 +7579,7 @@
       'TestOp',
       'TimeRange',
       'TrackFlags',
+      'TrackHeaderEdit',
       'TrackMetadata',
       'ValidationIssue',
       'ValueRef',
@@ -8216,7 +8461,7 @@
           }),
         ]),
         'default': None,
-        'description': 'A hash of the probe result (stream layout); ``None`` before the file is probed.',
+        'description': 'Not written by this version; older documents may carry a value.',
         'title': 'Probe Hash',
       }),
       'size': dict({
@@ -8391,7 +8636,7 @@
       'pass1',
       'pass2',
       'encode',
-      'mkvpropedit',
+      'header_edit',
       'finalize',
     ]),
     'type': 'string',
@@ -8950,10 +9195,10 @@
         ]),
         'default': None,
         'description': '''
-          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
-          ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
-          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
-          MediaInfo's value when MediaInfo is available. ``None`` when there is none.
+          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: with a
+          Matroska ``LanguageIETF`` of ``pt-BR`` ffprobe still says ``por``. A Matroska track that
+          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take the
+          BCP 47 form of their ISO 639 code (``por`` → ``pt``). ``None`` when there is none.
           
           The effective language, which track rules match, is ``language_ietf`` if set, else
           ``language``.
@@ -9332,6 +9577,22 @@
         'default': None,
         'title': 'Error',
       }),
+      'error_code': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          A stable code for an expected failure that a client handles on its own
+          (``tools.fetch_offline``); ``None`` for the others.
+        ''',
+        'title': 'Error Code',
+      }),
       'finished_at': dict({
         'anyOf': list([
           dict({
@@ -9350,7 +9611,7 @@
         'type': 'string',
       }),
       'kind': dict({
-        'description': '``probe_folder``, ``cropdetect``, ``bitrate_scan``, ``frames``, …',
+        'description': '``probe_sources``, ``cropdetect``, ``bitrate_scan``, ``frames``, …',
         'title': 'Kind',
         'type': 'string',
       }),
@@ -9536,6 +9797,141 @@
     'type': 'object',
   })
 # ---
+# name: test_json_schema_snapshot[ToolBuildOffer]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'An FFmpeg build of the manifest that the user may choose to install.',
+    'properties': dict({
+      'archive_url': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Where this platform's archive is downloaded from, to install it from a file on a
+          computer without a connection; ``None`` when the build has none for this platform.
+        ''',
+        'title': 'Archive Url',
+      }),
+      'label': dict({
+        'description': 'A short name for the picker ("Recommended").',
+        'title': 'Label',
+        'type': 'string',
+      }),
+      'license': dict({
+        'description': 'SPDX expression of the build (``GPL-3.0-or-later``).',
+        'title': 'License',
+        'type': 'string',
+      }),
+      'name': dict({
+        'description': "The manifest's build name (``default``, ``compat``).",
+        'title': 'Name',
+        'type': 'string',
+      }),
+      'release_version': dict({
+        'description': 'The upstream release the build is based on (``9.0.2``).',
+        'title': 'Release Version',
+        'type': 'string',
+      }),
+      'sha256': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          The SHA-256 of this platform's archive (64 lowercase hex digits), which an install
+          checks; ``None`` when the build has none for this platform.
+        ''',
+        'title': 'Sha256',
+      }),
+      'size': dict({
+        'anyOf': list([
+          dict({
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': "Bytes of this platform's archive; ``None`` when the build has none for this platform.",
+        'title': 'Size',
+      }),
+      'source_links': dict({
+        'description': 'Where the corresponding source is: the FFmpeg commit and the build scripts.',
+        'items': dict({
+          'type': 'string',
+        }),
+        'title': 'Source Links',
+        'type': 'array',
+      }),
+      'summary': dict({
+        'description': 'One sentence on who the build is for ("For NVIDIA drivers 570 to 609").',
+        'title': 'Summary',
+        'type': 'string',
+      }),
+      'version': dict({
+        'description': 'What ``ffmpeg -version`` prints after ``ffmpeg version``.',
+        'title': 'Version',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'name',
+      'label',
+      'summary',
+      'version',
+      'release_version',
+      'license',
+    ]),
+    'title': 'ToolBuildOffer',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[ToolBuilds]
+  dict({
+    '$defs': list([
+      'InstalledToolBuild',
+      'ToolBuildOffer',
+    ]),
+    'additionalProperties': False,
+    'description': 'The builds the user may install, and the one installed in the data folder.',
+    'properties': dict({
+      'builds': dict({
+        'items': dict({
+          '$ref': '#/$defs/ToolBuildOffer',
+        }),
+        'title': 'Builds',
+        'type': 'array',
+      }),
+      'installed': dict({
+        'anyOf': list([
+          dict({
+            '$ref': '#/$defs/InstalledToolBuild',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+      }),
+    }),
+    'title': 'ToolBuilds',
+    'type': 'object',
+  })
+# ---
 # name: test_json_schema_snapshot[ToolFetchResult]
   dict({
     '$defs': list([
@@ -9631,6 +10027,15 @@
         'title': 'Build Flags',
         'type': 'array',
       }),
+      'bundled': dict({
+        'default': False,
+        'description': '''
+          A bundled build of the tool's family (FFmpeg: ffmpeg and ffprobe) exists, so without a
+          Settings path discovery uses it. Also set while an override is in use.
+        ''',
+        'title': 'Bundled',
+        'type': 'boolean',
+      }),
       'env': dict({
         'additionalProperties': dict({
           'type': 'string',
@@ -9674,8 +10079,6 @@
         'enum': list([
           'ffmpeg',
           'ffprobe',
-          'mkvpropedit',
-          'mediainfo',
         ]),
         'title': 'Name',
         'type': 'string',
@@ -9789,8 +10192,6 @@
     'enum': list([
       'ffmpeg',
       'ffprobe',
-      'mkvpropedit',
-      'mediainfo',
     ]),
     'type': 'string',
   })
@@ -9845,32 +10246,6 @@
         'default': None,
         'title': 'Ffprobe',
       }),
-      'mediainfo': dict({
-        'anyOf': list([
-          dict({
-            'format': 'path',
-            'type': 'string',
-          }),
-          dict({
-            'type': 'null',
-          }),
-        ]),
-        'default': None,
-        'title': 'Mediainfo',
-      }),
-      'mkvpropedit': dict({
-        'anyOf': list([
-          dict({
-            'format': 'path',
-            'type': 'string',
-          }),
-          dict({
-            'type': 'null',
-          }),
-        ]),
-        'default': None,
-        'title': 'Mkvpropedit',
-      }),
     }),
     'title': 'ToolPaths',
     'type': 'object',
@@ -9892,7 +10267,7 @@
       'ToolStatus',
     ]),
     'additionalProperties': False,
-    'description': 'The discovery result for all four tools.',
+    'description': 'The discovery result for every tool.',
     'properties': dict({
       'ffmpeg': dict({
         '$ref': '#/$defs/ToolInfo',
@@ -9900,18 +10275,10 @@
       'ffprobe': dict({
         '$ref': '#/$defs/ToolInfo',
       }),
-      'mediainfo': dict({
-        '$ref': '#/$defs/ToolInfo',
-      }),
-      'mkvpropedit': dict({
-        '$ref': '#/$defs/ToolInfo',
-      }),
     }),
     'required': list([
       'ffmpeg',
       'ffprobe',
-      'mkvpropedit',
-      'mediainfo',
     ]),
     'title': 'ToolSet',
     'type': 'object',
@@ -10352,6 +10719,100 @@
       }),
     }),
     'title': 'TrackFlags',
+    'type': 'object',
+  })
+# ---
+# name: test_json_schema_snapshot[TrackHeaderEdit]
+  dict({
+    '$defs': list([
+    ]),
+    'additionalProperties': False,
+    'description': 'The changes to one Matroska ``TrackEntry``. A field left at its default is kept.',
+    'properties': dict({
+      'delete_name': dict({
+        'default': False,
+        'description': 'Remove the ``Name`` element.',
+        'title': 'Delete Name',
+        'type': 'boolean',
+      }),
+      'flags': dict({
+        'additionalProperties': dict({
+          'type': 'boolean',
+        }),
+        'description': 'The flags to write, in the order of ``HeaderFlag``.',
+        'propertyNames': dict({
+          'enum': list([
+            'default',
+            'forced',
+            'commentary',
+            'hearing_impaired',
+            'visual_impaired',
+            'original',
+          ]),
+        }),
+        'title': 'Flags',
+        'type': 'object',
+      }),
+      'language': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'ISO 639-2/B for ``Language``. Set together with ``language_ietf``: both are written.',
+        'title': 'Language',
+      }),
+      'language_ietf': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'BCP 47 for ``LanguageIETF``.',
+        'title': 'Language Ietf',
+      }),
+      'name': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'A new track name (not empty).',
+        'title': 'Name',
+      }),
+      'number': dict({
+        'description': '1-based: the n-th track of ``track_type`` in ``TrackEntry`` order.',
+        'minimum': 1,
+        'title': 'Number',
+        'type': 'integer',
+      }),
+      'track_type': dict({
+        'enum': list([
+          'video',
+          'audio',
+          'subtitle',
+        ]),
+        'title': 'Track Type',
+        'type': 'string',
+      }),
+    }),
+    'required': list([
+      'track_type',
+      'number',
+    ]),
+    'title': 'TrackHeaderEdit',
     'type': 'object',
   })
 # ---
@@ -11501,10 +11962,10 @@
         ]),
         'default': None,
         'description': '''
-          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: after
-          ``mkvpropedit --set language=pt-BR`` ffprobe still says ``por``. A Matroska track that
-          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take
-          MediaInfo's value when MediaInfo is available. ``None`` when there is none.
+          The BCP 47 tag of the track (``pt-BR``, ``zh-Hant``), which ffprobe does not show: with a
+          Matroska ``LanguageIETF`` of ``pt-BR`` ffprobe still says ``por``. A Matroska track that
+          Reframe's reader can match takes its ``LanguageIETF`` element only. Other tracks take the
+          BCP 47 form of their ISO 639 code (``por`` → ``pt``). ``None`` when there is none.
           
           The effective language, which track rules match, is ``language_ietf`` if set, else
           ``language``.

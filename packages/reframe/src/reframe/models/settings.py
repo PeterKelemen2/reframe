@@ -12,15 +12,16 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from reframe.models.base import DocumentModel, LanguageTag, PositiveInt
-from reframe.models.job import Container
 from reframe.models.naming import NamingOptions
 
 __all__ = [
     "AppSettings",
     "AppearanceSettings",
     "CollisionPolicy",
+    "DiagnosticsSettings",
     "EncoderSettings",
     "LanguageSettings",
+    "LogLevel",
     "OutputDefaults",
     "PartialFilePolicy",
     "PreviewSettings",
@@ -32,6 +33,7 @@ __all__ = [
 CollisionPolicy = Literal["ask", "auto_rename", "overwrite"]
 PartialFilePolicy = Literal["delete", "keep"]
 WhenDone = Literal["nothing", "notify", "quit", "sleep", "shutdown"]
+LogLevel = Literal["error", "warning", "info", "debug"]
 
 
 class ToolPaths(DocumentModel):
@@ -40,8 +42,6 @@ class ToolPaths(DocumentModel):
 
     ffmpeg: Path | None = None
     ffprobe: Path | None = None
-    mkvpropedit: Path | None = None
-    mediainfo: Path | None = None
 
 
 class EncoderSettings(DocumentModel):
@@ -57,7 +57,6 @@ class OutputDefaults(DocumentModel):
     """The output settings."""
 
     naming: NamingOptions = Field(default_factory=NamingOptions)
-    default_container: Container = "mkv"
     collision: CollisionPolicy = "auto_rename"
     """``ask`` needs a UI: the CLI and the queue treat it as an error with fixes. The default
     never overwrites and never blocks."""
@@ -91,10 +90,15 @@ class AppearanceSettings(DocumentModel):
     ui_language: str = "en"
 
 
+class DiagnosticsSettings(DocumentModel):
+    log_level: LogLevel = "info"
+    """The lowest level written to ``<data>/logs/reframe.log``."""
+
+
 class AppSettings(DocumentModel):
     """``<config>/settings.json``."""
 
-    schema_version: PositiveInt = 1
+    schema_version: PositiveInt = 3
     tools: ToolPaths = Field(default_factory=ToolPaths)
     encoders: EncoderSettings = Field(default_factory=EncoderSettings)
     output: OutputDefaults = Field(default_factory=OutputDefaults)
@@ -102,3 +106,4 @@ class AppSettings(DocumentModel):
     preview: PreviewSettings = Field(default_factory=PreviewSettings)
     queue: QueueSettings = Field(default_factory=QueueSettings)
     appearance: AppearanceSettings = Field(default_factory=AppearanceSettings)
+    diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)

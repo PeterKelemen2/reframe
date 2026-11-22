@@ -12,8 +12,6 @@ from pydantic import TypeAdapter, ValidationError
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     DOCUMENT_MODELS,
-    EVENT_ADAPTER,
-    EVENT_TYPES,
     AppSettings,
     ArgTemplate,
     AudioCodecRule,
@@ -30,7 +28,6 @@ from reframe.models import (
     EncodePlan,
     EncoderState,
     EncoderStatus,
-    Event,
     ExternalSubtitle,
     FilterConfig,
     FilterSettings,
@@ -63,7 +60,7 @@ from reframe.models import (
     migrate,
     resolve_argv,
 )
-from reframe.models import migrations as migrations_mod
+from reframe.models.tools import ToolInfo, ToolStatus
 from reframe.tools.discovery import locate_tools
 
 
@@ -144,8 +141,7 @@ def test_media_source_keeps_unknown_fields() -> None:
 def test_every_persisted_model_has_schema_version() -> None:
     for kind, model in DOCUMENT_MODELS.items():
         assert issubclass(model, DocumentModel), kind
-        assert model.model_fields["schema_version"].default == 1
-        assert current_version(kind) == 1
+        assert model.model_fields["schema_version"].default == current_version(kind)
 
 
 def test_a_newer_servers_endpoint_file_is_read_and_its_token_never_printed() -> None:
@@ -245,25 +241,12 @@ def test_migration_errors() -> None:
 
 
 def test_module_level_migrate() -> None:
-    assert migrate("settings", {}) == {"schema_version": 1}
+    assert migrate("settings", {}) == {"schema_version": 3}
     settings = load_document("settings", {"queue": {"parallel_jobs": 2}})
     assert isinstance(settings, AppSettings)
     assert settings.queue.parallel_jobs == 2
     with pytest.raises(UnsupportedSchemaVersion):
         migrate("preset_file", {"schema_version": 99})
-
-
-def test_register_migration_uses_the_global_registry(monkeypatch: pytest.MonkeyPatch) -> None:
-    registry = MigrationRegistry()
-    registry.add_kind("settings", 2)
-    monkeypatch.setattr(migrations_mod, "REGISTRY", registry)
-
-    @migrations_mod.register_migration("settings", from_version=1)
-    def rename(data: dict[str, Any]) -> dict[str, Any]:
-        data["renamed"] = True
-        return data
-
-    assert migrate("settings", {"schema_version": 1}) == {"schema_version": 2, "renamed": True}
 
 
 def test_audio_defaults_end_with_a_catch_all() -> None:
@@ -350,25 +333,6 @@ def test_filter_settings_keep_their_order() -> None:
     assert list(json.loads(filters.model_dump_json())) == ["sharpen", "deinterlace", "denoise"]
 
 
-def test_event_types_match_the_union() -> None:
-    members = TypeAdapter(Event).json_schema()["discriminator"]["mapping"]
-    assert set(members) == set(EVENT_TYPES)
-    assert len(EVENT_TYPES) == 13
-    assert EVENT_TYPES[-1] == "resync"
-    assert EVENT_TYPES[:8] == (
-        "capabilities.changed",
-        "task.progress",
-        "task.done",
-        "job.state",
-        "job.progress",
-        "job.log",
-        "queue.changed",
-        "queue.processing",
-    )
-    event = EVENT_ADAPTER.validate_python({"type": "job.state", "job_id": "1", "state": "running"})
-    assert event.type == "job.state"
-
-
 def test_move_op_alias() -> None:
     op = MoveOp(from_="/a", path="/b")
     assert op.model_dump() == {"op": "move", "from": "/a", "path": "/b"}
@@ -414,6 +378,14 @@ def test_use_bundled_fix_applies_to_app_settings(tmp_path: Path) -> None:
     assert AppSettings.model_validate(patched).tools.ffmpeg is None
 
 
+def test_a_tool_is_usable_only_when_found_with_a_path() -> None:
+    path = Path("/usr/bin/ffmpeg")
+    assert ToolInfo(name="ffmpeg", status=ToolStatus.FOUND, path=path).usable
+    assert not ToolInfo(name="ffmpeg", status=ToolStatus.FOUND).usable
+    assert not ToolInfo(name="ffmpeg", status=ToolStatus.MISSING, path=path).usable
+    assert "usable" not in ToolInfo(name="ffmpeg", status=ToolStatus.FOUND).model_dump()
+
+
 @pytest.mark.needs_ffmpeg
 def test_disposition_has_every_ffprobe_flag(fixture_media: Any) -> None:
     from reframe_testing import media
@@ -443,3 +415,73 @@ def test_capability_snapshot_lookups() -> None:
     assert snapshot.has_filter("zscale") is True
     assert snapshot.has_filter("libplacebo") is False
     assert CapabilitySnapshot().has_filter("zscale") is None
+
+
+def test_settings_2_drops_the_mkvpropedit_and_mediainfo_paths_only() -> None:
+    old: dict[str, Any] = {
+        "tools": {"ffmpeg": "/opt/ff/ffmpeg", "mkvpropedit": "/usr/bin/mkvpropedit",
+                  "mediainfo": "/usr/bin/mediainfo", "future": 1},
+        "queue": {"parallel_jobs": 3},
+    }  # fmt: skip
+    migrated = migrate("settings", old)
+    assert migrated == {
+        "schema_version": 3,
+        "tools": {"ffmpeg": "/opt/ff/ffmpeg", "future": 1},
+        "queue": {"parallel_jobs": 3},
+    }
+    assert "mkvpropedit" in old["tools"]  # the input is not changed
+    settings = load_document("settings", old)
+    assert isinstance(settings, AppSettings)
+    assert settings.model_dump(mode="json")["tools"] == {
+        "ffmpeg": str(Path("/opt/ff/ffmpeg")), "ffprobe": None, "future": 1,
+    }  # fmt: skip
+
+
+def test_settings_2_takes_a_file_without_tools() -> None:
+    assert migrate("settings", {"tools": None}) == {"schema_version": 3, "tools": None}
+
+
+def test_settings_3_drops_the_default_container_only() -> None:
+    old: dict[str, Any] = {
+        "schema_version": 2,
+        "output": {"default_container": "mp4", "collision": "overwrite", "future": 1},
+    }
+    migrated = migrate("settings", old)
+    assert migrated == {
+        "schema_version": 3,
+        "output": {"collision": "overwrite", "future": 1},
+    }
+    assert old["output"]["default_container"] == "mp4"  # the input is not changed
+    settings = load_document("settings", old)
+    assert isinstance(settings, AppSettings)
+    output = settings.model_dump(mode="json")["output"]
+    assert "default_container" not in output
+    assert (output["collision"], output["future"]) == ("overwrite", 1)
+    assert migrate("settings", {"schema_version": 2, "output": None}) == {
+        "schema_version": 3,
+        "output": None,
+    }
+
+
+def test_media_source_2_turns_mediainfo_bit_rates_into_estimated() -> None:
+    old = {
+        "ref": {"path": "/m/a.mkv"},
+        "video": [{"index": 0, "bitrate": {"value": 4_000_000, "source": "mediainfo"}}],
+        "audio": [
+            {"index": 1, "bitrate": {"value": 640_000, "source": "stats_tag"}},
+            {"index": 2, "bitrate": {"value": 192_000, "source": "mediainfo"}},
+            {"index": 3, "bitrate": "odd"},
+        ],
+        "subtitles": "odd",
+    }
+    migrated = migrate("media_source", old)
+    assert migrated["schema_version"] == 2
+    assert [s["bitrate"] for s in migrated["video"]] == [
+        {"value": 4_000_000, "source": "estimated"}
+    ]
+    assert [s["bitrate"] for s in migrated["audio"]] == [
+        {"value": 640_000, "source": "stats_tag"},
+        {"value": 192_000, "source": "estimated"},
+        "odd",
+    ]
+    assert migrated["subtitles"] == "odd"

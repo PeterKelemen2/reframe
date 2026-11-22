@@ -198,12 +198,15 @@ const aspect = computed(() => `${props.after.width} / ${props.after.height}`)
   cursor: ew-resize;
 }
 
-/* Inside the frame, over the pictures: its `overflow: hidden` cuts a ring drawn outside. */
+/* Inside the frame, over the pictures: its `overflow: hidden` cuts a ring drawn outside.
+   White beside black: one of them stands out on any picture. */
 .split-compare__frame:has(.split-compare__range:focus-visible)::after {
   content: '';
   position: absolute;
   inset: 0;
-  box-shadow: inset 0 0 0 3px var(--rf-color-primary);
+  box-shadow:
+    inset 0 0 0 2px #fff,
+    inset 0 0 0 4px #000;
   pointer-events: none;
 }
 

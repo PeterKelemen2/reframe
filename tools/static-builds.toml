@@ -1,0 +1,71 @@
+# Bundled binaries that are static builds: the source tree each was built from and the source of
+# every library it links. `scripts/sources-manifest.py` puts each tree and part into the sources
+# release for the binary's `platforms`; `scripts/third-party-notices.py` lists them in those
+# packages' notices. A part's URL and SHA-256 are the ones the binary's build scripts pin;
+# `archive` names the file in the sources release when the URL's file name does not say what it
+# is.
+
+schema_version = 1
+
+# The AppImage's loader. The bundler would download type2-runtime's floating "continuous" build;
+# desktop/packaging/linux/build-in-container.sh hands it this file instead (LDAI_RUNTIME_FILE).
+[binaries.appimage-runtime]
+description = "AppImage type 2 runtime 20251108 (x86_64), the loader at the start of the AppImage"
+platforms = ["linux-x64"]
+version = "20251108"
+license = "MIT"
+release_url = "https://github.com/AppImage/type2-runtime/releases/tag/20251108"
+url = "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64"
+# Equal to the release asset's digest on GitHub and to a download.
+sha256 = "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d"
+size = 944632
+# The release's tag. Its build: scripts/docker/Dockerfile (Alpine 3.21 packages: musl, zstd,
+# zlib, mimalloc) and scripts/common/install-dependencies.sh (libfuse with a patch, squashfuse).
+source_repository = "https://github.com/AppImage/type2-runtime"
+source_commit = "dd6cebedcbddde9c82f89b011e8e1d40b6e43868"
+
+[[binaries.appimage-runtime.parts]]
+name = "libfuse"
+version = "3.15.0"
+license = "LGPL-2.1-only"
+url = "https://github.com/libfuse/libfuse/releases/download/fuse-3.15.0/fuse-3.15.0.tar.xz"
+sha256 = "70589cfd5e1cff7ccd6ac91c86c01be340b227285c5e200baa284e401eea2ca0"
+
+[[binaries.appimage-runtime.parts]]
+name = "squashfuse"
+version = "0.5.2"
+license = "BSD-2-Clause"
+url = "https://github.com/vasi/squashfuse/archive/0.5.2.tar.gz"
+sha256 = "db0238c5981dabbd80ee09ae15387f390091668ca060a7bc38047912491443d3"
+archive = "squashfuse-0.5.2.tar.gz"
+
+# The Alpine 3.21 packages of 2025-12-08 (the release's build date), from their APKBUILDs in
+# aports (3.21-stable); the URLs and checksums are those APKBUILDs' sources.
+[[binaries.appimage-runtime.parts]]
+name = "musl"
+version = "1.2.5"
+license = "MIT"
+url = "https://musl.libc.org/releases/musl-1.2.5.tar.gz"
+sha256 = "a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4"
+
+[[binaries.appimage-runtime.parts]]
+name = "zstd"
+version = "1.5.6"
+license = "BSD-3-Clause OR GPL-2.0-only"
+url = "https://github.com/facebook/zstd/archive/v1.5.6.tar.gz"
+sha256 = "30f35f71c1203369dc979ecde0400ffea93c27391bfd2ac5a9715d2173d92ff7"
+archive = "zstd-1.5.6.tar.gz"
+
+[[binaries.appimage-runtime.parts]]
+name = "zlib"
+version = "1.3.1"
+license = "Zlib"
+url = "https://zlib.net/fossils/zlib-1.3.1.tar.gz"
+sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23"
+
+[[binaries.appimage-runtime.parts]]
+name = "mimalloc"
+version = "2.1.7"
+license = "MIT"
+url = "https://github.com/microsoft/mimalloc/archive/v2.1.7/mimalloc-2.1.7.tar.gz"
+sha256 = "0eed39319f139afde8515010ff59baf24de9e47ea316a315398e8027d198202d"

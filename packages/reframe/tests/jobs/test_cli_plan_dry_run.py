@@ -13,8 +13,9 @@ from reframe.jobs import JobService
 from reframe.models import JobSettings, MediaSource, Severity, ValidationIssue
 from reframe.presets import builtin_presets
 from reframe_testing import fake_tools as ft
+from reframe_testing.cli import invoke
 
-from .conftest import invoke, media_file, replay
+from .conftest import media_file, replay
 
 CUSTOM = "Custom x265"
 
@@ -81,9 +82,6 @@ def test_custom_parameters_are_dry_run_and_errors_printed(movie: Path, dry_run: 
     assert DRY_RUN_NOTE not in out
     assert "Traceback" not in result.stderr
 
-
-def test_dry_run_errors_in_json(movie: Path, dry_run: DryRun) -> None:
-    dry_run.issues = [REFUSED]
     result = invoke("plan", str(movie), "--preset", CUSTOM, "--json")
     assert result.exit_code == EXIT_FAILED
     data: dict[str, Any] = json.loads(result.stdout)

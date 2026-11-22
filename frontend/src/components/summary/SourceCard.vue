@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n'
 
 import Card from '@/components/base/Card.vue'
 import KeyValue from '@/components/base/KeyValue.vue'
+import { useRange } from '@/components/range/useRange'
 import { fileName, formatDuration } from '@/components/shell/format'
 import { useEditorStore } from '@/stores/editor'
 
@@ -12,9 +13,10 @@ import { formatBitrate, formatBytes, videoLine } from './format'
 import { useJobSource } from './useJobSource'
 import { useThumbnail } from './useThumbnail'
 
-const { t } = useI18n()
+const { t, n } = useI18n()
 const editor = useEditorStore()
 const { sourceId, entry, source } = useJobSource()
+const { label: rangeLabel, length: rangeLength } = useRange()
 
 const video = computed(() => source.value?.video?.[0] ?? null)
 const thumbnail = useThumbnail(sourceId, () => video.value !== null)
@@ -23,24 +25,31 @@ const name = computed(() => fileName(entry.value?.path ?? editor.job?.source.pat
 const container = computed(() => source.value?.container ?? null)
 const size = computed(() => {
   const bytes = container.value?.size
-  return bytes == null ? null : formatBytes(bytes, t)
+  return bytes == null ? null : formatBytes(bytes, t, n)
 })
 const bitrate = computed(() => {
   const value = container.value?.bitrate
-  return value == null ? null : formatBitrate(value, t)
+  return value == null ? null : formatBitrate(value, t, n)
 })
-const line = computed(() => (video.value === null ? null : videoLine(video.value, t).join(' · ')))
+const line = computed(() =>
+  video.value === null ? null : videoLine(video.value, t, n).join(' · '),
+)
 const tracks = computed(() => {
   const media = source.value
   if (media === null) return null
-  return [
-    t('summary.source.audioTracks', media.audio?.length ?? 0),
-    t('summary.source.subtitleTracks', media.subtitles?.length ?? 0),
-  ].join(' · ')
+  return t('summary.source.trackCounts', {
+    audio: t('summary.source.audioTracks', media.audio?.length ?? 0),
+    subtitles: t('summary.source.subtitleTracks', media.subtitles?.length ?? 0),
+  })
 })
+const range = computed(() =>
+  rangeLength.value === null
+    ? rangeLabel.value
+    : t('summary.source.rangeValue', { range: rangeLabel.value, length: rangeLength.value }),
+)
 const chapters = computed(() => {
   const count = source.value?.chapters?.length
-  return count === undefined ? null : count === 0 ? t('summary.source.noChapters') : String(count)
+  return count === undefined ? null : count === 0 ? t('summary.source.noChapters') : n(count)
 })
 </script>
 
@@ -82,6 +91,9 @@ const chapters = computed(() => {
           </KeyValue>
           <KeyValue :label="t('summary.source.chapters')">
             <span data-field="chapters">{{ chapters }}</span>
+          </KeyValue>
+          <KeyValue :label="t('summary.source.range')">
+            <span data-field="range">{{ range }}</span>
           </KeyValue>
         </template>
       </dl>

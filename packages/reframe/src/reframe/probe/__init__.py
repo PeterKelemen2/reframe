@@ -1,7 +1,7 @@
-"""Probing media files with ffprobe: one file, a folder, and the cache of the results.
+"""Probing media files with ffprobe, the media files of a folder, and the cache of the results.
 
-A file or tool problem is reported as a :class:`ProbeError` by :class:`Prober` and
-:func:`probe_file`, not raised as an exception.
+A file or tool problem is reported as a :class:`ProbeError` by :class:`Prober`, not raised as
+an exception.
 """
 
 from reframe.probe.cache import CacheKey, ProbeCache
@@ -13,14 +13,7 @@ from reframe.probe.ffprobe import (
     frames_argv,
     probe_argv,
 )
-from reframe.probe.folder import (
-    MEDIA_EXTENSIONS,
-    FolderProbeResult,
-    list_media_files,
-    natural_key,
-    probe_folder,
-    start_probe_folder,
-)
+from reframe.probe.folder import MEDIA_EXTENSIONS, list_media_files, natural_key
 from reframe.probe.names import (
     audio_display_name,
     container_display_name,
@@ -28,14 +21,13 @@ from reframe.probe.names import (
     video_display_name,
 )
 from reframe.probe.parse import PARSER_VERSION, parse_ffprobe
-from reframe.probe.prober import ProbeOutcome, Prober, probe_file
+from reframe.probe.prober import ProbeOutcome, Prober
 
 __all__ = [
     "MEDIA_EXTENSIONS",
     "PARSER_VERSION",
     "PROBE_TIMEOUT",
     "CacheKey",
-    "FolderProbeResult",
     "ProbeCache",
     "ProbeError",
     "ProbeErrorKind",
@@ -49,9 +41,6 @@ __all__ = [
     "natural_key",
     "parse_ffprobe",
     "probe_argv",
-    "probe_file",
-    "probe_folder",
-    "start_probe_folder",
     "subtitle_display_name",
     "video_display_name",
 ]

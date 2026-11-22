@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Check, ChevronUp, Copy, SquareTerminal } from '@lucide/vue'
-import { useClipboard, useLocalStorage, useResizeObserver } from '@vueuse/core'
+import { useClipboard, useLocalStorage } from '@vueuse/core'
 import Button from 'primevue/button'
-import { computed, onBeforeUnmount, useId, useTemplateRef } from 'vue'
+import { computed, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import IssueList from '@/components/base/IssueList.vue'
@@ -19,23 +19,17 @@ const { plan, problem, pending } = useCommandPlan(open)
 const { copy, copied, isSupported } = useClipboard({ legacy: true, copiedDuring: 2000 })
 
 const lines = computed(() => (plan.value === null ? [] : stepLines(tokenize(plan.value.display))))
+const editsHeader = computed(
+  () => plan.value?.steps.some((step) => step.kind === 'header_edit') ?? false,
+)
 
 async function copyCommand(): Promise<void> {
   if (plan.value !== null) await copy(plan.value.display)
 }
-
-// The tab's scroller keeps a focused control clear of the drawer by its height.
-const DRAWER_HEIGHT = '--video-command-drawer-height'
-const root = useTemplateRef<HTMLElement>('root')
-useResizeObserver(root, ([entry]) => {
-  const height = entry?.borderBoxSize?.[0]?.blockSize ?? entry?.contentRect.height ?? 0
-  document.documentElement.style.setProperty(DRAWER_HEIGHT, `${Math.ceil(height)}px`)
-})
-onBeforeUnmount(() => document.documentElement.style.removeProperty(DRAWER_HEIGHT))
 </script>
 
 <template>
-  <aside ref="root" class="command-preview" :class="{ 'command-preview--open': open }">
+  <aside class="command-preview" :class="{ 'command-preview--open': open }">
     <div class="command-preview__bar">
       <button
         type="button"
@@ -70,21 +64,25 @@ onBeforeUnmount(() => document.documentElement.style.removeProperty(DRAWER_HEIGH
       }}</span>
     </div>
     <div v-if="open" :id="bodyId" class="command-preview__body">
-      <pre
-        v-if="plan !== null"
-        class="command-preview__code"
-        :class="{ 'command-preview__code--stale': pending }"
-        tabindex="0"
-        :aria-label="t('video.command.code')"
-      ><code><span
-        v-for="(line, row) in lines"
-        :key="row"
-        class="command-preview__line"
-      ><span
-        v-for="(token, column) in line"
-        :key="column"
-        :class="`cmd-${token.kind}`"
-      >{{ token.text }}</span></span></code></pre>
+      <template v-if="plan !== null">
+        <pre
+          class="command-preview__code"
+          :class="{ 'command-preview__code--stale': pending }"
+          tabindex="0"
+          :aria-label="t('video.command.code')"
+        ><code><span
+          v-for="(line, row) in lines"
+          :key="row"
+          class="command-preview__line"
+        ><span
+          v-for="(token, column) in line"
+          :key="column"
+          :class="`cmd-${token.kind}`"
+        >{{ token.text }}</span></span></code></pre>
+        <p v-if="editsHeader" class="command-preview__note" data-note="header-edit">
+          {{ t('video.command.headerEdit') }}
+        </p>
+      </template>
       <div v-else-if="problem?.kind === 'invalid'" class="command-preview__problem">
         <p>{{ t('video.command.invalid') }}</p>
         <IssueList :issues="problem.issues" />
@@ -99,31 +97,10 @@ onBeforeUnmount(() => document.documentElement.style.removeProperty(DRAWER_HEIGH
 
 <style scoped>
 .command-preview {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
   border: 1px solid var(--rf-color-border);
   border-radius: var(--rf-radius-md) var(--rf-radius-md) 0 0;
   background: var(--rf-color-surface);
   box-shadow: 0 -2px 8px rgb(0 0 0 / 8%);
-}
-
-/*
- * A field's bar is drawn in the panel's side padding, which the drawer does not cover. The
- * middle of the gradient stays clear: it is painted over the drawer's own border.
- */
-.command-preview::before {
-  content: '';
-  position: absolute;
-  inset-block: -1px;
-  inset-inline: calc(-1 * (var(--rf-space-4) + 1px));
-  z-index: -1;
-  background: linear-gradient(
-    to right,
-    var(--rf-color-surface) var(--rf-space-4),
-    transparent var(--rf-space-4) calc(100% - var(--rf-space-4)),
-    var(--rf-color-surface) calc(100% - var(--rf-space-4))
-  );
 }
 
 .command-preview__bar {
@@ -205,8 +182,24 @@ onBeforeUnmount(() => document.documentElement.style.removeProperty(DRAWER_HEIGH
   margin: 0;
 }
 
+.command-preview__note {
+  margin: var(--rf-space-2) 0 0;
+  color: var(--rf-color-text-muted);
+  font-size: var(--rf-font-size-sm);
+}
+
 .cmd-program {
   font-weight: var(--rf-font-weight-bold);
+}
+
+/* Not a program on PATH: Reframe runs the step itself. */
+.cmd-step {
+  font-style: italic;
+  font-weight: var(--rf-font-weight-bold);
+}
+
+.cmd-track {
+  font-weight: var(--rf-font-weight-medium);
 }
 
 .cmd-option {

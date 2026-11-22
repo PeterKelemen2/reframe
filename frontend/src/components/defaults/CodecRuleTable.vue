@@ -30,7 +30,7 @@ import { labelOf, useDefaultsOptions } from './options'
 import ShownValue from './ShownValue.vue'
 
 /** The codec rules, first match wins; the catch-all stays last and cannot be moved or removed. */
-const { t } = useI18n()
+const { t, n, locale } = useI18n()
 const defaults = useDefaultsStore()
 const system = useSystemStore()
 const choices = useDefaultsOptions()
@@ -86,7 +86,7 @@ function names(rule: AudioCodecRule): string {
 
 function maxText(rule: AudioCodecRule): string {
   const max = rule.max_bitrate ?? null
-  return max === null ? t('defaults.rules.noMax') : t('defaults.units.kbps', { value: max })
+  return max === null ? t('defaults.rules.noMax') : t('defaults.units.kbps', { value: n(max) })
 }
 
 function fieldError(row: Row, field: string): boolean {
@@ -268,7 +268,8 @@ function dropSide(index: number): 'before' | 'after' | null {
               </span>
             </td>
             <th :id="rowId(row.key)" scope="row" class="rule-table__number">
-              <span class="rf-sr-only">{{ t('defaults.rules.rule') }} </span>{{ row.number }}
+              <span class="rf-sr-only">{{ t('defaults.rules.rule', { n: row.number }) }}</span>
+              <span aria-hidden="true">{{ n(row.number) }}</span>
             </th>
             <td data-field="language">
               <span v-if="row.catchAll" class="rule-table__any">
@@ -343,6 +344,7 @@ function dropSide(index: number): 'before' | 'after' | null {
             <td data-field="max_bitrate">
               <ShownValue v-if="locked" :text="maxText(row.rule)" />
               <InputNumber
+                :locale="locale"
                 v-else
                 class="rule-table__number-input"
                 :model-value="row.rule.max_bitrate ?? null"

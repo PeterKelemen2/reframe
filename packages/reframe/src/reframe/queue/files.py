@@ -9,18 +9,16 @@ from __future__ import annotations
 import contextlib
 import errno
 import os
-import time
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
+from reframe.fsretry import replace_file, retry
 from reframe.models.plan import PlanFile
 from reframe.validation.fs import LocalFileSystem
 
 __all__ = [
-    "ATTEMPTS",
-    "DELAY",
     "FileKey",
     "file_key",
     "remove_files",
@@ -32,31 +30,10 @@ __all__ = [
     "write_plan_files",
 ]
 
-#: How often a call that fails with ``PermissionError`` is tried on Windows.
-ATTEMPTS = 6
-#: The first pause between two tries (seconds); it doubles each time.
-DELAY = 0.05
 #: ``True`` on Windows (tests set it).
 WINDOWS = os.name == "nt"
 #: ``os.link`` errors that mean "this file system has no hard links".
 _NO_LINKS = {errno.EPERM, errno.EXDEV, errno.EMLINK, errno.ENOSYS, errno.EOPNOTSUPP}
-
-
-def _sleep(seconds: float) -> None:
-    time.sleep(seconds)
-
-
-def _retry[T](call: Callable[[], T]) -> T:
-    delay = DELAY
-    for attempt in range(ATTEMPTS):
-        try:
-            return call()
-        except PermissionError:
-            if not WINDOWS or attempt == ATTEMPTS - 1:
-                raise
-            _sleep(delay)
-            delay *= 2
-    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def write_plan_files(files: Iterable[PlanFile]) -> None:
@@ -148,7 +125,7 @@ def remove_files(paths: Iterable[Path], *, keep: Path | None = None) -> list[str
             problems.append(f"{path} is the source file, not removed")
             continue
         try:
-            _retry(partial(path.unlink, missing_ok=True))
+            retry(partial(path.unlink, missing_ok=True))
         except IsADirectoryError:
             problems.append(f"{path} is a folder, not removed")
         except OSError as exc:
@@ -158,16 +135,11 @@ def remove_files(paths: Iterable[Path], *, keep: Path | None = None) -> list[str
     return problems
 
 
-def replace_file(source: Path, target: Path) -> None:
-    """``os.replace``; on Windows a ``PermissionError`` (the target is open) is retried."""
-    _retry(partial(os.replace, source, target))
-
-
 def rename_no_replace(source: Path, target: Path) -> None:
     """Rename ``source`` to ``target``; ``FileExistsError`` when ``target`` exists. On POSIX
     ``os.rename`` would replace the target, so a hard link is made first."""
     if WINDOWS:
-        _retry(partial(os.rename, source, target))
+        retry(partial(os.rename, source, target))
         return
     try:
         os.link(source, target)

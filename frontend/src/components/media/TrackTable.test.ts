@@ -46,6 +46,17 @@ function detail(wrapper: VueWrapper, label: string): string | undefined {
   return pair && words(pair.find('dd').element)
 }
 
+/** Speech input users say what they see: a scan button's name starts with its visible text. */
+function expectNamesStartWithText(wrapper: VueWrapper): void {
+  const buttons = wrapper.findAll('[data-action="start-scan"]')
+  expect(buttons.length).toBeGreaterThan(0)
+  for (const found of buttons) {
+    const name = (found.attributes('aria-label') ?? '').toLowerCase()
+    const text = found.text().toLowerCase()
+    expect(name.slice(0, text.length)).toBe(text)
+  }
+}
+
 describe('the audio source table', () => {
   it('shows the columns of each track, with the bitrate and where it comes from', () => {
     const wrapper = mountTable('audio', probedSource('multitrack').audio!)
@@ -84,6 +95,12 @@ describe('the audio source table', () => {
     expect(detail(wrapper, 'Duration')).toBe('0:04.000')
     expect(detail(wrapper, 'Frame count')).toBe('—')
     expect(detail(wrapper, 'Dispositions')).toBe('default')
+    const flagged = { ...probedSource('multitrack').audio![0]!, frame_count: 172_500 }
+    flagged.disposition = { ...flagged.disposition!, original: true }
+    const more = mountTable('audio', [flagged])
+    await more.find('.track-table__toggle').trigger('click')
+    expect(detail(more, 'Dispositions')).toBe('default, original')
+    expect(detail(more, 'Frame count')).toBe('172,500')
     expect(detail(wrapper, 'ENCODER')).toBe('Lavc63.1.102 ac3')
     expect(detail(wrapper, 'Roles')).toBe(
       'Main (Set by a disposition flag in the file) disposition default',
@@ -111,7 +128,7 @@ describe('the subtitle source table', () => {
       'English',
       'PGS',
       'bitmap',
-      '3655',
+      '3,655',
       'Main (Set by a disposition flag in the file) Default',
     ])
     expect(cells(wrapper, 1)[5]).toBe('—')
@@ -119,10 +136,13 @@ describe('the subtitle source table', () => {
 
   it('shows the canvas and the forced events in the details', async () => {
     const pgs = probedSource('pgs').subtitles as SubtitleStream[]
-    const wrapper = mountTable('subtitle', [{ ...pgs[1]!, forced_event_count: 12 }])
+    const wrapper = mountTable('subtitle', [
+      { ...pgs[1]!, event_count: 3655, forced_event_count: 1200 },
+    ])
     await wrapper.find('.track-table__toggle').trigger('click')
     expect(detail(wrapper, 'Canvas')).toBe('720×480')
-    expect(detail(wrapper, 'Forced events')).toBe('12')
+    expect(detail(wrapper, 'Events')).toMatch(/^3,655\b/)
+    expect(detail(wrapper, 'Forced events')).toBe('1,200')
     expect(detail(wrapper, 'Delay')).toBe('+200 ms')
   })
 
@@ -142,6 +162,13 @@ function endTask(state: TaskInfo['state']): void {
 
 function measuredBitrate(stream: AudioStream): AudioStream {
   return { ...stream, bitrate: { value: 2_140_063, source: 'measured' } }
+}
+
+function estimated(samples: number | null): AudioStream {
+  return {
+    ...(probedSource('dts-hd-ma').audio![0] as AudioStream),
+    bitrate: { value: 1_509_400, source: 'estimated', samples },
+  }
 }
 
 const pgsStreams = () => probedSource('pgs').subtitles as SubtitleStream[]
@@ -205,8 +232,9 @@ describe('the scans in the source tables', () => {
     expect(button(wrapper, 'Count the events of track 1')).toBeUndefined()
     await button(wrapper, 'Count the events of track 2')!.trigger('click')
     expect(scanSubtitles).toHaveBeenLastCalledWith('src', [2])
-    await button(wrapper, 'Count the events of every subtitle track')!.trigger('click')
+    await button(wrapper, 'Count events of every subtitle track')!.trigger('click')
     expect(scanSubtitles).toHaveBeenLastCalledWith('src', undefined)
+    expectNamesStartWithText(wrapper)
   })
 
   it('turns a track’s own count off while every track is counted', async () => {
@@ -246,7 +274,8 @@ describe('the scans in the source tables', () => {
     )
     await wrapper.find('.track-table__toggle').trigger('click')
     expect(detail(wrapper, 'Loudness')).toBe('Measure loudness')
-    await button(wrapper, 'Measure the loudness of track 1')!.trigger('click')
+    expectNamesStartWithText(wrapper)
+    await button(wrapper, 'Measure loudness of track 1')!.trigger('click')
     expect(measureLoudness).toHaveBeenCalledExactlyOnceWith('src', 1)
 
     scans.loudness = {
@@ -257,7 +286,8 @@ describe('the scans in the source tables', () => {
     expect(detail(wrapper, 'Integrated loudness')).toBe('−22.5 LUFS')
     expect(detail(wrapper, 'True peak')).toBe('−20.0 dBTP')
     expect(detail(wrapper, 'Loudness range')).toBe('2.2 LU')
-    expect(button(wrapper, 'Measure the loudness of track 1')!.text()).toBe('Measure again')
+    expect(button(wrapper, 'Measure again: loudness of track 1')!.text()).toBe('Measure again')
+    expectNamesStartWithText(wrapper)
   })
 
   it('keeps the focus on the scan’s buttons as they replace each other', async () => {
@@ -308,6 +338,34 @@ describe('the scans in the source tables', () => {
     expect(cells(wrapper, 0)[6]).toBe('2,140 kb/s measured')
   })
 
+  describe('an estimated bitrate', () => {
+    it('says it is an estimate, from how many samples, and offers Measure for the exact value', async () => {
+      const { wrapper, measureBitrate } = mountScans('audio', [estimated(12)])
+      expect(cells(wrapper, 0)[6]).toBe('≈ 1,509 kb/s Measure estimated from 12 samples')
+      await button(wrapper, 'Measure the bitrate of track 1')!.trigger('click')
+      expect(measureBitrate).toHaveBeenCalledExactlyOnceWith('src', 1)
+      await wrapper.find('.track-table__toggle').trigger('click')
+      expect(detail(wrapper, 'Bitrate')).toBe(
+        "≈ 1,509 kb/s · Estimated from a sample of the file's clusters",
+      )
+    })
+
+    it('counts one sample in the singular', () => {
+      const { wrapper } = mountScans('audio', [estimated(1)])
+      expect(cells(wrapper, 0)[6]).toBe('≈ 1,509 kb/s Measure estimated from one sample')
+    })
+
+    it('says only "estimated" when the probe gave no count', () => {
+      const { wrapper } = mountScans('audio', [estimated(null)])
+      expect(cells(wrapper, 0)[6]).toBe('≈ 1,509 kb/s Measure estimated')
+    })
+
+    it('offers no Measure once the bitrate is measured', () => {
+      const { wrapper } = mountScans('audio', [measuredBitrate(estimated(12))])
+      expect(wrapper.findAll('[data-scan="bitrate"]')).toEqual([])
+    })
+  })
+
   const loud = { path: '/m.mkv', stream_index: 1, integrated: -22.47, true_peak: -20, lra: 2.2 }
 
   it.each([
@@ -334,6 +392,18 @@ describe('the scans in the source tables', () => {
       ended: run('subtitle', 2, null),
       streams: () => [{ ...pgsStreams()[1]!, event_count: 4, forced_event_count: 2 }],
       said: 'Track 2: 4 events counted, 2 forced.',
+    },
+    {
+      what: 'one event with the forced ones',
+      ended: run('subtitle', 2, null),
+      streams: () => [{ ...pgsStreams()[1]!, event_count: 1, forced_event_count: 0 }],
+      said: 'Track 2: one event counted, 0 forced.',
+    },
+    {
+      what: 'thousands of events',
+      ended: run('subtitle', 2, null),
+      streams: () => [{ ...pgsStreams()[1]!, event_count: 3655, forced_event_count: 1200 }],
+      said: 'Track 2: 3,655 events counted, 1,200 forced.',
     },
     {
       what: 'a track’s events',

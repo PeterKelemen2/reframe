@@ -7,9 +7,14 @@ import ToggleSwitch from 'primevue/toggleswitch'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { settle } from '@/api/testing/fakes'
-import type { JobGeometry, JobSettings, JobTemplate } from '@/api/types'
+import type { CropDetection, JobGeometry, JobSettings, JobTemplate } from '@/api/types'
 import CropMagnifier from '@/components/crop/CropMagnifier.vue'
-import { geometryOf, LETTERBOX, setUpCrop } from '@/components/dimensions/testing'
+import {
+  geometryOf,
+  LETTERBOX,
+  letterboxDetection,
+  setUpCrop,
+} from '@/components/dimensions/testing'
 import { mountShell } from '@/components/shell/testing'
 import { issue, sampleJob } from '@/editor/testing/samples'
 import { useCropStore } from '@/stores/crop'
@@ -46,8 +51,11 @@ function jobWith(dimensions: Partial<NonNullable<JobSettings['dimensions']>>): J
   return job
 }
 
-async function mountTab(options: { job?: JobSettings; geometry?: JobGeometry } = {}) {
+async function mountTab(
+  options: { job?: JobSettings; geometry?: JobGeometry; detection?: CropDetection } = {},
+) {
   const setup = setUpCrop(options)
+  if (options.detection) setup.outcome.task.result = options.detection as never
   const editor = useEditorStore()
   // The workspace starts the crop store before any file is opened.
   useCropStore()
@@ -110,6 +118,18 @@ describe('the Dimensions tab', () => {
     expect(line()).toBe('Black on every frame: 0 / 0 / 0 / 0 (10 frames)')
   })
 
+  it('says one sample frame in the singular', async () => {
+    const one = { ...letterboxDetection(), auto_frames: 1 }
+    one.samples = one.samples.slice(0, 1)
+    const { wrapper } = await mountTab({ detection: one })
+    const line = () => wrapper.find('[data-line="detection"]').text()
+    expect(line()).toBe('Detected 22 / 24 / 0 / 0 on the one sample frame')
+    control(wrapper, 'dimensions.crop', SelectButton).emit('conservative')
+    await settle()
+    await flushPromises()
+    expect(line()).toBe('Black on the one sample frame: 0 / 0 / 0 / 0')
+  })
+
   it('snaps a typed crop value with a note, and the input shows the stored value', async () => {
     const { wrapper, editor } = await mountTab({
       job: jobWith({ crop: { mode: 'manual', rect: { top: 0, bottom: 0, left: 0, right: 0 } } }),
@@ -127,6 +147,23 @@ describe('the Dimensions tab', () => {
     await top.setValue('141')
     await flushPromises()
     expect((top.element as HTMLInputElement).value).toBe('140')
+  })
+
+  it('keeps a crop value being typed when the job changes under it, and commits it', async () => {
+    const { wrapper, editor } = await mountTab({
+      job: jobWith({ crop: { mode: 'manual', rect: { top: 0, bottom: 0, left: 0, right: 0 } } }),
+    })
+    const left = wrapper.find('input[data-edge="left"]')
+    // Typed, not committed yet; then the previous edit's answer comes in (another edge).
+    ;(left.element as HTMLInputElement).value = '17'
+    await left.trigger('input')
+    editor.set('/dimensions/crop/rect/top', 22)
+    await flushPromises()
+    expect((left.element as HTMLInputElement).value).toBe('17')
+    expect((wrapper.find('input[data-edge="top"]').element as HTMLInputElement).value).toBe('22')
+    await left.trigger('change')
+    await flushPromises()
+    expect(editor.get('/dimensions/crop/rect')).toEqual({ top: 22, bottom: 0, left: 16, right: 0 })
   })
 
   it('makes a crop value typed after leaving the field an undo step of its own', async () => {
@@ -177,7 +214,7 @@ describe('the Dimensions tab', () => {
     expect(wrapper.find('[data-detection]').exists()).toBe(false)
   })
 
-  it("says that a group's files are queued without a crop, and shows the shown file's detection", async () => {
+  it("says that a group's files get their own crop when queued, and shows the shown file's detection", async () => {
     const { wrapper, editor } = await mountTab()
     editor.target = {
       kind: 'group',
@@ -191,7 +228,7 @@ describe('the Dimensions tab', () => {
     }
     await flushPromises()
     expect(wrapper.find('[data-line="group"]').text()).toBe(
-      'In a group, Automatic and Conservative queue the files without a crop: their black bars are not detected. Choose Manual to crop every file the same way.',
+      'In a group, Automatic and Conservative detect the black bars of each file when the group is queued. Choose Manual to crop every file the same way.',
     )
     expect(wrapper.find('[data-line="detection"]').text()).toBe(
       'This file: Detected 22 / 24 / 0 / 0 on 5 of 10 frames',
@@ -253,6 +290,13 @@ describe('the Dimensions tab', () => {
     control(wrapper, 'dimensions.allow_upscaling', ToggleSwitch).emit(true)
     await flushPromises()
     expect(editor.get('/dimensions/allow_upscaling')).toBe(true)
+  })
+
+  it('takes the focus when the picture as a whole is asked for', async () => {
+    const { wrapper } = await mountTab()
+    useUiStore().reveal('dimensions')
+    await flushPromises()
+    expect(wrapper.element.contains(document.activeElement)).toBe(true)
   })
 
   it('opens the advanced part when one of its fields is asked for', async () => {

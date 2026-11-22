@@ -24,7 +24,7 @@ const LETTER = /\p{L}/u
  * Attributes whose value a user reads, or hears from a screen reader, on any element or
  * component (camelCase: `aria-label` is `ariaLabel`).
  */
-const VISIBLE_ATTRIBUTES = new Set([
+export const VISIBLE_ATTRIBUTES = new Set([
   'title',
   'alt',
   'placeholder',

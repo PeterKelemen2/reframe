@@ -40,7 +40,15 @@ const props = defineProps<{
   sourceId?: string | null
 }>()
 
-const { t, locale } = useI18n()
+const { t, n: format, locale } = useI18n()
+
+function count(value: number | null | undefined): string | null {
+  return value === null || value === undefined ? null : format(value)
+}
+
+function listOf(items: string[]): string {
+  return new Intl.ListFormat(locale.value, { style: 'short', type: 'unit' }).format(items)
+}
 const id = useId()
 const scans = useScansStore()
 const tasks = useTasksStore()
@@ -126,8 +134,16 @@ function doneText(run: ScanRun, stream: SourceStream | undefined, n: number): st
   if (stream?.kind === 'subtitle' && typeof stream.event_count === 'number') {
     const forced = stream.forced_event_count
     return typeof forced === 'number'
-      ? t('media.scan.ended.eventsForced', { n, count: stream.event_count, forced })
-      : t('media.scan.ended.events', { n, count: stream.event_count }, stream.event_count)
+      ? t(
+          'media.scan.ended.eventsForced',
+          { track: n, count: format(stream.event_count), forced: format(forced) },
+          stream.event_count,
+        )
+      : t(
+          'media.scan.ended.events',
+          { track: n, count: format(stream.event_count) },
+          stream.event_count,
+        )
   }
   return t('media.scan.ended.done', { scan: progressText(run, n) })
 }
@@ -164,7 +180,7 @@ function loudnessOf(stream: SourceStream) {
 
 function measured(value: number | null | undefined, key: 'lufs' | 'dbtp' | 'lu'): string {
   if (value === null || value === undefined) return '—'
-  return t(`media.loudness.${key}`, { value: oneDecimal(value) })
+  return t(`media.loudness.${key}`, { value: oneDecimal(value, format) })
 }
 
 const expanded = ref(new Set<number>())
@@ -209,18 +225,35 @@ function flagLabel(flag: ShownFlag): string {
   return flag
 }
 
-function bitrateSource(source: Schemas['BitrateSource']): string {
+type Bitrate = Schemas['BitrateInfo']
+
+function bitrateSource({ source, samples }: Bitrate): string {
   switch (source) {
     case 'stream':
       return t('tracks.source.bitrateFrom.stream')
     case 'stats_tag':
       return t('tracks.source.bitrateFrom.statsTag')
-    case 'mediainfo':
-      return t('tracks.source.bitrateFrom.mediainfo')
+    case 'estimated':
+      // A probe cache entry from before the sampler has no count.
+      return samples
+        ? t('tracks.source.bitrateFrom.estimatedFrom', samples)
+        : t('tracks.source.bitrateFrom.estimated')
     case 'measured':
       return t('tracks.source.bitrateFrom.measured')
   }
   return t('tracks.source.bitrateFrom.unknown')
+}
+
+function kbps(bitrate: Bitrate): string {
+  const value = kbpsText(bitrate.value ?? 0, locale.value)
+  return bitrate.source === 'estimated'
+    ? t('tracks.units.kbpsEstimated', { value })
+    : t('tracks.units.kbps', { value })
+}
+
+/** No rate, or only an estimate: a scan measures the exact one. */
+function measurable(stream: AudioStream): boolean {
+  return !stream.bitrate?.value || stream.bitrate.source === 'estimated'
 }
 
 function bitrateHelp(source: Schemas['BitrateSource'] | undefined): string {
@@ -229,8 +262,8 @@ function bitrateHelp(source: Schemas['BitrateSource'] | undefined): string {
       return t('tracks.source.bitrateHelp.stream')
     case 'stats_tag':
       return t('tracks.source.bitrateHelp.statsTag')
-    case 'mediainfo':
-      return t('tracks.source.bitrateHelp.mediainfo')
+    case 'estimated':
+      return t('tracks.source.bitrateHelp.estimated')
     case 'measured':
       return t('tracks.source.bitrateHelp.measured')
   }
@@ -252,7 +285,7 @@ function eventsHelp(stream: SubtitleStream): string | undefined {
 function rateDepth(stream: AudioStream): string | null {
   if (!stream.sample_rate)
     return stream.bit_depth ? t('tracks.units.bits', { bits: stream.bit_depth }) : null
-  const rate = t('tracks.units.khz', { value: kiloHertz(stream.sample_rate) })
+  const rate = t('tracks.units.khz', { value: kiloHertz(stream.sample_rate, format) })
   return stream.bit_depth ? t('tracks.units.rateDepth', { rate, bits: stream.bit_depth }) : rate
 }
 
@@ -344,23 +377,19 @@ function tagsOf(stream: SourceStream): [string, string][] {
               <td>{{ channelsText(stream) ?? '—' }}</td>
               <td class="track-table__nowrap">{{ rateDepth(stream) ?? '—' }}</td>
               <td class="track-table__bitrate" :data-source="stream.bitrate?.source ?? 'unknown'">
-                <template v-if="stream.bitrate?.value">
-                  <span v-tooltip.top="bitrateHelp(stream.bitrate!.source)">
-                    {{
-                      t('tracks.units.kbps', { value: kbpsText(stream.bitrate!.value!, locale) })
-                    }}
+                <span class="track-table__value">
+                  <span
+                    v-if="stream.bitrate?.value"
+                    v-tooltip.top="bitrateHelp(stream.bitrate!.source)"
+                  >
+                    {{ kbps(stream.bitrate!) }}
                   </span>
-                  <span class="track-table__muted">
-                    {{ bitrateSource(stream.bitrate!.source) }}
-                  </span>
-                </template>
-                <span v-else class="track-table__unknown">
-                  <span v-tooltip.top="bitrateHelp(undefined)">
+                  <span v-else v-tooltip.top="bitrateHelp(undefined)">
                     <span aria-hidden="true">—</span>
                     <span class="rf-sr-only">{{ t('tracks.source.bitrateFrom.unknown') }}</span>
                   </span>
                   <ScanControl
-                    v-if="scanSource !== null"
+                    v-if="scanSource !== null && measurable(stream)"
                     :run="runOf('bitrate', stream)"
                     :label="t('media.scan.measure')"
                     :start-label="t('media.scan.measureBitrate', { n: trackNumber(stream) })"
@@ -373,14 +402,19 @@ function tagsOf(stream: SourceStream): [string, string][] {
                     @leave="focusRow(stream)"
                   />
                 </span>
+                <span v-if="stream.bitrate?.value" class="track-table__muted">
+                  {{ bitrateSource(stream.bitrate!) }}
+                </span>
               </td>
             </template>
             <template v-else>
               <td><CodecLabel :stream="stream" /></td>
               <td>{{ typeLabel(stream) }}</td>
               <td class="track-table__events">
-                <span class="track-table__unknown">
-                  <span v-tooltip.top="eventsHelp(stream)">{{ stream.event_count ?? '—' }}</span>
+                <span class="track-table__value">
+                  <span v-tooltip.top="eventsHelp(stream)">{{
+                    count(stream.event_count) ?? '—'
+                  }}</span>
                   <ScanControl
                     v-if="
                       scanSource !== null &&
@@ -406,7 +440,7 @@ function tagsOf(stream: SourceStream): [string, string][] {
                   class="track-table__muted"
                   data-forced
                 >
-                  {{ t('media.events.forced', { count: stream.forced_event_count }) }}
+                  {{ t('media.events.forced', { count: count(stream.forced_event_count) }) }}
                 </span>
               </td>
             </template>
@@ -464,9 +498,7 @@ function tagsOf(stream: SourceStream): [string, string][] {
                   />
                   <KeyValue :label="t('tracks.details.bitrate')">
                     <template v-if="stream.bitrate?.value">
-                      {{
-                        t('tracks.units.kbps', { value: kbpsText(stream.bitrate!.value!, locale) })
-                      }}
+                      {{ kbps(stream.bitrate!) }}
                       ·
                     </template>
                     {{ bitrateHelp(stream.bitrate?.source) }}
@@ -500,7 +532,9 @@ function tagsOf(stream: SourceStream): [string, string][] {
                           : t('media.scan.measureLoudness')
                       "
                       :start-label="
-                        t('media.scan.measureLoudnessLabel', { n: trackNumber(stream) })
+                        loudnessOf(stream)
+                          ? t('media.scan.measureLoudnessAgainLabel', { n: trackNumber(stream) })
+                          : t('media.scan.measureLoudnessLabel', { n: trackNumber(stream) })
                       "
                       :progress-label="
                         t('media.scan.measuringLoudness', { n: trackNumber(stream) })
@@ -521,7 +555,7 @@ function tagsOf(stream: SourceStream): [string, string][] {
                     :value="`${stream.width}×${stream.height}`"
                   />
                   <KeyValue :label="t('tracks.details.events')">
-                    {{ stream.event_count ?? '—' }}
+                    {{ count(stream.event_count) ?? '—' }}
                     <template v-if="eventsHelp(stream)"> · {{ eventsHelp(stream) }} </template>
                     <!-- Counts again, forced events too; the row counts only while unknown. -->
                     <ScanControl
@@ -551,7 +585,7 @@ function tagsOf(stream: SourceStream): [string, string][] {
                       hasForcedEvents(stream)
                     "
                     :label="t('tracks.details.forcedEvents')"
-                    :value="stream.forced_event_count ?? t('media.events.forcedUnknown')"
+                    :value="count(stream.forced_event_count) ?? t('media.events.forcedUnknown')"
                   />
                 </template>
                 <KeyValue
@@ -559,7 +593,7 @@ function tagsOf(stream: SourceStream): [string, string][] {
                   :value="
                     stream.delay === null || stream.delay === undefined
                       ? null
-                      : delayText(stream.delay)
+                      : delayText(stream.delay, t, format)
                   "
                 />
                 <KeyValue
@@ -567,7 +601,10 @@ function tagsOf(stream: SourceStream): [string, string][] {
                   :value="seconds(stream.start_time)"
                 />
                 <KeyValue :label="t('tracks.details.duration')" :value="seconds(stream.duration)" />
-                <KeyValue :label="t('tracks.details.frameCount')" :value="stream.frame_count" />
+                <KeyValue
+                  :label="t('tracks.details.frameCount')"
+                  :value="count(stream.frame_count)"
+                />
                 <KeyValue :label="t('tracks.details.roles')">
                   <ul v-if="(stream.roles ?? []).length > 0" class="track-table__list">
                     <li v-for="role in stream.roles" :key="role.role">
@@ -579,7 +616,7 @@ function tagsOf(stream: SourceStream): [string, string][] {
                 </KeyValue>
                 <KeyValue
                   :label="t('tracks.details.dispositions')"
-                  :value="setDispositions(stream).join(', ')"
+                  :value="listOf(setDispositions(stream))"
                 />
                 <KeyValue :label="t('tracks.details.tags')">
                   <dl v-if="tagsOf(stream).length > 0" class="rf-kv-list track-table__tags">
@@ -691,7 +728,7 @@ tbody + tbody .track-table__row td {
   display: block;
 }
 
-.track-table__table .track-table__unknown {
+.track-table__table .track-table__value {
   display: inline-flex;
   align-items: center;
   gap: var(--rf-space-2);

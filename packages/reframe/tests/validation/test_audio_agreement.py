@@ -4,13 +4,9 @@ from __future__ import annotations
 
 import dataclasses
 import functools
-import importlib.util
 import itertools
-import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
-from types import ModuleType
 from typing import Any, get_args
 
 import pytest
@@ -27,26 +23,15 @@ from reframe.models import (
     AudioRuleExtras,
     AudioStream,
     Mixdown,
+    ReplaceOp,
     RuleMixdown,
     Severity,
     ValidationIssue,
 )
 from reframe.validation import JOB_RULES, validate
 
+from . import scenario as sc
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 DEFS: Definitions = sc.DEFS
 CAPS = sc.make_caps()
 TOOLS = sc.make_tools()
@@ -64,6 +49,7 @@ MIXDOWN_CODES = {"audio.mixdown_unsupported", "audio.mixdown_upmix"}
 LAYOUTS: dict[str, tuple[int, str | None]] = {
     "mono": (1, "mono"),
     "stereo": (2, "stereo"),
+    "3.0": (3, "3.0"),
     "5.1": (6, "5.1"),
     "5.1(side)": (6, "5.1(side)"),
     "7.1": (8, "7.1"),
@@ -190,10 +176,13 @@ def scenario(stream: AudioStream, track: AudioOutputTrack) -> Any:
     return dataclasses.replace(base, job=job)
 
 
+@pytest.fixture(autouse=True)
+def _only_track_rules(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("reframe.validation.JOB_RULES", RULES)
+
+
 def issues_of(s: Any) -> list[ValidationIssue]:
-    return validate(
-        s.job, s.source, CAPS, TOOLS, s.fs, settings=s.settings, definitions=DEFS, rules=RULES
-    )
+    return validate(s.job, s.source, CAPS, TOOLS, s.fs, settings=s.settings, definitions=DEFS)
 
 
 def bitrate_for(category: str, encoder_id: str, table: Mixdown) -> int | None:
@@ -293,6 +282,19 @@ def check_notes(
         )
         assert shown in notes[code].message, notes[code]
     assert set(notes) == expected, (encoder.id, track, notes)
+    assert all(i.severity is Severity.INFO for i in notes.values()), notes
+
+    if not downmixed:
+        for code in MIXDOWN_CODES & set(notes):
+            # The fix names the layout the builder writes, not just one with the same argv, and
+            # never a layout that adds channels or needs a matrix encoding the source lacks.
+            [fix] = notes[code].fixes
+            [op] = fix.patch
+            assert isinstance(op, ReplaceOp)
+            assert op.value == planned.mixdown, (code, fix)
+            assert op.value != "dpl2", fix
+            if op.value is not None and stream.channels > 0:
+                assert DEFS.mixdowns[op.value].channels <= stream.channels, fix
 
     for issue in notes.values():
         for fix in issue.fixes:

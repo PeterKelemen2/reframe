@@ -53,6 +53,7 @@ uv run python scripts/make-testdata.py --list          # names and descriptions
 | `hdr10` | `hdr10.mkv` | HEVC Main 10, BT.2020 / PQ, mastering display (G 0.265,0.69 … L 0.0001–1000 cd/m²), MaxCLL 1000 / MaxFALL 400, as stream **and** frame side data |
 | `hdr10-4k` | `hdr10-4k.mkv` | 3840×2160 HEVC Main 10, BT.2020 / PQ, HDR10 metadata as SEI only (one libx265 pass), 5 s at 23.976 fps, keyint 48 (2 s). The 4K source of the C-10 frame budget (Q-3; the one fixture that is not low resolution, decision 0030); about 6 MB and 4 s to generate |
 | `chapters` | `chapters.mkv` | 5 s, 4 chapters (Opening, Part One, Part Two, Credits) and a title, from an FFMETADATA file |
+| `av-offset` | `av-offset.mkv` | Streams that start at different times (`-itsoffset`): H.264 320×180 25 fps from **0.6 s**, `eng` AAC stereo from 0, `eng` AC-3 stereo from **1.0 s**, all to 4.6 s. A white frame (frame 35 of the video) and a beep in each audio track (1 kHz / 500 Hz, 0.1 s) at **2.0 s**. Align A/V start |
 | `season` | `season/Show.S01E01.Title.mkv` … `E12` | 12 copies of the multi-track layout (title `Show - S01Enn`). **E05** has an extra `eng` AC-3 2.0 "Commentary" (comment) as the 4th audio track. **E09** has no second audio track ("English Stereo") |
 | `dts-hd-ma` | `dts-hd-ma.mkv` | H.264 320×180, 4 s. Audio: `hun` **DTS-HD MA** 5.1(side) 24-bit 48 kHz "DTS-HD MA 5.1" **default**, a real lossless (XLL) stream written by `reframe_testing/dts.py` with **no bit rate in the file** (ffprobe: `profile` `DTS-HD MA`, no `bit_rate`; 375 frames, 1 069 764 bytes = 2 139 528 b/s); `eng` AC-3 5.1 224 kb/s "English AC-3 5.1"; `eng` AC-3 stereo 192 kb/s "English Stereo". M6 demo 1 (Measure) and the audio-defaults demo |
 | `pgs` | `pgs.mkv` | H.264 720×480, 4 s. Two PGS (`hdmv_pgs_subtitle`) tracks written by `reframe_testing/pgs.py`: `eng` "English" **default**, 6 events (2 with the forced flag, at 0.2 s and 2.1 s), 12 display sets; `eng` "English (forced)" **forced**, 2 forced events, 4 display sets |
@@ -180,6 +181,104 @@ stream|index=2|bit_rate=N/A|tag:language=eng|tag:title=English Stereo|tag:ENCODE
 
 (In `-of json` output a missing bit rate is a missing `bit_rate` key, not `"N/A"`.)
 
+### Sampled bit rates (C-19)
+
+Checked on 2026-11-15 with ffprobe n9.0.2 (pinned build), MKVToolNix 103.0 and Reframe's own
+sample (`reframe.probe.sampling`, decision 0081). The exact value is the block scan of
+`testing/reframe_testing/blockscan.py` (every `SimpleBlock` and `Block`, payload bytes without
+the track number, timestamp and flags; lacing headers count, as in mkvmerge's
+`NUMBER_OF_BYTES`) over the stream's duration (ffprobe's `duration`, else its `DURATION` tag,
+else the file's). The tests that keep this true are `packages/reframe/tests/probe/test_sampling.py`
+(synthetic files) and `test_sampling_media.py` (fixtures, generated files, the recorded probes).
+
+What the tools do:
+
+- **mkvmerge zlib-compresses PGS tracks** (`ContentEncodings` → `ContentEncoding` →
+  `ContentCompression`, algorithm 0) and counts their `NUMBER_OF_BYTES` before compression. Six
+  of the 19 mkvmerge files of the corpus (v6.8.0 to v93.0) have such tracks; in two of them
+  (v15.0.0 and v93.0) the tracks' `NUMBER_OF_BYTES` add up to more than the file (550,630,437 >
+  548,171,435 and 29,943,201,280 > 29,929,897,720) although the video tag equals the block scan
+  to 1 bit/s. ffprobe does not show `ContentEncodings`. `mkvmerge --compression 4:zlib` writes
+  it, and `mkvmerge -J` lists `content_encoding_algorithms` for such a track only.
+- **Cluster sizes.** Each generated fixture (2 to 5 s) has one to three clusters. In the
+  corpus the median sampled cluster per file is 0.3 to 1.7 MB (0.2 to 2.7 s) in mkvmerge's
+  files and 0.4 to 5.1 MB (1.1 to 5 s) in HandBrake's, so a 256 KB window holds a cluster
+  start for some offsets only: the files gave 1 to 12 sampled clusters out of 32 offsets
+  (HandBrake 1 to 4). `BitrateInfo.samples` is the number actually read, not 32.
+- **TimestampScale**: every file of the corpus has 1,000,000 (1 ms).
+  `mkvmerge --timestamp-scale 100000` writes 100,000; the sample of such a file (20 s of MPEG-2
+  and AAC, remuxed with `--cluster-length 400ms`) is within 0.2 % (video) and 1.6 % (audio) of
+  the block scan.
+- A segment no larger than the windows together (32 × 256 KB) is read whole: every fixture is,
+  so its estimates are the exact bytes over the segment's `Duration` (the last cluster ends at
+  `Duration`). A file whose windows find no cluster is read cluster by cluster from the first
+  one, at most 32.
+- No usable cluster (only unknown-size clusters, damaged clusters, a cluster over 64 MB, a
+  `TimestampScale` of 0) gives no sample: the rates stay `unknown`, without a warning or an
+  exception.
+
+The fixtures (every Matroska recipe of `reframe_testing.media`; error against the block scan):
+
+| Fixture | Estimated streams (error) | Other streams |
+|---------|---------------------------|---------------|
+| `multitrack`, `season/*` | H.264 −0.52 %, AAC 0.00 %, AAC 0.00 % | AC-3: ffprobe |
+| `text-subs` | H.264 −0.52 %, AAC 0.00 % | |
+| `chapters` | H.264 −0.42 %, AAC 0.00 % | |
+| `dts-hd-ma` | H.264 0.00 %, DTS 0.00 % | 2 × AC-3: ffprobe |
+| `anime-s01/*`, `anime-s02/*` | H.264 −0.25 %, TrueHD −0.25 %, DTS 0.00 % (E11: 0.00 %) | AC-3 (E05): ffprobe |
+| `anamorphic`, `letterbox`, `interlaced`, `vfr-mkv`, `pgs`, `vobsub` | H.264 0.00 % | |
+| `hdr10`, `hdr10-4k` | HEVC 0.00 % | |
+
+The −0.52 % and −0.25 % are the difference between the stream's `DURATION` tag and the
+segment's `Duration`, not missing bytes.
+
+The real-file corpus: the 31 Matroska files of decision 0081's check, on the owner's shares
+(read only; no file names here). Before the change 34 of their streams had no rate without
+MediaInfo; now every video and audio stream has one. "stats tag": mkvmerge's statistics tags;
+"ffprobe": the stream's `bit_rate`; "est.": the sample, with its error against the block scan.
+Clusters, bytes read and time are the sample's own, over SMB (a stream that has a rate is not
+sampled by the probe; the sample was run anyway to measure it).
+
+| # | Writing application | Size | Streams | Clusters | Read | Time |
+|---|---|---|---|---|---|---|
+| 1 | HandBrake 1.7.3 | 0.2 GB | HEVC est. −0.00 %; AAC est. +3.71 %; AAC est. −0.14 % | 4 | 12.1 MB | 0.76 s |
+| 2 | HandBrake 1.7.3 | 0.3 GB | HEVC est. +0.25 %; AAC est. −0.78 %; AAC est. −0.21 % | 3 | 13.3 MB | 0.88 s |
+| 3 | HandBrake 0.10.0 | 2.0 GB | H.264 est. +0.08 %; AC-3 ffprobe | 4 | 10.4 MB | 0.73 s |
+| 4 | HandBrake 0.10.0 | 2.0 GB | H.264 est. +0.08 %; AC-3 ffprobe | 5 | 14.3 MB | 0.81 s |
+| 5 | HandBrake 0.10.0 | 2.0 GB | H.264 est. +0.08 %; AC-3 ffprobe | 4 | 13.4 MB | 0.80 s |
+| 6 | HandBrake 1.10.2 | 4.6 GB | HEVC est. +0.33 %; AAC est. +0.12 %; AAC est. −0.50 % | 3 | 16.1 MB | 0.94 s |
+| 7 | HandBrake 1.9.2 | 5.0 GB | HEVC est. −0.46 %; 2 × AC-3 ffprobe | 3 | 17.3 MB | 1.08 s |
+| 8 | HandBrake 1.8.2 | 7.0 GB | HEVC est. −0.01 %; 2 × AC-3 ffprobe | 1 | 13.7 MB | 1.01 s |
+| 9 | HandBrake 1.8.2 | 7.3 GB | HEVC est. +0.35 %; AAC est. −0.44 %; AAC est. −0.07 % | 2 | 16.6 MB | 1.20 s |
+| 10 | HandBrake 1.10.2 | 10.5 GB | HEVC est. +0.84 %; AAC est. +0.99 %; AAC est. −0.00 % | 2 | 11.2 MB | 0.89 s |
+| 11 | Lavf61.7.100 | 1.9 GB | H.264 est. +0.12 %; AAC est. −0.01 % | 9 | 17.4 MB | 1.02 s |
+| 12 | mkvmerge v15.0.0 | 0.5 GB | HEVC, 2 × AAC: stats tag (2 compressed PGS) | 4 | 12.1 MB | 0.74 s |
+| 13–17 | mkvmerge v86.0 (5 files) | 1.5 GB each | H.264, AAC: stats tag | 5–12 | 13.6–24.4 MB | 0.92–1.33 s |
+| 18 | mkvmerge v86.0 | 2.4 GB | HEVC stats tag; E-AC-3 ffprobe | 11 | 19.3 MB | 1.02 s |
+| 19 | mkvmerge v97.0 | 3.1 GB | HEVC stats tag; 3 × E-AC-3 ffprobe | 7 | 18.4 MB | 0.91 s |
+| 20 | mkvmerge v32.0.0 | 3.5 GB | HEVC, AAC: stats tag | 7 | 17.4 MB | 1.13 s |
+| 21 | mkvmerge v27.0.0 | 4.1 GB | H.264, 2 × DTS: stats tag | 6 | 12.0 MB | 0.82 s |
+| 22 | mkvmerge v88.0 | 4.9 GB | H.264 stats tag; E-AC-3 ffprobe | 9 | 16.7 MB | 0.89 s |
+| 23 | mkvmerge v95.0 | 7.2 GB | HEVC stats tag; 2 × E-AC-3 ffprobe | 7 | 17.9 MB | 0.92 s |
+| 24 | mkvmerge v82.0 | 9.0 GB | H.264 stats tag; E-AC-3 ffprobe | 9 | 20.9 MB | 1.01 s |
+| 25 | mkvmerge v6.8.0 | 13.5 GB | H.264 stats tag; AC-3, DTS, AC-3 ffprobe | 5 | 16.2 MB | 1.02 s |
+| 26 | mkvmerge v97.0.7 | 14.7 GB | HEVC stats tag; 2 × E-AC-3 ffprobe | 4 | 12.0 MB | 0.82 s |
+| 27 | mkvmerge v6.8.0 | 25.1 GB | H.264 est. +1.44 %; AC-3 ffprobe; FLAC est. −9.86 % | 8 | 20.2 MB | 0.97 s |
+| 28 | mkvmerge v102.0.4 | 28.5 GB | HEVC stats tag; 2 × E-AC-3 ffprobe | 5 | 14.5 MB | 0.94 s |
+| 29 | mkvmerge v93.0 | 29.9 GB | H.264 stats tag; AC-3 ffprobe; DTS stats tag; AC-3 ffprobe (1 compressed PGS) | 7 | 16.4 MB | 0.84 s |
+| 30 | mkvmerge v74.0.0 | 43.4 GB | HEVC stats tag; E-AC-3 ffprobe; TrueHD stats tag; E-AC-3 ffprobe | 3 | 13.4 MB | 0.87 s |
+| 31 | no writing application | 9.1 GB | H.264 stats tag; E-AC-3 ffprobe | 10 | 21.0 MB | 0.94 s |
+
+- Estimated video: 12 streams, median error 0.18 %, worst 1.44 % (plan: within 3 %).
+- Estimated audio: 12 streams, median 0.33 %, worst 9.86 % (FLAC; plan: within 12 %). The audio
+  error left is the audio's own variation over the few seconds sampled.
+- The sample read a median of 16.2 MB (at most 24.4 MB) in a median of 0.94 s (at most 1.33 s)
+  per file over SMB.
+- Rows 12 and 29 are the two files whose tags were called stale before: they keep their
+  statistics tags now. Their anonymised probes are `testdata/probes/real/` (ffprobe's JSON and
+  the Matroska track headers, `record_real.py`).
+- MP4 (the corpus's two files): ffprobe gives every stream's rate; nothing is sampled.
+
 ### HDR10 with libx265: one pass gives SEI only; `-color_trc` is not enough
 
 `-color_primaries` / `-color_trc` as output options did not reach the file when the frames
@@ -291,6 +390,25 @@ many blocks on a fast machine too. What `C-11`'s parser must handle:
 The fake's `progress(na_blocks=N, na_fields=[...])` action prints the same start-up blocks and
 `N/A` fields (`reframe_testing.fake_tools.progress`).
 
+### Closed output pipes: FFmpeg keeps encoding, ffprobe dies
+
+Checked on 2026-11-18 with the Arch Linux FFmpeg n9.0.2 and a BtbN n8.1.3 build. Both tools were
+started as the runner starts them (stdin from `/dev/null`, stdout and stderr to pipes, Python's
+default `restore_signals`), and both pipe read ends were closed at once:
+
+```sh
+ffmpeg -hide_banner -nostdin -y -progress pipe:1 -re -f lavfi -i testsrc=d=4:r=25 -f null -
+ffprobe -hide_banner -f lavfi -i testsrc=d=4:r=25 -show_frames -of json
+```
+
+| Tool | Result |
+|------|--------|
+| `ffmpeg` | runs the whole 4 s input and exits 0: it ignores `SIGPIPE` |
+| `ffprobe` | ends at once with return code -13 (`SIGPIPE`) |
+
+So an FFmpeg whose parent died without the death signal runs to its end
+([0092](../docs/decisions/0092-no-reframe-python-code-in-a-forked-child.md)).
+
 ### Hardware encoder failures (stderr and exit codes)
 
 Captured with the **pinned build** (`n9.0.2-17-g2a571b6068-20260930`, BtbN gpl-shared,
@@ -353,6 +471,7 @@ uv run python testing/reframe_testing/capture_fake_data.py --ffmpeg "$BIN/ffmpeg
 | `No capable devices found\n` | `lib/libavcodec.so.63.1.102` | NVENC: no GPU that can encode. **`No NVENC capable devices found` is not in the build** |
 | `No CUDA capable devices found\n` | `lib/libavcodec.so.63.1.102` | NVENC: CUDA finds no GPU |
 | `OpenEncodeSessionEx failed` | `lib/libavcodec.so.63.1.102` | NVENC session error (followed by the NVENC status text) |
+| `incompatible client key` | `lib/libavcodec.so.63.1.102` | NVENC status 21: the GeForce session limit (provoked on another machine, below) |
 | `Error creating a MFX session: %d.\n` | `lib/libavcodec.so.63.1.102`, `lib/libavutil.so.61.1.102` (and without `: %d.` in `lib/libavfilter.so.12.1.102`) | QSV: no Intel GPU / no runtime (provoked above, `-9`) |
 | `Error initializing an MFX session\n` | `lib/libavcodec.so.63.1.102` | QSV session init |
 | `Error querying a MFX session: %d.\n` | `lib/libavutil.so.61.1.102` | QSV device query |
@@ -365,6 +484,63 @@ uv run python testing/reframe_testing/capture_fake_data.py --ffmpeg "$BIN/ffmpeg
 | `Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.\n` | `bin/ffmpeg` | any encoder that cannot open |
 | `Conversion failed!\n` | `bin/ffmpeg` | generic last line |
 | `MFX_ERR_UNSUPPORTED` | **not found** | the plan's pattern; never printed |
+| `libnvidia-encode.so.1` | `lib/libavcodec.so.63.1.102` | the NVENC library that the loader opens (`Cannot load %s`); not provoked |
+
+#### Build mismatch: an NVIDIA driver older than the build (C-21)
+
+Captured on 2026-11-18 on a Windows 10 VM with a GeForce GTX 1050 Ti (Pascal) and NVIDIA driver
+582.78, with the pinned build (n9.0.2) through `reframe encoders` (the same for `h264_nvenc`,
+`hevc_nvenc` and `av1_nvenc`):
+
+```text
+[h264_nvenc @ …] Driver does not support the required nvenc API version. Required: 13.1 Found: 13.0
+[h264_nvenc @ …] The minimum required Nvidia driver for nvenc is 610.00 or newer
+```
+
+With the `compat` build (n8.1.3, release/8.1) the same computer has `h264_nvenc` (8-bit only)
+and `hevc_nvenc`; `av1_nvenc` stays unavailable ("No NVIDIA GPU that can encode AV1"). Both
+lines map to `build_mismatch` with the cause `driver` (`test_reasons.py`), and the
+`implib-gen` lines of a system libva too old or missing for the build to the cause
+`system_library` (another build does not help there: `libavutil`, `libavcodec` and
+`libavfilter` of both the `default` and the `compat` build carry `implib-gen: libva` stubs and
+their `lib/` has no libva, checked 2026-11-18); a missing driver or device, a 10-bit-only
+limit and a filter never do.
+
+`libavcodec/nvenc.c` at the pinned commit (`nvenc_load_libraries`) prints the driver
+requirement line also after a failed load of the NVENC library (`Cannot load
+libnvidia-encode.so.1`, a driver without it, as in a container without the `video`
+capability). That case is not a build mismatch: its own rule comes first.
+
+#### The NVENC minimum driver of each offered build
+
+`libavcodec/nvenc.c` at each pinned commit sets the driver that the NVENC API version of the
+build needs (`minver`, printed as "The minimum required Nvidia driver for nvenc is …"):
+`default` (release/9.0, API 13.1) needs `610.00`, `compat` (release/8.1, API 13.0) needs
+`570.0`, the same on Windows and Linux. API 12.2 (driver 550.54.14 on Linux) is in neither.
+Confirmed on 2026-11-19 on Debian 13 with a GeForce GTX 1050 Ti: with driver 550.163.01
+(Debian's own) both builds refuse NVENC (`Required: 13.0 Found: 12.2`, `570.0 or newer` with
+`compat`). With driver 580.159.04 (580 is the last driver series for Pascal: its README lists
+the card as supported, the 590 README lists it under legacy GPUs) `compat` has `h264_nvenc`
+(8-bit only) and `hevc_nvenc`, and `default` still needs `610.00`.
+
+#### NVENC session limit (GeForce)
+
+Checked on 2026-11-19 on Debian 13, GeForce GTX 1050 Ti, driver 580.159.04, `compat` build
+(n8.1.3): with 8 NVENC encodes running (`nvidia-smi --query-gpu=encoder.stats.sessionCount`
+says 8), a 9th fails, at the default log level and with `-v verbose` alike, with exit code 187:
+
+```text
+[hevc_nvenc @ …] OpenEncodeSessionEx failed: incompatible client key (21): (no details)
+[hevc_nvenc @ …] No capable devices found
+```
+
+With 7 running, the next one works. FFmpeg skips a GPU whose session does not open, so the
+"No capable devices found" line follows any session error: the session error is the cause.
+The status text `incompatible client key` is in the pinned `default` build too. Capture:
+`detect_hevc_nvenc_session_limit` (the `C-4` test command, made with `compat`, since `default`
+cannot open NVENC on this driver). Detection treats it as busy: it runs the test again and
+then reports `error`, not `unavailable`. Parallel GPU tests under xdist reach the limit, which
+made `test_the_facade_caches_the_real_result` fail now and then before this was handled.
 
 ### Language tags (FFmpeg n9.0.2, MKVToolNix v101.0)
 
@@ -408,11 +584,13 @@ ffmpeg -hide_banner -nostdin -v error -f lavfi -i color=size=640x360 -frames:v 3
 | `hevc_amf`, `av1_amf` | none, software frames (`-pix_fmt yuv420p` / `p010le`) | exit 0 | exit 0 |
 | `h264_amf` | none | exit 0 | exit 183: `10-bit input video is not supported by AMF H264 encoder` |
 | `hevc_nvenc` | none | exit 255: `Cannot load libcuda.so.1` | not run |
-| `hevc_qsv` | `-init_hw_device qsv=hw -filter_hw_device hw`, `-vf hwupload=extra_hw_frames=64,format=qsv` | exit 187: `Device creation failed: -542398533.` | not run |
+| `hevc_qsv` | none, software frames (`-pix_fmt nv12` / `p010le`) | exit 171 (pinned build, 2026-11-18): `Error creating a MFX session: -9.` | not run |
 | `libsvtav1`, `libvpx-vp9` | software, `-pix_fmt yuv420p10le` | exit 0 | exit 0 |
 
 `libsvtav1` prints `Svt[info]: …` lines on stderr even with `-v error` (the SVT library logs on
-its own). The QSV setup is the plan's; it is not verified on an Intel GPU.
+its own). The QSV setup was the plan's (`-init_hw_device qsv=hw`, `hwupload=extra_hw_frames=64`)
+until an Intel GPU refused it; QSV takes software frames since
+[0095](../docs/decisions/0095-qsv-takes-software-frames.md) (§QSV on an Intel GPU).
 
 ### Encoder detection (C-4)
 
@@ -424,11 +602,10 @@ machine above (AMD RX 7600, no NVIDIA driver, no Intel GPU). Decision
 (`reframe.capabilities.hardware_test_argv`):
 
 ```sh
-# VAAPI (10-bit: format=p010le); QSV: -init_hw_device qsv=hw -filter_hw_device hw and
-# -vf format=nv12,hwupload=extra_hw_frames=64,format=qsv
+# VAAPI (10-bit: format=p010le)
 ffmpeg -hide_banner -nostdin -init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va \
   -f lavfi -i color=size=640x360 -frames:v 3 -vf format=nv12,hwupload -c:v h264_vaapi -f null -
-# NVENC and AMF take software frames (10-bit: -pix_fmt p010le)
+# NVENC, AMF and QSV take software frames (10-bit: -pix_fmt p010le)
 ffmpeg -hide_banner -nostdin -f lavfi -i color=size=640x360 -frames:v 3 -pix_fmt nv12 \
   -c:v hevc_amf -f null -
 ```
@@ -441,10 +618,11 @@ command and the captures were not made again):
 |---------|-----------|-----------------|--------------------|
 | `detect_h264_vaapi_ok`, `detect_hevc_vaapi_10bit_ok`, `detect_hevc_amf_ok`, `detect_hevc_amf_10bit_ok` | 0 | — | available |
 | `detect_hevc_nvenc_no_driver` | 255 | `[hevc_nvenc @ 0x…] Cannot load libcuda.so.1` | NVIDIA driver not found |
-| `detect_hevc_qsv_no_device` | 187 | `Failed to set value 'qsv=hw' for option 'init_hw_device': Generic error in an external library` (no device line) | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `detect_hevc_qsv_no_device` | 171 | `[hevc_qsv @ 0x…] Error creating a MFX session: -9.` | No Intel QSV device or runtime (needs an Intel GPU, its media driver and its QSV runtime) |
 | `detect_h264_vaapi_bad_device` (`renderD999`) | 234 | `[VAAPI @ 0x…] No VA display found for device /dev/dri/renderD999.` | No VAAPI device (/dev/dri/renderD999) |
 | `detect_h264_vaapi_no_driver` (`LIBVA_DRIVER_NAME=reframe_nonexistent`) | 251 | `[VAAPI @ 0x…] Failed to initialise VAAPI connection: -1 (unknown libva error).` | VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error) |
 | `detect_hevc_amf_no_runtime` | 171 | `[AMF @ 0x…] DLL libamfrt64.so.1 failed to open`, then `[hevc_amf @ 0x…] Failed to create  hardware device context (AMF) : Unknown error occurred` | AMD AMF runtime not found (libamfrt64.so.1) |
+| `detect_hevc_nvenc_session_limit` (made with `compat` on a GTX 1050 Ti with 8 other NVENC encodes running) | 187 | `[hevc_nvenc @ 0x…] OpenEncodeSessionEx failed: incompatible client key (21): (no details)`, then `[hevc_nvenc @ 0x…] No capable devices found` | Every NVENC session of the GPU is in use by other programs (…) (error, after two more tries) |
 | `detect_h264_amf_10bit` (`-pix_fmt p010le -c:v h264_amf`) | 183 | `[h264_amf @ 0x…] 10-bit input video is not supported by AMF H264 encoder` | 10-bit is not supported by this encoder |
 
 - **A missing AMF runtime can be provoked without root**: `LD_LIBRARY_PATH` pointing at a
@@ -453,9 +631,11 @@ command and the captures were not made again):
 - **`-h encoder=` pixel formats do not tell 10-bit support for hardware encoders**: `h264_amf`
   lists `p010le` and still refuses 10-bit. Only the test encode decides. (For software
   encoders the list is right: `libx265` lists `yuv420p10le`.)
-- **QSV at `-v verbose`** says why the device fails here (`[VAAPI @ …] Ignoring device 0 with
-  non-matching vendor id (0x8086).` … `Cannot open a VA display from DRM device (null).`); at
-  the default level, which C-4 uses, only the fftools lines above are printed.
+- **QSV at `-v verbose`** adds nothing about the cause here: `Encoder: input is system memory
+  surface`, `Use Intel(R) oneVPL to create MFX session, the required implementation version is
+  1.1`, then the same `Error creating a MFX session: -9.` (With the old `-init_hw_device
+  qsv=hw` setup it named the VAAPI device it skipped: `Ignoring device 0 with non-matching
+  vendor id (0x8086).`)
 - **Presets in `-h encoder=`**: `libx264` / `libx265` have `-preset <string>`, so FFmpeg does
   not list them; `libsvtav1` has `-preset <int> … (from -2 to 13)` without names; NVENC lists
   `slow`, `medium`, `fast`, `p1` … `p7`; QSV `veryfast` … `veryslow`; AMF `quality`,
@@ -505,13 +685,342 @@ usable):
 |---------|-------|--------|--------|--------|
 | `libx264`, `libx265`, `libsvtav1`, `libvpx-vp9` | available | yes | – | |
 | `h264_nvenc`, `hevc_nvenc`, `av1_nvenc` | unavailable | – | – | NVIDIA driver not found |
-| `h264_qsv`, `hevc_qsv`, `av1_qsv` | unavailable | – | – | No Intel QSV device (needs an Intel GPU with its media driver) |
+| `h264_qsv`, `hevc_qsv`, `av1_qsv` | unavailable | – | – | No Intel QSV device or runtime (needs an Intel GPU, its media driver and its QSV runtime) |
 | `h264_amf` | available | no (no 10-bit format in the definition) | – | |
 | `hevc_amf`, `av1_amf` | available | yes | – | |
 | `h264_vaapi` | available | no (no 10-bit format in the definition) | `/dev/dri/renderD128` | |
 | `hevc_vaapi`, `av1_vaapi` | available | yes | `/dev/dri/renderD128` | |
 | `aac`, `ac3`, `eac3`, `libopus`, `flac`, `libmp3lame` | available | – | – | |
 | `libfdk_aac` | unavailable | – | – | Not in this FFmpeg build |
+
+### QSV on an Intel GPU
+
+Checked on 2026-11-18 on a laptop: Intel UHD 620 (i5-8250U, Kaby Lake R, PCI `8086:5917`, the
+only GPU), Windows 11 25H2, Intel driver 31.0.101.2140, over SSH (elevated Git Bash). Builds:
+the pinned n9.0.2-17-g2a571b6068-20260930 and the `override-test` n8.1.3-9-g29e619e767-20260930.
+Source `-f lavfi -i testsrc2`, output `-f null -`. Decision
+[0095](../docs/decisions/0095-qsv-takes-software-frames.md) is based on these.
+
+| Command (video part) | n9.0.2 | n8.1.3 |
+|----------------------|--------|--------|
+| `-init_hw_device qsv=hw -filter_hw_device hw`, `-vf format=nv12,hwupload=extra_hw_frames=64,format=qsv` (the old definitions) | exit 171: `[AVHWFramesContext @ …] Could not create the texture (80070057)` | the same |
+| the same with `extra_hw_frames` = 8, 16, 24, 32, 40, 48, 56, 63 | the same texture error | not run |
+| `-init_hw_device d3d11va=d3d -init_hw_device qsv=hw@d3d`, the same upload | the same texture error | not run |
+| `-init_hw_device qsv=hw:hw_any,child_device_type=dxva2` | `[DXVA2 @ …] Failed to create Direct3D device` | not run |
+| `-init_hw_device qsv=hw`, `-vf format=nv12,hwupload,format=qsv` (no `extra_hw_frames`) | exit 0 (`hevc_qsv` 1080p and 10-bit with `-bf 3 -refs 4`, `h264_qsv` 1080p with `-look_ahead 1`: 600 frames each) | `hevc_qsv` 1080p: exit 0 (600 frames); `h264_qsv` 720p: `Error while filtering: Cannot allocate memory` after it starts |
+| software frames: `-pix_fmt nv12 -c:v h264_qsv -global_quality 23 -look_ahead 1`, 1080p, 600 frames | exit 0 | exit 0 |
+| software frames: `-pix_fmt p010le -c:v hevc_qsv -global_quality 25 -bf 3 -refs 4`, 1080p, 600 frames | exit 0 | exit 0 |
+| software frames: `-pix_fmt p010le -c:v h264_qsv` | exit 0: `Incompatible pixel format 'p010le' for codec 'h264_qsv', auto-selecting format 'nv12'` (detection: 8-bit only) | exit 0 |
+| software frames: `-c:v av1_qsv` | exit 171: `[av1_qsv @ …] This version of runtime doesn't support AV1 encoding` | the same |
+
+- **The QSV device starts**; the frame pool does not. At `-v verbose` the old command prints
+  `Defaulting child_device_type to AV_HWDEVICE_TYPE_D3D11VA for oneVPL`, `Using device
+  8086:5917 (Intel(R) UHD Graphics 620)`, `Initialize MFX session: implementation version is
+  1.35`, then the texture error, `Error initializing a child frames context` and `Error
+  creating an internal frame pool` from `hwupload`. 80070057 is E_INVALIDARG.
+- **After the change** (software frames), `reframe encoders` on that laptop: `h264_qsv —
+  available (8-bit only)`, `hevc_qsv — available`, `av1_qsv — unavailable: This Intel GPU
+  cannot encode AV1`. `test_hardware_encode[h264_qsv-multitrack-8]` and
+  `[hevc_qsv-hdr10-10]` pass (10-bit H.265 with HDR10 kept).
+- **Not checked**: Arc and newer Intel GPUs. Linux: §QSV on Linux.
+
+**Every choice and option** (decision
+[0096](../docs/decisions/0096-qsv-options-on-intel-hardware-and-ffmpeg-that-does-not-exit.md)):
+one encode of 12 frames of 1280×720 per value, at ICQ 25 unless noted, compared with the
+baseline's `-v verbose` parameter dump (the lines `[h264_qsv @ …] GopPicSize: …`,
+`TargetUsage: …`, `NumRefFrame: …` that qsvenc prints after it opens). The n8.1.3 build gave
+the same exit codes and the same dumps for every value.
+
+| What | `h264_qsv` | `hevc_qsv` |
+|------|------------|------------|
+| Baseline (ICQ 25) | `RateControlMethod: ICQ`, `TargetUsage: 4`, `GopRefDist: 3`, `NumRefFrame: 2`, `MBBRC: ON` | the same with `GopRefDist: 4`, `NumRefFrame: 3`; 10-bit: `profile: hevc main10` |
+| `-preset` veryfast … veryslow | `TargetUsage` 7, 6, 5, 4, 3, 2, 1 | 7, 7, 4, 4, 4, 1, 1 (three levels) |
+| `-profile` | baseline (CAVLC, no B-frames), main, high | main, main10 |
+| `-global_quality` 1, 10, 25, 40, 51 | `ICQQuality` = the value | the same |
+| `-b:v` 500k, 4000k, 20000k | `VBR`, `MaxKbps` = 1.5 × the target | `VBR`, `MaxKbps` = the target |
+| `-bf` 0, 2, 16 | `GopRefDist` 1, 3, 17 | 1, 3, 17 |
+| `-refs` 2, 16 | `NumRefFrame` 2, 16 | 2, 15 |
+| `-g` 1, 500, 1000 | 1: fails (`Error flushing encoder: Internal bug, should not have happened`); with `-bf 0` it works; 500, 1000: `GopPicSize` | 1 works (`GopRefDist: 1`); `GopPicSize` |
+| `adaptive_i`, `adaptive_b` | always `OFF`, also with look-ahead or a bitrate | always `unknown` |
+| `b_strategy` | 1: `BRefType: pyramid` | 0: `BRefType: off` |
+| `low_power` 1 | fails at ICQ (`Invalid FrameType:0`, once `Error during encoding: GPU Hang (-21)`; FFmpeg sometimes does not exit); works at a bitrate and at the default CQP | fails at ICQ and at a bitrate (`Error while opening encoder`) |
+| `async_depth` | no dump line; encodes | the same |
+| `look_ahead` 1 | `LA_ICQ`, `LookAheadDepth: 10` | — |
+| `look_ahead_depth` | with `look_ahead`: 0 keeps 10, 50 and 100 = the value | 40 with `-extbrc 1` at a bitrate = the value; at ICQ: nothing |
+| `look_ahead_downsampling` | `off` works; `4x` stays `2x` | — |
+| `extbrc` 1 | — | at a bitrate: `ExtBRC: ON`; at ICQ: `OFF` |
+| `mbbrc` | 1 / 0 at a bitrate; at ICQ always `ON` | `MBBRC` ON / OFF |
+| `p_strategy` 1, 2 | `PRefType: simple`; 2 with B-frames: `Please set max_b_frames(-bf) to 0 to enable P-pyramid` | 2: `PRefType: pyramid` and the same message |
+| `idr_interval` 500, 1000 | `IdrInterval` = the value | the value + 1 |
+| `rdo` 1 | `RateDistortionOpt: ON` | `unknown` (ignored) |
+| `dblk_idc` 1, 2 | `DisableDeblockingIdc` = the value | the same |
+| `cavlc` 1 | `Entropy coding: CAVLC` | — |
+| `gpb` 0 | — | `GPB: OFF` |
+| `transform_skip` 1 | — | `TransformSkip: OFF` (ignored), also 10-bit |
+| `tile_cols` / `tile_rows` 2, 64 | — | fail (`Error querying encoder params: unsupported (-3)`) |
+
+**Through Reframe** (jobs from custom presets, `reframe plan` and `reframe encode` with the
+queue):
+
+- The built-in `h265-qsv-1080p` encodes; `av1-qsv-2160p-4k` gives `encoder.unavailable` ("This
+  Intel GPU cannot encode AV1") with the fix "Use libsvtav1". 2-pass and H.264 10-bit are
+  refused by validation.
+- 10-bit H.265 with B-frames 3, refs 4, GOP 250, MBBRC, simple P references, IDR interval and
+  deblocking on: `hdr10-4k.mkv` gives 3840×2160 Main 10, PQ / BT.2020 with the mastering
+  display and light level side data (10 s); `anamorphic.mkv` 854×480, `interlaced.mkv` and
+  `vfr.mkv` encode.
+- Bitrate with `extbrc` and look-ahead depth 40, H.264 look-ahead at a bitrate with
+  downsampling off, CAVLC and RDO, and the custom parameter `scenario=archive` encode.
+- Tiles and H.264 `g=1` fail with FFmpeg's error in the job. The custom parameter
+  `low_power=1` is caught by the dry run of `reframe plan` ("some encoding parameters are not
+  supported by the QSV runtime"; `reframe encode` runs no dry run, so there the job fails with
+  that error); `no_such_option=1` by `encoder.custom_param_unknown`.
+- H.264 low power at ICQ in the queue, three runs: failed at once (8 s), FFmpeg did not exit
+  and the exit limit stopped it (68 s), driver `GPU Hang (-21)` (2 s). The GPU encoded
+  normally afterwards. Before the limit, one such job ran more than 10 minutes at about one
+  core.
+- A cancel of a running QSV job ends FFmpeg and removes the `.part` file. A preview clip (1 s
+  from 1 s) of a 10-bit H.265 job encodes.
+- Output sizes are exact for 1920×1080, 1280×720, 720×480, 640×360, 854×480, 1918×1078 and
+  4096×2160 (both encoders); 8192×4320 fails (`Current profile is unsupported` on H.264,
+  `some encoding parameters are not supported` on H.265).
+- Several encodes at once (1080p, 500 frames, `hevc_qsv`): one alone 7 s, two together 13 s,
+  four together 25 s, all exit 0. The GPU is shared, so parallel QSV jobs are not faster.
+
+### QSV on Linux
+
+Checked on 2026-11-19 on the laptop of §QSV on an Intel GPU (Intel UHD 620, `8086:5917`), now
+under CachyOS (kernel 7.3.3-1-cachyos): intel-media-driver 26.3.5 (iHD), intel-media-sdk 23.2.2
+(`/usr/lib/libmfxhw64.so.1.35`), libvpl 2.17.0, libva 2.24.1; no vpl-gpu-rt (`libmfx-gen`).
+Builds: the pinned n9.0.2-17-g2a571b6068-20260930, `override-test` n8.1.3-9-g29e619e767-20260930
+and Arch's `/usr/bin/ffmpeg` n9.0.2; the three gave the same results throughout. Decision
+[0099](../docs/decisions/0099-intel-qsv-on-linux.md) is based on these.
+
+- **vainfo** (`--display drm`): iHD 26.3.5; encode entrypoints H.264 Main/High/Constrained
+  Baseline `EncSlice`, `FEI` and `EncSliceLP`; HEVC Main `EncSlice` and `FEI`; HEVC Main10
+  `EncSlice`; MPEG-2, JPEG, VP8; VP9 decode only; no AV1 profile.
+- **Where QSV comes from**: `readelf -d` of the BtbN `libavcodec` / `libavutil` has no
+  `NEEDED` libvpl, libmfx or libva: the oneVPL dispatcher is linked in (its strings name
+  `libmfx-gen.so.1.2`, `libmfxhw64.so.1`, `ONEVPL_SEARCH_PATH`), and `libavutil` loads the
+  system `libva-drm.so.2` at run time. `LD_DEBUG=libs` on an `h264_qsv` encode: it loads
+  `/usr/lib/libmfxhw64.so.1.35`, `/usr/lib/dri/iHD_drv_video.so` and `libigdgmm.so.12`. The
+  `undefined symbol: MFXQueryImplsDescription` lines are the dispatcher probing for the 2.x
+  API, harmless. `ldd libavcodec.so.63` shows `/usr/lib/libvpl.so.2`: an `ldd` artefact (without
+  the `$ORIGIN` rpath it finds the system FFmpeg's libraries of the same soname).
+- **Session lines**: software frames print `Use Intel(R) oneVPL to create MFX session, the
+  required implementation version is 1.1`, `Initialized an internal MFX session using hardware
+  accelerated implementation` and no implementation version; `-init_hw_device qsv=hw` prints
+  `API version is 2.17` and `Initialize MFX session: implementation version is 1.35`.
+- **Test encodes** (3 frames, `-f null -`; QSV with `-pix_fmt`, VAAPI with
+  `format=…,hwupload`):
+
+  | Encoder | nv12 | p010le |
+  |---------|------|--------|
+  | `h264_qsv` | 0 | 0, `Incompatible pixel format 'p010le' for codec 'h264_qsv', auto-selecting format 'nv12'` |
+  | `hevc_qsv` | 0 | 0 |
+  | `av1_qsv` | 171: `This version of runtime doesn't support AV1 encoding` | the same |
+  | `h264_vaapi` | 0 | 218: `No usable encoding profile found.` |
+  | `hevc_vaapi` | 0 (`Driver does not advertise encoder features/block size, using guessed defaults.`) | 0 |
+  | `av1_vaapi` | 218: `No usable encoding profile found.` | the same |
+
+- **The old setup** (`-init_hw_device qsv=hw -filter_hw_device hw`,
+  `format=nv12|p010le,hwupload=extra_hw_frames=64,format=qsv`, and without `extra_hw_frames`):
+  exit 0 for `h264_qsv` and `hevc_qsv`. The texture error of the Windows table is D3D11's.
+- **`reframe encoders`** (both FFmpeg builds, about 0.9 s): `h264_qsv — available (8-bit
+  only)`, `hevc_qsv — available`, `av1_qsv — unavailable: This Intel GPU cannot encode AV1`,
+  `h264_vaapi — available (/dev/dri/renderD128, 8-bit only)`, `hevc_vaapi — available`,
+  `av1_vaapi — unavailable: The VAAPI driver has no AV1 encoder`; NVENC "NVIDIA driver not
+  found", AMF "AMD AMF runtime not found (libamfrt64.so.1)".
+- **Without parts of the stack** (no root: `unshare -rm` with an empty file mounted over the
+  library, or `LD_LIBRARY_PATH`):
+
+  | Missing | FFmpeg `h264_qsv` | QSV reason | VAAPI reason |
+  |---------|-------------------|------------|--------------|
+  | the QSV runtime (`libmfxhw64.so.1.35` empty) | 171: `Error creating a MFX session: -9.` | No Intel QSV device or runtime (…) | available |
+  | the iHD driver (`iHD_drv_video.so` empty) | 251: `Failed to initialise VAAPI connection: -1 (unknown libva error).`, `[h264_qsv] Failed to create a VAAPI device.` | VAAPI driver failed to start (unknown libva error) | the same, "on /dev/dri/renderD128" |
+  | libva (`libva.so.2` empty, `LD_LIBRARY_PATH`) | 171: `Error creating a MFX session: -9.` | No Intel QSV device or runtime (…) | The system library libva-drm.so.2 could not be loaded (libva.so.2: file too short) |
+  | `LIBVA_DRIVERS_PATH=/nonexistent` | 251, as the iHD row | as the iHD row | as the iHD row |
+  | `LIBVA_DRIVER_NAME=reframe_nonexistent` | 0 (QSV names its driver itself) | available | VAAPI driver failed to start on /dev/dri/renderD128 (unknown libva error) |
+
+  An empty `libmfxhw64.so.1` in `LD_LIBRARY_PATH` alone changes nothing: the dispatcher falls
+  back to `/usr/lib`.
+- **Options** (0096's table repeated, 12 frames of 1280×720): the same as Windows, except
+  - H.264 `low_power` fails when the encoder opens, at ICQ **and at a bitrate** (exit 218,
+    `Selected ratecontrol mode is unsupported`, then `some encoding parameters are not
+    supported by the QSV runtime`); without a rate control (CQP) it works (`VDENC: ON`). H.265
+    `low_power` fails at open (exit 218).
+  - H.265 `-extbrc 1 -look_ahead_depth 40` at 4000k: `ExtBRC: ON`, `LookAheadDepth: 0`,
+    `GopRefDist: 8`, `NumRefFrame: 4` (Windows: the depth).
+  - H.264 `g=1` with B-frames: `Error during encoding: undefined behavior (-16)`, then the same
+    `Error flushing encoder: Internal bug, should not have happened` (exit 190).
+  - H.264 `-extbrc 1` at a bitrate (not in Reframe's H.264 options): `ExtBRC: ON` with
+    `AdaptiveI: ON; AdaptiveB: ON`.
+- **Through Reframe** (`reframe plan` / `reframe encode`, the queue): every row of the Windows
+  list gives the same result (presets, ICQ and VBR on both encoders, 8- and 10-bit H.265, the
+  AV1 preset's `encoder.unavailable`, 2-pass and H.264 10-bit refused, HDR10 kept on
+  `hdr10.mkv` and `hdr10-4k.mkv` (3840×2160 Main 10 at about 11 fps), `anamorphic`,
+  `interlaced`, `vfr`, tiles failing in the job, the `g=1` conflict, the custom parameters),
+  except that H.264 low power fails at once at a bitrate too. A cancel ends FFmpeg and removes
+  the `.part` file. `h264_vaapi` and `hevc_vaapi` 10-bit (HDR10 kept) encode on the iHD driver.
+- **FFmpeg that does not exit**: H.264 low power at ICQ, four runs through the queue: each
+  failed at open in 0.1 s (`exit code 218`). No hang, no `GPU Hang`; the exit limit was not
+  reached.
+- **VAAPI values that iHD refuses** (`-v error`, 3 frames of 1280×720): `h264_vaapi -level`
+  6, 6.1, 6.2 → exit 251, `Failed to end picture encode issue: 24 (internal encoding error)`,
+  `Encode failed: Input/output error.`; 1 … 5.2 work. `hevc_vaapi -compression_level` 0, 2, 3,
+  5, 6 → the same error; 1, 4, 7 and 8 work (8-bit and 10-bit). `h264_vaapi` takes 0 … 8;
+  `hevc_vaapi` takes every level up to 6.2. The AMD RX 7600 takes all of these.
+- **Docker** (`docker/Dockerfile`, Debian 13, `/dev/dri` passed, the default build downloaded
+  into `/data`): with only `libmfx-gen1.2` 25.1.4, `LD_DEBUG` shows the dispatcher load
+  `libmfx-gen.so.1.2.14`, the iHD driver open, `libmfx-gen` unload and `Error creating a MFX
+  session: -9.`: the oneVPL GPU runtime does not take gen 9.5. `apt-cache` in
+  `debian:trixie-20261027-slim`: no `libmfx1` (main, contrib, non-free), nor in trixie-backports
+  or sid; bookworm main has `libmfx1 22.5.4-1` (`Depends: libc6 (>= 2.34), libgcc-s1 (>= 3.0),
+  libstdc++6 (>= 12), libva2 (>= 2.9.0)`). With it installed, the dispatcher loads both
+  runtimes, drops `libmfx-gen` and uses `libmfxhw64.so.1.35`; `reframe encoders` in the
+  container then matches the bare-metal list, and `h265-qsv-1080p` encodes `multitrack.mkv`
+  (HEVC Main, 100 frames). The image grows from 699 to 735 MB. The container's user gets the
+  groups of `card1` and `renderD128` from the entrypoint, without `group_add`.
+- **The desktop app** (2026-11-19, the AppImage and .deb of `build.sh`, decision
+  [0100](../docs/decisions/0100-desktop-app-with-intel-qsv-on-linux.md)): a build downloaded
+  through the app has the packaged libva (built on Ubuntu 22.04) in its `lib/`; its ffmpeg maps
+  that `libva.so.2` and `libva-drm.so.2`, `/usr/lib/dri/iHD_drv_video.so`,
+  `libigdgmm.so.12.10.0`, `/usr/lib/libmfxhw64.so.1.35` and the system's `libva-x11.so.2`
+  (loaded by the Media SDK runtime), with `LIBVA_DRIVERS_PATH=/usr/lib64/dri:/usr/lib/dri` and
+  no AppImage paths. The CLI's build maps the system `libva.so.2.2400.0` instead. Both give the
+  encoder list above, and QSV and VAAPI encode (HDR10 kept). The .deb in `ubuntu:22.04` with
+  `--device /dev/dri`, intel-media-va-driver-non-free 22.3.1, libmfx1 22.3.0 and libva 2.14:
+  `LD_DEBUG=libs` shows the packaged libva, Ubuntu's iHD and `libmfxhw64.so.1.35`, and
+  `h265-qsv-1080p` encodes. A 1080p25 `h265-qsv-1080p` encode runs at about 150 fps and uses
+  about 3.3 of the 8 threads (decoding, scaling and the format conversion are on the CPU).
+- **The AppImage's GStreamer**: the image carries GStreamer 1.20.3 core libraries and no
+  plugins; AppRun sets `GST_PLUGIN_SYSTEM_PATH_1_0=$APPDIR/usr/lib/gstreamer-1.0:` (no such
+  folder). A `<video>` in its window: `no such element factory "appsink"!`, `"appsrc"`,
+  `"autoaudiosink"`, `GStreamer element autoaudiosink not found. Please install it`,
+  `g_signal_connect_data: assertion 'G_TYPE_CHECK_INSTANCE (instance)' failed`, then
+  WebKitWebProcess ends with SIGABRT in `libwebkit2gtk-4.1.so.0` (no media error reaches the
+  page).
+
+### NVENC on Linux
+
+Checked on 2026-11-20 on Debian 13 with a GeForce GTX 1050 Ti (Pascal), driver 580.159.04 and
+the `compat` build (n8.1.3), decision 0102. Each line was run with the `C-4` software-frame
+setup (`-pix_fmt yuv420p` / `p010le`, `-c:v h264_nvenc|hevc_nvenc`).
+
+**Choices and options** (`test_hardware_choices_rate_control_and_options_encode`): every preset
+(p1–p7), the tunes hq, ll, ull, lossless, every rate control and the other options encode. Pascal
+refuses at the start (exit 187, the line, then `No capable devices found`):
+
+| Option | H.264 | H.265 | Line |
+|--------|-------|-------|------|
+| `-refs 2` | refused | refused | `Multiple reference frames are not supported by the device` |
+| `-tf_level 4` | refused | refused | `Temporal filtering not supported by the device` |
+| `-lookahead_level 3` (with look-ahead) | refused | refused | `Lookahead level not supported. Maximum level: 0` |
+| `-bf 2` | works | refused | `Max B-frames 2 exceed 0` |
+| `-b_ref_mode middle` / `each` | works | refused | `B frames as references are not supported` / `Each B frame as reference is not supported` |
+| `-temporal-aq 1` | works | refused | `Temporal AQ not supported` |
+| `-unidir_b 1` | — | refused | `Unidirectional B-Frames not supported by the device` |
+| `-tune uhq` | — | refused (exit 234) | `InitializeEncoder failed: invalid param (8): Ultra High Quality Tuning Info is not supported on this architecture.` |
+| `-pix_fmt p010le` | refused | works | `10 bit encode not supported` |
+
+Any GPU (the driver's own text, exit 234): `-weighted_pred 1` with B-frames (`Weighted
+Prediction not supported with B-frames.`), `-g 2` with B-frames (`Gop Length should be greater
+than number of B frames + 1`).
+
+**Default profile.** Without `-profile`, `h264_nvenc` writes Main with FFmpeg 8.1 and High with
+9.0 (`ffmpeg -h encoder=h264_nvenc`: "default main" / "default high"); `hevc_nvenc` writes Main
+(Main 10 for 10-bit input) in both.
+
+**Levels.** NVENC refuses a level it cannot meet with `InitializeEncoder failed: invalid param
+(8): Invalid Level.` (exit 234):
+
+- When the picture size or the frame rate is above the level: H.264 table A-1 (MaxFS, MaxMBPS)
+  and H.265 table A.8 (MaxLumaPs, MaxLumaSr). Checked: H.264 1080p60 needs 4.2 (4.1 refused),
+  1080p30 4.0 (3.2 refused), 720p60 3.2 (3.1 refused), 320x240 at 25 fps 1.3; H.265 1080p60
+  4.1, 1080p30 4.0, 2160p60 5.1 (`test_nvenc_level_picture_limits_match_the_rule`).
+- In bitrate mode, when the bitrate is too high. FFmpeg sets the buffer to twice the bitrate
+  (`libavcodec/nvenc.c`: `vbvBufferSize = 2 * averageBitRate` without `-bufsize`), and NVENC
+  checks the buffer against MaxCPB and the bitrate against MaxBR, both with the NAL factor
+  (H.264 1.2 for Baseline and Main, 1.5 for High; H.265 1.1). Explicit values show it: H.264
+  High 4.1 takes `-bufsize 93750k` (62500 × 1.5), not 93751k, and `-maxrate 75000k`; H.265
+  Main 4.1 takes 22000k for both. The highest `-b:v` for each level, profile and tier is the
+  table in `validation/levels.py`, measured by bisection and checked by
+  `test_the_nvenc_level_bitrates_match_the_gpu`. Main 10 has the Main limits; the High tier
+  below level 4 takes any bitrate. In CQ mode (`-cq N -b:v 0`) every level fits.
+
+**Constant quality is capped by the level NVENC picks.** Without `-level`, NVENC picks the lowest
+level that fits the picture and keeps the bitrate under it in CQ mode too. A noisy 1080p25
+source (testsrc2 with `noise=alls=20:allf=t`, 50 frames): H.265 CQ 5 to 21 give the same size
+(3.1 MB, level 4.0); with `-level 4.1` 5.1 MB, `-level 5.1` 9.4 MB, `-level 6.2` 26 MB at CQ 10
+and 13 MB at CQ 20; `-maxrate 100M -bufsize 200M` lets NVENC pick level 5.0 (21 MB). H.264: about
+24 Mbit/s at its automatic level 4.0, 38 MB at CQ 10 with level 5.1. On the 320x240 test picture
+CQ 1 and 2 gave the same file.
+
+**The rate buffer of a CQ encode** (2026-11-20, same GPU, driver and build, decision 0103 item 1).
+With `-maxrate` set and no `-level`, NVENC picks the level from the maxrate (and the picture):
+the lowest level whose High-tier MaxBR (H.265) or MaxBR × 1.5 (H.264 High) is at least the
+maxrate; `-bufsize` does not change it. H.265 30M → 4.0, 40M → 4.1, 60M and 100M → 5.0, 150M
+and 160M → 5.1, 176M and 240M → 5.2, 300M and 480M → 6.1, 800M → 6.2; H.264 50M → 4.1, 80M and
+202M → 5.0, 203M and 300M → 5.1, 480M → 6.1, 800M → 6.2 (ffprobe `level`: 150 = 5.0, 51 = 5.1). The sources are testsrc2 with
+temporal noise ("grainy": `noise=alls=8:allf=t`; "heavy": `alls=20`), 250 frames, the CQ
+arguments of the definitions plus the profile, bufsize = 2 × maxrate:
+
+```sh
+ffmpeg -f lavfi -i testsrc2=size=1920x1080:rate=25 -vf noise=alls=8:allf=t -frames:v 250 \
+  -pix_fmt yuv420p -c:v hevc_nvenc -rc vbr -cq 10 -b:v 0 -init_qpI 8 -init_qpP 10 -init_qpB 12 \
+  -profile:v main -maxrate 160M -bufsize 320M out.mkv
+ffprobe -v error -select_streams v:0 -show_entries stream=profile,level -of csv=p=0 out.mkv
+```
+
+| Codec, picture | maxrate (level) | grainy CQ 10 / 20 / 27 (MB) | heavy CQ 10 / 20 / 27 (MB) |
+|----------------|-----------------|------------------------------|-----------------------------|
+| H.265 1080p25 | none (4.0) | 12.9 / 12.9 / 11.0 | 12.9 / 12.9 / 12.9 |
+| H.265 1080p25 | 100M (5.0) | 125.5 / 32.0 / 11.1 | 98.4 / 61.1 / 18.7 |
+| H.265 1080p25 | **160M (5.1)** | 141.2 / 32.0 / 11.1 | 149.1 / 61.1 / 18.5 |
+| H.265 1080p25 | 200M (5.2) | 141.3 / 32.0 / 11.1 | 189.0 / 61.0 / 18.6 |
+| H.265 1080p25 | 300M (6.1) | 130.2 / 31.8 / 11.1 | 205.8 / 61.0 / 18.8 |
+| H.265 1080p60 | **160M (5.1)** | 86.9 / 32.0 / 11.1 | 63.0 / 63.2 / 18.7 |
+| H.265 2160p25 | none (5.0) | 25.8 / 25.8 / 25.8 | 26.9 / 26.9 / 26.9 |
+| H.265 2160p25 | **160M (5.1)** | 201.2 / 126.3 / 43.7 | 201.3 / 201.1 / 74.5 |
+| H.265 2160p25 | 240M (5.2) | 301.8 / 126.1 / 43.7 | 280.4 / 285.0 / 74.2 |
+| H.265 2160p25 | 480M (6.1) | 558.9 / 126.1 / 43.8 | 497.6 / 236.2 / 74.3 |
+| H.265 2160p60 | **160M (5.1)** | 85.2 / 85.5 / 42.0 | 86.4 / 86.4 / 73.8 |
+| H.264 1080p25 | none (4.0) | 21.9 / 21.9 / 9.2 | 22.0 / 22.0 / 16.9 |
+| H.264 1080p25 | 100M (5.0) | 121.6 / 29.3 / 9.2 | 136.3 / 83.2 / 16.8 |
+| H.264 1080p25 | **200M (5.0)** | 121.6 / 29.2 / 9.2 | 225.1 / 83.2 / 16.8 |
+| H.264 1080p25 | 800M (6.2) | 121.0 / 29.4 / 9.2 | 226.1 / 83.2 / 16.9 |
+| H.264 1080p60 | **200M (5.0)** | 112.2 / 28.9 / 8.8 | 114.8 / 82.6 / 17.1 |
+| H.264 2160p25 | none (5.1) | 160.8 / 115.4 / 36.1 | 160.9 / 160.7 / 66.9 |
+| H.264 2160p25 | **200M (5.1)** | 260.4 / 115.4 / 36.2 | 260.1 / 259.9 / 67.3 |
+| H.264 2160p25 | 480M (6.1) | 481.6 / 114.9 / 36.1 | 606.7 / 328.2 / 66.8 |
+| H.264 2160p60 | **200M (5.2)** | 115.0 / 112.2 / 35.1 | 115.3 / 115.2 / 68.0 |
+
+(60 fps rows are 250 frames, 4.2 s.) The command builder gives a CQ encode without a level and
+without `maxrate` / `bufsize` in the custom parameters `-maxrate 160M -bufsize 320M` (H.265) and
+`-maxrate 200M -bufsize 400M` (H.264): the highest values that keep H.265 at level 5.1 (the
+usual level of 4K players) and H.264 at 5.0 (5.1 and 5.2 where the picture needs them). With them, CQ 10 and CQ 20 give clearly different files on
+the grainy source at 1080p and 2160p (25 fps), CQ 20 and 27 are not capped, and at 1080p the cap
+does not bind at CQ 10 either. It still binds at 2160p CQ 10 (201 MB of 559 MB), on the heavy
+source at 2160p25 and 1080p60 (H.265), and at 2160p60: the grainy 2160p CQ 10 needs about
+480M, which makes every output level 6.1. Larger buffers are not monotonic: H.265 1080p25 at CQ
+10 is 141 MB at 160M–200M, 130 MB at 300M and 108 MB at 800M. NVENC AV1 was not measured (no
+AV1 encoder on Pascal) and gets no buffer. A level in the custom parameters gets no buffer
+either: `-maxrate 200M -bufsize 400M -level 4.1` (H.264 CQ 20, 1080p25) and `-maxrate 160M
+-bufsize 320M -level 4` (H.265) end in `Invalid Level.` (exit 234); without the buffer the
+output has level 4.1 and 4.0 (GTX 1050 Ti, compat build n8.1.3, 2026-11-21).
+
+The range end: on the plain 320x240 test picture (5 frames) H.265 CQ 1 and 2 give the same file
+with the buffer and even with `-level 6.2` (CQ 3 differs; H.264: CQ 1 to 4 alike), so that is
+the picture, not the level. With `-vf noise=alls=8:allf=t` (the noise filter's fixed seed gives
+the same file each run) H.265 CQ 1 and 2 give the same file without the buffer (68 483 bytes,
+level 2.0) and differ with it (305 582 and 280 116 bytes); H.264 likewise.
+`test_hardware_quality_range_ends_are_honoured` runs NVENC on that grainy picture with the
+buffer.
+
+**Docker.** With the NVIDIA Container Toolkit 1.20.2 in CDI mode, `--gpus all`, `--device
+nvidia.com/gpu=all`, `--runtime nvidia` and the compose `deploy` reservation all mount the same 63
+driver libraries (`libnvidia-encode.so.1`, `libcuda.so.1`, `nvidia-smi`), whatever
+`NVIDIA_DRIVER_CAPABILITIES` says.
 
 ### Encoder definitions (C-6)
 
@@ -610,6 +1119,36 @@ goes up to a multiple of 64, a height that is not a multiple of 16 gets 2 more l
 extra lines repeat the picture's edge. 1280x720 and 3840x2160 stay as they are. `av1_vaapi` on
 the same GPU writes 1920x1080; `hevc_amf` keeps the display size and pads only the coded size
 (`coded_height` 1088). `test_av1_amf_pads_the_picture` records it.
+
+**AMF pre-analysis needs a picture of at least 320x200** (RX 7600, `/usr/bin/ffmpeg` n9.0.2,
+2026-11-20). `h264_amf`, `hevc_amf` and `av1_amf` alike, with `-preanalysis 1` on the picture
+the encoder gets (the output size: 318x240 fails, 320x200 works; `av1_amf` checks before it
+pads). Below it the encoder does not start, exit 190:
+
+```
+[AMFPreAnalysisImpl]   Error: …/AMFPreAnalysisImpl.cpp(1376):Assertion failed:Init() - height (180) not in [200, 4352]
+[AMFPreAnalysisImpl]   Error: …/AMFPreAnalysisImpl.cpp(1375):Assertion failed:Init() - width (318) not in [320, 8192]
+```
+
+These lines come from the AMF runtime without FFmpeg's tag. Before them `h264_amf` and
+`hevc_amf` log `[warning] VBAQ is not supported by cqp Rate Control Method, automatically
+disabled` in CQP mode (with or without `-vbaq`), and FFmpeg ends with "Error while opening
+encoder - maybe incorrect parameters such as bit_rate, rate, width or height". Without
+`-preanalysis` (and with `-preanalysis 0`, every `-quality`, or `-pa_lookahead_buffer_depth`
+alone) 320x180 encodes. The rate controls `qvbr`, `hqvbr` and `hqcbr` (H.264, H.265) start the
+pre-analysis themselves and fail the same way; `cqp`, `cbr`, `vbr_peak` and `vbr_latency` do
+not. The upper ends (8192, 4352) are above what the encoders take anyway (`h264_amf` refuses
+1920x4352 with `AMF_OUT_OF_RANGE: SetPropertyInternal() FrameSize`). Validation:
+`encoder.preanalysis_picture_too_small`; `test_amf_preanalysis_needs_the_smallest_picture_of_the_rule`
+checks it on the GPU.
+
+FFmpeg reads `-preanalysis` as a boolean (2026-11-21, same machine): `true`, `y`, `yes`,
+`enable`, `enabled`, `on` and `false`, `n`, `no`, `disable`, `disabled`, `off` in any case,
+`auto` in lower case only, and any integer (`00`, `01`, `+1`). Only 1 starts the pre-analysis
+(320x180 fails); 0 and -1 (`auto`) encode. `2` and `AUTO` are refused: `Unable to parse
+"preanalysis" option value "2" as boolean`, exit 234. `-rc` takes its names in lower case
+only (`QVBR` is refused) or a number (`04` and ` 4` are `qvbr`).
+`test_amf_reads_the_preanalysis_spellings_of_the_rule` checks it on the GPU.
 
 **Hardware rate control (AMF, VAAPI on radeonsi).** Every preset, profile, level, the quality
 mode at min / default / max, average bitrate and every option encode:
@@ -1177,6 +1716,35 @@ refuses some values and silently changes others, so the builder snaps them itsel
 
 E-AC-3 at 44.1 kHz with `-b:a 1536k` reads back as 1 535 231 b/s (whole frames).
 
+**Align A/V start** (2026-11-20, `/usr/bin/ffmpeg` n9.0.2; decision 0103 item 4). The
+`av-offset` fixture: video from 0.6 s, AAC from 0, AC-3 from 1.0 s, a white frame at 2.0 s and
+a beep in each audio track at 2.0 s. Without options FFmpeg keeps each stream's start (shifted
+by the input's start time): `ffprobe -show_entries stream=start_time` says 0.6 / 0 / 1.0 in
+MKV, 0.6 / 0 / 0.979 in MP4 (an edit list). The builder adds, when the option is on:
+
+- video: `setpts='if(eq(N,0),0,PTS)'` at the end of the chain, before the format or hardware
+  tail (in the overlay graph of a bitmap burn-in too): the first frame moves to 0 and is
+  shown until the second; with a constant frame rate FFmpeg repeats it (frames at 0, 0.04, …).
+- each encoded audio track: `aresample=async=1:first_pts=0` first in its chain (before the
+  layout, the gain and `loudnorm`, also in the loudness analysis): silence from 0 to the first
+  sample (FFmpeg's documented use of `first_pts`). `async=1` fills and trims, it does not
+  stretch (`ffmpeg -h filter=aresample`: "1(filling and trimming), >1(maximum stretch/squeeze
+  in samples per second)"). It also fills a gap of more than 0.1 s (`min_hard_comp`) inside a
+  track with silence: a sine with a 0.5 s timestamp gap at 1 s stays 3.5 s long either way, but
+  without the filter the gap has no samples (141 packets), with it 0.5 s of silence (147).
+
+Checked with `ffprobe` and, in the file's own timestamps (`ffmpeg -copyts`), the first frame
+with `signalstats` YAVG > 200 and the first `silencedetect` end of each track: every stream
+starts at 0.000 in MKV and MP4, the white frame and both beeps stay at 2.00. With a range
+(`-ss 0.3 -i … -ss 0`) the streams start at 0 and the marks are where the same range puts them
+without the option: the beeps at 1.70 and the white frame at 1.72, because FFmpeg puts the
+video on its 1/25 s frame grid after a seek that is not on it (0.3 s → the first frame at 0.32,
+also without the option). A copied track cannot be filtered: an AC-3 track passed through keeps
+its start (1.0 s) while the others start at 0, and validation says so
+(`container.align_copied_track`, info, without a range). A copied video keeps its start too.
+Subtitle tracks keep their times (nothing is moved, only the start is filled); a burned-in
+subtitle is drawn before the video filter. `test_align_av_start_*` in `test_integration.py`.
+
 ### Validation (C-8)
 
 **Forced-only subtitles** (`subtitle.forced_only_unsupported`). `forced_subs_only` is a
@@ -1569,6 +2137,15 @@ based on these. `packages/reframe/tests/preview/` asserts them (`test_frames.py`
 before T and outputs the first frame at or after T: on `letterbox.mkv` at 0.2, 1.52, 2.0 and
 3.96 s the PNG is pixel-identical to `-i … -ss T` (which decodes everything before T).
 
+**A clip cut between two frames starts late.** (2026-11-19, the pinned n9.0.2 build.) At 25 fps,
+`-ss 0.1 -i hdr10.mkv … -c:v hevc_qsv` (and `libx265`) keeps the frame at 0.12, which gets the
+timestamp 0.02; the encoder rounds it to its 1/25 s time base, and the clip's `start_time` is
+0.04. With `-ss 0.12` or `-ss 0.2` it is 0. `-ss` counts from the file's `start_time` (`-ss 1.01`
+gives the same frame of `letterbox.mkv` and of a copy with `-output_ts_offset 10`), but
+ffprobe's `-read_intervals` takes timestamps (`1.01%+0.2` on that copy starts at its first
+packet, 10.0). `test_clip.py::test_a_clip_asked_between_two_frames_starts_on_the_next_one`
+asserts the result.
+
 **Past the last frame FFmpeg writes nothing and exits 0**, with nothing on stderr at
 `-loglevel error`:
 
@@ -1825,6 +2402,129 @@ runs each, no damaged file, and every job's end matched its file. With the step 
 may be damaged" with the file intact (killed before the write, or after it), none `cancelled`
 (before RB-3: 22 of 200). A real `asyncio.run` stopped by two SIGINTs while the edit waits at
 a gate: the shutdown cancels every task and so kills mkvpropedit; the stored job says so.
+
+### Matroska header writer
+
+Checked on 2026-11-15 with MKVToolNix **103.0** (`mkvmerge`, `mkvinfo`, `mkvpropedit`) and the
+pinned FFmpeg n9.0.2 (BtbN), for Reframe's own writer (`reframe.metadata.header`, decision
+[0080](../docs/decisions/0080-own-matroska-header-writer.md)). The tests are in
+`packages/reframe/tests/metadata/header/`; the corpus is made at test time (`corpus.py`).
+
+**`CRC-32`.** FFmpeg's Matroska muxer puts a `CRC-32` element (`0xBF`, 4 bytes) first in every
+level-1 element: `SeekHead`, `Info`, `Tracks`, `Tags`, `Cues` and each `Cluster`. The value is
+zlib's CRC-32 of the bytes after the `CRC-32` element to the end of its parent, stored
+little-endian. `mkvinfo -v -z` does not list them (`Seek head size 71 data size 66` holds 60
+bytes of `Seek` entries and the 6 bytes of the `CRC-32`). mkvmerge 103 writes none and has no
+option for them, so the corpus file "mkvmerge-written with `CRC-32`" is an mkvmerge file into
+which the test puts `CRC-32` elements (`SeekHead`, `Info`, `Tracks`, each `TrackEntry`);
+`mkvmerge -J` and ffprobe read it as before. mkvpropedit keeps a `CRC-32` that is there and
+calculates it again.
+
+**Layouts.** FFmpeg: `SeekHead`, `Void` (90 bytes), `Info`, `Tracks`, `Tags`, the clusters,
+`Cues`; nothing after `Tracks` that can take a longer `Tracks`, so most edits that add bytes
+move it. `SeekPosition` has the shortest width (1 to 3 bytes). mkvmerge: `SeekHead`, `Void`
+(about 4 KB), `Info`, `Tracks`, `Void` (about 1 KB), the attachments and chapters, the
+clusters, `Cues`, `Tags`. After an edit that moves `Tracks` and shortens `Info`, mkvpropedit
+leaves a first `SeekHead` with one entry, which points to a second `SeekHead` behind the
+clusters with the entries for `Info`, `Tracks`, `Tags` and `Cues`. When the writer moves an
+element that a `SeekHead` behind the clusters lists, it moves that `SeekHead` too.
+
+**What the readers read in the states between two writes** (`multitrack.mkv`, a `Tracks` copy
+with one changed name; ffprobe `-show_streams`, `mkvmerge -J`, `read_matroska`):
+
+| State | ffprobe | `mkvmerge -J` | Reframe's reader |
+|---|---|---|---|
+| a `Tracks` or a `Void` after the end of the segment | old | old | old |
+| the segment grown over a second `Tracks` at the end; `SeekHead` → old | old | old | old |
+| the same, `SeekHead` → new | **old** | **new** | **old** |
+| old `Tracks` turned into a `Void`, `SeekHead` → new | new | new | new |
+| old `Tracks` turned into a `Void`, `SeekHead` → old place | no streams | 0 tracks | error |
+| `SeekHead` → a `Tracks` after the end of the segment | old | **new** | old |
+
+ffprobe and Reframe's reader take the `Tracks` they meet first in file order; `mkvmerge -J`
+takes the one the `SeekHead` names. So the `SeekHead` entry and the old place must change in
+the same write. The writer writes the moved copies after the end of the segment first, then
+one write changes the segment size, the `SeekHead` and every old place before the clusters;
+a moved element's old copy behind the clusters becomes a `Void` after that. The fault tests
+stop the writer after each write (and in the middle of the write of the copies) on FFmpeg,
+mkvmerge and mkvpropedit-edited files: every file left reads all old or all new in ffprobe,
+`mkvmerge -J` and Reframe's reader. A copy cut short after the segment is truncated by the next
+edit.
+
+**Refusals.** The writer refuses these files and leaves them byte for byte unchanged; mkvpropedit
+103 on the same file:
+
+| File | Writer | mkvpropedit |
+|---|---|---|
+| a `Seek` for `Tracks` to `2^64 - 1` before the real one | `header.seek_head` | refuses (exit 2, "no corresponding level 1 element") |
+| other `SeekHead` entries that disagree, or point to no such element | `header.seek_head` | not tried |
+| two `Info` elements before the clusters (two `Tracks`: the same code) | `header.duplicate` | edits |
+| a `CRC-32` that does not match | `header.unreadable` | edits, and writes a `CRC-32` that matches the damaged bytes |
+| a child that runs past its parent, an element of unknown size before the clusters | `header.unreadable` | not tried |
+| beyond the reader's `MAX_*` limits, or a `SeekHead` with more than `MAX_CHILDREN` entries | `header.unreadable`, `header.too_large` | not tried |
+| a title for a file with no `Info` | `header.no_info` | refuses (exit 2) |
+| a track number the file does not have | `header.no_such_track` | refuses (exit 2) |
+| an element must move, and: the segment has an unknown size | `header.unknown_size` | edits |
+| … no `SeekHead`, or no room for the longer `SeekHead` | `header.no_room` | edits (writes a new `SeekHead`) |
+| … unknown data after the segment | `header.trailing_data` | edits |
+| … the file is shorter than its segment | `header.truncated` | edits |
+
+The same files with an edit that fits in place are edited. A refusal is data
+(`HeaderEditResult`), never an exception; an OS error is `failed` (`header.io_error`), and
+`file_state` says what the file holds.
+
+**A write that stops part-way** (checked by fault injection only, 2026-11-15: no real full
+disk). On a full disk the kernel can store the first part of one `write()` and fail the retry
+with `ENOSPC`; on a copy-on-write file system (btrfs, this host's default) an overwrite needs
+free space too. A switch torn that way is not all old or all new: with 64 of its bytes in
+`multitrack.mkv` (a `Tracks` that moves), Reframe's reader fails ("truncated element header"),
+`mkvmerge -J` reads values that are neither all old nor all new, and ffprobe reads the old
+values; with 200 bytes Reframe's reader and `mkvmerge -J` read new and ffprobe old. So the
+writer, when a write over existing bytes fails (also when its `fsync` fails), writes the bytes
+it replaced back, syncs, and reads them back; only then does the result say `old` (`unchanged`
+when it was the first write and the size did not change), or `new` for the clean-up behind the
+clusters after the switch. If writing them back fails too, the result is `damaged` with the old
+bytes and their offset (`HeaderBackup`); the queue saves them as
+`<data dir>/logs/<job id>.header-at-<offset>.bin` and names the file in the job's error. The
+fault tests tear the switch after 1 byte, every tenth of it, 2 bytes into each element header
+in it and all but one byte, in place and when elements move (FFmpeg, mkvmerge with `CRC-32`,
+mkvpropedit's two-`SeekHead` file), and check that ffprobe, `mkvmerge -J` and Reframe's reader
+read what the result says. Before it writes, the writer wants the bytes it writes plus 16 MB
+free on the disk (`shutil.disk_usage`); with less it writes nothing (`header.no_space`). A file
+system that reports a size of 0 is not checked.
+
+**`DocTypeVersion`.** mkvpropedit 103 raises the EBML header's `DocTypeVersion` when it writes
+`Tracks` and an element anywhere in the new `Tracks` is from a later Matroska version: a
+`DocTypeVersion` 2 copy of `multitrack.mkv` or `text-subs.mkv` becomes 4 after any track edit
+(a name, a flag, a language), because their `Tracks` already hold v4 elements
+(`FlagCommentary`, `FlagHearingImpaired`, `CodecDelay`). An edit of `Info` only (a title) leaves
+it at 2. mkvpropedit does not change `DocTypeReadVersion` (2). The writer does the same, with the
+`minver` of every element under `\Segment\Tracks` from the Matroska specification
+(`ebml_matroska.xml` of `ietf-wg-cellar/matroska-specification`, read 2026-11-15): 4 for
+`FlagHearingImpaired`, `FlagVisualImpaired`, `FlagTextDescriptions`, `FlagOriginal`,
+`FlagCommentary` and `LanguageBCP47` (and the colour, projection, block addition mapping,
+`CodecDelay` and `SeekPreRoll` elements); `FlagForced` has none. The new value is written in the
+element's own width before the switch (with a new `CRC-32` when the EBML header has one); a
+header without `DocTypeVersion` is left as it is, since it would have to grow. Of the 31 sampled
+real files, 3 have `DocTypeVersion` 2 (mkvmerge v6.8 era): a BCP 47 language raises them to 4,
+a name only does not (their `Tracks` hold no v4 element).
+
+**Leftovers.** The copies of a stopped edit after the segment are truncated by the next edit,
+also by one that fits in place.
+
+**Real files** (read only; the files themselves are not named here). A dry run of the planner on
+the 32 sampled MKV files on the share (mkvmerge v6.8 to v102, HandBrake 0.10 to 1.10, FFmpeg,
+one unknown muxer): no refusal for a small edit (a language pair, a flag, a short title); one
+refusal for an edit that grows `Tracks` and `Info`: the unknown-muxer file has `Info` right after
+its `SeekHead` (`header.no_room`; mkvpropedit edits that layout, checked on a copy made like it
+from `multitrack.mkv`). Every `CRC-32` in the sample matched; none of the mkvmerge files has
+one. On local copies of five files (mkvmerge v15 and v86, two HandBrake 1.7.3, one FFmpeg with
+`CRC-32`), three edits in a row (a small edit; 6000-character name and a 3000-character title;
+a shorter name and no title) by the writer and by mkvpropedit: `mkvmerge -J` and ffprobe read
+the same, every stream is kept, every `CRC-32` matches. The writer took 2 to 45 ms per edit
+(with its own check of every state). Its files grow more than mkvpropedit's (up to 68 KB after
+the three edits): a `Tracks` behind the clusters that changes with the title is moved again
+instead of written over. The fault stops on copies of two of them read all old.
 
 ### Advanced encoder options (C-6, complete option sets)
 
@@ -2162,6 +2862,38 @@ Checked on 2026-10-15 (Arch Linux, Python 3.14, the pinned BtbN n9.0.2 build of
   latest step. The plain-line output of `tools fetch` therefore never relies on seeing every
   step, and the tests read the events while the task runs.
 
+### Offline downloads and file installs (C-21)
+
+Checked on 2026-11-18 (Arch Linux, Python 3.14) with `reframe.tools.fetch.download` and one
+attempt. What `urllib` raises, and the `FetchError` it gives:
+
+| Case | Error | `code` |
+|------|-------|--------|
+| no network (`unshare -rn`), a host name or an IP address | `URLError(OSError(101, 'Network is unreachable'))` | `tools.fetch_offline` |
+| a name that does not resolve (`*.invalid`) | `URLError(gaierror(-2, 'Name or service not known'))` | `tools.fetch_offline` |
+| a loopback port without a server | `URLError(ConnectionRefusedError(111, …))` | `tools.fetch_offline` |
+| an address without a route (`10.255.255.1`) | `URLError(OSError(101, 'Network is unreachable'))` | `tools.fetch_offline` |
+| GitHub, a release asset that does not exist | `HTTPError 404` | none |
+
+The message is `cannot reach the download server <host> (<reason>; <n> attempt(s))`; the task
+adds what to do instead. TLS errors, a reset connection and HTTP errors keep their text and
+have no code (`test_fetch.py`).
+
+`urllib` wraps an error of the connection or the TLS handshake in `URLError`; a timeout while
+it waits for the response headers, and every error while the body is read, come bare. A
+self-signed certificate is `URLError(SSLCertVerificationError(1, '[SSL:
+CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate …'))`. Real runs
+of `download` with its back-off (2026-11-18), before and after the attempts per error:
+
+| Case | Four attempts each | Now |
+|------|--------------------|-----|
+| `*.invalid` | 14.0 s | 0.0 s, 1 attempt |
+| a refused loopback port | 14.0 s | 2.0 s, 2 attempts |
+| a self-signed certificate (local TLS server) | 14.0 s | 0.0 s, 1 attempt |
+| `10.255.255.1` | 54.1 s | 42.0 s, 2 attempts (two connect timeouts of 20 s); another run 4.2 s, 1 attempt (`Network is unreachable` at once) | A file install copies the archive into the work folder and
+hashes what it copies, so the file that is checked is the file that is extracted; a file of the
+wrong size is refused before it is copied.
+
 ### Batch engine (C-12, M7)
 
 Checked on 2026-10-15 with FFmpeg n9.0.2 (the Arch package; the fixture probes recorded with
@@ -2494,7 +3226,8 @@ uv 0.13.5), with the image of `docker/Dockerfile` and no `/dev/dri` in any conta
   25.0.7-2+deb13u1, line 154), so `radeonsi_drv_video.so` in `mesa-va-drivers` has the H.264,
   HEVC and AV1 encoders. Debian's free `intel-media-va-driver` has only some encoders before
   Ice Lake (its package description); `intel-media-va-driver-non-free` has them all.
-  `libmfx-gen1.2` (25.1.4) is the oneVPL GPU runtime. `tzdata` comes with these packages.
+  `libmfx-gen1.2` (25.1.4) is the oneVPL GPU runtime (Tiger Lake and newer; for older Intel
+  GPUs see §QSV on Linux). `tzdata` comes with these packages.
 - **The BtbN shared build** needs only glibc and `libgcc_s` of the system (`ldd bin/ffmpeg`):
   libva is linked in, and finds Debian's drivers through `LIBVA_DRIVERS_PATH`, which tool
   discovery sets to `/usr/lib/x86_64-linux-gnu/dri`.
@@ -2711,10 +3444,9 @@ PyInstaller 6.22.3 with pyinstaller-hooks-contrib 2026.9, Tauri 2.12.5 (CLI 2.12
   with the death signal alone (no `--parent-pid`) ended with the job `interrupted` and its
   `.part` file removed.
 - **PyInstaller onedir**: the bootloader runs Python in its own process (no child process;
-  `/proc/<pid>/exe` is the frozen binary). The hooks of pydantic, uvicorn, websockets and
-  langcodes collect what they need; babelfish, language_data, guessit, the `reframe` data and
-  pymediainfo need options (the table in `desktop/spike/README.md`, each with its error). The
-  pymediainfo hook's default library patterns miss the wheel's `libmediainfo.so.0`. Asserted by
+  `/proc/<pid>/exe` is the frozen binary). The hooks of pydantic, uvicorn and websockets
+  collect what they need; babelfish, guessit and the `reframe` data (with the language tables)
+  need options (the table in `desktop/spike/README.md`, each with its error). Asserted by
   `packages/reframe-server/tests/test_frozen_sidecar.py` (skipped without the build).
 - **guessit 4.4.0** reads `guessit/config/options.json` at its first call; without it every call
   raises (`FileNotFoundError`), and the core reads that as "no match".
@@ -2743,12 +3475,10 @@ PyInstaller 6.22.3 with pyinstaller-hooks-contrib 2026.9, Tauri 2.12.5 (CLI 2.12
 - **A process name with `)` and a space**: a Python started through a symlink named `a) b` has
   `comm` `a) b` and a stat line `381433 (a) b) S 381432 …`; only the last `)` ends the name.
   Asserted by `test_parent.py::test_a_process_younger_than_the_server_is_not_its_parent`.
-- **MediaInfo in the frozen build** (`/usr/bin/ffprobe` n9.0.2): of the fixtures, the video
-  bit rate of `anamorphic`, `hdr10-4k`, `hdr10`, `interlaced`, `letterbox`, `pgs`, `vobsub` and
-  `vfr.mkv` comes from MediaInfo (`vfr.mkv`: 483043, source `mediainfo`); a build without
-  `pymediainfo` and `libmediainfo` gives `unknown` for each, and no fixture gets a
-  `language_ietf`. `vfr.mp4` has a stream bit rate from ffprobe (489085). Asserted by
-  `test_frozen_sidecar.py::test_the_frozen_server_reads_bit_rates_with_its_bundled_mediainfo`.
+- **Bit rates in the frozen build** (2026-11-15, the pinned ffprobe n9.0.2): the build has no
+  MediaInfo; `vfr.mkv`'s video bit rate, which ffprobe does not give, is sampled from its
+  clusters (489048, source `estimated`, 1 sample). Asserted by
+  `test_frozen_sidecar.py::test_the_frozen_server_estimates_the_bit_rates_that_ffprobe_does_not_give`.
 - **Tauri's event permissions**: `core:event:default` is `allow-listen`, `allow-unlisten`,
   `allow-emit` and `allow-emit-to` (`src-tauri/gen/schemas/acl-manifests.json`, Tauri 2.12.5).
 - **Tauri's `data_directory`** (Tauri 2.12.5, wry 0.57.0): `WebviewWindowBuilder::data_directory`
@@ -2945,6 +3675,117 @@ the stream's encoder settings SEI:
   key by key. `keyint=10s` (seconds) stays a custom parameter: the keyint option is a number of
   frames.
 
+### Windows: paths, processes and file behaviour (Q-1.4)
+
+Windows 10 22H2 (VM), Python 3.14.10, FFmpeg n9.0.2 (BtbN win64, `reframe tools fetch`),
+2026-11-04:
+
+- `-x264-params` / `-x265-params` with a Windows path: FFmpeg's dictionary parser splits
+  `key=C:\dir\f` at the drive colon, and the rest (`\dir\f`, also `/dir/f`) is a key without
+  `=`, so FFmpeg refuses the whole argument (`Error setting option x265-params`) and nothing is
+  written. `key=C\:\dir\f` gives the library `C:dirf` (each `\` removed): x265 `csv` and x264
+  `dump-yuv` write that drive-relative name in the working folder. `key=C\:\\dir\\f`,
+  `key='C:\dir\f'` and `key=C\:/dir/f` give the library `C:\dir\f`, and the file is written.
+  Reframe refuses these keys by name, whatever the value.
+- The builder's two-pass x265 plan (`stats=C\:/…/x.part.passlog`) encodes on Windows.
+- Filter text `eq=/contrast=C:\dir\secret.txt` (also with `/`, or `C\:`) is a graph syntax
+  error. Written as one graph token, `'C\:/dir/secret.txt'` (`quote_value`) or `C\\\:/dir/…`,
+  the file is read: its text is in FFmpeg's error. The same holds for `eq='/contrast'=…`,
+  `eq=brightness=0\: /contrast=…` and `unsharp=5:5:/lx=…`.
+- The Windows build's `h264_qsv` has the private options `dual_gfx` and `vcm`, and `hevc_qsv`
+  has `dual_gfx`; the Linux builds have neither.
+- `os.stat()` on NTFS: `st_ctime_ns` is the creation time (equal to `st_birthtime_ns`). A
+  rewrite of the same size followed by `os.utime` back to the old times changes no field but
+  `st_atime`. `FILE_BASIC_INFO.ChangeTime` (`GetFileInformationByHandleEx`) moves on each write
+  and on `os.utime`, but in clock ticks: writes less than one tick apart (1 ms on the VM, 15.6 ms
+  by default) can share it. Reading it takes about as long as `os.stat` (16 µs and 23 µs).
+- A path with a NUL: `os.path.realpath` and `Path.resolve` give it back (`ntpath` ignores the
+  error unless `strict=True`, which raises `OSError`); `os.stat`, `open` and the others raise
+  `ValueError` as on Linux.
+- `os.stat` takes `..` out of a path before it looks at the folders: `C:\t\missing\..\a.mkv`
+  is `C:\t\a.mkv` when `missing` does not exist.
+- A file name `a:b` is the NTFS stream `b` of the file `a`: `shutil.copy` writes it and
+  FFmpeg's `subtitles` filter reads it.
+- `os.open` (and `open`) of a folder raises `PermissionError` (EACCES), not
+  `IsADirectoryError`.
+- `os.replace` cannot replace a symbolic link to a folder (`PermissionError`, WinError 5); the
+  VM's account can create symbolic links.
+- uv's `.venv\Scripts\python.exe` is a launcher: it starts the real interpreter as a child
+  process (another pid), passes the exit code through (`SystemExit(75)` gives 75), and a kill of
+  the launcher ends the child, also when it was started with `launch_detached`'s flags.
+- A tool that crashes with an access violation exits with `0xC0000005` (positive, as an
+  NTSTATUS code), not with a negative signal number. FFmpeg's own error exit is its negative
+  `AVERROR` as an unsigned 32-bit code: an AAC encode of a silent track shorter than 3 s with
+  loudness normalisation (`EINVAL`, -22) exits with `0xFFFFFFEA` (on Linux 234). FFmpeg's tag
+  codes reach above `0xC0000000` too (`AVERROR_EOF` is `0xDFB9B0BB`), but none has the form of
+  a system exception, `0xC000xxxx`.
+- A just-renamed or just-deleted file can refuse to open for a moment (`PermissionError`): the
+  fake tools' call log needed a retry when read while files came and went.
+- FFmpeg's Matroska muxer, writing a seekable file, takes time quadratic in the number of
+  subtitle packets on Windows (50 / 100 / 200 loops of the fixture: 0.34 / 3.6 / 16 s); with
+  `-live 1`, or to a pipe or null output, it is linear (200 loops: 0.25 s). On Linux the 1800
+  loops take 2.6 s.
+- pydantic-core dumps at most 100 nested levels on Windows (256 on Linux).
+
+### Windows: the desktop part of the testing phase (Q-1.4, second VM)
+
+Windows 10 Pro 2004 (19041.1, no updates; VM, 4 cores), Python 3.14.10, FFmpeg n9.0.2 (BtbN
+win64), WebView2 157, Tauri 2.12.5, 2026-11-09:
+
+- FFmpeg crashes now and then with `0xC0000005` when `fieldmatch` runs before other filters:
+  the every-filter chain of `test_every_filter_on_an_untagged_interlaced_source` on
+  `interlaced.mkv` crashed 2 of 40 and 5 of 60 times; without `decimate` 11 of 80, without
+  `fieldmatch` 0 of 80, and `fieldmatch` alone or with `decimate` alone 0 of 80. The pinned
+  Linux build ran the whole chain 80 times on the same CPU without a crash.
+- A process started from a session that ignores Ctrl+C (Win32-OpenSSH's) hands the flag down,
+  also through `CREATE_NEW_CONSOLE`: `GenerateConsoleCtrlEvent(CTRL_C_EVENT, 0)` from a process
+  attached to the child's console succeeds, and the child sees nothing until it calls
+  `SetConsoleCtrlHandler(None, False)`; then Python raises `KeyboardInterrupt` at once.
+- Reading a file while another process replaces it with `os.replace` can raise
+  `PermissionError` (seen once for `server.json` in a full run).
+- The proactor loop's read pipe transport allocates a 32 KiB buffer per pipe when it is made
+  (`_ProactorReadPipeTransport`): 20 FFmpeg pipes of encoder detection are about 650 KB under
+  `tracemalloc`.
+- `SO_RCVBUF` set to 8192 before `connect` stays 8192 (65536 when left alone).
+- WebView2 converts a PNG's `cICP` colours in `createImageBitmap` unless
+  `colorSpaceConversion: "none"`: a tone-mapped frame (`cICP` 1/1/0/1) differed from FFmpeg's
+  rgb24 decode at 656 of 1640 sampled pixels (78 read as 68); with the option all equal.
+- `document.hasFocus()` in WebView2 stays true while no other window has taken the focus (a
+  window shown behind a hidden one); it is false once another window is in front.
+- A Tauri notification of an app that is not installed shows Windows PowerShell's name and
+  icon (Tauri falls back to PowerShell's AppUserModelID).
+- Windows places a new Tauri window without regard to the taskbar (208,61 with 1296×839 on a
+  1600×900 screen), and the window-state plugin restores a place from a larger screen as it was.
+- A process that is not in the foreground cannot bring another to the front: open-with from a
+  background launcher hands the path over, but the running window stays behind.
+- The common Open dialog (`#32770`) on this build gives UI Automation its file name box and its
+  buttons as plain panes; `WM_SETTEXT` to the box's edit (control 1148) and `BM_CLICK` to
+  `IDOK` work.
+
+### Windows: scaling, unusual paths and long paths (M10, second VM)
+
+The same VM, PyInstaller 6.22.3, 2026-11-10:
+
+- `SystemParametersInfo(SPI_SETLOGICALDPIOVERRIDE, n, NULL, SPIF_UPDATEINIFILE)` changes the
+  display scaling of the running session (n steps above the recommended value; QXL at
+  1600×900 recommends 100 %): a new process gets `GetDpiForSystem()` 120 or 144 without a
+  sign-out. A process that was already DPI-aware keeps 96 and sees a scaled screen.
+- A running Tauri window follows such a change: at 100 % → 150 % its `GetDpiForWindow` became
+  144 and it stayed inside the work area (0,0 1598×840 of 1600×840).
+- Python 3.14 writes a pipe or a redirected file in the ANSI code page (cp1252 here), so `ő`,
+  `日本` and `🎬` cannot be encoded; with `errors="replace"` they become `?`. A program frozen
+  with PyInstaller ignores `PYTHONUTF8`.
+- With `LongPathsEnabled` 0 (the Windows default), Python cannot open a 359-character path:
+  `os.stat` raises `WinError 3` ("The system cannot find the path specified"). The BtbN
+  `ffprobe.exe` n9.0.2 reads the same path. With 1, Python, the frozen sidecar and FFmpeg all
+  read and write paths of 359 and 394 characters.
+- The limits with `LongPathsEnabled` 0: Python creates and finds a file whose path has 259
+  characters, and gets `FileNotFoundError` at 260; it creates a folder of 247 characters and
+  gets `FileNotFoundError` (`winerror` 206) at 248. `ntdll.RtlAreLongPathsEnabled()` in
+  Python's own process follows the policy (0 with 0, 1 with 1), read when the process starts.
+- The frozen sidecar (PyInstaller bootloader), the Tauri app and the bundled FFmpeg start and
+  work from a folder whose name holds `ő`, `日本` and `🎬`.
+
 ### The sidecar build and its packages (M5 task A)
 
 PyInstaller 6.22.3 (hooks-contrib 2026.9, Python 3.14.8), Tauri CLI 2.12.4 and tauri-build 2.7.4:
@@ -2968,3 +3809,125 @@ PyInstaller 6.22.3 (hooks-contrib 2026.9, Python 3.14.8), Tauri CLI 2.12.4 and t
   with `StartupWMClass=reframe-desktop`; the package name is `reframe`.
   `postInstallScript` / `preRemoveScript` become the `.deb`'s `postinst` / `prerm` and the
   `.rpm`'s `POSTIN` / `PREUN` header tags.
+
+### The bundled tools (D-7)
+
+The pinned BtbN build `n9.0.2-17-g2a571b6068-20260930`, MKVToolNix 103.0 and MediaInfo CLI
+26.10, 2026-11-12 ([0002](../docs/decisions/0002-bundled-ffmpeg.md)):
+
+- The BtbN Linux build carries no libva or Vulkan loader: `libavutil` and `libavcodec` load
+  `libva.so.2` and `libva-drm.so.2` at run time through implib-gen stubs (on Arch the encode
+  works with and without `LIBVA_DRIVERS_PATH`; `LIBVA_DRIVERS_PATH` set but empty makes device
+  creation fail with -5). `bin/ffmpeg` has `DT_RPATH $ORIGIN/../lib`, so a `libva.so.2` in the
+  build's `lib/` is loaded before the system's (`LD_DEBUG=libs`: `…/bin/../lib/libva.so.2`),
+  also when the system's is newer.
+- libva 2.24.1 built with meson (DRM only) in `ubuntu:22.04` needs `GLIBC_2.34` at most; its
+  built-in driver path (`-Ddriverdir`, the core's `LIBVA_DRIVER_DIRS` joined by `:`) is tried
+  folder by folder (Arch: `/usr/lib64/dri`, a link to `/usr/lib`). libva loads a driver that exports
+  `__vaDriverInit_1_<n>` for its own VA-API minor or an older one (`va.c`); Mesa exports the
+  one of the libva it was built with (Arch's Mesa 26.2.5: `__vaDriverInit_1_24`).
+- libva 2.24.1 splits `LIBVA_DRIVERS_PATH` (or, unset, its built-in path) at `:` and opens
+  `<folder>/<driver>_drv_video.so` folder by folder; the first that loads is used (`va.c`,
+  `va_openDriver`). Fedora 45's own libva has the built-in path
+  `/usr/lib64/dri-nonfree:/usr/lib64/dri-freeworld:/usr/lib64/dri`. There
+  `mesa-dri-drivers` 26.2.6 ships `/usr/lib64/dri/radeonsi_drv_video.so` without H.264 / H.265
+  (on the RX 7600, `vainfo`: only `VAProfileAV1Profile0: VAEntrypointEncSlice`), and RPM
+  Fusion's `mesa-va-drivers-freeworld` puts the full driver into `/usr/lib64/dri-freeworld/`
+  (H.264, HEVC Main / Main10 and AV1 encode).
+- With that libva on the RX 7600: Ubuntu 22.04's Mesa 23.2.1 and Debian 12's 22.3.6 write no
+  H.264 parameter sets ("Driver does not support some wanted packed headers (wanted 0xd, found
+  0)"): the encode to `null` works, into Matroska the header fails ("Could not write header
+  (incorrect codec parameters ?): Invalid data found when processing input") and FFmpeg 9.0
+  then segfaults (the distro's 4.4.2 / 5.1.9 fail the same way without a crash). Mesa 23.2.1
+  offers an AV1 entrypoint that fails ("Failed to query config attribute"); Mesa 22.3.6 has
+  none ("No usable encoding entrypoint found for profile VAProfileAV1Profile0 (32)"). Ubuntu
+  24.04 (Mesa 25.2.8) and Debian 13 (25.0.7) encode all three into Matroska.
+- Without libdrm2 the bundled `libva-drm.so.2` cannot load: `implib-gen: libva-drm.so.2:
+  failed to load library 'libva-drm.so.2' via dlopen: libdrm.so.2: cannot open shared object
+  file: No such file or directory`.
+- A stub aborts the process (SIGABRT, exit 134) when the library is missing
+  (`implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: …`, the QSV
+  test without `libva-drm2`) or lacks a function
+  (`implib-gen: libva.so.2: failed to resolve symbol 'vaMapBuffer2' via dlsym: …`). Every
+  VAAPI encode hits the second with libva 2.14 (Ubuntu 22.04), 2.17 (Debian 12) and 2.20
+  (Ubuntu 24.04); libva 2.22 (Debian 13) and 2.24 (Arch) work.
+- libplacebo without a Vulkan loader (no `libvulkan1` in a container, no `vulkan-1.dll` on the
+  Windows VM) prints `Instance API version 1.0.0 is lower than the minimum required version of
+  1.2.0, cannot proceed!` and exits 187; the same text with `Device API version` exists in
+  `libavfilter`.
+- The Detelecine crash on Windows (the chain of `test_every_filter_on_an_untagged_interlaced_source`,
+  400 runs each on the 6-processor VM): the pin 2, BtbN n9.0.2-39 (2026-10-31) 5, gyan.dev
+  9.0.2 `full_build-shared` 4; the pin with `-filter_threads 1` 0; the chain without
+  `decimate` 11, and with `-filter_threads 1` 16; the pin's Linux build on the same CPU 0. Git Bash shows `0xC0000005` as exit 139.
+- `mkvpropedit.exe` of the portable MKVToolNix zip is linked statically: alone in a folder it
+  prints `mkvpropedit v103.0 ('The Darkness') 64-bit`. `MediaInfo.exe` without `LIBCURL.DLL`
+  prints its version and reads a local file.
+- The MediaInfo CLI zip has no top folder. MKVToolNix publishes a `.zip` next to the `.7z` and
+  a `.sha256` for each.
+- mediaarea.net's chain ends at "SSL.com TLS ECC Root CA 2022", cross-signed by "SecureTrust
+  CA"; the VM's machine root store has neither, so Python's download fails with
+  `CERTIFICATE_VERIFY_FAILED` (Windows adds such roots on demand, Python does not ask);
+  `SSL_CERT_FILE` set to certifi's `cacert.pem` works.
+- BtbN's repository is now `github.com/FFmpeg-Builds/FFmpeg-Builds`; the release URLs under
+  `github.com/BtbN/FFmpeg-Builds` redirect there.
+- PyInstaller's bootloader (6.22.3, onedir) puts the sidecar's `_internal/` first in
+  `LD_LIBRARY_PATH` and keeps the value it found in `LD_LIBRARY_PATH_ORIG` (absent when the
+  variable was unset). Its `_internal/` has Ubuntu 22.04's `libstdc++.so.6`, so a system tool
+  started with that environment fails on a newer distro: `mkvpropedit` on Arch exits 1 with
+  `_internal/libstdc++.so.6: version 'CXXABI_1.3.15' not found (required by
+  /usr/lib/libicui18n.so.78)`.
+- An AppImage made by Tauri runs linuxdeploy's `AppRun` (a script that sources
+  `apprun-hooks/linuxdeploy-plugin-gtk.sh`, then AppImageKit's `AppRun.wrapped`). The hook
+  exports `APPDIR`, `GTK_DATA_PREFIX`, `GTK_THEME`, `XDG_DATA_DIRS`, `GSETTINGS_SCHEMA_DIR`,
+  `GI_TYPELIB_PATH`, `GIO_MODULE_DIR`, `GTK_EXE_PREFIX`, `GTK_PATH`, `GTK_IM_MODULE_FILE` and
+  `GDK_PIXBUF_MODULE_FILE` into `$APPDIR`; `AppRun.wrapped` puts `$APPDIR/usr/bin/…` first in
+  `PATH`, ten `$APPDIR/…lib…` folders first in `LD_LIBRARY_PATH` and sets `PYTHONHOME`,
+  `PYTHONPATH`, `PERLLIB`, `QT_PLUGIN_PATH`, `GST_PLUGIN_SYSTEM_PATH(_1_0)` into the image and
+  `PYTHONDONTWRITEBYTECODE=1` (its format strings, `strings AppRun.wrapped`). With that
+  environment (the extracted AppImage of task L, `Exec` pointed at a script that runs the frozen
+  CLI) on this host: `mkvpropedit` broken as above, VAAPI "VAAPI driver failed to start … (unknown
+  libva error)", AMF "AMD AMF could not start (Function not implemented)", libplacebo "No working
+  Vulkan driver". With the environment restored for the tools: all of them work.
+- The bundled FFmpeg needs nothing from `LD_LIBRARY_PATH`: `bin/ffmpeg` finds its libraries and
+  the bundled libva through `DT_RPATH $ORIGIN/../lib` (it runs with the variable unset).
+- Fedora 45: `mesa-dri-drivers` 26.2.6 installs `/usr/lib64/dri/radeonsi_drv_video.so` (there
+  is no `mesa-va-drivers` package), whose VAAPI offers no H.264 or H.265 encoding: FFmpeg says
+  `No usable encoding profile found.`; AV1 encodes. The `mkvtoolnix` and `mediainfo` packages
+  put their programs in `/usr/sbin`.
+
+### Encoder defaults behind the option help (C-6, decision 0103 item 11)
+
+Checked for the help texts of the advanced options (FFmpeg n9.0.2, RX 7600 with radeonsi):
+
+- FFmpeg's libvpx wrapper sets `kf_min_dist` only when `-keyint_min` equals `-g` (two-pass encode).
+- libvpx with no `-g` puts a keyframe every 128 frames, in good and realtime mode.
+- VAAPI with no `-g`: a keyframe every 120 frames (H.264, H.265, AV1); `h264_vaapi` uses 2
+  B-frames.
+- AMF with no `-g`: a keyframe every 240 frames at 25 and 30 fps, no B-frames.
+- x264 and x265's automatic min-keyint is min(keyint / 10, fps): 25 at 30 and 60 fps, 24 at
+  24 fps.
+- x265's `lookahead-slices` depends on the resolution: preset medium gives 4 at 720p, 6 at
+  1080p, 8 at 2160p.
+- SVT-AV1's `max-qp` also works with CRF (36 KB against 408 KB), although the app's help names
+  VBR and CBR only.
+- VP9's under/overshoot default of 25 is from the libvpx source; test encodes could not show it.
+
+### GStreamer's VA-API decoders in the AppImage (D-8, decision 0103)
+
+- GStreamer 1.20's `va` decoders (`vah264dec`, `vah265dec`, `vaav1dec`) have rank none, so
+  playbin does not pick them without `GST_PLUGIN_FEATURE_RANK`.
+- libva 2.14 (Ubuntu 22.04) tries `__vaDriverInit_1_14` down to `__vaDriverInit_1_0` only;
+  Mesa 26.2's radeonsi exports only `__vaDriverInit_1_24`, so 2.14 cannot load it.
+- `vaav1dec` 1.20 fails on AV1 with hidden frames (SVT-AV1, libaom, rav1e output): "Already have
+  picture for current frame". AV1 from `av1_vaapi` and `av1_amf` plays.
+- Ubuntu 22.04 has no GStreamer dav1d plugin.
+- GStreamer 1.20.3's `av1dec` (aom) has rank primary (256) and decodes on one thread.
+- decodebin/playbin in WebKitGTK 2.50 does not try the next decoder after a decode error: with
+  `vaav1dec` at 258 above `av1dec`, SVT-AV1 8-bit clips end in error 3 and 10-bit in error 4
+  (RX 7600, Mesa 22.3.6).
+- GLib (`gio launch`) does not load an entry whose `Exec=` program path has `%` written as `%%`,
+  although `desktop-file-validate` accepts it; quotes, `$`, backquote, backslash, space and
+  non-ASCII paths load.
+- Tauri 2.12.4's `tauri bundle --bundles rpm --config …` reuses the built binary. The rpm crate
+  refuses `-` in Version; Release `0.dev.0` sorts before `1`.
+

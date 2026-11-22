@@ -91,7 +91,7 @@ Reasons:
 | Taskbar progress | `Window.setProgressBar` on Windows. Linux: the app's own Unity `LauncherEntry.Update` signal on the session bus, for launchers that support it (Tauri's needs libunity; [decision 0069](../decisions/0069-m5-desktop-shell.md)) |
 | Single instance + "Open with Reframe" | `tauri-plugin-single-instance`. Paths from argv are forwarded to the running window and probed |
 | File associations (optional) | NSIS registry entries. Linux `.desktop` `MimeType=` |
-| Reveal in folder, open externally | `tauri-plugin-opener` |
+| Reveal in folder, open externally | Reveal: `tauri-plugin-opener` (D-Bus `FileManager1` on Linux). Open externally: the shell's `open_external` command (the preview clip links only), which opens the clip's cached file (`GET /api/preview/clips/{id}/file`, desktop mode only), else the link ([decision 0100](../decisions/0100-desktop-app-with-intel-qsv-on-linux.md)); in an AppImage it starts the opener's launchers itself, with the user's environment and folder ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) "Fix round — FA") |
 | Remember window size/position | `tauri-plugin-window-state` |
 | Detached preview window | A second webview window on route `/preview/:sourceId`, same backend |
 | Tray (optional) | Queue progress, pause all, show, quit |
@@ -104,26 +104,44 @@ Webview codec support differs: WebView2 plays H.264 out of the box, but HEVC and
 Windows extensions. WebKitGTK depends on the GStreamer plugins that are installed. Because of
 this:
 
-- The preview clip plays in-app when the webview can decode it (checked with
-  `HTMLMediaElement.canPlayType`).
+- The preview clip plays in-app when the webview can decode it: the `<video>` decides, and its
+  error shows the frame compare instead (`canPlayType` is not reliable,
+  [decision 0067](../decisions/0067-m8-picture.md) item 4). A webview without its media
+  framework is not asked: WebKitGTK aborts its web process instead of reporting an error when
+  GStreamer lacks the player's elements, as in the AppImage, whose AppRun points GStreamer at
+  an empty plugin folder. The shell's `webview_plays_video` says so, and the preview shows the
+  frame compare at once ([decision 0100](../decisions/0100-desktop-app-with-intel-qsv-on-linux.md)).
+  The AppImage bundles GStreamer's base, good and libav plugins, so clips play in it too
+  ([decision 0103](../decisions/0103-owner-decisions-before-v1.md) item 12).
 - **Frame compare works for every codec.** FFmpeg decodes frames from the encoded preview clip
   to PNG, and the split view shows them next to the source frame. This is the main quality
-  check and does not depend on the webview.
-- **Open in external player** (mpv, VLC, or the system default) is always available.
+  check and does not depend on the webview. The clip starts on a source frame, so its frame at
+  `t` is the source frame at `start + t`.
+- **Open in external player** is always available. The desktop app opens the cached clip file,
+  so the system's video player opens it (a link would open the browser); the web app opens the
+  signed link.
 
 ## Tool bundling
 
-Every desktop package bundles the pinned FFmpeg from `tools/ffmpeg.toml`
-([02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg)).
+The desktop packages contain **no FFmpeg**. The first run offers the pinned builds that
+`tools/ffmpeg.toml` marks as offered, downloads the chosen one into `<data dir>/tools/ffmpeg/`
+(or installs it from an archive file), or takes the user's own FFmpeg path
+([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md), which supersedes the
+bundling part of [0002](../decisions/0002-bundled-ffmpeg.md)).
 
-| Platform | FFmpeg | mkvpropedit / mediainfo |
-|----------|--------|-------------------------|
-| Windows | Bundled in `resources/tools/ffmpeg/` | Bundled MKVToolNix CLI tools (`mkvpropedit.exe`) and MediaInfo CLI |
-| Linux AppImage | Bundled inside the AppImage | System packages, if installed |
-| Linux .deb / .rpm | Bundled in `/usr/lib/reframe/tools/ffmpeg/`. No dependency on the distro `ffmpeg` package | `Recommends: mkvtoolnix, mediainfo` |
+| Platform | What the package ships for FFmpeg |
+|----------|-----------------------------------|
+| Windows | Nothing |
+| Linux AppImage | The pinned libva, copied into a downloaded build's `lib/` |
+| Linux .deb / .rpm | The pinned libva in `/usr/lib/Reframe/tools/libva/`, copied the same way. No dependency on the distro `ffmpeg` package |
 
-**Override**: Settings → Tools has a path field for each tool, a **Test** button and a **Use
-bundled** reset. Environment variables (`REFRAME_FFMPEG`, …) take precedence and show as
+No other tool is bundled or recommended: since C-18 and C-19 Reframe runs no MKVToolNix or
+MediaInfo ([decision 0080](../decisions/0080-own-matroska-header-writer.md),
+[decision 0081](../decisions/0081-probe-without-mediainfo.md)). Until then, the Windows
+package bundles the MediaInfo CLI and the .deb / .rpm have `Recommends: mediainfo`.
+
+**Override**: Settings → Tools has the build picker, a path field for each tool, a **Test**
+button and a **Use bundled** reset (the downloaded build). Environment variables (`REFRAME_FFMPEG`, …) take precedence and show as
 read-only. The first-run screen shows which binary is in use and where it came from.
 
 ## Steps
@@ -144,7 +162,8 @@ or delete it ([decision 0054](../decisions/0054-d0-spike-layout-and-parent-watch
       remains. The same with a kill from Task Manager: *(Windows testing phase)*.
 - [x] Check drag-and-drop paths, PrimeVue rendering and canvas magnifier performance on
       WebKitGTK.
-- [x] Note any PyInstaller hidden imports (pydantic, uvicorn loops, langcodes data).
+- [x] Note any PyInstaller hidden imports (pydantic, uvicorn loops, langcodes data; since C-20
+      the generated language table instead, [decision 0082](../decisions/0082-own-language-data-table.md)).
 
 Linux result (2026-10-28): [decision 0001](../decisions/0001-desktop-shell.md). The Windows items
 stay open for the Windows testing phase.
@@ -169,12 +188,15 @@ and confirms or revisits this choice. It lists the Windows items as not verified
       libraries). The `.deb` and `.rpm` link it as `/usr/bin/reframe`; the Windows installer
       offers to add the folder to the user's `PATH`; the AppImage does not put it on `PATH`
       ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md) item 11).
-      The Windows installer's offer is written, not run: *(Windows testing phase)*.
+      The Windows installer's offer is checked on Windows, also that an update keeps the entry
+      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) task W).
 - [x] A smoke test runs the frozen binary with `--mode desktop --port 0` and waits for the ready
       line.
 
-Linux result (2026-11-03): [decision 0069](../decisions/0069-m5-desktop-shell.md) "Task A". The
-sidecar ships MediaInfo (pymediainfo with its own library).
+Linux result (2026-11-03): [decision 0069](../decisions/0069-m5-desktop-shell.md) "Task A". Since
+C-19 the sidecar ships no MediaInfo, and since C-20 none of langcodes, language_data and
+marisa-trie ([decision 0081](../decisions/0081-probe-without-mediainfo.md),
+[decision 0082](../decisions/0082-own-language-data-table.md)).
 
 ### D-3 Sidecar manager (Rust)
 - [x] Spawn with `tokio::process`. Read the ready line. Keep the managed state.
@@ -213,30 +235,79 @@ sidecar ships MediaInfo (pymediainfo with its own library).
       the session bus (0069 "Fix round — FB").
 
 ### D-7 Tool bundling
-- [ ] Choose the FFmpeg build for `tools/ffmpeg.toml` against the requirements in
+- [x] Choose the FFmpeg build for `tools/ffmpeg.toml` against the requirements in
       [02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg). Test it on the hosts that are
       available, aiming at Intel (VAAPI + QSV), AMD (VAAPI, AMF on Windows) and NVIDIA
       (NVENC), on at least two Linux distros (Debian/Ubuntu and Fedora or Arch) and on
       Windows *(Windows testing phase)*. Record each host and its result in `docs/decisions/0002-bundled-ffmpeg.md`, and
       list there the hosts that were not tested as not verified
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 7).
-- [ ] CI downloads the pinned FFmpeg / MKVToolNix / MediaInfo builds, verifies the checksums,
-      and puts them in `resources/tools/<os>/`. The same step feeds the .deb/.rpm layout.
-- [ ] Settings → Tools: a path override per tool, **Test**, **Use bundled**, env overrides shown
-      read-only. The first-run check runs before the main UI.
+- [x] CI downloads the pinned FFmpeg / MediaInfo builds (MediaInfo: until C-19,
+      [decision 0081](../decisions/0081-probe-without-mediainfo.md); MKVToolNix: not bundled since
+      [decision 0079](../decisions/0079-q5-release-process.md) item 11), verifies the checksums,
+      and puts them in `resources/tools/` (`scripts/bundle-tools.py`; one build platform per
+      layout, so no sub-folder per OS). The same step feeds the .deb/.rpm layout. The
+      `desktop-smoke` CI job and the Linux package build run it; the job has not run on GitHub
+      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md)).
+- [x] Settings → Tools: a path override per tool, **Test**, **Use bundled**, env overrides shown
+      read-only. The first-run check runs before the main UI. On Linux; the Windows row of the
+      bundled MediaInfo is checked with D-8's installer
+      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) "Task U"). Since
+      C-18 there is no mkvpropedit row and no MKVToolNix text
+      ([decision 0080](../decisions/0080-own-matroska-header-writer.md)), and since C-19 no
+      mediainfo row ([decision 0081](../decisions/0081-probe-without-mediainfo.md)).
 
 ### D-8 Packaging, signing, updates
-- [ ] Windows: NSIS installer (per-user, no admin rights), WebView2 bootstrapper, optional MSI.
+- [x] Windows: NSIS installer (per-user, no admin rights), WebView2 bootstrapper, optional MSI.
       Code signing is strongly recommended (SmartScreen warns about unsigned installers).
-      Installed and run on Windows: *(Windows testing phase)*.
-- [ ] Linux: AppImage (built on the oldest supported distro image, for glibc compatibility),
+      Installed and run on Windows: *(Windows testing phase)*. The per-user install goes to
+      `%LOCALAPPDATA%\Programs\Reframe` (Tauri's default is Reframe's data folder); the MSI is
+      per machine, for administrators. Signed with a self-signed test certificate; a release
+      needs one from a certification authority. Installed, run, updated and removed on the
+      Windows VM ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md)
+      task W).
+- [x] Linux: AppImage (built on the oldest supported distro image, for glibc compatibility),
       `.deb`, `.rpm`. Flatpak comes later (its sandbox complicates file access and GPU access).
-- [ ] Updater: signed `latest.json` in GitHub Releases.
+      Built in `ubuntu:22.04` by `desktop/packaging/linux/build.sh`; installed and run in Ubuntu
+      22.04, Debian 12 and Fedora 45 containers, the AppImage on the host in a virtual session
+      ([decision 0072](../decisions/0072-m10-bundling-packaging-smoke-tests.md) task L).
+- [ ] Updater: signed `latest.json` in GitHub Releases. The plugin, the test key, the question,
+      the install through the quit flow and a signed `latest.json` are built and checked from a
+      test release served to the VM (0072 task W, with the release job's steps); a GitHub
+      release has not been made (no workflow has run on GitHub yet).
+- [ ] The AppImage bundles GStreamer's base, good and libav plugins (their LGPL notices and
+      corresponding source in the notices and the sources release), and at its first start
+      offers once to add `~/.local/share/applications/Reframe.desktop` (taskbar progress,
+      open-with); Settings can remove it ([decision 0103](../decisions/0103-owner-decisions-before-v1.md) items 12, 13).
 
 ### D-9 Desktop smoke tests
 - [ ] `tauri-driver` (WebDriver) on Linux and Windows CI: the app starts, the backend becomes
       ready, a fixture opens from argv, a job is queued and finishes, and quitting leaves no
       orphan processes. On Windows: *(Windows testing phase)*.
+
+### D-10 Packages without FFmpeg
+- [x] `scripts/bundle-tools.py` and the package builds put no FFmpeg into `resources/tools/`;
+      on Linux they ship the pinned libva in `resources/tools/libva/` (AppImage, .deb, .rpm)
+      for C-21's copy ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)).
+- [x] The sidecar tells the core where the packaged libva is; discovery finds a downloaded
+      build in `<data dir>/tools/ffmpeg/` as today.
+- [x] The notices of the desktop packages drop FFmpeg (the Docker image's too, since
+      [decision 0094](../decisions/0094-docker-image-without-ffmpeg.md)).
+- [x] D-9's smoke test starts with no FFmpeg, sees the first-run screen list the offered
+      builds, installs the `default` build with **Install from file** from the CI cache, and
+      then runs the rest of the flow. The package install tests of D-8 check that no FFmpeg is
+      in the packages and that a build installed after the install finds the packaged libva.
+
+Done when: the Linux packages and the Windows installers contain no `ffmpeg`/`ffprobe`
+binaries; the smoke test passes on Linux; an installed .deb in an Ubuntu 22.04 container
+downloads (or installs from a file) the `default` build and detects VAAPI with the copied libva.
+
+Intel QSV (2026-11-19, a UHD 620 under CachyOS,
+[decision 0100](../decisions/0100-desktop-app-with-intel-qsv-on-linux.md)): the AppImage's
+downloaded build with the copied libva, and the CLI's build with the system's, both use QSV and
+VAAPI on iHD 26.3.5 and Media SDK 23.2.2; the .deb in an Ubuntu 22.04 container does on
+Ubuntu's iHD 22.3.1. The AppImage shows no taskbar progress without an installed
+`Reframe.desktop`.
 
 ## Risks
 
@@ -245,6 +316,7 @@ sidecar ships MediaInfo (pymediainfo with its own library).
 | Orphaned FFmpeg or sidecar after a crash | Job Object (Windows), PDEATHSIG + parent watch (Linux). Tested in D-0 and D-9 |
 | Antivirus false positives on the PyInstaller binary (Windows) | Onedir build (not onefile), code signing, submit to vendors if needed |
 | WebKitGTK differences (CSS, performance, codecs) | D-0 spike, Playwright WebKit project in CI, frame compare that does not need webview codecs |
+| The AppImage's WebKitGTK has no GStreamer plugins: a `<video>` aborts its web process | No `<video>` where the shell's `webview_plays_video` is false; frame compare and the external player instead. The AppImage bundles the plugins ([decision 0103](../decisions/0103-owner-decisions-before-v1.md) item 12) |
 | The bundled FFmpeg cannot use VAAPI/QSV on some Linux hosts (driver path or libva mismatch) | D-7 tests on several distros. `LIBVA_DRIVERS_PATH` handling in `C-1`. Capability reasons in Settings name the cause. Users can point the override to their distro FFmpeg |
-| The bundled FFmpeg makes installers larger | Shared-library build (one copy of the libraries for `ffmpeg` and `ffprobe`). Installer compression |
+| A fresh install needs the FFmpeg archive (the packages contain none) | Download at the first run, or install from a file; the user's own FFmpeg path. BtbN keeps a month-end build for two years: re-pin (or mirror) before then ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)) |
 | Startup time of the Python sidecar | Onedir build, lazy imports, the UI shows a skeleton while it connects |

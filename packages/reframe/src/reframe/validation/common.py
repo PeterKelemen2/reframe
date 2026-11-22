@@ -29,6 +29,7 @@ __all__ = [
     "TrackKind",
     "add",
     "containers_for",
+    "drop_track",
     "error",
     "fix",
     "info",
@@ -86,7 +87,6 @@ def switch_container_fixes(
     current: Container,
     definitions: Definitions,
     *,
-    target: FixTarget = "job",
     output: PurePath | None = None,
     holds: Callable[[ContainerDef], bool] | None = None,
 ) -> list[Fix]:
@@ -106,8 +106,13 @@ def switch_container_fixes(
         ops: list[JsonPatchOp] = [replace("output.container", container_id)]
         if output is not None and output.suffix.lower() not in container.extensions:
             ops.append(replace("output.path", str(output.with_suffix(container.extensions[0]))))
-        fixes.append(fix(f"Switch to {container.label}", *ops, target=target))
+        fixes.append(fix(f"Switch to {container.label}", *ops))
     return fixes
+
+
+def drop_track(kind: Literal["audio", "subtitles"], index: int) -> Fix:
+    label = "audio" if kind == "audio" else "subtitle"
+    return fix(f"Remove this {label} track", remove(f"{kind}[{index}]"))
 
 
 def usable_encoder(encoder_id: str, caps: CapabilitySnapshot) -> bool:

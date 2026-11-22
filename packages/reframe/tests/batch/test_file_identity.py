@@ -3,14 +3,12 @@ target."""
 
 from __future__ import annotations
 
-import importlib.util
 import ntpath
 import os
 import shutil
-import sys
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -24,25 +22,12 @@ from reframe.models import (
     Severity,
     ValidationIssue,
 )
-from reframe.probe import mediainfo
 from reframe.queue.files import same_file
 from reframe.service import Reframe
 from reframe_testing import media
 
+from . import anime as A
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-A = _load("anime")
 OPS = TypeAdapter(list[JsonPatchOp])
 Media = Callable[[str], Path]
 E01 = media.anime_file_name(1, 1)
@@ -195,7 +180,6 @@ def _replace(path: str, value: object) -> list[JsonPatchOp]:
 
 @pytest.fixture
 async def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[Reframe]:
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     async with await Reframe.create(
         tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "cache"
     ) as reframe:

@@ -347,14 +347,16 @@ def _jail(config: ServerConfig, path: str | os.PathLike[str], roots: list[Path],
     given = Path(text)
     if not given.is_absolute():
         raise _bad_path(text, "the path is not absolute")
+    if "\0" in text:  # Windows' non-strict realpath returns such a path unchanged
+        raise _bad_path(text, "the path holds a NUL character")
     try:
         resolved = given.resolve(strict=False)
-    except ValueError as exc:  # a NUL, or a character the file system cannot encode
+    except ValueError as exc:  # a character the file system cannot encode
         raise _bad_path(text, str(exc)) from None
     if config.mode == "desktop":
         return resolved
     for root in roots:
-        if resolved.is_relative_to(Path(root).resolve(strict=False)):
+        if resolved.is_relative_to(root.resolve(strict=False)):
             return resolved
     # The resolved path is not shown: it would tell where a link points.
     raise ProblemError(
@@ -377,20 +379,20 @@ def jail_write(config: ServerConfig, path: str | os.PathLike[str]) -> Path:
     return _jail(config, path, config.output_roots, "write to")
 
 
-def _paths(
+def model_paths(
     value: object, where: tuple[str | int, ...]
 ) -> Iterator[tuple[tuple[str | int, ...], PurePath]]:
     if isinstance(value, PurePath):
         yield where, value
     elif isinstance(value, BaseModel):
         for name in type(value).model_fields:
-            yield from _paths(getattr(value, name), (*where, name))
+            yield from model_paths(getattr(value, name), (*where, name))
     elif isinstance(value, Mapping):
         for key, item in value.items():
-            yield from _paths(item, (*where, str(key)))
+            yield from model_paths(item, (*where, str(key)))
     elif isinstance(value, (list, tuple, set, frozenset)):
         for index, item in enumerate(value):
-            yield from _paths(item, (*where, index))
+            yield from model_paths(item, (*where, index))
 
 
 def jail_job(config: ServerConfig, job: JobSettings) -> None:
@@ -400,7 +402,7 @@ def jail_job(config: ServerConfig, job: JobSettings) -> None:
 
     Web mode: free filter text (``filters.*.custom``) may name only allowed filters, else a
     403 ``filter.not_allowed``."""
-    for where, path in _paths(job, ()):
+    for where, path in model_paths(job, ()):
         if where[0] == "output":
             jail_write(config, path)
         else:

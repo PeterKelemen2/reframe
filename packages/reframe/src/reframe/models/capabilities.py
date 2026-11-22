@@ -8,13 +8,14 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AwareDatetime, Field
 
 from reframe.models.base import ReframeModel
 from reframe.models.text import DisplayText
 
-__all__ = ["CapabilitySnapshot", "EncoderState", "EncoderStatus"]
+__all__ = ["BuildMismatchCause", "CapabilitySnapshot", "EncoderState", "EncoderStatus"]
 
 
 class EncoderState(StrEnum):
@@ -26,6 +27,10 @@ class EncoderState(StrEnum):
     """Not in this build, or the hardware test failed for a known reason (``reason``)."""
     ERROR = "error"
     """The check itself failed (timeout, unknown failure); ``reason`` says what happened."""
+
+
+#: What an FFmpeg build needs that the computer lacks (``EncoderStatus.build_mismatch_cause``).
+BuildMismatchCause = Literal["driver", "system_library"]
 
 
 class EncoderStatus(ReframeModel):
@@ -55,6 +60,16 @@ class EncoderStatus(ReframeModel):
     reason_10bit: DisplayText | None = None
     """Why ``supports_10bit`` is ``False`` when the 10-bit test encode failed ("10-bit is not
     supported by this encoder")."""
+    build_mismatch: bool = False
+    """``True`` when the encoder is unavailable because this FFmpeg build needs newer system
+    software than the computer has (an NVIDIA driver older than the build's NVENC needs, a
+    system library too old for the build): a driver update or another FFmpeg build can make it
+    available. Never set by a 10-bit-only limit."""
+    build_mismatch_cause: BuildMismatchCause | None = None
+    """What the build needs when ``build_mismatch`` is ``True``: ``driver``, a newer GPU driver
+    (another build can help), or ``system_library``, a system library that is missing or too
+    old, such as libva (install or update it, or use an FFmpeg that does not need it). ``None``
+    otherwise."""
     device: str | None = None
     """The device the encoder works on, for encoders that need one: the VAAPI render node
     (``/dev/dri/renderD128``), the first node where the test encode worked, or the node that

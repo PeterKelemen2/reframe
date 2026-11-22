@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test'
 
-import { changeSettings, openApp, readQueue, readSettings } from './support/app'
+import { CROP_DETECTION, changeSettings, openApp, readQueue, readSettings } from './support/app'
 import { expect, test } from './support/test'
 
 const FOLDER = 'Anime.Show.S01.BluRay.x264-GRP'
@@ -93,7 +93,8 @@ test('a season folder: edit the group, check the matrix, queue the group', async
   const group = tree.locator(`[data-group="${GROUP}"]`)
   await expect(tree.locator('[aria-level="1"]')).toHaveCount(1)
   await expect(group.locator('[data-field="count"]')).toHaveText('12 files')
-  const members = group.locator('[aria-level="2"]')
+  // The tree is flat: the members follow their group's row, and this is the only group.
+  const members = tree.locator('[aria-level="2"]')
   await expect(members.locator('.source-item__label')).toHaveText(EPISODES)
   await expect(members.and(page.locator('[data-match="near"]'))).toHaveCount(2)
   const e05 = members.filter({ hasText: 'E05' })
@@ -145,7 +146,7 @@ test('a season folder: edit the group, check the matrix, queue the group', async
   await expect(output.getByTestId('naming-result')).toHaveText('Anime Show - S01E01 - Pilot.mkv')
 
   await banner.getByRole('button', { name: 'Add group to queue' }).click()
-  await expect(page.getByText('Queued 12 jobs')).toBeVisible()
+  await expect(page.getByText('Queued 12 jobs')).toBeVisible({ timeout: CROP_DETECTION })
   const jobs = (await readQueue(request)).jobs
     .filter((job) => !known.has(job.id))
     .toSorted((a, b) => a.position - b.position)

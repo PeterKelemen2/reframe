@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import importlib.util
 import random
-import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
@@ -17,7 +14,6 @@ from reframe.batch.grouping import (
     compare,
     episode_info,
     episode_key,
-    episode_label,
     episode_labels,
     group_name,
 )
@@ -31,20 +27,7 @@ from reframe.models import (
     VideoStream,
 )
 
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-A = _load("anime")
+from . import anime as A
 
 
 @pytest.mark.parametrize(
@@ -68,12 +51,7 @@ def test_episode_info(
 ) -> None:
     info = episode_info(Path(path))
     assert (info.name, info.season, info.episode) == (name, season, episode)
-    assert episode_label(Path(path)) == label
-
-
-def test_episode_label_with_season() -> None:
-    assert episode_label(A.path(1, 5), season=True) == "S01E05"
-    assert episode_label(Path("/tv/Show - 07.mkv"), season=True) == "E07"
+    assert episode_labels([Path(path)]) == [label]
 
 
 def test_episode_order() -> None:
@@ -215,13 +193,10 @@ def test_the_example_season_is_one_group() -> None:
     assert all(not m.differences for m in group.members if m.match == "exact")
 
 
-@pytest.mark.parametrize("level", ["strict", "standard", "loose"])
-def test_one_group_at_every_level(level: str) -> None:
-    (group,) = group_sources(A.season(1), level)  # type: ignore[arg-type]
-    assert len(group.members) == 12
-    assert (
-        group.id != group_sources(A.season(1), "standard" if level != "standard" else "loose")[0].id
-    )
+def test_one_group_at_every_level() -> None:
+    groups = [group_sources(A.season(1), level) for level in MATCH_LEVELS]
+    assert [[len(g.members) for g in found] for found in groups] == [[12]] * 3
+    assert len({found[0].id for found in groups}) == 3
 
 
 def test_two_seasons_of_one_release_are_one_group_at_the_standard_level() -> None:
@@ -333,6 +308,8 @@ def test_episode_labels() -> None:
         "movie.mkv",
     ]
     assert episode_labels(paths[2:], season=True) == ["S01E02", "movie.mkv"]
+    assert episode_labels([A.path(1, 5)], season=True) == ["S01E05"]
+    assert episode_labels([Path("/tv/Show - 07.mkv")], season=True) == ["E07"]
     assert episode_labels([Path("/a/Show.S01E01.mkv"), Path("/a/Show.S02E01.mkv")]) == [
         "S01E01",
         "S02E01",

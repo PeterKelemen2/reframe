@@ -52,7 +52,19 @@ describe('the Settings view', () => {
     const { wrapper } = await mountView()
     expect(
       wrapper.findAll('[data-section]').map((section) => section.attributes('data-section')),
-    ).toEqual(['tools', 'encoders', 'output', 'languages', 'preview', 'queue', 'appearance'])
+    ).toEqual([
+      'tools',
+      'encoders',
+      'output',
+      'languages',
+      'preview',
+      'queue',
+      'appearance',
+      'diagnostics',
+    ])
+    expect(
+      wrapper.find('[data-section="diagnostics"] [data-action="copy-diagnostics"]').exists(),
+    ).toBe(true)
   })
 
   it('shows the desktop app’s own settings last, in the desktop app only', async () => {
@@ -65,6 +77,33 @@ describe('the Settings view', () => {
       expect(sections.at(-1)?.attributes('data-section')).toBe('desktop')
       expect(wrapper.find('[data-section-link="desktop"]').exists()).toBe(true)
       expect(wrapper.find('[data-field="tray"] input').element).toHaveProperty('checked', true)
+    } finally {
+      platform.desktop = null
+    }
+  })
+
+  it.each([
+    { appimage: '/a/Reframe.AppImage', sections: ['desktop', 'menu'] },
+    { appimage: null, sections: ['diagnostics', 'desktop'] },
+  ])('shows the application menu entry in the AppImage only ($appimage)', async (row) => {
+    platform.desktop = {
+      settings: async () => ({ tray: false }),
+      menuEntry: async () => ({
+        appimage: row.appimage,
+        added: true,
+        other: null,
+        percentInPath: false,
+      }),
+    } as Partial<DesktopShell> as DesktopShell
+    try {
+      const { wrapper } = await mountView()
+      await flushPromises()
+      const sections = wrapper.findAll('[data-section]').map((s) => s.attributes('data-section'))
+      expect(sections.slice(-2)).toEqual(row.sections)
+      expect(wrapper.find('[data-section-link="menu"]').exists()).toBe(row.appimage !== null)
+      expect(wrapper.findAll('[data-field="menu-entry"] input:checked')).toHaveLength(
+        row.appimage === null ? 0 : 1,
+      )
     } finally {
       platform.desktop = null
     }

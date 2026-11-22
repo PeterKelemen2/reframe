@@ -10,16 +10,15 @@ from pathlib import Path
 from typing import Any
 
 from reframe.analysis.subtitles import PGS, SupError, read_display_sets
-from reframe.command.subtitles import EXTERNAL_CODECS
+from reframe.command.subtitles import EXTERNAL_FORMATS
 from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.media import SubtitleFileInfo
 from reframe.probe.ffprobe import PROBE_TIMEOUT, ProbeError, ProbeErrorKind, ProbeTool, run_json
-from reframe.textfile import ENCODING_SAMPLE, detect_charset, open_regular, read_charset
+from reframe.probe.names import BITMAP_SUBTITLE_CODECS
+from reframe.textfile import open_regular, read_charset
 from reframe.tools import CancelToken
 
-__all__ = ["BITMAP_CODECS", "ENCODING_SAMPLE", "detect_charset", "inspect_subtitle_file"]
-
-BITMAP_CODECS = frozenset({PGS, "dvd_subtitle", "dvb_subtitle", "xsub"})
+__all__ = ["inspect_subtitle_file"]
 
 
 def _display_sets(path: Path) -> int | None:
@@ -63,9 +62,8 @@ async def inspect_subtitle_file(
     subtitles in, is a ``FAILED`` :class:`~reframe.probe.ProbeError`."""
     file = Path(path)
     suffix = file.suffix.lower()
-    expected = EXTERNAL_CODECS.get(suffix)
-    if expected is None:
-        known = ", ".join(sorted(EXTERNAL_CODECS))
+    if suffix not in EXTERNAL_FORMATS:
+        known = ", ".join(sorted(EXTERNAL_FORMATS))
         return ProbeError(
             file,
             ProbeErrorKind.FAILED,
@@ -81,7 +79,8 @@ async def inspect_subtitle_file(
     if stream is None or not isinstance(stream.get("codec_name"), str):
         return ProbeError(file, ProbeErrorKind.FAILED, f"FFmpeg finds no subtitles in {file.name}.")
     codec: str = stream["codec_name"]
-    bitmap = codec in BITMAP_CODECS
+    expected = EXTERNAL_FORMATS[suffix][0]
+    bitmap = codec in BITMAP_SUBTITLE_CODECS
     issues: list[ValidationIssue] = []
     if codec != expected:
         issues.append(

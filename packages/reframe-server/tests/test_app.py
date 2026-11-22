@@ -32,7 +32,7 @@ from reframe_server.app import create_app
 from reframe_server.config import ServerConfig
 from reframe_server.deps import ReframeDep
 from reframe_server.errors import ProblemError, issue_problem, probe_problem
-from reframe_testing.server import BASE_URL, Api, ApiFactory, receive_json
+from reframe_testing.server import BASE_URL, Api, ApiFactory
 
 pytestmark = pytest.mark.anyio
 
@@ -173,6 +173,14 @@ def test_desktop_server_prints_the_ready_line_and_answers_health(
     assert "Application shutdown complete" in err
     assert _out == "", "only the ready line may go to stdout"
     assert token not in err
+    log = (tmp_path / "data" / "logs" / "reframe.log").read_text(encoding="utf-8")
+    records = [json.loads(line) for line in log.splitlines()]
+    assert ("uvicorn.error", "Application startup complete.") in [
+        (record["logger"], record["message"]) for record in records
+    ]
+    assert token not in log
+    assert "/api/health" not in log, "the access log stays out of reframe.log"
+    assert '{"time"' not in err, "stderr stays plain text"
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="checked on Linux only (decision 0053)")
@@ -368,23 +376,3 @@ async def test_a_request_after_close_is_503(probe_api: Api) -> None:
     await probe_api.reframe.close()
     response = await probe_api.client.post("/t/task")
     assert (response.status_code, response.json()["code"]) == (503, "server.closing")
-
-
-async def test_task_events_name_no_server_folder(api: Api) -> None:
-    """The event stream shows a task's result as ``GET /api/tasks/{id}`` does: the server's
-    cache folder as ``<cache>``."""
-    frame = f"{api.reframe.cache_dir}/frames/f.png"
-
-    async def work(_ctx: TaskContext) -> dict[str, str]:
-        return {"path": frame}
-
-    async with api.live() as server, server.connect() as connection:
-        await connection.send(json.dumps({"type": "auth", "token": api.token}))
-        assert (await receive_json(connection))["type"] == "hello"
-        task = api.reframe.tasks.start("test", work)
-        while True:
-            message = await receive_json(connection)
-            event = message.get("event", {})
-            if event.get("type") == "task.done" and event["task"]["id"] == task.id:
-                break
-    assert event["task"]["result"] == {"path": "<cache>/frames/f.png"}

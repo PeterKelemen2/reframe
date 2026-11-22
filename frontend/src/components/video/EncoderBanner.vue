@@ -3,6 +3,7 @@ import { CircleX } from '@lucide/vue'
 import Button from 'primevue/button'
 import { computed, ref, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 
 import { ApiError } from '@/api/client'
 import type { Fix } from '@/api/types'
@@ -12,11 +13,13 @@ import { useValidationStore } from '@/stores/validation'
 
 /**
  * Shown while the job's encoder is unavailable (`encoder.unavailable`): the reason, the issue's
- * fixes, *Choose encoder* and *Check again*. It never blocks the tab.
+ * fixes, *Choose encoder*, *Use another FFmpeg…* when another build can help, and *Check
+ * again*. It never blocks the tab.
  */
 const emit = defineEmits<{ choose: [] }>()
 
 const { t } = useI18n()
+const router = useRouter()
 const editor = useEditorStore()
 const system = useSystemStore()
 const validation = useValidationStore()
@@ -29,6 +32,7 @@ const issue = computed(
 )
 const encoder = computed(() => editor.job?.video?.encoder ?? '')
 const reason = computed(() => system.encoderStatus(encoder.value)?.reason ?? null)
+const buildMismatch = computed(() => system.encoderStatus(encoder.value)?.build_mismatch === true)
 /** The preset's name while the job still has the preset's encoder; after a change it is the job's. */
 const presetName = computed(() => {
   const preset = editor.preset
@@ -47,6 +51,10 @@ async function apply(fix: Fix): Promise<void> {
   } finally {
     applying.value = null
   }
+}
+
+async function otherFfmpeg(): Promise<void> {
+  await router.push({ name: 'settings', hash: '#tools' })
 }
 
 async function checkAgain(): Promise<void> {
@@ -111,6 +119,15 @@ async function checkAgain(): Promise<void> {
           outlined
           :label="t('video.banner.choose')"
           @click="emit('choose')"
+        />
+        <Button
+          v-if="buildMismatch"
+          class="encoder-banner__other-ffmpeg"
+          size="small"
+          severity="secondary"
+          outlined
+          :label="t('video.banner.otherFfmpeg')"
+          @click="otherFfmpeg"
         />
         <Button
           class="encoder-banner__check"

@@ -78,19 +78,33 @@ pub fn take_open_paths(pending: State<'_, Pending>) -> Vec<String> {
 mod tests {
     use super::*;
 
+    /// A test path written POSIX-style, in this platform's form (`C:\…` on Windows).
+    fn native(path: &str) -> String {
+        if cfg!(windows) && path.starts_with('/') {
+            format!("C:{}", path.replace('/', "\\"))
+        } else {
+            path.to_owned()
+        }
+    }
+
     fn paths(args: &[&str], cwd: &str) -> Vec<String> {
-        absolute_paths(args.iter().map(OsString::from), Path::new(cwd))
+        let args = args.iter().map(|arg| OsString::from(native(arg)));
+        absolute_paths(args, Path::new(&native(cwd)))
+    }
+
+    fn natives(paths: &[&str]) -> Vec<String> {
+        paths.iter().map(|path| native(path)).collect()
     }
 
     #[test]
     fn a_relative_path_is_made_absolute_against_the_launch_folder() {
         assert_eq!(
             paths(&["file1.mkv", "folder/", "./sub/../b.mkv"], "/home/u/films"),
-            [
+            natives(&[
                 "/home/u/films/file1.mkv",
                 "/home/u/films/folder",
                 "/home/u/films/sub/../b.mkv"
-            ]
+            ])
         );
     }
 
@@ -98,7 +112,7 @@ mod tests {
     fn an_absolute_path_stays_as_it_is() {
         assert_eq!(
             paths(&["/media/a.mkv", "/media/season 1/"], "/home/u"),
-            ["/media/a.mkv", "/media/season 1"]
+            natives(&["/media/a.mkv", "/media/season 1"])
         );
     }
 
@@ -106,7 +120,7 @@ mod tests {
     fn spaces_and_accents_are_kept_byte_for_byte() {
         assert_eq!(
             paths(&["Ünnepi film – 2.mkv", "日本語/ä b.mkv"], "/tmp/Ő ű"),
-            ["/tmp/Ő ű/Ünnepi film – 2.mkv", "/tmp/Ő ű/日本語/ä b.mkv"]
+            natives(&["/tmp/Ő ű/Ünnepi film – 2.mkv", "/tmp/Ő ű/日本語/ä b.mkv"])
         );
     }
 
@@ -114,13 +128,13 @@ mod tests {
     fn flags_and_empty_arguments_are_not_paths() {
         assert_eq!(
             paths(&["--display=:1", "-v", "", "a.mkv"], "/m"),
-            ["/m/a.mkv"]
+            natives(&["/m/a.mkv"])
         );
     }
 
     #[test]
     fn a_relative_path_without_a_launch_folder_is_dropped() {
-        assert_eq!(paths(&["a.mkv", "/m/b.mkv"], ""), ["/m/b.mkv"]);
+        assert_eq!(paths(&["a.mkv", "/m/b.mkv"], ""), natives(&["/m/b.mkv"]));
     }
 
     #[cfg(unix)]
@@ -140,7 +154,10 @@ mod tests {
             "/usr/bin/reframe-desktop".to_owned(),
             "other.mkv".to_owned(),
         ];
-        assert_eq!(handed_over(argv, "/home/u"), ["/home/u/other.mkv"]);
+        assert_eq!(
+            handed_over(argv, &native("/home/u")),
+            natives(&["/home/u/other.mkv"])
+        );
     }
 
     #[test]

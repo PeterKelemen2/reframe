@@ -1,0 +1,546 @@
+# The release of a v* tag: the sources release that the Linux packages name, the Linux packages,
+# the Windows installers, the Docker image (amd64, arm64), latest.json and the GitHub release.
+# No package contains FFmpeg: the app downloads it.
+# The procedure and the secrets: docs/release.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  # One release at a time: a draft found under a release's tag is then an interrupted run's, and
+  # scripts/release-workflow.py deletes it. A newer tag's run cancels a pending one
+  # (docs/release.md).
+  group: release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  version:
+    name: Version, secrets and visibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.preflight.outputs.version }}
+      latest: ${{ steps.preflight.outputs.latest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      # Before anything is built or published. Only whether each secret is set reaches the
+      # script, not its value.
+      - name: The tag, the version, the secrets and the repository's visibility
+        id: preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY_SET: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
+          RELEASE_GPG_PRIVATE_KEY_SET: ${{ secrets.RELEASE_GPG_PRIVATE_KEY != '' }}
+          WINDOWS_CERTIFICATE_SET: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
+          WINDOWS_CERTIFICATE_PASSWORD_SET: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD != '' }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          version=$(uv run --no-project python scripts/stamp-version.py --check)
+          uv run --no-project python scripts/release-workflow.py preflight \
+            --tag "$GITHUB_REF_NAME" --version "$version" --repo "$GITHUB_REPOSITORY"
+
+      - name: CHANGELOG.md has a section for the version
+        env:
+          VERSION: ${{ steps.preflight.outputs.version }}
+        run: uv run --no-project python scripts/release-notes.py "$VERSION" > /dev/null
+
+      # The release job's signing, on a file of the checkout: a wrong passphrase or a key other
+      # than the one docs/release.md publishes stops the run here.
+      - name: The release key signs SHA256SUMS, checked with the key in docs/release.md
+        env:
+          RELEASE_GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
+          RELEASE_GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
+        run: >-
+          uv run --no-project python scripts/release-workflow.py sums
+          --out-dir "$RUNNER_TEMP/signing-check" CHANGELOG.md
+
+  sources:
+    name: Sources release
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.manifest.outputs.tag }}
+      url: ${{ steps.manifest.outputs.url }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      # Read before any package is built: the notices in the packages name this release.
+      - name: Resolve the AppImage's distro packages (Linux build image)
+        run: desktop/packaging/linux/appimage-libs.sh "$RUNNER_TEMP/sources/appimage-libs.json"
+
+      - name: Write the source manifest
+        id: manifest
+        run: |
+          tag=$(uv run python scripts/sources-manifest.py \
+            --out "$RUNNER_TEMP/sources/manifest.json" \
+            --appimage-libs "$RUNNER_TEMP/sources/appimage-libs.json")
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "url=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$tag" >> "$GITHUB_OUTPUT"
+
+      # Found only when published with every file of the manifest. A draft of it (an
+      # interrupted upload) is deleted; a published but incomplete one stops the run.
+      - name: Look for the sources release
+        id: existing
+        env:
+          TAG: ${{ steps.manifest.outputs.tag }}
+        run: >-
+          uv run --no-project python scripts/release-workflow.py sources-find
+          --repo "$GITHUB_REPOSITORY" --tag "$TAG"
+          --manifest "$RUNNER_TEMP/sources/manifest.json"
+          --sums-out "$RUNNER_TEMP/sources/SHA256SUMS"
+          --texts-out "$RUNNER_TEMP/sources/licence-texts.json"
+
+      # In the pinned image of desktop/packaging/sources (git for the repository entries).
+      - name: Fetch and check one archive per manifest entry
+        if: steps.existing.outputs.found == 'false'
+        run: |
+          df -h "$RUNNER_TEMP"
+          DOCKER_BUILDKIT=0 docker build -t reframe-sources-fetch desktop/packaging/sources
+          docker run --rm -v "$PWD:/src:ro" -v "$RUNNER_TEMP/sources:/sources" -w /src \
+            -e UV_FROZEN=1 reframe-sources-fetch \
+            uv run python scripts/sources-fetch.py --manifest /sources/manifest.json --out /sources/files
+          cp "$RUNNER_TEMP/sources/files/SHA256SUMS" "$RUNNER_TEMP/sources/files/licence-texts.json" \
+            "$RUNNER_TEMP/sources/"
+          du -sh "$RUNNER_TEMP/sources/files"
+          df -h "$RUNNER_TEMP"
+
+      # A draft until every archive is up, then published, never as "latest" (the updater reads
+      # the latest release); no v in its tag (a v* tag starts this workflow).
+      - name: Make the sources release
+        if: steps.existing.outputs.found == 'false'
+        env:
+          TAG: ${{ steps.manifest.outputs.tag }}
+        run: >-
+          uv run --no-project python scripts/release-workflow.py sources-publish
+          --repo "$GITHUB_REPOSITORY" --tag "$TAG" --target "$GITHUB_SHA"
+          --manifest "$RUNNER_TEMP/sources/manifest.json" --files "$RUNNER_TEMP/sources/files"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sources
+          path: |
+            ${{ runner.temp }}/sources/manifest.json
+            ${{ runner.temp }}/sources/SHA256SUMS
+            ${{ runner.temp }}/sources/licence-texts.json
+            ${{ runner.temp }}/sources/appimage-libs.json
+          if-no-files-found: error
+
+  linux:
+    name: Linux packages
+    needs: [version, sources]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sources
+          path: ${{ runner.temp }}/sources
+
+      # build.sh fails when the AppImage's distro packages differ from the list the manifest
+      # was made from (apt moved since the sources job): run the release again.
+      - name: Build the AppImage, .deb and .rpm (Ubuntu 22.04 build image)
+        env:
+          REFRAME_SOURCES_URL: ${{ needs.sources.outputs.url }}
+          REFRAME_SOURCES_SUMS: ${{ runner.temp }}/sources/SHA256SUMS
+          REFRAME_SOURCES_MANIFEST: ${{ runner.temp }}/sources/manifest.json
+          REFRAME_SOURCES_TEXTS: ${{ runner.temp }}/sources/licence-texts.json
+          REFRAME_APPIMAGE_LIBS: ${{ runner.temp }}/sources/appimage-libs.json
+        run: desktop/packaging/linux/build.sh dist/linux
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      # The install tests install it from this file into the installed app.
+      - name: The FFmpeg archive, and the test file made with its FFmpeg
+        run: |
+          cache="$RUNNER_TEMP/ffmpeg-archive"
+          archive=$(uv run python desktop/tests/smoke/ffmpeg-archive.py "$cache")
+          echo "REFRAME_FFMPEG_ARCHIVE=$archive" >> "$GITHUB_ENV"
+          bin=$(uv run python desktop/tests/smoke/ffmpeg-archive.py "$cache" --extract "$RUNNER_TEMP/ffmpeg")
+          PATH="$bin:$PATH" uv run python scripts/make-testdata.py --only multitrack
+
+      - name: Install, run and remove the packages (Ubuntu 22.04, Debian 12, Fedora)
+        run: desktop/packaging/linux/install-test.sh dist/linux
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-packages
+          path: |
+            dist/linux/*.AppImage
+            dist/linux/*.deb
+            dist/linux/*.rpm
+          if-no-files-found: error
+
+  windows:
+    name: Windows installers
+    needs: [version]
+    runs-on: windows-latest
+    timeout-minutes: 120
+    outputs:
+      signed: ${{ steps.signing.outputs.signed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.node-version
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            desktop/package-lock.json
+
+      - run: uv sync --frozen
+
+      # The Windows layout holds no tool: this removes what an older layout left.
+      - name: Lay out the packaged tools folder
+        run: uv run python scripts/bundle-tools.py --platform windows-x64
+
+      - name: Build the frozen sidecar
+        run: uv run python desktop/sidecar/build.py
+
+      # The app downloads FFmpeg: no ffmpeg.exe, ffprobe.exe or FFmpeg DLL may be packaged.
+      - name: Check that the packaged layout has no FFmpeg
+        run: uv run python desktop/packaging/windows/no-ffmpeg-check.py desktop/src-tauri/resources
+
+      - run: npm ci
+        working-directory: frontend
+      - run: npm ci
+        working-directory: desktop
+
+      # Without --features cli, cargo installs nothing and exits 0.
+      - name: Install cargo-about
+        run: cargo install --locked cargo-about@0.9.3 --features cli
+
+      # PYTHONUTF8: cargo about's output is UTF-8, not the runner's ANSI code page. The
+      # installers bundle nothing from the sources release.
+      - name: Write THIRD_PARTY_NOTICES
+        env:
+          PYTHONUTF8: "1"
+        run: >-
+          uv run --with pip-licenses==5.5.5 python scripts/third-party-notices.py
+          --platform windows-x64
+
+      # The bundler signs the installers, Reframe.exe and every unsigned .exe and .dll in the
+      # resources with this certificate.
+      - name: Code signing certificate (only when its secrets are set)
+        id: signing
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE) {
+            Write-Output "::warning::WINDOWS_CERTIFICATE is not set: the installers are not code-signed"
+            "signed=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+          if (-not $env:WINDOWS_TIMESTAMP_URL) {
+            Write-Output "::error::The variable WINDOWS_TIMESTAMP_URL is not set (docs/release.md)"
+            exit 1
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP 'signing.pfx'
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+          Remove-Item $pfx
+          $overlay = @{ bundle = @{ windows = @{
+            certificateThumbprint = $cert.Thumbprint
+            digestAlgorithm = 'sha256'
+            timestampUrl = $env:WINDOWS_TIMESTAMP_URL
+            tsp = $true
+          } } }
+          $overlay | ConvertTo-Json -Depth 4 | Set-Content -Encoding utf8 (Join-Path $env:RUNNER_TEMP 'tauri.signing.json')
+          "signed=true" >> $env:GITHUB_OUTPUT
+
+      - name: Build the NSIS and MSI installers
+        working-directory: desktop
+        env:
+          SIGNED: ${{ steps.signing.outputs.signed }}
+        run: |
+          config=()
+          if [ "$SIGNED" = true ]; then
+            config=(--config "$RUNNER_TEMP/tauri.signing.json")
+          fi
+          npx tauri build "${config[@]}"
+
+      # 7-Zip reads NSIS installers; an administrative install (msiexec /a) extracts an MSI.
+      - name: Check that the installers contain no FFmpeg
+        shell: pwsh
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'installer-contents'
+          $nsis = @(Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*-setup.exe)
+          $msi = @(Get-ChildItem desktop/src-tauri/target/release/bundle/msi/*.msi)
+          if ($nsis.Count -eq 0 -or $msi.Count -eq 0) {
+            Write-Output "::error::an NSIS or MSI installer is missing"
+            exit 1
+          }
+          foreach ($file in $nsis) {
+            & 7z x -y "-o$work\nsis\$($file.BaseName)" $file.FullName | Out-Null
+            if ($LASTEXITCODE -ne 0) { Write-Output "::error::7z x $($file.Name) failed"; exit 1 }
+          }
+          foreach ($file in $msi) {
+            $arguments = @('/a', "`"$($file.FullName)`"", '/qn', "TARGETDIR=`"$work\msi\$($file.BaseName)`"")
+            $process = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+            if ($process.ExitCode -ne 0) {
+              Write-Output "::error::msiexec /a $($file.Name) exited with $($process.ExitCode)"
+              exit 1
+            }
+          }
+          uv run python desktop/packaging/windows/no-ffmpeg-check.py "$work\nsis" "$work\msi"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Check the installers' Authenticode signatures
+        if: steps.signing.outputs.signed == 'true'
+        shell: pwsh
+        run: |
+          $installers = Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*-setup.exe, desktop/src-tauri/target/release/bundle/msi/*.msi
+          foreach ($file in $installers) {
+            $status = (Get-AuthenticodeSignature $file.FullName).Status
+            Write-Output "$($file.Name): $status"
+            if ($status -ne 'Valid') { exit 1 }
+          }
+
+      # Bound to the version: the app refuses a signature made for another one.
+      - name: Sign the NSIS installer for the updater
+        working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: >-
+          npx tauri signer sign --app-version "$VERSION"
+          "src-tauri/target/release/bundle/nsis/Reframe_${VERSION}_x64-setup.exe"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-installers
+          path: |
+            desktop/src-tauri/target/release/bundle/nsis/Reframe_*_x64-setup.exe
+            desktop/src-tauri/target/release/bundle/nsis/Reframe_*_x64-setup.exe.sig
+            desktop/src-tauri/target/release/bundle/msi/Reframe_*.msi
+          if-no-files-found: error
+
+  docker:
+    # One build per platform, each with its own notices, pushed by digest only: the tags are
+    # set once every package has been built. arm64 builds natively, without emulation.
+    name: Docker image (linux/${{ matrix.arch }})
+    needs: [version]
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+            notices: docker-linux-x64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            notices: docker-linux-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: frontend/.node-version
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - run: npm ci
+        working-directory: frontend
+
+      # The notices refuse any Python but the image's. The image adds its Debian packages'
+      # copyright files to them; it holds nothing from the sources release.
+      - name: Write docker/notices/THIRD_PARTY_NOTICES
+        env:
+          PLATFORM: ${{ matrix.notices }}
+        run: >-
+          uv run --python 3.14.8 --with pip-licenses==5.5.5 python scripts/third-party-notices.py
+          --platform "$PLATFORM" --out docker/notices/THIRD_PARTY_NOTICES
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build and push the image by digest
+        env:
+          ARCH: ${{ matrix.arch }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/reframe"
+          docker buildx build -f docker/Dockerfile --platform "linux/$ARCH" \
+            --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.version=$VERSION" \
+            --output "type=image,name=$image,push-by-digest=true,name-canonical=true,push=true" \
+            --metadata-file "$RUNNER_TEMP/metadata.json" .
+          digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/metadata.json")
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: docker-digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+
+  docker-tags:
+    name: Docker image tags
+    needs: [version, docker, linux, windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: docker-digest-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/digests
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      # latest only for the highest version: a patch of an older line leaves it where it is.
+      - name: Tag the multi-platform image
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          LATEST: ${{ needs.version.outputs.latest }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/reframe"
+          tags=(--tag "$image:$VERSION")
+          if [ "$LATEST" = true ]; then
+            tags+=(--tag "$image:latest")
+          fi
+          sources=()
+          for digest in "$RUNNER_TEMP"/digests/*; do
+            sources+=("$image@sha256:${digest##*/}")
+          done
+          docker buildx imagetools create "${tags[@]}" \
+            --annotation "index:org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            "${sources[@]}"
+          docker buildx imagetools inspect "$image:$VERSION"
+
+  release:
+    name: GitHub release
+    needs: [version, sources, linux, windows, docker-tags]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: linux-packages
+          path: dist/linux
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: windows-installers
+          path: dist/windows
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sources
+          path: ${{ runner.temp }}/sources
+
+      # Windows only: the AppImage and .deb update path is not verified yet.
+      - name: Write latest.json
+        run: |
+          uv run --no-project python scripts/release-notes.py "$VERSION" > "$RUNNER_TEMP/changes.md"
+          uv run --no-project python scripts/updater-manifest.py \
+            --version "$VERSION" --notes "$RUNNER_TEMP/changes.md" \
+            --base-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME" \
+            --out dist/latest.json "dist/windows/nsis/Reframe_${VERSION}_x64-setup.exe"
+
+      - name: Write the release notes
+        env:
+          SIGNED: ${{ needs.windows.outputs.signed }}
+          SOURCES_URL: ${{ needs.sources.outputs.url }}
+        run: >-
+          uv run --no-project python scripts/release-workflow.py notes
+          --changes "$RUNNER_TEMP/changes.md" --signed "$SIGNED"
+          --check-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_REF_NAME/docs/release.md#check-a-download"
+          --sources-url "$SOURCES_URL" --sources-sums "$RUNNER_TEMP/sources/SHA256SUMS"
+          --out "$RUNNER_TEMP/notes.md"
+
+      # The Linux packages' signature: users check each download against this file.
+      - name: SHA256SUMS of every file, signed with the release key
+        env:
+          RELEASE_GPG_PRIVATE_KEY: ${{ secrets.RELEASE_GPG_PRIVATE_KEY }}
+          RELEASE_GPG_PASSPHRASE: ${{ secrets.RELEASE_GPG_PASSPHRASE }}
+        run: >-
+          uv run --no-project python scripts/release-workflow.py sums --out-dir dist/sums
+          dist/linux/* dist/windows/nsis/* dist/windows/msi/* dist/latest.json
+
+      # A draft until every file is up, so the updater never sees a release without latest.json.
+      # A leftover draft of the tag is deleted first; a published release is never replaced.
+      - name: Publish the release
+        env:
+          LATEST: ${{ needs.version.outputs.latest }}
+        run: >-
+          uv run --no-project python scripts/release-workflow.py publish
+          --repo "$GITHUB_REPOSITORY" --tag "$GITHUB_REF_NAME" --verify-tag --latest "$LATEST"
+          --title "Reframe $VERSION" --notes-file "$RUNNER_TEMP/notes.md"
+          dist/linux/* dist/windows/nsis/* dist/windows/msi/* dist/latest.json dist/sums/*

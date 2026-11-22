@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ctypes
+import functools
 import os
 import signal
 import subprocess
@@ -176,7 +177,8 @@ def test_windows_job_is_created_lazily(monkeypatch: pytest.MonkeyPatch) -> None:
     assert created == [first]
 
 
-def test_linux_spawn_options() -> None:
+def test_linux_spawn_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(childproc, "_prctl", lambda *args: 0)
     options = childproc.spawn_options("linux")
     assert options["start_new_session"] is True
     assert callable(options["preexec_fn"])
@@ -193,9 +195,12 @@ def test_preexec_sets_pdeathsig() -> None:
         calls.append(args)
         return 0
 
-    preexec = childproc.linux_preexec(os.getppid(), prctl=prctl)
-    preexec()  # we are not in a forked child, so make the parent check pass with getppid()
-    assert calls == [(childproc.PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0)]
+    for traced in (False, True):
+        # not in a forked child: make the parent check pass with getppid()
+        preexec = childproc.linux_preexec(os.getppid(), prctl=prctl, traced=traced)
+        assert preexec is not None
+        preexec()
+    assert calls == [(childproc.PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0)] * 2
 
 
 def test_preexec_kills_itself_when_the_parent_is_already_gone(
@@ -203,9 +208,67 @@ def test_preexec_kills_itself_when_the_parent_is_already_gone(
 ) -> None:
     killed: list[tuple[int, int]] = []
     monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append((pid, sig)))
-    preexec = childproc.linux_preexec(parent_pid=-12345, prctl=lambda *a: 0)
+    preexec = childproc.linux_preexec(parent_pid=-12345, prctl=lambda *a: 0, traced=False)
+    assert preexec is not None
     preexec()
     assert killed == [(os.getpid(), SIGKILL)]
+
+
+def test_under_a_tracer_the_preexec_is_prctl_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    killed: list[tuple[int, int]] = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    monkeypatch.setattr(sys, "gettrace", lambda: print)
+
+    def prctl(*args: Any) -> int:
+        return 0
+
+    preexec = childproc.linux_preexec(parent_pid=-12345, prctl=prctl)
+    assert isinstance(preexec, functools.partial)
+    assert (preexec.func, preexec.args) == (prctl, (childproc.PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0))
+    preexec()
+    assert killed == []
+
+
+def test_under_a_tracer_without_prctl_there_is_no_preexec(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(childproc, "_prctl", None)
+    monkeypatch.setattr(childproc, "_load_prctl", lambda: None)
+    assert childproc.linux_preexec(traced=True) is None
+
+
+_LOCKED_TRACER = """
+import os, subprocess, sys, threading
+import reframe
+from reframe.platform import childproc
+
+measured = os.path.dirname(reframe.__file__)
+parent = os.getpid()
+held = threading.Lock()
+tool = next(i for i in range(6) if sys.monitoring.get_tool(i) is None)
+sys.monitoring.use_tool_id(tool, "test")
+
+def py_start(code, offset):
+    if os.getpid() != parent and code.co_filename.startswith(measured):
+        if not held.acquire(timeout=3):
+            os._exit(97)
+    return sys.monitoring.DISABLE
+
+sys.monitoring.register_callback(tool, sys.monitoring.events.PY_START, py_start)
+sys.monitoring.set_events(tool, sys.monitoring.events.PY_START)
+options = childproc.spawn_options()
+held.acquire()
+print(subprocess.run(["true"], **options).returncode)
+"""
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="PR_SET_PDEATHSIG is Linux-only")
+def test_a_tracer_lock_held_at_the_fork_does_not_block_a_spawn() -> None:
+    """A tracer that takes a lock on the first call of measured code (as coverage does) blocks a
+    forked child forever when another thread held that lock at the fork, if the ``preexec_fn`` is
+    Reframe's Python code. The stdlib's at-fork hooks still run there; they are not measured."""
+    result = subprocess.run(
+        [sys.executable, "-c", _LOCKED_TRACER], capture_output=True, text=True, timeout=60
+    )
+    assert (result.returncode, result.stdout.strip()) == (0, "0"), result.stderr
 
 
 class _FakePopen:
@@ -298,3 +361,85 @@ def test_launch_detached_real_process() -> None:
             assert os.getsid(pid) == pid != os.getsid(0)
     finally:
         psutil.Process(pid).kill()
+
+
+# What PyInstaller's bootloader and an AppImage's AppRun (AppImageKit's, with linuxdeploy's GTK
+# hook) leave in the frozen sidecar's environment; the values follow their format strings.
+APPDIR = "/tmp/.mount_ReframXYZ"
+SIDECAR = f"{APPDIR}/usr/lib/Reframe/sidecar/reframe-server"
+APPIMAGE_ENV = {
+    "APPDIR": APPDIR,
+    "APPIMAGE": "/home/u/Reframe_0.1.0_amd64.AppImage",
+    "LD_LIBRARY_PATH": f"{APPDIR}/usr/lib/Reframe/sidecar/_internal:{APPDIR}/usr/lib/:"
+    f"{APPDIR}/usr/lib/x86_64-linux-gnu/:{APPDIR}/lib/:/opt/mine/lib",
+    "LD_LIBRARY_PATH_ORIG": f"{APPDIR}/usr/lib/:{APPDIR}/usr/lib/x86_64-linux-gnu/:"
+    f"{APPDIR}/lib/:/opt/mine/lib",
+    "PATH": f"{APPDIR}/usr/bin/:{APPDIR}/usr/sbin/:/usr/local/bin:/usr/bin",
+    "PYTHONHOME": f"{APPDIR}/usr/",
+    "XDG_DATA_DIRS": f"{APPDIR}/usr/share:/usr/share:{APPDIR}/usr/share/:",
+    "GTK_PATH": f"{APPDIR}//usr/lib/gtk-3.0",
+    "GTK_THEME": "Adwaita:light",
+    "HOME": "/home/u",
+}
+
+
+def test_a_frozen_app_gives_tools_the_library_path_it_was_started_with() -> None:
+    """Without this, a system tool loads PyInstaller's libstdc++ (CXXABI errors)."""
+    env = {
+        "LD_LIBRARY_PATH": "/app/_internal:/opt/mine/lib",
+        "LD_LIBRARY_PATH_ORIG": "/opt/mine/lib",
+    }
+    out = childproc.user_environ(env, frozen=True, executable="/app/reframe", platform="linux")
+    assert out == {"LD_LIBRARY_PATH": "/opt/mine/lib"}
+    unset = childproc.user_environ(
+        {"LD_LIBRARY_PATH": "/app/_internal", "HOME": "/h"},
+        frozen=True,
+        executable="/app/reframe",
+        platform="linux",
+    )
+    assert unset == {"HOME": "/h"}
+
+
+def test_inside_an_appimage_the_image_is_dropped_from_every_search_path() -> None:
+    out = childproc.user_environ(APPIMAGE_ENV, frozen=True, executable=SIDECAR, platform="linux")
+    assert out == {
+        "APPIMAGE": "/home/u/Reframe_0.1.0_amd64.AppImage",
+        "LD_LIBRARY_PATH": "/opt/mine/lib",
+        "PATH": "/usr/local/bin:/usr/bin",
+        "XDG_DATA_DIRS": "/usr/share",
+        "GTK_THEME": "Adwaita:light",
+        "HOME": "/home/u",
+    }
+
+
+@pytest.mark.parametrize(
+    ("frozen", "platform"),
+    [
+        (False, "linux"),  # from source: the user's own LD_LIBRARY_PATH stays
+        (True, "win32"),
+    ],
+)
+def test_the_environment_stays_when_not_a_frozen_linux_app(frozen: bool, platform: str) -> None:
+    out = childproc.user_environ(APPIMAGE_ENV, frozen=frozen, executable=SIDECAR, platform=platform)
+    assert out == APPIMAGE_ENV
+
+
+def test_an_appdir_that_is_not_the_apps_own_is_kept() -> None:
+    out = childproc.user_environ(
+        APPIMAGE_ENV, frozen=True, executable="/opt/reframe/sidecar/reframe", platform="linux"
+    )
+    assert out["PATH"] == APPIMAGE_ENV["PATH"]
+    assert out["LD_LIBRARY_PATH"] == APPIMAGE_ENV["LD_LIBRARY_PATH_ORIG"]
+
+
+def test_launch_detached_gives_the_program_the_users_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setenv("LD_LIBRARY_PATH", "/app/_internal")
+    monkeypatch.delenv("LD_LIBRARY_PATH_ORIG", raising=False)
+    popen = _FakePopen()
+    childproc.launch_detached(["xdg-open", "/media/out.mkv"], platform="linux", popen=popen)
+    ((_, kwargs),) = popen.calls
+    assert "LD_LIBRARY_PATH" not in kwargs["env"]
+    assert kwargs["env"]["PATH"] == os.environ["PATH"]

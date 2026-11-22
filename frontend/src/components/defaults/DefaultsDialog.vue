@@ -76,6 +76,15 @@ function onKey(event: KeyboardEvent): void {
   defaults.close()
 }
 
+/** A closed Select's Escape comes prevented, which `onKey` takes as handled: it closes here. */
+function onKeyCapture(event: KeyboardEvent): void {
+  const target = event.target as HTMLElement | null
+  if (event.key !== 'Escape' || target?.getAttribute('role') !== 'combobox') return
+  if (target.getAttribute('aria-expanded') !== 'false') return
+  event.stopPropagation()
+  defaults.close()
+}
+
 // A click on text in the dialog leaves the focus nowhere, so the key never reaches the dialog.
 useEventListener(document, 'keydown', (event: KeyboardEvent) => {
   const lost = event.target === document.body || event.target === document.documentElement
@@ -108,7 +117,7 @@ async function saveAsNew(details: PresetDetailsInput): Promise<void> {
     :draggable="false"
     :close-on-escape="false"
     :pt="{
-      root: { onKeydown: onKey, 'data-kind': defaults.kind },
+      root: { onKeydown: onKey, onKeydownCapture: onKeyCapture, 'data-kind': defaults.kind },
       content: { class: 'defaults-dialog__content' },
     }"
     @update:visible="onVisible"

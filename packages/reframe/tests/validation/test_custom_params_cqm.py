@@ -1,28 +1,20 @@
-"""x264 ``cqm`` with a file name: validation refuses it, and the dry run never starts FFmpeg
-with it. The matrix presets ``cqm=flat`` and ``cqm=jvt`` still dry-run."""
+"""x264 ``cqm`` with a file name is refused by validation and the dry run. The matrix presets
+``cqm=flat`` and ``cqm=jvt`` still dry-run."""
 
 from __future__ import annotations
 
 import asyncio
-import importlib.util
-import sys
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
 
-from reframe.jsonpatch import apply_patch
 from reframe.models import (
     JobSettings,
-    MediaSource,
     Severity,
     SourceRef,
-    ToolInfo,
-    ToolSet,
-    ToolStatus,
     VideoSettings,
 )
 from reframe.probe import ProbeError
@@ -30,6 +22,8 @@ from reframe.service import Reframe
 from reframe.tools import RunResult
 from reframe.validation import dryrun
 from reframe.validation.dryrun import dry_run
+
+from . import scenario as sc
 
 pytestmark = pytest.mark.anyio
 
@@ -49,70 +43,11 @@ CQM_FILE = "".join(
 )
 
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
-
-
 def _job(custom: str, encoder: str = "libx264") -> JobSettings:
     return JobSettings(
         source=SourceRef(path=Path("/media/in.mkv")),
         video=VideoSettings(encoder=encoder, custom_params=custom),
     )
-
-
-def _found_tools() -> ToolSet:
-    def info(name: str) -> ToolInfo:
-        return ToolInfo(name=name, status=ToolStatus.FOUND, path=Path(f"/usr/bin/{name}"))  # type: ignore[arg-type]
-
-    return ToolSet(
-        ffmpeg=info("ffmpeg"),
-        ffprobe=info("ffprobe"),
-        mkvpropedit=info("mkvpropedit"),
-        mediainfo=info("mediainfo"),
-    )
-
-
-def _source() -> MediaSource:
-    source: MediaSource = sc.make_source()
-    return source
-
-
-@pytest.mark.parametrize(
-    ("custom", "rest"),
-    [
-        ("cqm=/home/u/secret.cfg", ""),
-        ("nr=100:cqm=/home/u/matrix.cfg", "nr=100"),
-        ("cqm=FLAT", ""),  # x264 matches the names case-sensitively: a file named FLAT
-        ("nocqm=flat", ""),  # x264 gets cqm=true: a file named true
-        ("cqm=default", ""),
-    ],
-)
-async def test_the_dry_run_never_starts_ffmpeg_with_a_cqm_file(
-    custom: str, rest: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    async def no_run(*args: Any, **kwargs: Any) -> RunResult:
-        raise AssertionError("FFmpeg must not start")
-
-    monkeypatch.setattr(dryrun, "run", no_run)
-    job = _job(custom)
-    issues = await dry_run(job, _source(), sc.make_caps(), _found_tools())
-    assert [(i.code, i.severity, i.path) for i in issues] == [
-        ("encoder.custom_param_file", Severity.ERROR, "video.custom_params")
-    ]
-    (fix,) = issues[0].fixes
-    fixed = JobSettings.model_validate(apply_patch(job.model_dump(mode="json"), fix.patch))
-    assert fixed.video.custom_params == rest
 
 
 @pytest.mark.parametrize("custom", ["cqm=flat", "cqm=jvt", "nr=100:cqm=jvt"])
@@ -126,7 +61,7 @@ async def test_the_matrix_presets_are_still_dry_run(
         return RunResult(returncode=0, stdout=b"", stderr=b"frame=1\n", duration=0.1)
 
     monkeypatch.setattr(dryrun, "run", fake_run)
-    assert await dry_run(_job(custom), _source(), sc.make_caps(), _found_tools()) == []
+    assert await dry_run(_job(custom), sc.make_source(), sc.make_caps(), sc.make_tools()) == []
     (argv,) = argvs
     assert argv[argv.index("-x264-params:v:0") + 1].endswith(custom)
 

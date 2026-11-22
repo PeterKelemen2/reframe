@@ -17,12 +17,6 @@ def data_text(name: str) -> str:
 def test_encoder_list_of_the_pinned_build() -> None:
     encoders = parse_encoders(data_text("encoders.stdout.txt"))
     assert len(encoders) > 200
-    x265 = encoders["libx265"]
-    assert (x265.kind, x265.description) == ("video", "libx265 H.265 / HEVC (codec hevc)")
-    assert encoders["aac"].kind == "audio"
-    assert encoders["mov_text"].kind == "subtitle"
-    assert encoders["avui"].experimental
-    assert not x265.experimental
     # the legend is not an encoder
     assert "=" not in encoders
     assert "------" not in encoders
@@ -32,12 +26,15 @@ def test_every_definition_encoder_but_libfdk_aac_is_in_the_pinned_build() -> Non
     encoders = parse_encoders(data_text("encoders.stdout.txt"))
     defs = load_definitions()
     known = set(defs.video_encoders) | set(defs.audio_encoders)
-    assert known - set(encoders) == {"libfdk_aac"}  # GPL builds have no FDK AAC
+    assert known - encoders == {"libfdk_aac"}  # GPL builds have no FDK AAC
 
 
 def test_encoder_list_of_garbage_is_empty() -> None:
-    assert parse_encoders("") == {}
-    assert parse_encoders("ffmpeg version n9.0.2\n V....D libx264 not after a separator\n") == {}
+    assert parse_encoders("") == frozenset()
+    assert (
+        parse_encoders("ffmpeg version n9.0.2\n V....D libx264 not after a separator\n")
+        == frozenset()
+    )
 
 
 def test_filter_list_of_the_pinned_build() -> None:
@@ -73,14 +70,12 @@ HELP_FILES = sorted(
 def test_every_captured_help_text_parses(name: str) -> None:
     parsed = parse_encoder_help(data_text(f"help_encoder/{name}.stdout.txt"))
     assert parsed is not None
-    assert parsed.name == name
     assert "Exiting" not in " ".join(parsed.private_options)
 
 
 def test_help_of_libx265() -> None:
     parsed = parse_encoder_help(data_text("help_encoder/libx265.stdout.txt"))
     assert parsed is not None
-    assert parsed.description == "libx265 H.265 / HEVC"
     assert parsed.private_options == [
         "crf",
         "qp",
@@ -96,7 +91,6 @@ def test_help_of_libx265() -> None:
     ]
     assert parsed.presets == []
     assert "yuv420p10le" in parsed.pix_fmts
-    assert parsed.hardware_devices == []
 
 
 def test_help_of_hevc_nvenc_lists_the_named_presets() -> None:
@@ -104,7 +98,6 @@ def test_help_of_hevc_nvenc_lists_the_named_presets() -> None:
     assert parsed is not None
     assert parsed.presets == ["slow", "medium", "fast", "p1", "p2", "p3", "p4", "p5", "p6", "p7"]
     assert {"preset", "tune", "rc", "cq", "spatial-aq", "b_ref_mode"} <= set(parsed.private_options)
-    assert parsed.hardware_devices == ["cuda"]  # "cuda cuda" in the text
     assert "p010le" in parsed.pix_fmts
 
 

@@ -13,14 +13,16 @@ import contextlib
 import logging
 import os
 import uuid
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from reframe.definitions import Definitions, load_definitions
+from reframe.errors import ReframeClosedError
 from reframe.events import EventBus
+from reframe.mediatask import CapabilitiesLookup, SourceProber, ToolsLookup
 from reframe.models.events import (
     AppWarningEvent,
     JobProgressEvent,
@@ -32,35 +34,28 @@ from reframe.models.issues import Severity, ValidationIssue
 from reframe.models.job import JobSettings
 from reframe.models.naming import NamingOptions
 from reframe.models.queue import JobProgress, JobState, QueueJob
-from reframe.models.settings import AppSettings
+from reframe.models.settings import AppSettings, WhenDone
 from reframe.platform.power import PowerService
 from reframe.platform.sleep import SleepInhibitor, create_sleep_inhibitor
 from reframe.queue import files
 from reframe.queue.clock import Clock, SystemClock
-from reframe.queue.errors import JobStateError, UnknownJobError, closed_error, printable
+from reframe.queue.errors import JobStateError, UnknownJobError, printable
 from reframe.queue.lock import LOCK_FILE, LockBackend, StoreLock
 from reframe.queue.logs import EVENT_INTERVAL, JobLog, log_file
 from reframe.queue.process import resume_tree, suspend_tree
-from reframe.queue.runner import (
-    ActiveJob,
-    CapabilitiesSource,
-    JobRunner,
-    Outcome,
-    SourceProber,
-    ToolsSource,
-)
+from reframe.queue.runner import ActiveJob, JobRunner, Outcome
 from reframe.queue.store import STORE_FILE, QueueStore, row_of
 from reframe.queue.watchdog import STALL_AFTER, STEP_TIME_LIMIT, TICK
-from reframe.queue.whendone import WhenDoneActions
+from reframe.queue.whendone import POWER_LABELS, WhenDoneActions
 from reframe.validation import FileSystemView, LocalFileSystem
 
-__all__ = ["ENDED", "OUTPUT_CLAIMED", "QueueService"]
+__all__ = ["ACTIVE", "ENDED", "OUTPUT_CLAIMED", "QueueService"]
 
 log = logging.getLogger(__name__)
 
 #: States in which a job has ended (until it is retried).
 ENDED = frozenset({JobState.DONE, JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED})
-_ACTIVE = frozenset({JobState.RUNNING, JobState.PAUSED})
+ACTIVE = frozenset({JobState.RUNNING, JobState.PAUSED})
 _RETRY = frozenset({JobState.FAILED, JobState.CANCELLED, JobState.INTERRUPTED})
 #: States in which a job's output and source are claimed: no other job may write them.
 _CLAIMING = frozenset({JobState.WAITING, JobState.RUNNING, JobState.PAUSED})
@@ -79,20 +74,6 @@ def _path_key(path: str | os.PathLike[str]) -> files.FileKey:
     """The :class:`~reframe.queue.files.FileKey` of ``path``. Blocking: never call it on the
     event loop."""
     return files.file_key(path)
-
-
-def _source_key(job: QueueJob) -> files.FileKey:
-    return _path_key(job.settings.source.path)
-
-
-def _output_key(job: QueueJob) -> files.FileKey | None:
-    """The file the job writes: its output path, or its source for an in-place edit."""
-    if job.settings.output.edit_in_place:
-        return _source_key(job)
-    path = job.settings.output.path
-    if path is None:
-        return None
-    return _path_key(path)
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,16 +142,18 @@ def _claim_issue(job: QueueJob, other: QueueJob, *, as_source: bool) -> Validati
 
 
 def _restored_error(job: QueueJob) -> str:
-    """The error of a job that was running or paused when Reframe stopped. An in-place edit
-    may have been stopped while mkvpropedit wrote its source (a crash or a hard exit kills the
-    child), so the error says what that can mean for the file."""
+    """The error of a job that was running or paused when Reframe stopped. A crash or a hard
+    exit may have stopped an in-place edit while it wrote the source, so the error says what
+    that can mean for the file."""
     error = "Reframe stopped while the job was running."
     plan = job.plan
     edits = plan is not None and plan.job_type == "metadata_edit" and bool(plan.steps)
     if job.settings.output.edit_in_place and edits:
         name = Path(job.settings.source.path).name
         error += (
-            f" If mkvpropedit was editing {name} in place at that moment, the file may be damaged."
+            f" If Reframe was writing the header of {name} at that moment, the file holds "
+            "either all its old values or all the new ones, unless the computer lost power "
+            "during the write: then check that the file still opens."
         )
     return error
 
@@ -184,11 +167,13 @@ class QueueService:
         Settings → Output.
     :param power: the when-done power actions; ``None``: they are reported as not available
         (``queue.when_done_unavailable``).
+    :param unavailable_when_done: when-done actions that this process cannot carry out, each
+        with the reason: they are reported as not available too.
     :param clock: the clocks (tests replace them).
     :param fs: the file-system view of validation and of the collision rename.
     :param stall_after: seconds without progress, output or CPU use before an FFmpeg step is
         stopped (``None``: never).
-    :param step_time_limit: seconds a short step (``mkvpropedit``) may take.
+    :param step_time_limit: seconds a tool step other than FFmpeg may take.
     :param lock_backend: the OS lock of ``queue.lock``; tests replace it.
     """
 
@@ -198,12 +183,13 @@ class QueueService:
         settings: Callable[[], AppSettings],
         *,
         data_dir: Path,
-        tools: ToolsSource,
-        capabilities: CapabilitiesSource,
+        tools: ToolsLookup,
+        capabilities: CapabilitiesLookup,
         sources: SourceProber,
         naming: Callable[[JobSettings], NamingOptions | None] | None = None,
         inhibitor: SleepInhibitor | None = None,
         power: PowerService | None = None,
+        unavailable_when_done: Mapping[WhenDone, str] | None = None,
         definitions: Definitions | None = None,
         clock: Clock | None = None,
         fs: FileSystemView | None = None,
@@ -251,13 +237,15 @@ class QueueService:
         self._only: dict[str, None] | None = None
         """``start(job_ids=…)``: only these jobs are taken, in the order named (``None``: every
         waiting job). ``None`` whenever the runner is not processing."""
+        self._own_batch = True
+        """``start(job_ids=…, own_batch=…)`` of the jobs in :attr:`_only`."""
         self._closed = False
         self._opened = False
         self._store_busy = False
         self._lock = asyncio.Lock()
         self._changed = asyncio.Condition()
         self._background: set[asyncio.Task[None]] = set()
-        self._when = WhenDoneActions(events, power)
+        self._when = WhenDoneActions(events, power, unavailable_when_done)
         """The batch counts, the job notifications and the when-done action."""
 
     @property
@@ -369,7 +357,7 @@ class QueueService:
         self._ensure_open()
         async with self._lock:
             job = self._job(job_id)
-            if job.state in _ACTIVE or job_id in self._active:
+            if job.state in ACTIVE or job_id in self._active:
                 raise JobStateError(f"job {job_id} is {job.state.value}: cancel it first")
             del self._jobs[job_id]
             self._keys.pop(job_id, None)
@@ -437,7 +425,7 @@ class QueueService:
         self._schedule()
         return job.model_copy(deep=True)
 
-    def start(self, *, job_ids: Sequence[str] | None = None) -> None:
+    def start(self, *, job_ids: Sequence[str] | None = None, own_batch: bool = True) -> None:
         """Start taking waiting jobs, in queue order, ``parallel_jobs`` at a time.
 
         ``job_ids`` takes only these jobs while they are waiting, so other waiting jobs stay as
@@ -445,6 +433,11 @@ class QueueService:
         When none of them is waiting or running any more, the runner goes idle, as after
         :meth:`stop`. A call while the runner is already taking jobs never narrows what it takes.
         Running state only: it is not saved, so a restored queue is idle.
+
+        ``own_batch`` (with ``job_ids``): the named jobs are a batch of their own, as a CLI
+        command's are, and the when-done action runs when they end. ``False`` (a queue row's
+        Start): while other jobs wait, Sleep, Shut down and Quit wait for them; Notify still
+        reports the named jobs.
         """
         self._check_open()
         self._ensure_open()
@@ -455,8 +448,10 @@ class QueueService:
                 self._job(job_id)
             if not self._processing:
                 only = named
+                self._own_batch = own_batch
             elif self._only is not None:
                 only = self._only | named
+                self._own_batch = self._own_batch and own_batch
         self._set_processing(True, only, "start")
         self._schedule()
 
@@ -512,8 +507,8 @@ class QueueService:
     async def cancel(self, job_id: str | None = None) -> None:
         """Cancel a job: a waiting one is marked ``cancelled``; a running or paused one has
         its process tree killed and ends ``cancelled`` with its ``.part`` file removed — except a
-        running in-place mkvpropedit edit, which is let finish first (stopping it could damage
-        the source) before the job ends ``cancelled``.
+        running ``header_edit`` step, which is let finish first (a worker thread cannot be
+        stopped) before the job ends ``cancelled``.
         ``None``: every job that has not ended (running, paused and waiting). Returns when
         the cancelled jobs have ended."""
         self._check_open()
@@ -567,7 +562,7 @@ class QueueService:
     async def close(self) -> None:
         """No new jobs; a when-done countdown that the queue started is cancelled (its action
         never runs); running jobs are stopped (``interrupted``, ``.part`` removed; a running
-        in-place mkvpropedit edit is let finish first, as in :meth:`cancel`), the sleep inhibit
+        ``header_edit`` step is let finish first, as in :meth:`cancel`), the sleep inhibit
         is freed and the store is flushed. Safe to call more than once."""
         if self._closed:
             return
@@ -599,8 +594,8 @@ class QueueService:
 
         The process that holds the lock loads the store. Running and paused jobs become
         interrupted, and their leftover files are removed in the background. A process that
-        cannot take the lock keeps its jobs in a private store in memory and sends one
-        ``app.warning``. Blocking, once: the lock is taken without waiting, and the store is a
+        cannot take the lock keeps its jobs in a read-only store that is never saved and sends
+        one ``app.warning``. Blocking, once: the lock is taken without waiting, and the store is a
         small local file.
         """
         if self._opened or self._closed:
@@ -609,7 +604,7 @@ class QueueService:
         try:
             owner = self._owner.acquire()
         except OSError as exc:
-            self._store.use_memory()
+            self._store.read_only = True
             self._events.publish(
                 AppWarningEvent(
                     code="queue.unreadable",
@@ -621,7 +616,7 @@ class QueueService:
             return
         if not owner.owned:
             self._store_busy = True
-            self._store.use_memory()
+            self._store.read_only = True
             who = f" (pid {owner.owner})" if owner.owner is not None else ""
             self._events.publish(
                 AppWarningEvent(
@@ -638,7 +633,7 @@ class QueueService:
         now = self._clock.now()
         interrupted: builtins.list[tuple[QueueJob, JobState]] = []
         for job in loaded.jobs:
-            if job.state in _ACTIVE:
+            if job.state in ACTIVE:
                 interrupted.append((job, job.state))
                 job.state = JobState.INTERRUPTED
                 job.error = _restored_error(job)
@@ -835,7 +830,7 @@ class QueueService:
             return
         try:
             if active.token.cancelled:  # cancelled before it started
-                outcome = Outcome(JobState.CANCELLED, stop_reason=active.stop_reason)
+                outcome = Outcome(JobState.CANCELLED)
             else:
                 job.started_at = self._clock.now()
                 job.finished_at = None
@@ -947,15 +942,20 @@ class QueueService:
         user cancelled the last job or Reframe closed). See :mod:`reframe.queue.whendone`.
 
         "Emptied": nothing runs, and nothing is left that the runner would take: no waiting
-        job at all, or (``drained``) none of the jobs of ``start(job_ids=…)``."""
+        job at all, or (``drained``) none of the jobs of ``start(job_ids=…)``. A power action
+        after ``start(…, own_batch=False)`` runs only when no job waits."""
         if self._closed or self._active:
             return
+        waiting = any(job.state is JobState.WAITING for job in self._jobs.values())
         if self._processing:
             if any(self._eligible(job) for job in self._jobs.values()):
                 return
-        elif not drained and any(job.state is JobState.WAITING for job in self._jobs.values()):
+        elif not drained and waiting:
             return  # stopped with jobs left: the queue did not empty
-        self._when.emptied(last, self._settings().queue.when_done)
+        action = self._settings().queue.when_done
+        if drained and waiting and not self._own_batch and action in POWER_LABELS:
+            return  # the batch goes on with the jobs that wait
+        self._when.emptied(last, action)
 
     async def _hold_inhibit(self, active: ActiveJob, job: QueueJob) -> None:
         """Take one count for the job (called with ``active.control`` held). The job holds it
@@ -975,16 +975,15 @@ class QueueService:
         await self._inhibitor.release()
 
     async def _resumed_for_stop(self, job: QueueJob, active: ActiveJob) -> None:
-        """A paused job's in-place mkvpropedit step was resumed so that a cancel or
-        ``close()`` can let it finish (called by the runner with ``active.control`` held): the
-        job is ``running`` again until it ends, and holds its sleep inhibit, as after
-        :meth:`resume`."""
+        """A paused job's ``header_edit`` step goes on writing while a cancel or ``close()``
+        lets it finish (called by the runner with ``active.control`` held): the job is
+        ``running`` again until it ends, and holds its sleep inhibit, as after :meth:`resume`."""
         await self._set_state(job, JobState.RUNNING)
         await self._hold_inhibit(active, job)
 
     def _check_open(self) -> None:
         if self._closed:
-            raise closed_error()
+            raise ReframeClosedError
 
     def _job(self, job_id: str) -> QueueJob:
         job = self._jobs.get(job_id)

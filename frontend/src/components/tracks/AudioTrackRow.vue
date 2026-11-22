@@ -38,7 +38,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ move: [to: number]; remove: [] }>()
 
-const { t, locale } = useI18n()
+const { t, n, locale } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
 
@@ -129,7 +129,7 @@ const samplerateOptions = computed(() => [
   { value: KEEP, label: t('tracks.output.sameAsSource') },
   ...(encoder.value?.samplerates ?? []).map((rate) => ({
     value: String(rate),
-    label: t('tracks.units.khz', { value: kiloHertz(rate) }),
+    label: t('tracks.units.khz', { value: kiloHertz(rate, n) }),
   })),
 ])
 
@@ -363,6 +363,7 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
         >
           <template #default="{ id, invalid }">
             <InputNumber
+              :locale="locale"
               :input-id="id"
               class="track-field__number"
               :model-value="track.quality ?? encoder.quality.default"
@@ -399,6 +400,7 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
       <Field :label="t('tracks.output.gain')" :path="`${path}.gain`" stacked>
         <template #default="{ id, invalid }">
           <InputNumber
+            :locale="locale"
             :input-id="id"
             class="track-field__number"
             :model-value="track.gain"
@@ -435,7 +437,11 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
               @slideend="editor.endCoalescing()"
             />
             <output class="track-field__value" :for="id">
-              {{ track.drc === 0 ? t('tracks.output.drcOff') : track.drc.toFixed(1) }}
+              {{
+                track.drc === 0
+                  ? t('tracks.output.drcOff')
+                  : n(track.drc, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+              }}
             </output>
           </div>
         </template>

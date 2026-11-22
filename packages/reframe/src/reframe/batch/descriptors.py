@@ -19,7 +19,7 @@ from typing import Literal
 
 from reframe import languages
 from reframe.batch.metadata import effective_language
-from reframe.batch.selection import _EXTRA_ROLES, is_undetermined
+from reframe.batch.selection import _EXTRA_ROLES, flag_extra_role, is_undetermined
 from reframe.models.batch import Fingerprint, MatchLevel, TrackDescriptor
 from reframe.models.job import TrackFlags
 from reframe.models.media import (
@@ -32,9 +32,9 @@ from reframe.models.media import (
     VideoStream,
 )
 from reframe.naming.context import audio_channels_label, resolution_label
+from reframe.probe.names import BITMAP_SUBTITLE_CODECS, codec_name
 
 __all__ = [
-    "CODEC_LABELS",
     "MATCH_LEVELS",
     "codec_family",
     "codec_label",
@@ -42,7 +42,6 @@ __all__ = [
     "describe_tracks",
     "fingerprint",
     "hdr_type",
-    "language_code",
     "stream_roles",
     "track_key",
     "track_label",
@@ -67,34 +66,6 @@ _FAMILIES = {
     "mp3": "mpeg_audio",
 }
 
-#: Short names of codecs for labels when the probe has no commercial name.
-CODEC_LABELS = {
-    "truehd": "TrueHD",
-    "dts": "DTS",
-    "ac3": "AC-3",
-    "eac3": "E-AC-3",
-    "aac": "AAC",
-    "flac": "FLAC",
-    "opus": "Opus",
-    "vorbis": "Vorbis",
-    "mp3": "MP3",
-    "mp2": "MP2",
-    "alac": "ALAC",
-    "ass": "ASS",
-    "ssa": "SSA",
-    "subrip": "SRT",
-    "webvtt": "WebVTT",
-    "mov_text": "mov_text",
-    "hdmv_pgs_subtitle": "PGS",
-    "dvd_subtitle": "VobSub",
-    "dvb_subtitle": "DVB",
-    "h264": "H.264",
-    "hevc": "HEVC",
-    "av1": "AV1",
-    "vp9": "VP9",
-    "mpeg2video": "MPEG-2",
-}
-
 #: The order in which an HDR type is named when a stream has several.
 _HDR_ORDER = (HdrFormat.DOLBY_VISION, HdrFormat.HDR10_PLUS, HdrFormat.HDR10, HdrFormat.HLG)
 
@@ -104,7 +75,6 @@ Stream = VideoStream | AudioStream | SubtitleStream
 #: Subtitle codecs by family: a release may carry the same subtitles as SRT or as ASS. A codec
 #: in neither set is its own family.
 _TEXT_SUBTITLES = frozenset({"ass", "ssa", "subrip", "srt", "webvtt", "mov_text", "text"})
-_BITMAP_SUBTITLES = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"})
 
 
 def codec_family(stream: Stream) -> str | None:
@@ -116,7 +86,7 @@ def codec_family(stream: Stream) -> str | None:
     if isinstance(stream, SubtitleStream):
         if codec in _TEXT_SUBTITLES:
             return "text"
-        if codec in _BITMAP_SUBTITLES:
+        if codec in BITMAP_SUBTITLE_CODECS:
             return "bitmap"
         return codec
     if codec.startswith("pcm_"):
@@ -130,21 +100,7 @@ def codec_label(stream: Stream) -> str:
         return stream.display_codec
     if stream.codec is None:
         return "unknown codec"
-    return CODEC_LABELS.get(stream.codec, stream.codec)
-
-
-def _flag_extra_role(stream: AudioStream | SubtitleStream) -> TrackRole | None:
-    """The extra role that the disposition flags alone give, for a source built without the
-    prober."""
-    d = stream.disposition
-    audio = isinstance(stream, AudioStream)
-    if d.comment:
-        return TrackRole.COMMENTARY
-    if (audio and d.visual_impaired) or d.descriptions:
-        return TrackRole.DESCRIPTION
-    if audio and d.clean_effects:
-        return TrackRole.MUSIC
-    return None
+    return codec_name(stream.codec)
 
 
 def stream_roles(stream: AudioStream | SubtitleStream) -> list[TrackRole]:
@@ -156,9 +112,9 @@ def stream_roles(stream: AudioStream | SubtitleStream) -> list[TrackRole]:
     ]
     extras = _EXTRA_ROLES["audio" if isinstance(stream, AudioStream) else "subtitle"]
     if not any(role in extras for role in found):
-        extra = _flag_extra_role(stream)
+        extra = flag_extra_role(stream)
         if extra is not None:
-            found.append(extra)
+            found.append(extra[0])
     if isinstance(stream, SubtitleStream):
         d = stream.disposition
         if d.forced and TrackRole.FORCED not in found:
@@ -168,11 +124,6 @@ def stream_roles(stream: AudioStream | SubtitleStream) -> list[TrackRole]:
     if len(found) > 1 and TrackRole.MAIN in found:
         found.remove(TrackRole.MAIN)
     return found or [TrackRole.MAIN]
-
-
-def language_code(language: str | None) -> str:
-    """The three-letter ISO 639-2 code used in labels; ``und`` for none."""
-    return languages.to_matroska_legacy(language)
 
 
 def _flags(stream: Stream) -> TrackFlags:
@@ -191,8 +142,11 @@ def track_label(descriptor: TrackDescriptor) -> str:
     """``eng AC-3 2.0 "Commentary"``, ``eng ASS "Signs & Songs"``, ``H.264 320x180``."""
     parts: list[str] = []
     if descriptor.kind != "video":
-        parts.append(language_code(descriptor.language))
-    parts.append(descriptor.profile or CODEC_LABELS.get(descriptor.codec or "", "unknown codec"))
+        parts.append(languages.to_matroska_legacy(descriptor.language))
+    parts.append(
+        descriptor.profile
+        or (codec_name(descriptor.codec) if descriptor.codec else "unknown codec")
+    )
     if descriptor.kind == "audio" and descriptor.channels:
         parts.append(audio_channels_label(descriptor.channels))
     if descriptor.title:
@@ -213,8 +167,7 @@ def describe_stream(stream: Stream, position: int) -> TrackDescriptor:
         kind = "video"
         bitrate = stream.bitrate.value
         profile = stream.display_codec
-        value = stream.language_ietf or stream.language
-        language = (languages.normalize(value) or value) if value else None
+        language = effective_language(stream)
     else:
         language = effective_language(stream)
         if is_undetermined(language):

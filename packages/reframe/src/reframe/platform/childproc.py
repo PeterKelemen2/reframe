@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import contextlib
 import ctypes
+import functools
 import os
+import posixpath
 import signal
 import subprocess
 import sys
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal, Protocol, cast
 
 __all__ = [
@@ -28,6 +30,7 @@ __all__ = [
     "launch_detached",
     "linux_preexec",
     "spawn_options",
+    "user_environ",
     "windows_job",
 ]
 
@@ -58,14 +61,31 @@ _prctl: Callable[..., int] | None = None
 _prctl_lock = threading.Lock()
 
 
+def _traced() -> bool:
+    """Whether a tracer or profiler (coverage, a debugger) watches this thread's Python code."""
+    if sys.gettrace() is not None or sys.getprofile() is not None:
+        return True
+    monitoring = getattr(sys, "monitoring", None)
+    return monitoring is not None and any(monitoring.get_tool(i) is not None for i in range(6))
+
+
 def linux_preexec(
-    parent_pid: int | None = None, *, prctl: Callable[..., int] | None = None
-) -> Callable[[], None]:
+    parent_pid: int | None = None,
+    *,
+    prctl: Callable[..., int] | None = None,
+    traced: bool | None = None,
+) -> Callable[[], object] | None:
     """Return a ``preexec_fn`` that sets ``PR_SET_PDEATHSIG = SIGKILL`` in the child.
 
-    ``prctl`` is loaded here, in the parent, never in the forked child. The death signal
-    follows the thread that forked, not the process, so the fork must happen on a thread that
-    lives as long as its children.
+    It also kills the child when the parent died before ``prctl`` took effect (the interpreter's
+    at-fork hooks run first, about a millisecond). Under a tracer that check is left out and the
+    ``preexec_fn`` is libc's ``prctl`` with its arguments bound (``None`` without ``prctl``): the
+    tracer would run on Reframe's code in the child and can wait there forever on its own lock,
+    held by another thread at the fork, while the parent waits for the ``exec``.
+
+    ``prctl`` is loaded here, in the parent, never in the forked child. The death signal follows
+    the thread that forked, not the process, so the fork must happen on a thread that lives as
+    long as its children.
     """
     global _prctl
     if prctl is None:
@@ -73,9 +93,13 @@ def linux_preexec(
             if _prctl is None:
                 _prctl = _load_prctl()
             prctl = _prctl
+    sigkill = int(getattr(signal, "SIGKILL", 9))
+    if _traced() if traced is None else traced:
+        if prctl is None:
+            return None
+        return functools.partial(prctl, PR_SET_PDEATHSIG, sigkill, 0, 0, 0)
     expected_parent = os.getpid() if parent_pid is None else parent_pid
     bound = prctl
-    sigkill = int(getattr(signal, "SIGKILL", 9))
 
     def preexec() -> None:  # runs in the child between fork() and exec()
         if bound is not None:
@@ -287,9 +311,54 @@ def spawn_options(platform: str | None = None, *, user_facing: bool = False) -> 
         windows_job()  # Reframe joins the job before its first child starts
         return {"creationflags": CREATE_NO_WINDOW}
     options: dict[str, Any] = {"start_new_session": True}
-    if platform.startswith("linux"):
-        options["preexec_fn"] = linux_preexec()
+    if platform.startswith("linux") and (preexec := linux_preexec()) is not None:
+        options["preexec_fn"] = preexec
     return options
+
+
+def user_environ(
+    environ: Mapping[str, str] | None = None,
+    *,
+    frozen: bool | None = None,
+    executable: str | None = None,
+    platform: str | None = None,
+) -> dict[str, str]:
+    """The environment for a program that Reframe starts: the user's, without what the
+    launchers of a frozen Linux app added for Reframe itself.
+
+    PyInstaller's bootloader puts its own library folder (with its libstdc++) first in
+    ``LD_LIBRARY_PATH`` and keeps the value it found in ``LD_LIBRARY_PATH_ORIG`` (none: the
+    variable was unset). Inside an AppImage, AppRun and its hooks point ``LD_LIBRARY_PATH``,
+    ``PATH``, ``PYTHONHOME``, the GTK and GIO variables and more into the image (``APPDIR``):
+    every entry under ``APPDIR`` is dropped. A system library or VA driver loaded by a tool
+    would otherwise get the app's copies of the libraries it links.
+    """
+    env = dict(os.environ if environ is None else environ)
+    platform = sys.platform if platform is None else platform
+    frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
+    if not frozen or not platform.startswith("linux"):
+        return env
+    original = env.pop("LD_LIBRARY_PATH_ORIG", None)
+    if original is None:
+        env.pop("LD_LIBRARY_PATH", None)
+    else:
+        env["LD_LIBRARY_PATH"] = original
+    appdir = env.get("APPDIR", "").rstrip("/")
+    exe = posixpath.abspath(executable or sys.executable)
+    if not appdir.startswith("/") or not exe.startswith(appdir + "/"):
+        return env
+    for name, value in list(env.items()):
+        entries = value.split(":")
+        kept = [e for e in entries if e != appdir and not e.startswith(appdir + "/")]
+        if len(kept) == len(entries):
+            continue
+        # An empty entry in a search path means the current folder.
+        kept = [e for e in kept if e]
+        if kept:
+            env[name] = ":".join(kept)
+        else:
+            del env[name]
+    return env
 
 
 def after_spawn(pid: int, platform: str | None = None) -> None:
@@ -322,6 +391,7 @@ def launch_detached(
         "stderr": subprocess.DEVNULL,
         "cwd": cwd,
         "close_fds": True,
+        "env": user_environ(platform=platform),
         **options,
     }
     try:

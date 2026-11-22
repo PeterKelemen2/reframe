@@ -18,7 +18,7 @@
                     │ command builder · validation · preview · presets · batch · queue · metadata     │
                     └───────────┬─────────────────────────────────────────────────────────────────────┘
                                 │ subprocess (asyncio)
-                      ffprobe · ffmpeg · mkvpropedit (optional) · mediainfo (optional)
+                      ffprobe · ffmpeg
 ```
 
 The core is the product. The server is a thin transport layer. The frontend is the only UI
@@ -63,7 +63,7 @@ reframe/
 | Async | `asyncio` subprocesses, `anyio` in tests | FastAPI is async. Encodes are long-running child processes |
 | Process control | `psutil` | Cross-platform suspend/resume (pause), tree kill, parent-death watch |
 | Paths | `platformdirs` | Config/data/cache dirs on Linux and Windows |
-| Languages | `langcodes` (+ `language_data`) | BCP 47 parsing, display names, ISO 639-2/B conversion for Matroska |
+| Languages | A generated table, built from `langcodes` + `language_data` at dev time ([decision 0082](../decisions/0082-own-language-data-table.md)) | BCP 47 parsing, display names, ISO 639-2/B conversion for Matroska, without 27 MB of libraries at run time |
 | Release-name parsing | `guessit` (LGPL-3.0) | Title, year, season/episode, episode title and release tags from file and folder names, with their positions, for [output naming](03-features.md#output-naming) |
 | Storage | JSON files (presets, settings) + SQLite (queue, history) | Presets stay portable. The queue needs safe updates |
 | Server | **FastAPI** + uvicorn, WebSocket for events | Async, OpenAPI out of the box |
@@ -82,11 +82,14 @@ reframe/
 - `ffmpeg` encodes. It also extracts preview frames, runs crop detection and renders preview
   clips.
 - `ffmpeg -progress pipe:1 -nostats` reports progress in a machine-readable format.
-- `mkvpropedit` (optional) edits Matroska metadata in place, with no remux. Reframe uses it when
-  the user changes only track names, languages or flags. It also sets fields that FFmpeg's
-  Matroska muxer cannot write (for example BCP 47 `LanguageIETF`).
-- `mediainfo` (optional, through `pymediainfo`) adds detail when FFprobe has none (for
-  example the bitrate of lossless audio in files without statistics tags).
+- Reframe's own Matroska header writer (core, no subprocess) edits Matroska metadata in place,
+  with no remux, when the user changes only track names, languages or flags. It also writes
+  what FFmpeg's Matroska muxer cannot (BCP 47 `LanguageIETF`). It replaces `mkvpropedit`;
+  MKVToolNix is a development tool only, used by tests as an oracle
+  ([decision 0080](../decisions/0080-own-matroska-header-writer.md), step C-18).
+- No MediaInfo: where ffprobe gives no bit rate, the probe estimates it from a sample of the
+  Matroska clusters, and **Measure** gives the exact value
+  ([decision 0081](../decisions/0081-probe-without-mediainfo.md), step C-19).
 
 Why not HandBrakeCLI as the backend? It hides the knobs this project needs to expose:
 per-stream metadata flags, arbitrary encoder parameters, FFmpeg filters such as `libplacebo`
@@ -94,23 +97,36 @@ tone mapping, and remux-only jobs. FFmpeg covers all of them, and its CLI is sta
 
 ### Bundled FFmpeg
 
-**Every build ships the same pinned FFmpeg**: the Docker image, the Linux packages (AppImage,
-.deb, .rpm) and the Windows installer. Users get a known-good FFmpeg on every target, and every
-build behaves the same.
+**Every target uses a pinned FFmpeg build, and no artefact contains one.** The desktop
+packages (AppImage, .deb, .rpm, the Windows installers) and the Docker image
+([decision 0094](../decisions/0094-docker-image-without-ffmpeg.md)) contain no FFmpeg: the first run
+offers the builds that the manifest marks as offered, downloads the chosen one (or installs it
+from an archive file), or takes the user's own FFmpeg path
+([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)). Users get a known-good
+FFmpeg on every target, and a system that does not fit the `default` build (an NVIDIA driver
+older than its NVENC needs) can take another offered build.
 
 - **One manifest**, `tools/ffmpeg.toml`, pins the version, the download URL and the SHA-256
   for each platform (`linux-x64`, `windows-x64`). CI uses it for the tests and for every
   package, so the tests run against the exact binaries that ship (`Q-1.2`).
 - **Build requirements**: GPL build from an upstream release branch. It must include libx264,
   libx265, libsvtav1, libopus, libplacebo + Vulkan, libvpl (QSV), NVENC, AMF (Windows) and
-  VAAPI (Linux), and it must run on the oldest supported distro. The first candidate is the
-  BtbN release-branch GPL build, shared-library variant, so `ffmpeg` and `ffprobe` share one
-  set of libraries. `D-7` confirms the choice.
-- **Install location**: `<app>/tools/ffmpeg/` (Windows, AppImage), `/usr/lib/reframe/tools/ffmpeg/`
-  (.deb/.rpm, so it does not conflict with the distro's `ffmpeg` package),
-  `/opt/reframe/tools/ffmpeg/` (Docker), `<data dir>/tools/ffmpeg/` (`reframe tools fetch`, and
-  CI). Bundled MKVToolNix and MediaInfo go to `tools/mkvtoolnix/` and `tools/mediainfo/` next to
-  it. Each folder holds the binaries in `bin/` or directly. `REFRAME_CONFIG_DIR`,
+  VAAPI (Linux), and it must run on the oldest supported distro. The BtbN release-branch GPL
+  build, shared-library variant (`ffmpeg` and `ffprobe` share one set of libraries), is the
+  choice ([decision 0002](../decisions/0002-bundled-ffmpeg.md)). Its VAAPI needs a libva
+  newer than Ubuntu 22.04 / 24.04 or Debian 12 have, so the Linux layout ships libva (built
+  from its pinned source on the oldest supported distro) in the FFmpeg folder's `lib/`.
+- **Offered builds**: `default` (the build the tests use) and `compat` (an older release
+  branch for NVIDIA drivers that the `default` build's NVENC refuses), each with a label, a
+  one-line summary and its licence and source links, shown before the download.
+- **Install location**: `<data dir>/tools/ffmpeg/` for a downloaded build (desktop app,
+  `reframe tools fetch`, CI; Docker: `/data/tools/ffmpeg/`, on the bind-mounted `/data`). A
+  build that someone puts at `<app>/tools/ffmpeg/`, `/usr/lib/Reframe/tools/ffmpeg/` or
+  `/opt/reframe/tools/ffmpeg/` is still found as bundled. On Linux the desktop packages ship the pinned libva, which a download copies into
+  the build's `lib/`. No package bundles MediaInfo since C-19
+  ([decision 0081](../decisions/0081-probe-without-mediainfo.md)), and none bundles
+  MKVToolNix ([decision 0079](../decisions/0079-q5-release-process.md) item 11), and since C-18
+  Reframe does not run it ([decision 0080](../decisions/0080-own-matroska-header-writer.md)). Each folder holds the binaries in `bin/` or directly. `REFRAME_CONFIG_DIR`,
   `REFRAME_DATA_DIR` and `REFRAME_CACHE_DIR` override the platform folders
   ([decision 0005](../decisions/0005-tool-discovery-details.md)).
 
@@ -118,9 +134,9 @@ build behaves the same.
 
 | # | Source | Typical use |
 |---|--------|-------------|
-| 1 | Environment variable: `REFRAME_FFMPEG`, `REFRAME_FFPROBE` (also `REFRAME_MKVPROPEDIT`, `REFRAME_MEDIAINFO`) | Docker, scripts, CI. Settings shows the value read-only, with a note that the environment sets it |
+| 1 | Environment variable: `REFRAME_FFMPEG`, `REFRAME_FFPROBE` | Docker, scripts, CI. Settings shows the value read-only, with a note that the environment sets it |
 | 2 | Path in **Settings → Tools** | Desktop users with their own FFmpeg build |
-| 3 | Bundled build | Default |
+| 3 | The downloaded build (`<data dir>/tools/ffmpeg/`), or a build at a bundled location | Default |
 | 4 | `PATH` | Only when no bundled build exists (for example when running from source) |
 
 - If only `ffmpeg` is overridden, Reframe looks for `ffprobe` next to it first, so pointing

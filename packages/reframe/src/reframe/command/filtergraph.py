@@ -22,6 +22,7 @@ from reframe.models import (
 )
 
 __all__ = [
+    "ALIGN_VIDEO_START",
     "HDR_SIDE_DATA",
     "BitmapBurn",
     "TextBurn",
@@ -34,6 +35,7 @@ __all__ = [
     "filter_path",
     "is_hdr",
     "keeps_hdr",
+    "known_colour",
     "quote_value",
     "subtitles_filter",
     "tonemap_filters",
@@ -50,6 +52,10 @@ HDR_SIDE_DATA = (
 )
 #: ffprobe colour values that mean "not known".
 _UNKNOWN_COLOUR = frozenset({"unknown", "unspecified", "reserved", ""})
+#: Align A/V start for the video: the first frame moves to the output's time 0 and is shown
+#: until the second one, so a video that starts after the audio starts with it. The other
+#: frames keep their times.
+ALIGN_VIDEO_START = "setpts='if(eq(N,0),0,PTS)'"
 
 
 def escape_value(text: str) -> str:
@@ -109,18 +115,20 @@ def filter_available(caps: CapabilitySnapshot, definitions: Definitions) -> dict
     return result
 
 
-def _known(value: str | None) -> str | None:
+def known_colour(value: str | None) -> str | None:
+    """An ffprobe colour value, or ``None`` when it means "not known"."""
     return None if value is None or value in _UNKNOWN_COLOUR else value
 
 
-def _is_hdr(video: VideoStream) -> bool:
+def is_hdr(video: VideoStream) -> bool:
+    """Whether the probe found an HDR format for the source."""
     return video.hdr is not None and bool(video.hdr.formats)
 
 
 def assumed_colour(video: VideoStream) -> tuple[str, str, str]:
     """``(primaries, transfer, matrix)``: the probed values, with what is unknown filled in by
     the usual standard for the picture (HDR, SD or HD)."""
-    if _is_hdr(video):
+    if is_hdr(video):
         assert video.hdr is not None
         hlg = HdrFormat.HLG in video.hdr.formats
         defaults = ("bt2020", "arib-std-b67" if hlg else "smpte2084", "bt2020nc")
@@ -132,30 +140,20 @@ def assumed_colour(video: VideoStream) -> tuple[str, str, str]:
         defaults = ("bt709", "bt709", "bt709")
     c = video.color
     return (
-        _known(c.primaries) or defaults[0],
-        _known(c.transfer) or defaults[1],
-        _known(c.matrix) or defaults[2],
+        known_colour(c.primaries) or defaults[0],
+        known_colour(c.transfer) or defaults[1],
+        known_colour(c.matrix) or defaults[2],
     )
-
-
-def _setparams(video: VideoStream) -> str | None:
-    """``setparams`` for the colour values the source does not say (``None``: it says all)."""
-    c = video.color
-    if _known(c.primaries) and _known(c.transfer) and _known(c.matrix):
-        return None
-    primaries, transfer, matrix = assumed_colour(video)
-    return f"setparams=color_primaries={primaries}:color_trc={transfer}:colorspace={matrix}"
-
-
-def is_hdr(video: VideoStream) -> bool:
-    """Whether the probe found an HDR format for the source."""
-    return _is_hdr(video)
 
 
 def colour_params(video: VideoStream) -> str | None:
     """The ``setparams`` filter that gives a source with unknown colour values its assumed colour
     (:func:`assumed_colour`); ``None`` when the source says all three values."""
-    return _setparams(video)
+    c = video.color
+    if known_colour(c.primaries) and known_colour(c.transfer) and known_colour(c.matrix):
+        return None
+    primaries, transfer, matrix = assumed_colour(video)
+    return f"setparams=color_primaries={primaries}:color_trc={transfer}:colorspace={matrix}"
 
 
 def tonemap_filters(
@@ -171,7 +169,7 @@ def tonemap_filters(
     fdef = definitions.filters["tonemap"]
     impl, chain = _chain(fdef, config if config is not None else FilterConfig(), available)
     filters: list[str] = []
-    setparams = _setparams(video) if impl.requires_tagged_input else None
+    setparams = colour_params(video) if impl.requires_tagged_input else None
     if setparams is not None:
         filters.append(setparams)
     filters.append(chain)
@@ -181,7 +179,7 @@ def tonemap_filters(
 def keeps_hdr(video: VideoStream, filters: Mapping[str, FilterConfig], bit_depth: int) -> bool:
     """The output stays HDR: an HDR source with no tone mapping or colour conversion, at 10 bits."""
     return (
-        _is_hdr(video) and "tonemap" not in filters and "colorspace" not in filters
+        is_hdr(video) and "tonemap" not in filters and "colorspace" not in filters
         and bit_depth == 10
     )  # fmt: skip
 
@@ -309,11 +307,13 @@ def build_video_graph(
     available: Mapping[str, bool],
     text_burn: TextBurn | None = None,
     bitmap_burn: BitmapBurn | None = None,
+    align_start: bool = False,
 ) -> VideoGraph:
     """The video filters of one job, in the fixed order.
 
     ``tail`` is the format stage (``["format=yuv420p"]`` or a hardware filter tail).
-    Unknown filter ids raise :class:`PlanError` (validation reports them).
+    ``align_start`` adds :data:`ALIGN_VIDEO_START` before it. Unknown filter ids raise
+    :class:`PlanError` (validation reports them).
     """
     for filter_id in filters:
         if filter_id not in definitions.filters:
@@ -321,7 +321,7 @@ def build_video_graph(
     graph = VideoGraph()
     before: list[str] = []  # up to the crop (a bitmap overlay comes after these)
     after: list[str] = []  # from the rotation on
-    hdr_source = _is_hdr(video)
+    hdr_source = is_hdr(video)
 
     def add(target: list[str], filter_id: str) -> None:
         config = filters.get(filter_id)
@@ -336,7 +336,7 @@ def build_video_graph(
         if impl.combed_only and "interlace_detection" in filters:
             chain = _with_option(chain, impl.combed_only)
         if impl.requires_tagged_input:
-            setparams = _setparams(video)
+            setparams = colour_params(video)
             if setparams is not None:
                 target.append(setparams)
         target.append(chain)
@@ -353,6 +353,8 @@ def build_video_graph(
         elif stage == "format":
             if text_burn is not None:
                 after.extend(_text_burn(text_burn))
+            if align_start:
+                after.append(ALIGN_VIDEO_START)
             after.extend(tail)
         else:
             target = before if not _past_crop(stage, definitions) else after

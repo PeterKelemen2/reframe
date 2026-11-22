@@ -25,6 +25,8 @@ from reframe_server import parent
 from reframe_server.__main__ import serve
 from reframe_server.config import ServerConfig
 from reframe_testing import media
+from reframe_testing.processes import ready_port
+from reframe_testing.waiting import wait_until_sync
 
 pytestmark = pytest.mark.anyio
 
@@ -69,23 +71,6 @@ def server_env(home: Path) -> dict[str, str]:
     return env | {"REFRAME_FFMPEG": ffmpeg, "REFRAME_FFPROBE": ffprobe, "REFRAME_TOKEN": TOKEN}
 
 
-def ready_port(process: subprocess.Popen[bytes], limit: float = 60.0) -> int:
-    lines: queue.Queue[bytes] = queue.Queue()
-    stdout = process.stdout
-    assert stdout is not None
-    threading.Thread(target=lambda: lines.put(stdout.readline()), daemon=True).start()
-    port: int = json.loads(lines.get(timeout=limit))["port"]
-    return port
-
-
-def wait_until(check: Callable[[], Any], limit: float = 60.0) -> Any:
-    deadline = time.monotonic() + limit
-    while not (result := check()):
-        assert time.monotonic() < deadline, "not in time"
-        time.sleep(0.05)
-    return result
-
-
 def start_encode(client: httpx.Client, source: Path, output: Path) -> dict[str, Any]:
     """An x265 encode of ``source`` that runs for a while; returns the job once it writes."""
     accepted = client.post("/api/sources", json={"paths": [str(source)]}).json()
@@ -94,7 +79,7 @@ def start_encode(client: httpx.Client, source: Path, output: Path) -> dict[str, 
         task = client.get(f"/api/tasks/{accepted['task_id']}").json()
         return task["result"] if task["state"] == "done" else None
 
-    source_id = wait_until(probed)["sources"][0]["id"]
+    source_id = wait_until_sync(probed, 60)["sources"][0]["id"]
     job = client.post("/api/jobs/draft", json={"source_id": source_id}).json()["job"]
     job["output"]["path"] = str(output)
     job["video"] |= {"encoder": "libx265", "preset": "slow"}
@@ -108,7 +93,7 @@ def start_encode(client: httpx.Client, source: Path, output: Path) -> dict[str, 
         progress = queued.get("progress") or {}
         return queued if progress.get("output_size") else None
 
-    job_now: dict[str, Any] = wait_until(writing)
+    job_now: dict[str, Any] = wait_until_sync(writing, 60)
     return job_now
 
 
@@ -144,7 +129,7 @@ def test_the_server_and_its_encode_stop_when_the_parent_is_killed(
             env=server_env(tmp_path / "home"),
         )
     try:
-        base_url = f"http://127.0.0.1:{ready_port(server)}"
+        base_url = f"http://127.0.0.1:{ready_port(server, 60)}"
         headers = {"Authorization": f"Bearer {TOKEN}"}
         with httpx.Client(base_url=base_url, headers=headers, timeout=30) as client:
             job = start_encode(client, source, tmp_path / "out" / "encoded.mkv")

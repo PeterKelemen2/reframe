@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from fractions import Fraction
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -90,17 +91,21 @@ def test_subtitles_filter_with_a_windows_path() -> None:
     )
 
 
+#: A Windows name cannot hold ``\``, ``"`` or ``:`` (``a:b`` names an NTFS stream of ``a``).
+_NOT_A_WINDOWS_NAME = pytest.mark.skipif(sys.platform == "win32", reason="not a Windows name")
+
 #: File names with every character that either parser treats specially.
 AWKWARD_NAMES = [
     "plain.srt",
     "with space.srt",
-    "colon:name.srt",
+    pytest.param("colon:name.srt", marks=_NOT_A_WINDOWS_NAME),
     "quote'name.srt",
     "comma,semi;br[ack]et.srt",
-    "back\\slash.srt",
+    pytest.param("back\\slash.srt", marks=_NOT_A_WINDOWS_NAME),
     "percent%d =eq.srt",
     "ünï cødé \u2013 dash.srt",
-    "all ' : , ; [ ] \\ \" $ & mixed.srt",
+    pytest.param("all ' : , ; [ ] \\ \" $ & mixed.srt", marks=_NOT_A_WINDOWS_NAME),
+    "all ' , ; [ ] $ & % = mixed.srt",
 ]
 
 
@@ -270,11 +275,12 @@ def test_empty_custom_filter_is_left_out() -> None:
 
 
 def test_setparams_only_for_an_untagged_source() -> None:
+    setparams = colour_params(stream())
+    assert setparams == "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709"
     untagged = graph(stream(), {"colorspace": FilterConfig(preset="bt2020")})
-    assert "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,zscale=p=bt2020" in (
-        untagged
-    )
+    assert f",{setparams},zscale=p=bt2020" in untagged
     tagged = stream(color=ColorInfo(primaries="bt709", transfer="bt709", matrix="bt709"))
+    assert colour_params(tagged) is None
     assert "setparams" not in graph(tagged, {"colorspace": FilterConfig(preset="bt2020")})
 
 
@@ -382,15 +388,6 @@ def test_is_hdr() -> None:
     assert is_hdr(stream(hdr=HdrInfo(formats=[HdrFormat.DOLBY_VISION])))
     assert not is_hdr(stream(hdr=HdrInfo(formats=[])))
     assert not is_hdr(stream())
-
-
-def test_colour_params_is_the_graphs_setparams() -> None:
-    setparams = colour_params(stream())
-    assert setparams == "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709"
-    tagged = stream(color=ColorInfo(primaries="bt709", transfer="bt709", matrix="bt709"))
-    assert colour_params(tagged) is None
-    untagged = graph(stream(), {"colorspace": FilterConfig(preset="bt2020")})
-    assert f",{setparams},zscale=" in untagged
 
 
 @pytest.mark.parametrize("libplacebo", [True, False])

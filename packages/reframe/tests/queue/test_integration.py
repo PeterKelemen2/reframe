@@ -16,13 +16,13 @@ import psutil
 import pytest
 
 from reframe.models import Event, JobSettings, JobState, MediaSource
-from reframe.probe import mediainfo
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
+from reframe_testing.waiting import wait_until
 
-from .conftest import draft, event_kinds, of_job, poll, state_changes
+from .conftest import draft, event_kinds, of_job, state_changes
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.anyio]
 
@@ -65,7 +65,7 @@ class Real:
         return event_kinds(of_job(self.published, job_id))
 
     async def until(self, condition: Callable[[], bool], limit: float = 60.0) -> None:
-        await poll(condition, limit)
+        await wait_until(condition, limit)
 
     def progressed(self, job_id: str) -> bool:
         return any(
@@ -97,7 +97,6 @@ def real(
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
     monkeypatch.setenv("REFRAME_FFPROBE", ffprobe)
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     write_settings(tmp_path / "config", parallel_jobs=2)
     env = Real(tmp_path, ffmpeg, ffprobe, fake_tools, source)
     env.scenario()
@@ -306,7 +305,6 @@ def plain(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[str, Path]:
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     monkeypatch.setenv("REFRAME_FFMPEG", ffmpeg)
     monkeypatch.setenv("REFRAME_FFPROBE", ffprobe)
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     write_settings(tmp_path / "config")
     return ffmpeg, tmp_path
 

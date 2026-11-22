@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -32,6 +33,8 @@ def test_a_file_saved_again_with_the_same_size_and_time_is_read_again(tmp_path: 
     local = LocalFileSystem()
     assert local.text_charset(file) == TextCharset("UTF-8", ascii=False)
     times = os.stat(file).st_atime_ns, os.stat(file).st_mtime_ns
+    # A later save: NTFS takes a file's times from the clock tick (up to 15.6 ms).
+    time.sleep(0.05)
     file.write_bytes(b"\xff\xfe")
     os.utime(file, ns=times)
     assert local.text_charset(file) == TextCharset("UTF-16LE", ascii=False)

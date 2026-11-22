@@ -29,7 +29,6 @@ def test_unknown_fields_are_rejected() -> None:
                 "codec_label": "H.264",
                 "handbrake_key": "x",
                 "family": "software",
-                "hardware": False,
                 "typo_field": 1,
             }
         )
@@ -53,7 +52,6 @@ def test_exactly_the_supported_video_encoders_are_defined() -> None:
 def test_fallback_chains_name_known_encoders_and_end_in_software() -> None:
     encoders = load_definitions().video_encoders
     for encoder in encoders.values():
-        assert encoder.hardware == (encoder.family != "software"), encoder.id
         if not encoder.hardware:
             assert encoder.fallback == [], encoder.id
             continue

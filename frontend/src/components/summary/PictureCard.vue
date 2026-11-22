@@ -12,7 +12,7 @@ import { pipelineOf, type Size } from './pipeline'
 import SummaryLink from './SummaryLink.vue'
 import { useGeometry } from './useGeometry'
 
-const { t } = useI18n()
+const { t, n } = useI18n()
 const editor = useEditorStore()
 const system = useSystemStore()
 const geometry = useGeometry()
@@ -44,7 +44,7 @@ const line = computed<string | null>(() => {
   const pixels = current.par
     ? t('summary.picture.par', { par: `${current.par.num}:${current.par.den}` })
     : t('summary.picture.square')
-  return [steps.join(' → '), formatAspect(current.aspect), pixels].join(' · ')
+  return [steps.join(' → '), formatAspect(current.aspect, t, n), pixels].join(' · ')
 })
 
 const tone = computed(() => {
@@ -90,7 +90,12 @@ const chips = computed(() => filterChips(editor.job?.filters, system.definitions
               :class="{ 'summary-chip--off': chip.value === null }"
               :data-filter="chip.id"
             >
-              {{ chip.label }}: {{ chip.value ?? t('summary.picture.off') }}
+              {{
+                t('summary.picture.filter', {
+                  label: chip.label,
+                  value: chip.value ?? t('summary.picture.off'),
+                })
+              }}
             </span>
           </SummaryLink>
         </li>

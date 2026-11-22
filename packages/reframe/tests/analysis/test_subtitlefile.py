@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import pytest
 
-from reframe.analysis.subtitlefile import detect_charset
 from reframe.textfile import charset_of
 
 TEXT = "Őszi szél"
@@ -27,13 +26,13 @@ TEXT = "Őszi szél"
 def test_the_encoding_comes_from_a_byte_order_mark_or_valid_utf8(
     data: bytes, charset: str | None
 ) -> None:
-    assert detect_charset(data) == charset
+    assert charset_of(data).name == charset
 
 
 def test_a_character_cut_at_the_end_of_a_sample_is_still_utf8() -> None:
     cut = TEXT.encode()[:1]  # the first byte of "Ő"
-    assert detect_charset(cut, complete=False) == "UTF-8"
-    assert detect_charset(cut, complete=True) is None
+    assert charset_of(cut, complete=False).name == "UTF-8"
+    assert charset_of(cut, complete=True).name is None
 
 
 @pytest.mark.parametrize(

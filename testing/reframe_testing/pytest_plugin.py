@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 import subprocess
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, NoReturn
 
@@ -21,9 +21,11 @@ import pytest
 from reframe_testing import media
 from reframe_testing.fake_tools import FakeTools, make_fake_tools
 from reframe_testing.folders_guard import guard_reframe_folders  # noqa: F401 - autouse fixture
+from reframe_testing.mkvtoolnix import mkvtoolnix_problem
 
 if TYPE_CHECKING:
     from reframe.platform.power import Win32Libraries
+    from reframe.service import Reframe
     from reframe.tools import RunResult
 
 REQUIRE_ENV = "REFRAME_REQUIRE_FFMPEG"
@@ -35,6 +37,31 @@ _PROBLEM = pytest.StashKey[str | None]()
 #: launchers, so the test session opts in (test-only; see reframe.tools.discovery).
 ALLOW_SCRIPT_TOOLS_ENV = "REFRAME_ALLOW_SCRIPT_TOOLS"
 os.environ.setdefault(ALLOW_SCRIPT_TOOLS_ENV, "1")
+
+
+def _put_bundled_ffmpeg_on_path() -> None:
+    # A test that makes a Reframe with private folders does not see the bundled build of the
+    # session's data folder; PATH keeps that same FFmpeg reachable for it. Not for a build
+    # that needs its own environment (the Linux build's lib/), which PATH cannot carry.
+    import shutil
+
+    from reframe.models.tools import ToolOrigin
+    from reframe.tools.discovery import locate_tools
+
+    tools = locate_tools()
+    folders: list[str] = []
+    for name in ("ffmpeg", "ffprobe"):
+        location = tools[name]
+        if shutil.which(name) is not None or location.path is None or location.env:
+            continue
+        if location.origin is ToolOrigin.BUNDLED and str(location.path.parent) not in folders:
+            folders.append(str(location.path.parent))
+    if folders:
+        os.environ["PATH"] = os.pathsep.join([*folders, os.environ.get("PATH", "")])
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    _put_bundled_ffmpeg_on_path()
 
 
 def require_ffmpeg() -> bool:
@@ -104,6 +131,13 @@ def fixture_media_path(name: str) -> Path:
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item: pytest.Item) -> None:
+    # A time budget means nothing while every core runs other tests.
+    if item.get_closest_marker("benchmark") is not None and "PYTEST_XDIST_WORKER" in os.environ:
+        pytest.skip("benchmark: run alone with `uv run pytest -m benchmark -n 0`")
+    if item.get_closest_marker("needs_mkvtoolnix") is not None:
+        missing = mkvtoolnix_problem()
+        if missing is not None:
+            pytest.skip(missing)
     if item.get_closest_marker("needs_ffmpeg") is None:
         return
     problem = _session_problem(item.config)
@@ -136,6 +170,20 @@ def fake_tools(tmp_path: Path) -> Iterator[FakeTools]:
     tools = make_fake_tools(tmp_path / "fake-tools")
     yield tools
     tools.kill_leftovers()
+
+
+@pytest.fixture
+async def app(tmp_path: Path) -> AsyncIterator[Reframe]:
+    """A core with its folders under ``tmp_path``, closed after the test."""
+    from reframe.service import Reframe
+
+    reframe = await Reframe.create(
+        tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "cache"
+    )
+    try:
+        yield reframe
+    finally:
+        await reframe.close()
 
 
 class PowerGuard:
@@ -180,6 +228,17 @@ def _no_real_power_actions() -> Iterator[PowerGuard]:
         yield guard
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _long_paths_on() -> Iterator[None]:
+    """Session-wide: tests do not depend on the machine's Windows long path policy. A test of
+    the refused-path messages turns it off with ``monkeypatch``."""
+    from reframe.platform import longpath
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(longpath, "long_paths_enabled", lambda: True)
+        yield
+
+
 @pytest.fixture(autouse=True)
 def power_guard(_no_real_power_actions: PowerGuard) -> Iterator[PowerGuard]:
     """The session's :class:`PowerGuard`. The teardown fails the test if it refused a call that
@@ -191,3 +250,13 @@ def power_guard(_no_real_power_actions: PowerGuard) -> Iterator[PowerGuard]:
     calls = guard.take_calls()
     if calls:
         pytest.fail(f"a test reached a real power action: {calls}", pytrace=False)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    # pytest-xdist sends each report to the controller as UTF-8, and a lone surrogate in captured
+    # output (tests log undecodable file names on purpose) kills the worker; escape it first.
+    report.sections = [
+        (title, text.encode("utf-8", "backslashreplace").decode("utf-8"))
+        for title, text in report.sections
+    ]

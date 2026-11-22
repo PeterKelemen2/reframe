@@ -1,10 +1,10 @@
 import { flushPromises } from '@vue/test-utils'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { configureClient } from '@/api/client'
 import { FakeServer, problem } from '@/api/testing/fakes'
 import type { FsListing } from '@/api/types'
-import { mountShell } from '@/components/shell/testing'
+import { mountShell, setAppLocale } from '@/components/shell/testing'
 
 import { browse, currentRequest, finish } from './fileBrowser'
 import FileBrowserDialog from './FileBrowserDialog.vue'
@@ -104,7 +104,7 @@ async function mountDialog() {
   opener.focus()
   const { wrapper } = await mountShell(FileBrowserDialog)
   mounted.push(wrapper)
-  return { opener }
+  return { opener, wrapper }
 }
 
 const $ = <T extends Element = HTMLElement>(selector: string) => document.querySelector<T>(selector)
@@ -115,6 +115,7 @@ const selected = () =>
 const crumbs = () => $$('[data-role="crumb"]').map((crumb) => crumb.textContent?.trim())
 const list = () => $('[role="listbox"]') as HTMLElement
 const entry = (name: string) => $(`.file-browser__entry[data-name="${name}"]`) as HTMLElement
+const cursor = () => list().getAttribute('aria-activedescendant')
 const listedExtensions = () =>
   server.requests
     .filter((request) => request.path === '/api/fs/list')
@@ -253,6 +254,24 @@ describe('the file browser dialog', () => {
     ])
   })
 
+  it('moves the cursor to the entry whose name starts with the typed keys', async () => {
+    await mountDialog()
+    await open({ mode: 'files', multiple: true })
+    await key('c')
+    expect(cursor()).toBe(entry('c.mkv').id)
+    await key('s')
+    expect(cursor()).toBe(entry('c.mkv').id)
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    await key('S')
+    expect(cursor()).toBe(entry('season').id)
+    await key('e')
+    expect(cursor()).toBe(entry('season').id)
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    await key('a')
+    expect(cursor()).toBe(entry('a.mkv').id)
+    expect(selected()).toEqual([])
+  })
+
   it('selects every file with Ctrl+A and opens the cursor’s file when nothing is chosen', async () => {
     await mountDialog()
     const { chosen: first } = await open({ mode: 'files', multiple: true })
@@ -301,6 +320,13 @@ describe('the file browser dialog', () => {
     await open({ mode: 'files', multiple: true })
     expect($('[data-field="filter"]')).toBeNull()
     expect(listedExtensions()).toEqual([[]])
+  })
+
+  it('lists the filter’s extensions as the locale does', async () => {
+    const { wrapper } = await mountDialog()
+    setAppLocale(wrapper, 'ja')
+    await open({ mode: 'files', multiple: true, filters: ['.srt', 'ASS'] })
+    expect($('[data-field="filter-note"]')?.textContent?.trim()).toBe('Only srt ass')
   })
 
   it('asks the server for the filter’s files when they are not media files', async () => {
@@ -395,5 +421,18 @@ describe('the file browser dialog', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape' }))
     await settled()
     expect(await escaped).toBeNull()
+  })
+
+  it('puts the focus on the workspace when it was opened from no control (Ctrl+O)', async () => {
+    const { opener } = await mountDialog()
+    const workspace = document.createElement('button')
+    workspace.className = 'workspace__open'
+    document.body.append(workspace)
+    opener.blur()
+    const { chosen } = await open({ mode: 'files', multiple: true })
+    await click(entry('a.mkv'))
+    await click($('[data-action="confirm"]'))
+    expect(await chosen).toEqual(['/srv/media/a.mkv'])
+    await vi.waitFor(() => expect(document.activeElement).toBe(workspace))
   })
 })

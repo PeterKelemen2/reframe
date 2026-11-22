@@ -2,7 +2,8 @@
 
 - Status: accepted. The points marked **(open)** are product questions answered with a default
   that is easy to change (each one is a small function or constant, named below); the lead or
-  the user may change them.
+  the user may change them. Amended in part by [0090](0090-batch-api-and-draft-path.md) (§6:
+  the `container_codecs` mechanism).
 - Date: 2026-10-15
 - Steps: C-12 (M6 part; core-complete wave 1a)
 
@@ -167,7 +168,7 @@ Settings switches the selection on. (`reframe.batch.selection.select_tracks`, th
 | `defaults.rule_shadowed` | warning | an earlier rule's languages and channels contain this rule's (`lint.rule_covers`; a rule limited to the first track of a language does not shadow an unlimited one) |
 | `defaults.bitrate_snapped` | info | the max is not what C-7 writes (C-6's `snap`, down, 0025) for a layout the rule makes; the message names the written value, and a fix sets it when all layouts agree |
 | `defaults.codec_not_in_container` | error | a rule, extra-output or fallback encoder the container cannot hold; fixes: the first of AAC, Opus, AC-3, E-AC-3, FLAC, MP3 that the container holds, or another container that holds every encoder of the defaults and every video codec of this one |
-| `defaults.rule_unused` | info | with a source: no selected track uses the rule (the catch-all and unreachable rules are not reported; nothing when no track is selected) |
+| `defaults.rule_unused` | info | with a source (`lint_defaults(defaults, used=...)`, called by the track stage with the rules its selected tracks used): no selected track uses the rule (the catch-all and unreachable rules are not reported; nothing when no track is selected) |
 
 - Because the catch-all must be last, "unreachable" is defined as above; a rule after the
   last rule cannot exist. Fixes move a shadowed rule above the one that hides it (not when both

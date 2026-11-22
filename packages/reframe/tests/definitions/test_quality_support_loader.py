@@ -1,4 +1,4 @@
-"""convert_quality, supported_options / supported_presets, and the loader's merge rules."""
+"""convert_quality, mapping_supported / supported_presets, and the loader's merge rules."""
 
 from __future__ import annotations
 
@@ -9,9 +9,11 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from reframe.definitions import (
+    EncoderOption,
+    VideoEncoderDef,
     convert_quality,
     load_definitions,
-    supported_options,
+    mapping_supported,
     supported_presets,
 )
 from reframe.definitions.loader import resolve_video_encoders
@@ -105,6 +107,12 @@ def test_conversion_is_monotonic_and_in_range(src: str, dst: str, a: float, b: f
     lo, hi = sorted((mode.min + a * (mode.max - mode.min), mode.min + b * (mode.max - mode.min)))
     x, y = convert_quality(lo, src, dst), convert_quality(hi, src, dst)
     assert target.min <= x <= y <= target.max
+
+
+def supported_options(
+    encoder: VideoEncoderDef, status: EncoderStatus | None
+) -> list[EncoderOption]:
+    return [o for o in encoder.options if mapping_supported(encoder, o.mapping, status)]
 
 
 def test_none_status_hides_nothing() -> None:

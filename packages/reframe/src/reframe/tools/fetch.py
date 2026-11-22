@@ -1,8 +1,9 @@
-"""``reframe tools fetch``: download the pinned FFmpeg build of the manifest, check its size and
-SHA-256, and install it as the bundled build in ``<data dir>/tools/ffmpeg``, where tool
-discovery finds it.
+"""``reframe tools fetch``: download a pinned FFmpeg build of the manifest (or take its archive
+file), check its size and SHA-256, and install it as the bundled build in
+``<data dir>/tools/ffmpeg``, where tool discovery finds it.
 
-The work runs as the task ``tools_fetch`` (see :func:`start_fetch`). Nothing is extracted before
+The work runs as the task ``tools_fetch`` (see :func:`start_fetch`, :func:`start_install_file`)
+and logs its start, progress and result on this module's logger. Nothing is extracted before
 the size and SHA-256 match. A failure leaves nothing half-installed, and an installed build stays
 as it was. A folder with files but no marker at the install path is never replaced.
 
@@ -18,15 +19,20 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
+import functools
 import hashlib
 import http.client
 import json
+import logging
 import lzma
 import os
 import platform as platform_module
 import posixpath
 import re
 import shutil
+import socket
+import ssl
 import stat
 import sys
 import tarfile
@@ -37,48 +43,68 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Literal
 
 from reframe import __version__
 from reframe.mediatask import TaskFailed
 from reframe.models.tasks import TaskInfo
-from reframe.models.tools import ToolFetchResult, ToolSet
+from reframe.models.tools import (
+    InstalledToolBuild,
+    ToolBuildOffer,
+    ToolBuilds,
+    ToolFetchResult,
+    ToolSet,
+)
 from reframe.tasks import TaskContext, TaskManager
 from reframe.tools.runner import CancelToken, run
 from reframe.tools.versions import MIN_FFMPEG
 
 __all__ = [
     "DEFAULT_MANIFEST",
+    "FETCH_OFFLINE",
+    "LIBVA_FOLDER",
+    "LIBVA_SONAMES",
     "MARKER_NAME",
     "PLATFORMS",
     "Build",
     "FetchError",
     "PlatformBuild",
+    "add_libva",
+    "choose_build",
     "host_platform",
     "install_dir_for",
     "installed_build",
     "load_manifest",
     "member_path",
+    "offered_builds",
+    "packaged_libva",
     "parse_manifest",
+    "restore_previous_build",
     "start_fetch",
+    "start_install_file",
 ]
+
+log = logging.getLogger(__name__)
 
 #: The pinned builds, shipped with the package (a copy of ``tools/ffmpeg.toml``).
 DEFAULT_MANIFEST = Path(__file__).with_name("ffmpeg.toml")
 SCHEMA_VERSION = 1
-PLATFORMS = ("linux-x64", "windows-x64")
+PLATFORMS = ("linux-x64", "linux-arm64", "windows-x64")
 FORMATS = ("tar.xz", "zip")
+_TAR_MODES: dict[str, Literal["r:xz", "r:bz2"]] = {"tar.xz": "r:xz", "tar.bz2": "r:bz2"}
 #: The marker that ``scripts/fetch-tools.py`` writes too (same name and format).
 MARKER_NAME = ".fetch-tools.json"
 USER_AGENT = f"reframe/{__version__} (tools fetch)"
 #: Hosts that may serve a manifest URL over plain ``http`` (tests with a local server).
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
-#: Download attempts (network errors and HTTP 429 / 5xx are retried with back-off).
+#: Download attempts for an error in the middle of the transfer, and for HTTP 429 / 5xx.
 ATTEMPTS = 4
+#: Attempts for a refused or timed-out connection: the server is most likely not there.
+CONNECT_ATTEMPTS = 2
 #: Socket timeout of the download (seconds without data).
 SOCKET_TIMEOUT = 20.0
 #: Seconds the ``-version`` check of each binary may take.
@@ -90,6 +116,20 @@ CHUNK = 1 << 20
 STALE_WORK_AGE = 6 * 3600
 #: Links followed in a row inside an archive before the chain counts as a loop.
 MAX_LINK_DEPTH = 40
+#: ``TaskInfo.error_code`` of a download that cannot reach the server.
+FETCH_OFFLINE = "tools.fetch_offline"
+#: What to do instead, appended to the message of :data:`FETCH_OFFLINE`.
+OFFLINE_ALTERNATIVES = (
+    "Without a connection, install the build from its archive file (downloaded on another "
+    "computer), or use an FFmpeg that is already on this computer (its path in Settings > "
+    "Tools, or REFRAME_FFMPEG and REFRAME_FFPROBE)."
+)
+#: The packaged libva of the Linux app: a folder of this name in a bundled tool root.
+LIBVA_FOLDER = "libva"
+#: The libva libraries that the BtbN Linux build loads at run time.
+LIBVA_SONAMES = ("libva.so.2", "libva-drm.so.2")
+#: Transfer progress is logged at every this many percent.
+LOG_PROGRESS_STEP = 10
 
 #: Progress ranges of the steps (percent of the task).
 _DOWNLOAD = (0.0, 85.0)
@@ -99,11 +139,47 @@ _CHECK = 97.0
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _RELEASE_VERSION_RE = re.compile(r"^(\d+)\.(\d+)(?:\.(\d+))?$")
 _DRIVE_RE = re.compile(r"^[A-Za-z]:")
+_LIBVA_FILE_RE = re.compile(r"^libva(?:-drm)?\.so\.2(?:\.\d+)*$")
+#: Socket errors of a computer without a network (the Windows codes too).
+_OFFLINE_ERRNOS = frozenset(
+    code
+    for name in (
+        "ENETUNREACH",
+        "ENETDOWN",
+        "EHOSTUNREACH",
+        "EHOSTDOWN",
+        "WSAENETUNREACH",
+        "WSAENETDOWN",
+        "WSAEHOSTUNREACH",
+        "WSAEHOSTDOWN",
+    )
+    if (code := getattr(errno, name, None)) is not None
+)
 
 
 class FetchError(Exception):
     """An expected failure: a bad manifest, a download error, a checksum mismatch, an unsafe
-    or broken archive, a build that does not run. The task ends ``failed`` with the text."""
+    or broken archive, a build that does not run. The task ends ``failed`` with the text and
+    ``code`` as its ``error_code``."""
+
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class _Mismatch(FetchError):
+    """A file whose size or SHA-256 is not the pinned one; ``why`` says which."""
+
+    def __init__(self, path: Path, why: str) -> None:
+        super().__init__(f"{path.name}: {why}")
+        self.why = why
+
+
+def _not_the_archive(source: Path, build: Build, pbuild: PlatformBuild, why: str) -> FetchError:
+    return FetchError(
+        f"{source.name} is not the archive of the FFmpeg build {build.name!r} for "
+        f"{pbuild.platform} ({pbuild.file_name}), or it is damaged: {why}"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +214,13 @@ class Build:
     license: str
     source_commit: str
     platforms: Mapping[str, PlatformBuild]
+    source_repository: str = ""
+    build_scripts_repository: str = ""
+    build_scripts_commit: str = ""
+    offered: bool = False
+    """The user may choose it (the first-run screen, Settings → Tools)."""
+    label: str = ""
+    summary: str = ""
 
 
 def _get_str(table: Mapping[str, object], key: str, where: str) -> str:
@@ -234,6 +317,11 @@ def _parse_build(name: str, table: Mapping[str, object]) -> Build:
         platforms[platform_name] = _parse_platform(
             platform_name, platform_table, f"{where}.platforms.{platform_name}"
         )
+    offered = table.get("offered", False)
+    if not isinstance(offered, bool):
+        raise FetchError(f"{where}.offered: expected true or false")
+    label = _get_str(table, "label", where) if offered else str(table.get("label", ""))
+    summary = _get_str(table, "summary", where) if offered else str(table.get("summary", ""))
     return Build(
         name=name,
         version=version,
@@ -241,6 +329,12 @@ def _parse_build(name: str, table: Mapping[str, object]) -> Build:
         license=_get_str(table, "license", where),
         source_commit=_get_str(table, "source_commit", where),
         platforms=platforms,
+        source_repository=_get_str(table, "source_repository", where),
+        build_scripts_repository=str(table.get("build_scripts_repository", "")),
+        build_scripts_commit=str(table.get("build_scripts_commit", "")),
+        offered=offered,
+        label=label,
+        summary=summary,
     )
 
 
@@ -255,7 +349,7 @@ def parse_manifest(data: Mapping[str, object]) -> dict[str, Build]:
             raise FetchError(f"builds.{name}: expected a table")
         builds[name] = _parse_build(name, table)
     if "default" not in builds:
-        raise FetchError("builds.default: missing (the build that ships)")
+        raise FetchError("builds.default: missing (the recommended build)")
     return builds
 
 
@@ -287,6 +381,8 @@ def host_platform(sys_platform: str | None = None, machine: str | None = None) -
             return "linux-x64"
         if sys_platform == "win32":
             return "windows-x64"
+    if machine in ("aarch64", "arm64") and sys_platform.startswith("linux"):
+        return "linux-arm64"
     return None
 
 
@@ -330,43 +426,88 @@ def download(
     attempts: int = ATTEMPTS,
     timeout: float = SOCKET_TIMEOUT,
 ) -> None:
-    """Download ``url`` to ``dest`` (worker thread). Network errors and HTTP 429 / 5xx are
-    retried with back-off; a response longer than ``size`` stops at once (a wrong or hostile
-    server cannot fill the disk) and is not retried."""
+    """Download ``url`` to ``dest`` (worker thread). Errors in the middle of the transfer and
+    HTTP 429 / 5xx are retried with back-off, a refused or timed-out connection once, and no
+    name resolution, an unreachable network and a TLS failure never. A response longer than
+    ``size`` stops at once (a wrong or hostile server cannot fill the disk) and is not retried.
+    A server that cannot be reached at all is a :class:`FetchError` with the code
+    :data:`FETCH_OFFLINE`."""
     for attempt in range(1, attempts + 1):
         error: Exception
+        connected = False
         try:
             request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(request, timeout=timeout) as response, dest.open("wb") as f:
-                written = 0
-                # read1 returns what has arrived, so a slow server does not keep a cancel
-                # waiting for a whole block.
-                while chunk := response.read1(CHUNK):
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                connected = True
+                with dest.open("wb") as f:
+                    written = 0
+                    # read1 returns what has arrived, so a slow server does not keep a cancel
+                    # waiting for a whole block.
+                    while chunk := response.read1(CHUNK):
+                        _check_cancel(cancel)
+                        written += len(chunk)
+                        if written > size:
+                            raise FetchError(
+                                f"{url}: the download is larger than the pinned size of "
+                                f"{size} bytes"
+                            )
+                        f.write(chunk)
+                        if progress is not None:
+                            progress(written)
                     _check_cancel(cancel)
-                    written += len(chunk)
-                    if written > size:
-                        raise FetchError(
-                            f"{url}: the download is larger than the pinned size of {size} bytes"
-                        )
-                    f.write(chunk)
-                    if progress is not None:
-                        progress(written)
-                _check_cancel(cancel)
             return
         except (FetchError, _Stopped):
             dest.unlink(missing_ok=True)
             raise
         except urllib.error.HTTPError as e:
-            retryable = e.code == 429 or e.code >= 500
+            limit = attempts if e.code == 429 or e.code >= 500 else 1
             error = e
             e.close()  # an HTTPError holds the response body open
-        except (OSError, http.client.HTTPException, ValueError) as e:  # URLError is an OSError
-            retryable = not isinstance(e, ValueError)
+        except ValueError as e:  # a URL that urllib cannot open
+            limit = 1
+            error = e
+        except (OSError, http.client.HTTPException) as e:  # URLError is an OSError
+            limit = attempts if connected else _connect_attempts(e, attempts)
             error = e
         dest.unlink(missing_ok=True)
-        if not retryable or attempt == attempts:
+        if attempt >= limit:
+            why = _offline_reason(error)
+            if why is not None:
+                host = urllib.parse.urlsplit(url).hostname or url
+                raise FetchError(
+                    f"cannot reach the download server {host} ({why}; {attempt} attempt(s))",
+                    code=FETCH_OFFLINE,
+                )
             raise FetchError(f"the download failed after {attempt} attempt(s): {url}: {error}")
         _sleep(2.0**attempt, cancel)
+
+
+def _connect_attempts(error: BaseException, attempts: int) -> int:
+    """The attempts of a download whose connection failed with ``error``: another try cannot
+    help without name resolution, without a route or with a failed TLS handshake."""
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    if isinstance(reason, (ssl.SSLError, socket.gaierror)) or (
+        isinstance(reason, OSError) and reason.errno in _OFFLINE_ERRNOS
+    ):
+        return 1
+    if isinstance(reason, (ConnectionRefusedError, TimeoutError)):
+        return min(attempts, CONNECT_ATTEMPTS)
+    return attempts
+
+
+def _offline_reason(error: BaseException) -> str | None:
+    """The reason text when ``error`` says that the server cannot be reached (no network or
+    name resolution, a refused or timed-out connection); ``None`` for any other error."""
+    if isinstance(error, urllib.error.HTTPError):
+        return None
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    if not isinstance(reason, OSError):
+        return None
+    if isinstance(reason, (socket.gaierror, ConnectionRefusedError, TimeoutError)) or (
+        reason.errno in _OFFLINE_ERRNOS
+    ):
+        return reason.strerror or str(reason) or type(reason).__name__
+    return None
 
 
 def _sleep(seconds: float, cancel: CancelToken) -> None:
@@ -392,22 +533,70 @@ def verify_file(path: Path, sha256: str, size: int, cancel: CancelToken | None =
     """:raises FetchError: unless ``path`` has exactly the pinned size and SHA-256."""
     actual_size = path.stat().st_size
     if actual_size != size:
-        raise FetchError(f"{path.name}: the size is {actual_size} bytes, expected {size}")
+        raise _Mismatch(path, f"the size is {actual_size} bytes, expected {size}")
     actual = sha256_file(path, cancel)
     if actual != sha256:
-        raise FetchError(f"{path.name}: the SHA-256 is {actual}, expected {sha256}")
+        raise _Mismatch(path, f"the SHA-256 is {actual}, expected {sha256}")
 
 
-def member_path(name: str, root: str) -> PurePosixPath:
+def archive_size(path: Path) -> int:
+    """The size of the archive file ``path``. :raises FetchError: it does not exist, is not a
+    file or cannot be read."""
+    try:
+        info = path.stat()
+    except FileNotFoundError:
+        raise FetchError(f"{path}: the file does not exist") from None
+    except OSError as e:
+        raise FetchError(f"{path}: cannot read it: {e.strerror or e}") from None
+    if not stat.S_ISREG(info.st_mode):
+        raise FetchError(f"{path} is not a file")
+    return info.st_size
+
+
+def copy_checked(
+    source: Path,
+    dest: Path,
+    *,
+    sha256: str,
+    size: int,
+    cancel: CancelToken,
+    progress: _Progress | None = None,
+) -> None:
+    """Copy ``source`` to ``dest`` (worker thread); what was copied must have exactly the pinned
+    size and SHA-256 (a file that changes meanwhile cannot slip through). :raises FetchError:"""
+    digest = hashlib.sha256()
+    written = 0
+    try:
+        with source.open("rb") as src, dest.open("wb") as dst:
+            while chunk := src.read(CHUNK):
+                _check_cancel(cancel)
+                written += len(chunk)
+                if written > size:
+                    raise _Mismatch(source, f"the file is larger than {size} bytes")
+                digest.update(chunk)
+                dst.write(chunk)
+                if progress is not None:
+                    progress(written)
+        if written != size:
+            raise _Mismatch(source, f"the size is {written} bytes, expected {size}")
+        actual = digest.hexdigest()
+        if actual != sha256:
+            raise _Mismatch(source, f"the SHA-256 is {actual}, expected {sha256}")
+    except BaseException:
+        dest.unlink(missing_ok=True)
+        raise
+
+
+def member_path(name: str, root: str | None) -> PurePosixPath:
     """The safe relative path of an archive member. Every member must be inside the folder
-    ``root``; absolute paths, drive letters, backslashes, NUL, ``..`` and ``:`` (NTFS streams)
-    are refused. :raises FetchError:"""
+    ``root`` (``None``: an archive without a top folder); absolute paths, drive letters,
+    backslashes, NUL, ``..`` and ``:`` (NTFS streams) are refused. :raises FetchError:"""
     if not name or name.startswith("/") or "\\" in name or "\x00" in name or _DRIVE_RE.match(name):
         raise FetchError(f"unsafe archive member name: {name!r}")
     parts = [part for part in name.split("/") if part not in ("", ".")]
     if not parts or any(part == ".." or ":" in part for part in parts):
         raise FetchError(f"unsafe archive member name: {name!r}")
-    if parts[0] != root:
+    if root is not None and parts[0] != root:
         raise FetchError(f"archive member {name!r} is outside the folder {root!r}")
     return PurePosixPath(*parts)
 
@@ -459,8 +648,10 @@ def _check_links(paths: list[PurePosixPath], links: Mapping[PurePosixPath, str],
             raise FetchError(f"the link {member} -> {text!r} points outside {root!r} (or loops)")
 
 
-def _extract_tar(archive: Path, root: str, dest: Path, cancel: CancelToken) -> None:
-    with tarfile.open(archive, "r:xz") as tf:
+def _extract_tar(
+    archive: Path, mode: Literal["r:xz", "r:bz2"], root: str, dest: Path, cancel: CancelToken
+) -> None:
+    with tarfile.open(archive, mode) as tf:
         members = tf.getmembers()
         links: dict[PurePosixPath, str] = {}
         paths = []
@@ -482,7 +673,7 @@ def _extract_tar(archive: Path, root: str, dest: Path, cancel: CancelToken) -> N
             tf.extract(m, dest, filter="data")
 
 
-def _extract_zip(archive: Path, root: str, dest: Path, cancel: CancelToken) -> None:
+def _extract_zip(archive: Path, root: str | None, dest: Path, cancel: CancelToken) -> None:
     with zipfile.ZipFile(archive) as zf:
         infos = zf.infolist()
         paths = []
@@ -505,12 +696,18 @@ def _extract_zip(archive: Path, root: str, dest: Path, cancel: CancelToken) -> N
                 target.chmod(0o755)
 
 
-def safe_extract(archive: Path, fmt: str, root: str, dest: Path, cancel: CancelToken) -> None:
-    """Extract ``archive`` into ``dest``; every member is checked before a file is written.
-    :raises FetchError: an unsafe member, or an archive that cannot be read."""
+def safe_extract(
+    archive: Path, fmt: str, root: str | None, dest: Path, cancel: CancelToken
+) -> None:
+    """Extract ``archive`` (``tar.xz``, ``tar.bz2`` or ``zip``) into ``dest``; every member is
+    checked before a file is written. Only a zip archive may lack a top folder (``root``
+    ``None``): a tar's links are checked against it. :raises FetchError: an unsafe member, or
+    an archive that cannot be read."""
     try:
-        if fmt == "tar.xz":
-            _extract_tar(archive, root, dest, cancel)
+        if fmt in _TAR_MODES:
+            if root is None:
+                raise FetchError(f"{archive.name}: a {fmt} archive needs a top folder")
+            _extract_tar(archive, _TAR_MODES[fmt], root, dest, cancel)
         elif fmt == "zip":
             _extract_zip(archive, root, dest, cancel)
         else:  # pragma: no cover - the manifest parser allows only these
@@ -535,17 +732,105 @@ def tree_digest(directory: Path, cancel: CancelToken | None = None) -> dict[str,
 
 
 def is_installed(
-    install_dir: Path, pbuild: PlatformBuild, cancel: CancelToken | None = None
+    install_dir: Path,
+    pbuild: PlatformBuild,
+    cancel: CancelToken | None = None,
+    *,
+    libva: Path | None = None,
 ) -> bool:
-    """The archive ``pbuild`` is installed in ``install_dir`` and every file still has the hash
-    recorded at install time."""
+    """The archive ``pbuild`` is installed in ``install_dir``, every file still has the hash
+    recorded at install time and, with ``libva``, its ``lib/`` has that packaged libva."""
     marker = installed_build(install_dir)
     if marker is None or marker.get("sha256") != pbuild.sha256:
         return False
     files = marker.get("files")
     if not isinstance(files, dict) or not files:
         return False
+    if libva is not None and any(
+        files.get(rel) != value for rel, value in libva_files(libva, cancel).items()
+    ):
+        return False
     return tree_digest(install_dir, cancel) == files
+
+
+def packaged_libva(roots: Sequence[Path], data_dir: Path) -> Path | None:
+    """The packaged libva folder: ``<root>/libva`` of the first of ``roots`` (the bundled tool
+    roots) that has one, leaving out ``<data dir>/tools``; ``None`` when there is none."""
+    own = Path(data_dir) / "tools"
+    for root in roots:
+        if Path(root) == own:
+            continue
+        folder = Path(root) / LIBVA_FOLDER
+        if folder.is_dir():
+            return folder
+    return None
+
+
+def _libva_layout(libva: Path) -> dict[str, str | None]:
+    """The libva libraries of the folder ``libva`` by name: the target of a link to another of
+    them, else ``None`` (copied as a file). :raises FetchError: a soname is missing, or links
+    loop or leave the folder."""
+    names = {entry.name: entry for entry in libva.iterdir() if _LIBVA_FILE_RE.match(entry.name)}
+    layout: dict[str, str | None] = {}
+    for name, entry in sorted(names.items()):
+        _check_libva_links(libva, name)
+        target = os.readlink(entry) if entry.is_symlink() else None
+        if target is not None and target in names:
+            layout[name] = target
+        elif entry.is_file():
+            layout[name] = None  # a file, or a link to another file of the folder: its content
+    while dangling := [name for name, target in layout.items() if target and target not in layout]:
+        for name in dangling:
+            del layout[name]
+    for soname in LIBVA_SONAMES:
+        if soname not in layout:
+            raise FetchError(f"the packaged libva in {libva} has no {soname}")
+    return layout
+
+
+def _check_libva_links(libva: Path, name: str) -> None:
+    """:raises FetchError: the links from ``name`` loop or leave the folder ``libva``."""
+    chain = [name]
+    while (libva / chain[-1]).is_symlink():
+        target = os.readlink(libva / chain[-1])
+        if target in ("", ".", "..") or "/" in target or "\\" in target:
+            raise FetchError(
+                f"the packaged libva in {libva} is broken: the link {chain[-1]} -> {target!r} "
+                "leaves the folder"
+            )
+        if target in chain:
+            raise FetchError(
+                f"the packaged libva in {libva} is broken: its links loop: "
+                + " -> ".join([*chain, target])
+            )
+        chain.append(target)
+
+
+def libva_files(libva: Path, cancel: CancelToken | None = None) -> dict[str, str]:
+    """What :func:`add_libva` adds to a build, as :func:`tree_digest` records it."""
+    return {
+        f"lib/{name}": f"link:{target}"
+        if target is not None
+        else "sha256:" + sha256_file(libva / name, cancel)
+        for name, target in _libva_layout(libva).items()
+    }
+
+
+def add_libva(root: Path, libva: Path) -> None:
+    """Copy the libva libraries of the folder ``libva`` into ``root/lib``, each link as a link
+    (the layout of the bundled Linux build). :raises FetchError: a soname is missing, or links
+    loop or leave the folder (nothing is copied)."""
+    layout = _libva_layout(libva)
+    lib = root / "lib"
+    lib.mkdir(exist_ok=True)
+    for name, target in layout.items():
+        dest = lib / name
+        if dest.is_symlink() or dest.exists():
+            dest.unlink()
+        if target is None:
+            shutil.copyfile(libva / name, dest)
+        else:
+            dest.symlink_to(target)
 
 
 def check_replaceable(install_dir: Path) -> None:
@@ -595,7 +880,8 @@ def _retry_on_permission(
 
 def _swap_into_place(new: Path, install_dir: Path, aside: Path) -> None:
     """Move ``new`` to ``install_dir``; an old build is moved to ``aside`` first (removed with
-    the work folder) and moved back if the new one cannot be moved."""
+    the work folder) and moved back if the new one cannot be moved, or by
+    :func:`restore_previous_build` after a kill."""
     old = install_dir.exists() or install_dir.is_symlink()
     try:
         if old:
@@ -614,6 +900,45 @@ def _swap_into_place(new: Path, install_dir: Path, aside: Path) -> None:
         ) from e
 
 
+def restore_previous_build(install_dir: Path, platform: str) -> Path | None:
+    """Put back the build that a fetch killed between the two renames of its swap left in
+    ``.fetch-*/previous``: only when ``install_dir`` is missing and that build's marker
+    (for ``platform``) and files are intact. Never fails; returns the folder it came from."""
+    if install_dir.exists() or install_dir.is_symlink():
+        return None
+    found: list[tuple[float, Path]] = []
+    try:
+        candidates = [work / "previous" for work in install_dir.parent.glob(".fetch-*")]
+    except OSError:
+        return None
+    for previous in candidates:
+        try:
+            if previous.is_symlink() or not previous.is_dir():
+                continue
+            marker = installed_build(previous)
+            files = marker.get("files") if marker is not None else None
+            if marker is None or marker.get("platform") != platform or not files:
+                continue
+            if tree_digest(previous) == files:
+                found.append(((previous / MARKER_NAME).stat().st_mtime, previous))
+        except OSError:
+            continue
+    if not found:
+        return None
+    previous = max(found)[1]
+    try:
+        _retry_on_permission(functools.partial(previous.rename, install_dir))
+    except OSError as e:
+        log.warning("Cannot put back the FFmpeg build in %s: %s", previous, e.strerror or e)
+        return None
+    log.warning(
+        "Put back the FFmpeg build that an interrupted install left in %s: %s",
+        previous,
+        install_dir,
+    )
+    return previous
+
+
 @dataclass(slots=True)
 class _Job:
     """One fetch: what to install, where, and how to report."""
@@ -624,19 +949,57 @@ class _Job:
     native: bool
     ctx: TaskContext
     loop: asyncio.AbstractEventLoop
+    source: Path | None = None
+    """The archive file to install instead of the download."""
+    libva: Path | None = None
+    """The packaged libva folder whose libraries go into the build's ``lib/``."""
     #: The new build is in place (set by the worker thread right after the swap).
     swapped: bool = False
+    #: The last transfer percentage logged.
+    logged: int = 0
 
     def report(self, percent: float | None, message: str) -> None:
         """Progress from the worker thread (thread-safe)."""
         with contextlib.suppress(RuntimeError):  # the loop is closed: nobody listens
             self.loop.call_soon_threadsafe(self.ctx.progress, percent, message)
 
-    def download_and_extract(self, work: Path) -> Path:
-        """Worker thread: download into ``work``, verify, extract. The extracted root folder."""
+    def start_line(self) -> str:
+        build, pbuild = self.build, self.pbuild
+        links = _source_links(build)
+        source = f"; source: {links[0]}" if links else ""
+        origin = f"from the file {self.source}" if self.source else f"from {pbuild.url}"
+        return (
+            f"FFmpeg build {build.name!r} ({build.version}, {pbuild.platform}, "
+            f"{_mebibytes(pbuild.size)}): installing {origin} into {self.install_dir}. "
+            f"Licence {build.license}{source}"
+        )
+
+    def _log_transfer(self, done: int) -> None:
+        percent = int(100 * min(done / self.pbuild.size, 1.0))
+        step = percent - percent % LOG_PROGRESS_STEP
+        if step > self.logged:
+            self.logged = step
+            what = "downloaded" if self.source is None else "copied"
+            log.info(
+                "FFmpeg build %r: %s %d %% (%s of %s)",
+                self.build.name,
+                what,
+                step,
+                _mebibytes(done),
+                _mebibytes(self.pbuild.size),
+            )
+
+    def prepare(self, work: Path) -> Path:
+        """Worker thread: the archive (downloaded, or copied from the file) checked in ``work``,
+        then extracted, with the packaged libva added. The extracted root folder."""
         pbuild, cancel = self.pbuild, self.ctx.cancel
-        archive = work / (pbuild.file_name or f"ffmpeg.{pbuild.format}")
-        message = f"Downloading {archive.name}"
+        if self.source is None:
+            archive = work / (pbuild.file_name or f"ffmpeg.{pbuild.format}")
+            message = f"Downloading {archive.name}"
+        else:
+            (work / "archive").mkdir()
+            archive = work / "archive" / self.source.name
+            message = f"Checking {self.source.name}"
         self.report(0.0, message)
         start, end = _DOWNLOAD
         last = [-1]
@@ -646,10 +1009,24 @@ class _Job:
             if int(percent) != last[0]:
                 last[0] = int(percent)
                 self.report(percent, message)
+            self._log_transfer(done)
 
-        download(pbuild.url, archive, size=pbuild.size, cancel=cancel, progress=progress)
-        self.report(end, "Checking the size and SHA-256")
-        verify_file(archive, pbuild.sha256, pbuild.size, cancel)
+        if self.source is None:
+            download(pbuild.url, archive, size=pbuild.size, cancel=cancel, progress=progress)
+            self.report(end, "Checking the size and SHA-256")
+            verify_file(archive, pbuild.sha256, pbuild.size, cancel)
+        else:
+            try:
+                copy_checked(
+                    self.source,
+                    archive,
+                    sha256=pbuild.sha256,
+                    size=pbuild.size,
+                    cancel=cancel,
+                    progress=progress,
+                )
+            except _Mismatch as e:
+                raise _not_the_archive(self.source, self.build, pbuild, e.why) from None
         self.report(_EXTRACT, f"Extracting {archive.name}")
         staging = work / "extract"
         staging.mkdir()
@@ -659,6 +1036,11 @@ class _Job:
         for tool in (pbuild.ffmpeg, pbuild.ffprobe):
             if not (root / tool).is_file():
                 raise FetchError(f"{tool} is not in the archive under {pbuild.root}/")
+        if self.libva is not None:
+            add_libva(root, self.libva)
+            log.info(
+                "FFmpeg build %r: added the packaged libva from %s", self.build.name, self.libva
+            )
         return root
 
     def install(self, root: Path, work: Path) -> None:
@@ -668,6 +1050,10 @@ class _Job:
         _check_cancel(self.ctx.cancel)
         _swap_into_place(root, self.install_dir, work / "previous")
         self.swapped = True
+
+
+def _mebibytes(size: int) -> str:
+    return f"{size / 2**20:.1f} MiB"
 
 
 def _newest_write(folder: Path) -> float:
@@ -716,7 +1102,7 @@ async def _in_thread[T](cancel: CancelToken, fn: Callable[..., T], *args: object
         # Not shield(): it reports an exception of the thread after a cancel to the loop.
         await asyncio.wait({future})  # a cancel of this wait leaves the thread running
     except asyncio.CancelledError:
-        cancel.cancel("cancelled")
+        cancel.cancel()
         await asyncio.wait({future}, timeout=STOP_WAIT)
         raise
     try:
@@ -738,7 +1124,7 @@ async def _to_the_end[T](aw: Awaitable[T], cancel: CancelToken) -> tuple[T, bool
             if inner.cancelled():
                 raise  # ``aw`` itself was cancelled
             cancelled = True
-            cancel.cancel("cancelled")
+            cancel.cancel()
             current = asyncio.current_task()
             if current is not None:
                 current.uncancel()
@@ -767,15 +1153,25 @@ async def _check_version(executable: Path, tool: str, version: str, cancel: Canc
     raise FetchError(f"the downloaded {tool} does not work on this computer: {why}")
 
 
+def _describe(build: str | None, platform: str | None, source: Path | None) -> str:
+    """The fetch in the log lines: ``FFmpeg download of build 'default'``."""
+    if source is not None:
+        return f"FFmpeg install from the file {source}"
+    return f"FFmpeg download of build {build!r}" + (f" for {platform}" if platform else "")
+
+
 async def _fetch(
     ctx: TaskContext,
     *,
     data_dir: Path,
     rescan: Callable[[], Awaitable[ToolSet]],
-    build: str,
+    build: str | None,
     platform: str | None,
     manifest: Path | None,
+    source: Path | None = None,
+    libva: Path | None = None,
 ) -> ToolFetchResult:
+    what = _describe(build, platform, source)
     try:
         return await _fetch_steps(
             ctx,
@@ -784,12 +1180,52 @@ async def _fetch(
             build=build,
             platform=platform,
             manifest=manifest,
+            source=source,
+            libva=libva,
         )
     except FetchError as e:
-        raise TaskFailed(str(e)) from None
+        message = str(e)
+        if e.code == FETCH_OFFLINE:
+            message = f"{message}. {OFFLINE_ALTERNATIVES}"
+        log.error("%s failed: %s", what, message)
+        raise TaskFailed(message, code=e.code) from None
     except OSError as e:  # the data folder cannot be written, the disk is full, …
         where = f" ({e.filename})" if e.filename else ""
-        raise TaskFailed(f"{e.strerror or e}{where}") from None
+        message = f"{e.strerror or e}{where}"
+        log.error("%s failed: %s", what, message)
+        raise TaskFailed(message) from None
+    except asyncio.CancelledError:
+        if not ctx.cancelled:
+            raise
+        log.info("%s was cancelled: nothing was installed", what)
+        raise
+
+
+def choose_build(
+    builds: Mapping[str, Build], name: str | None, target: str, source: Path | None
+) -> Build:
+    """The build ``name``; for an archive file without a name, the offered build whose archive
+    for ``target`` has the file's name. :raises FetchError:"""
+    if name is not None or source is None:
+        name = "default" if name is None else name
+        chosen = builds.get(name)
+        if chosen is None:
+            raise FetchError(
+                f"the manifest has no build {name!r} (it has {', '.join(sorted(builds))})"
+            )
+        return chosen
+    offered = [b for b in builds.values() if b.offered and target in b.platforms]
+    matches = [b for b in offered if b.platforms[target].file_name == source.name]
+    if not matches:
+        names = ", ".join(sorted({b.platforms[target].file_name for b in offered}))
+        raise FetchError(
+            f"{source.name} is not the file name of an offered build's archive for {target} "
+            f"({names}): name the build it is"
+        )
+    if len({b.platforms[target].sha256 for b in matches}) > 1:
+        names = ", ".join(b.name for b in matches)
+        raise FetchError(f"{source.name} is the archive of several builds ({names}): name one")
+    return matches[0]
 
 
 async def _fetch_steps(
@@ -797,18 +1233,15 @@ async def _fetch_steps(
     *,
     data_dir: Path,
     rescan: Callable[[], Awaitable[ToolSet]],
-    build: str,
+    build: str | None,
     platform: str | None,
     manifest: Path | None,
+    source: Path | None,
+    libva: Path | None,
 ) -> ToolFetchResult:
     cancel = ctx.cancel
     ctx.progress(None, "Reading the manifest")
     builds = await asyncio.to_thread(load_manifest, manifest)
-    chosen = builds.get(build)
-    if chosen is None:
-        raise FetchError(
-            f"the manifest has no build {build!r} (it has {', '.join(sorted(builds))})"
-        )
     host = host_platform()
     target = platform or host
     if target is None:
@@ -816,12 +1249,32 @@ async def _fetch_steps(
             f"no FFmpeg build is pinned for this computer ({sys.platform}, "
             f"{platform_module.machine()}); the manifest has {', '.join(PLATFORMS)}"
         )
+    size = None if source is None else await asyncio.to_thread(archive_size, source)
+    chosen = choose_build(builds, build, target, source)
     pbuild = chosen.platforms.get(target)
     if pbuild is None:
-        raise FetchError(f"the build {build!r} has no archive for {target}")
+        raise FetchError(f"the build {chosen.name!r} has no archive for {target}")
     install_dir = install_dir_for(data_dir, target, host)
     native = target == host
-    job = _Job(chosen, pbuild, install_dir, native, ctx, asyncio.get_running_loop())
+    if not (native and target.startswith("linux")):
+        libva = None
+    if libva is not None:
+        await asyncio.to_thread(_libva_layout, libva)  # a broken one fails before the download
+    job = _Job(
+        chosen,
+        pbuild,
+        install_dir,
+        native,
+        ctx,
+        asyncio.get_running_loop(),
+        source=source,
+        libva=libva,
+    )
+    log.info("%s", job.start_line())
+    if source is not None and size != pbuild.size:
+        # Refused before anything is copied or extracted.
+        why = f"the size is {size} bytes, expected {pbuild.size}"
+        raise _not_the_archive(source, chosen, pbuild, why)
 
     def result(downloaded: bool) -> ToolFetchResult:
         return ToolFetchResult(
@@ -835,17 +1288,31 @@ async def _fetch_steps(
         )
 
     ctx.progress(None, f"Checking the build in {install_dir}")
-    if await _in_thread(cancel, is_installed, install_dir, pbuild, cancel):
+    await asyncio.to_thread(restore_previous_build, install_dir, target)
+    if await _in_thread(cancel, lambda: is_installed(install_dir, pbuild, cancel, libva=libva)):
+        if source is not None:
+            ctx.progress(None, f"Checking the SHA-256 of {source.name}")
+            try:
+                await _in_thread(cancel, verify_file, source, pbuild.sha256, pbuild.size, cancel)
+            except _Mismatch as e:
+                raise _not_the_archive(source, chosen, pbuild, e.why) from None
         if native:
             ctx.progress(_CHECK + 2, "Running tool discovery")
             await rescan()
+        log.info(
+            "FFmpeg build %r (%s) is already installed in %s and every file is intact: "
+            "nothing to do",
+            chosen.name,
+            chosen.version,
+            install_dir,
+        )
         return result(downloaded=False)
     check_replaceable(install_dir)
     install_dir.parent.mkdir(parents=True, exist_ok=True)
     await asyncio.to_thread(remove_stale_work, install_dir.parent)
     work = Path(tempfile.mkdtemp(prefix=".fetch-", dir=install_dir.parent))
     try:
-        root = await _in_thread(cancel, job.download_and_extract, work)
+        root = await _in_thread(cancel, job.prepare, work)
         if native:
             ctx.progress(_CHECK, "Checking ffmpeg -version and ffprobe -version")
             await _check_version(root / pbuild.ffmpeg, "ffmpeg", chosen.version, cancel)
@@ -866,6 +1333,17 @@ async def _fetch_steps(
     if native:
         ctx.progress(_CHECK + 2, "Running tool discovery")
         await _to_the_end(rescan(), cancel)
+    checks = "the size and SHA-256 of the archive" + (
+        ", ffmpeg -version and ffprobe -version" if native else f" (not run: it is for {target})"
+    )
+    log.info(
+        "Installed FFmpeg build %r (%s) into %s%s; checked: %s",
+        chosen.name,
+        chosen.version,
+        install_dir,
+        " before the cancel" if cancel.cancelled else "",
+        checks,
+    )
     if cancel.cancelled:
         # The task ends ``cancelled`` (the task manager sees the token), with this message.
         ctx.progress(
@@ -883,12 +1361,15 @@ def start_fetch(
     build: str = "default",
     platform: str | None = None,
     manifest: Path | None = None,
+    libva: Path | None = None,
 ) -> TaskInfo:
     """Task ``tools_fetch``: the build ``build`` of ``manifest`` (default: the pinned manifest
     shipped with Reframe) for ``platform`` (``None``: this one), downloaded with progress,
     verified, installed into ``data_dir / "tools" / "ffmpeg"``; then ``rescan()`` (tool
     discovery). Result: :class:`~reframe.models.ToolFetchResult`. A download or checksum
-    failure ends the task ``failed`` with the reason; nothing half-installed is left."""
+    failure ends the task ``failed`` with the reason (``error_code`` :data:`FETCH_OFFLINE`
+    when the server cannot be reached); nothing half-installed is left. ``libva``: a packaged
+    libva folder, whose libraries a Linux build for this computer gets in its ``lib/``."""
 
     async def fn(ctx: TaskContext) -> ToolFetchResult:
         return await _fetch(
@@ -898,7 +1379,85 @@ def start_fetch(
             build=build,
             platform=platform,
             manifest=manifest,
+            libva=libva,
         )
 
     label = f"FFmpeg build {build!r}" + (f" for {platform}" if platform else "")
     return tasks.start("tools_fetch", fn, message=f"Fetching the {label}")
+
+
+def start_install_file(
+    tasks: TaskManager,
+    *,
+    data_dir: Path,
+    rescan: Callable[[], Awaitable[ToolSet]],
+    archive: Path,
+    build: str | None = None,
+    manifest: Path | None = None,
+    libva: Path | None = None,
+) -> TaskInfo:
+    """Task ``tools_fetch`` for an archive file of a build for this computer: checked like a
+    download (size and SHA-256 against the manifest entry of ``build``; ``None``: the offered
+    build whose archive has the file's name) before anything is extracted, then installed as
+    :func:`start_fetch` installs a download."""
+
+    async def fn(ctx: TaskContext) -> ToolFetchResult:
+        return await _fetch(
+            ctx,
+            data_dir=Path(data_dir),
+            rescan=rescan,
+            build=build,
+            platform=None,
+            manifest=manifest,
+            source=Path(archive),
+            libva=libva,
+        )
+
+    name = Path(archive).name
+    return tasks.start("tools_fetch", fn, message=f"Installing the FFmpeg archive {name}")
+
+
+def offered_builds(
+    data_dir: Path, *, manifest: Path | None = None, platform: str | None = None
+) -> ToolBuilds:
+    """The offered builds of ``manifest`` and the build installed in ``data_dir``. Reads two
+    small files: call it from a worker thread in async code. :raises FetchError: a bad
+    manifest."""
+    builds = load_manifest(manifest)
+    host = host_platform() if platform is None else platform
+
+    def offer(build: Build) -> ToolBuildOffer:
+        archive = build.platforms.get(host) if host is not None else None
+        return ToolBuildOffer(
+            name=build.name,
+            label=build.label,
+            summary=build.summary,
+            version=build.version,
+            release_version=build.release_version,
+            license=build.license,
+            source_links=_source_links(build),
+            size=None if archive is None else archive.size,
+            archive_url=None if archive is None else archive.url,
+            sha256=None if archive is None else archive.sha256,
+        )
+
+    offers = [offer(build) for build in builds.values() if build.offered]
+    installed: InstalledToolBuild | None = None
+    if host is not None:
+        marker = installed_build(install_dir_for(Path(data_dir), host, host))
+        if marker is not None and isinstance(marker.get("build"), str):
+            name, version = marker["build"], str(marker.get("version", ""))
+            pinned = builds.get(name)
+            outdated = pinned is not None and pinned.version != version
+            installed = InstalledToolBuild(name=name, version=version, outdated=outdated)
+    return ToolBuilds(builds=offers, installed=installed)
+
+
+def _source_links(build: Build) -> list[str]:
+    links = []
+    if build.source_repository:
+        links.append(f"{build.source_repository.rstrip('/')}/commit/{build.source_commit}")
+    if build.build_scripts_repository and build.build_scripts_commit:
+        scripts = build.build_scripts_repository.rstrip("/")
+        links.append(f"{scripts}/tree/{build.build_scripts_commit}")
+    return links

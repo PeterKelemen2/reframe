@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+import reframe.preview.clip as clip_module
+from reframe.metadata import header
+from reframe.metadata.header import HeaderEditResult
 from reframe.models import (
     AudioOutputTrack,
     AverageBitrate,
@@ -19,10 +25,10 @@ from reframe.models import (
     EncoderState,
     EncoderStatus,
     FrameSet,
+    HeaderEdit,
     JobSettings,
     PreviewClip,
     TaskState,
-    ToolStatus,
     TrackMetadata,
 )
 from reframe.preview import clip_path, start_frames, start_preview_clip
@@ -30,6 +36,7 @@ from reframe.preview.cache import is_clip_id
 from reframe.tools import RunResult, run_streaming
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
+from reframe_testing.mkvtoolnix import mkvtoolnix_tool
 
 from .helpers import (
     Env,
@@ -123,6 +130,8 @@ async def test_the_same_request_gives_the_cached_clip(
 ) -> None:
     src = fixture_media("letterbox")
     env = make_env(tmp_path / "cache")
+    # The cache folder may be slow (a network share, a disk that spins up): no read on the loop.
+    on_loop = file_reads_on_this_thread(monkeypatch, tmp_path / "cache")
     first = await clip(env, lossless(src), start=0.5, seconds=1.0)
 
     async def no_encode(*args: object, **kwargs: object) -> object:
@@ -131,6 +140,7 @@ async def test_the_same_request_gives_the_cached_clip(
     monkeypatch.setattr("reframe.preview.clip.run_streaming", no_encode)
     again = await clip(env, lossless(src), start=0.5, seconds=1.0)
     assert again == first
+    assert on_loop == [], on_loop
     other = lossless(src)
     other.dimensions.crop.rect = CropRect(left=40, right=40)
     monkeypatch.undo()
@@ -156,8 +166,7 @@ async def test_renamed_chapters_give_a_new_clip(tmp_path: Path, fixture_media: M
 
 async def test_two_identical_clips_at_once(tmp_path: Path, fixture_media: Media) -> None:
     """Two runs of the same clip id at once (a raised limit, or two processes on one cache)."""
-    env = make_env(tmp_path / "cache")
-    env.tasks.set_limit("preview_clip", 2)
+    env = make_env(tmp_path / "cache", limits={"preview_clip": 2})
     src = fixture_media("hdr10-4k")
     job = job_for(src, encoder="libx265", bit_depth=10, preset="ultrafast")
     a = start_preview_clip(env.ctx, job, start=0.0, seconds=3.0)
@@ -201,19 +210,6 @@ async def test_a_clip_made_meanwhile_by_another_run(
     assert no_leftovers(tmp_path / "cache" / "clips") == []
 
 
-async def test_the_clip_cache_is_read_off_the_event_loop(
-    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The cache folder may be slow (a network share, a disk that spins up)."""
-    src = fixture_media("letterbox")
-    env = make_env(tmp_path / "cache")
-    on_loop = file_reads_on_this_thread(monkeypatch, tmp_path / "cache")
-    first = await clip(env, lossless(src), start=0.5, seconds=1.0)
-    again = await clip(env, lossless(src), start=0.5, seconds=1.0)
-    assert again == first
-    assert on_loop == [], on_loop
-
-
 async def test_the_encoded_frames_are_the_output_frames(
     tmp_path: Path, fixture_media: Media
 ) -> None:
@@ -236,6 +232,36 @@ async def test_the_encoded_frames_are_the_output_frames(
     encoded = [f for f in clip_frames.frames if f.kind == "source"]
     rendered = [f for f in job_frames.frames if f.kind == "output"]
     assert [(f.width, f.height) for f in encoded] == [(320, 134), (320, 134)]
+    for a, b in zip(encoded, rendered, strict=True):
+        assert rgb_pixels(a.path) == rgb_pixels(b.path), a.timestamp
+
+
+async def test_a_clip_asked_between_two_frames_starts_on_the_next_one(
+    tmp_path: Path, fixture_media: Media
+) -> None:
+    """At 25 fps 1.01 s is between the frames at 1.00 and 1.04: an encoder would round the first
+    frame's timestamp, and the clip's frames would no longer be the output frames at start + t."""
+    src = fixture_media("letterbox")
+    env = make_env(tmp_path / "cache")
+    job = lossless(src)
+    result = await clip(env, job, start=1.01, seconds=1.0)
+    assert result.start == pytest.approx(1.04)
+    assert float(probe(result.path)["format"]["start_time"]) == pytest.approx(0.0)
+    times = [0.03, 0.25, 0.51, 0.77]
+    done, clip_frames = await env.finish(
+        start_frames(env.ctx, result.path, count=None, timestamps=times, job=None)
+    )
+    assert done.state is TaskState.DONE, done.error
+    done, job_frames = await env.finish(
+        start_frames(
+            env.ctx, src, count=None, timestamps=[result.start + t for t in times], job=job
+        )
+    )
+    assert done.state is TaskState.DONE, done.error
+    assert isinstance(clip_frames, FrameSet)
+    assert isinstance(job_frames, FrameSet)
+    encoded = [f for f in clip_frames.frames if f.kind == "source"]
+    rendered = [f for f in job_frames.frames if f.kind == "output"]
     for a, b in zip(encoded, rendered, strict=True):
         assert rgb_pixels(a.path) == rgb_pixels(b.path), a.timestamp
 
@@ -296,17 +322,7 @@ async def test_two_pass_runs_both_passes(
     assert no_leftovers(tmp_path / "cache" / "clips") == []
 
 
-@pytest.mark.parametrize("mkvpropedit", [True, False])
-async def test_loudness_and_languages(
-    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch, mkvpropedit: bool
-) -> None:
-    """The analyse step measures, the encode uses the values. FFmpeg writes the ISO 639-2
-    language, and mkvpropedit (when it is installed) the BCP 47 one, which ffprobe never
-    shows."""
-    src = fixture_media("multitrack")
-    tools = real_tools(mkvpropedit=mkvpropedit)
-    env = make_env(tmp_path / "cache", tools=tools)
-    runs = record_runs(monkeypatch)
+def portuguese_loudness_job(src: Path) -> JobSettings:
     job = job_for(src)
     job.audio = [
         AudioOutputTrack(
@@ -316,12 +332,159 @@ async def test_loudness_and_languages(
             metadata=TrackMetadata(language="pt-BR"),
         )
     ]
-    result = await clip(env, job, start=1.0, seconds=2.0)
+    return job
+
+
+class Writer:
+    """The header writer, faked: records each edit and the files that existed then."""
+
+    def __init__(self, hold: threading.Event | None = None) -> None:
+        self.edits: list[HeaderEdit] = []
+        self.existed: list[bool] = []
+        self.hold = hold
+        self.started = threading.Event()
+
+    def __call__(self, edit: HeaderEdit) -> HeaderEditResult:
+        self.edits.append(edit)
+        self.existed.append(edit.path.is_file())
+        self.started.set()
+        if self.hold is not None:
+            self.hold.wait(30)
+        return HeaderEditResult("written")
+
+
+async def test_loudness_and_the_bcp47_language_header_edit(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The analyse step measures, the encode uses the values. FFmpeg writes the ISO 639-2
+    language, and the header edit on the clip's own ``.part`` file the BCP 47 one; no
+    MKVToolNix program runs."""
+    env = make_env(tmp_path / "cache")
+    runs = record_runs(monkeypatch)
+    writer = Writer()
+    monkeypatch.setattr(header, "apply_header_edit", writer)
+    result = await clip(env, portuguese_loudness_job(fixture_media("multitrack")), 1.0, 2.0)
     streams = probe(result.path)["streams"]
     assert [s["codec_type"] for s in streams] == ["video", "audio"]
     assert streams[1]["tags"]["language"] == "por"
-    ietf = [run for run in runs if "language-ietf=pt-BR" in run]
-    assert len(ietf) == (1 if tools.mkvpropedit.status is ToolStatus.FOUND else 0)
+    assert [Path(run[0]).stem for run in runs] == ["ffmpeg", "ffmpeg"]  # analyse, encode
+    [edit] = writer.edits
+    assert edit.path.parent == tmp_path / "cache" / "clips"
+    assert ".part" in edit.path.name
+    assert writer.existed == [True]
+    assert [(t.track_type, t.number, t.language, t.language_ietf) for t in edit.tracks] == [
+        ("audio", 1, "por", "pt-BR")
+    ]
+
+
+async def test_a_cancel_during_the_header_edit_waits_for_it(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The writer's thread cannot be stopped: the clip's ``.part`` file is removed after the
+    write, never under it."""
+    env = make_env(tmp_path / "cache")
+    release = threading.Event()
+    writer = Writer(hold=release)
+    monkeypatch.setattr(header, "apply_header_edit", writer)
+    job = portuguese_loudness_job(fixture_media("multitrack"))
+    info = start_preview_clip(env.ctx, job, start=1.0, seconds=2.0)
+    try:
+        assert await asyncio.to_thread(writer.started.wait, 30)
+        assert env.tasks.cancel(info.id)
+        await asyncio.sleep(0.2)
+        assert writer.edits[0].path.is_file()  # not removed under the write
+    finally:
+        release.set()
+    done = await env.tasks.wait(info.id)
+    assert done.state is TaskState.CANCELLED
+    assert no_leftovers(tmp_path / "cache" / "clips") == []
+
+
+async def test_a_cancel_ends_at_once_while_other_threads_hold_the_executor(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defect: the header edit waits for a worker of the shared default executor; a cancel
+    then waits for whatever holds that worker."""
+    loop = asyncio.get_running_loop()
+    loop.set_default_executor(ThreadPoolExecutor(max_workers=1))
+    gate, busy = threading.Event(), asyncio.Event()
+
+    async def encode_then_busy(*args: Any, **kwargs: Any) -> RunResult:
+        result = await run_streaming(*args, **kwargs)
+        if not busy.is_set():  # after the last encode: a hung share holds the only worker
+            loop.run_in_executor(None, gate.wait, 60)
+            busy.set()
+        return result
+
+    monkeypatch.setattr(clip_module, "run_streaming", encode_then_busy)
+    writer = Writer()
+    monkeypatch.setattr(header, "apply_header_edit", writer)
+    env = make_env(tmp_path / "cache")
+    job = portuguese_loudness_job(fixture_media("multitrack"))
+    job.audio[0].loudness = "off"  # one FFmpeg run, then the header edit
+    info = start_preview_clip(env.ctx, job, start=1.0, seconds=2.0)
+    try:
+        await asyncio.wait_for(busy.wait(), 60)
+        await asyncio.sleep(0.3)
+        assert env.tasks.cancel(info.id)
+        done = await asyncio.wait_for(env.tasks.wait(info.id), 5)
+        assert done.state is TaskState.CANCELLED
+    finally:
+        gate.set()
+
+
+async def test_a_cancel_before_the_header_edit_starts_ends_at_once_and_writes_nothing(
+    tmp_path: Path, fixture_media: Media, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Defect: a cancel while the writer's thread has not run yet waits for it, and the
+    writer then writes a file of a cancelled clip."""
+    hold, waiting = threading.Event(), threading.Event()
+
+    class HeldThread(threading.Thread):
+        def run(self) -> None:
+            waiting.set()
+            hold.wait(30)
+            super().run()
+
+    from reframe.metadata import own_thread
+
+    monkeypatch.setattr(own_thread, "Thread", HeldThread)
+    writer = Writer()
+    monkeypatch.setattr(header, "apply_header_edit", writer)
+    env = make_env(tmp_path / "cache")
+    info = start_preview_clip(
+        env.ctx, portuguese_loudness_job(fixture_media("multitrack")), start=1.0, seconds=2.0
+    )
+    try:
+        assert await asyncio.to_thread(waiting.wait, 60)
+        assert env.tasks.cancel(info.id)
+        done = await asyncio.wait_for(env.tasks.wait(info.id), 5)
+        assert done.state is TaskState.CANCELLED
+        assert no_leftovers(tmp_path / "cache" / "clips") == []
+    finally:
+        hold.set()
+    await asyncio.sleep(0.2)
+    assert writer.edits == []
+
+
+@pytest.mark.needs_mkvtoolnix
+async def test_the_clip_has_the_bcp47_language(tmp_path: Path, fixture_media: Media) -> None:
+    env = make_env(tmp_path / "cache")
+    result = await clip(env, portuguese_loudness_job(fixture_media("multitrack")), 1.0, 2.0)
+    [audio] = [t for t in mkvmerge_tracks(result.path) if t["type"] == "audio"]
+    assert (audio["properties"]["language"], audio["properties"]["language_ietf"]) == (
+        "por",
+        "pt-BR",
+    )
+
+
+def mkvmerge_tracks(path: Path) -> list[dict[str, Any]]:
+    out = subprocess.run(
+        [mkvtoolnix_tool("mkvmerge"), "-J", str(path)],
+        capture_output=True, text=True, check=True, timeout=60,
+    )  # fmt: skip
+    tracks: list[dict[str, Any]] = json.loads(out.stdout)["tracks"]
+    return tracks
 
 
 @pytest.mark.parametrize(

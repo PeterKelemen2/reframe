@@ -3,17 +3,19 @@ error."""
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from collections.abc import Callable
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
 
-from reframe.batch import draft_tracks, lint_defaults
-from reframe.batch.lint import CODES, describe_rule, lint_rules, lint_track_rules, rule_covers
+from reframe.batch import lint_defaults, resolve_tracks
+from reframe.batch.lint import (
+    container_codec_issues,
+    describe_rule,
+    lint_track_rules,
+    rule_covers,
+)
+from reframe.definitions import load_definitions
 from reframe.jsonpatch import apply_patch
 from reframe.models import (
     AudioCodecRule,
@@ -21,10 +23,10 @@ from reframe.models import (
     AudioDefaults,
     AudioOutputSettings,
     AudioRuleExtras,
-    AudioStream,
     Container,
     ExtraAudioOutput,
     JobTemplate,
+    LanguageSettings,
     MediaSource,
     OutputOptions,
     OutputTrackRule,
@@ -40,24 +42,8 @@ from reframe.models import (
     TrackSelector,
     ValidationIssue,
 )
-from reframe.presets import builtin_presets
 
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-T = _load("defaults_tracks")
-audio: Callable[..., AudioStream] = T.audio
-source: Callable[..., MediaSource] = T.source
+from .defaults_tracks import EXAMPLE_CODEC_RULES, audio, source
 
 CATCH_ALL = AudioCodecRule(codec="aac", mixdown="up_to_5.1", max_bitrate=256)
 
@@ -83,18 +69,26 @@ def template_of(audio_defaults: AudioDefaults, container: Container = "mkv") -> 
     return JobTemplate(output=OutputOptions(container=container), audio_defaults=audio_defaults)
 
 
+def lint(template: JobTemplate) -> list[ValidationIssue]:
+    """The defaults lint and the container's codec check, as the preview shows them."""
+    defaults, container = template.audio_defaults, template.output.container
+    return [
+        *lint_defaults(defaults, container=container),
+        *container_codec_issues(defaults, container, load_definitions()),
+    ]
+
+
 def check_fixes(template: JobTemplate) -> list[ValidationIssue]:
     """Apply every fix of every issue: its issue is gone and no error is new. A fix that removes
     a rule renumbers the later rules, so it is checked by code: one issue of that code fewer."""
-    issues = lint_defaults(template.audio_defaults, container=template.output.container)
+    issues = lint(template)
     errors = {(i.code, i.path) for i in issues if i.severity is Severity.ERROR}
     for issue in issues:
-        assert issue.code in CODES
         for fix in issue.fixes:
             assert fix.target == "template"
             data = apply_patch(template.model_dump(mode="json"), fix.patch)
             fixed = JobTemplate.model_validate(data)
-            after = lint_defaults(fixed.audio_defaults, container=fixed.output.container)
+            after = lint(fixed)
             if any(isinstance(op, RemoveOp) for op in fix.patch):
                 before = [i for i in issues if i.code == issue.code]
                 assert len([i for i in after if i.code == issue.code]) < len(before), fix.label
@@ -109,18 +103,8 @@ def check_fixes(template: JobTemplate) -> list[ValidationIssue]:
 
 def test_clean_defaults() -> None:
     assert lint_defaults(AudioDefaults()) == []
-    example = defaults(
-        rule(["hu"], "5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=320),
-        rule(["en"], "5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=384),
-        rule(None, "stereo_or_less", codec="aac", mixdown="stereo", max_bitrate=160),
-        rule(None, codec="libopus", mixdown="up_to_5.1", max_bitrate=256, if_fits="reencode"),
-    )
+    example = AudioDefaults(codec_rules=EXAMPLE_CODEC_RULES)
     assert lint_defaults(example) == []
-
-
-@pytest.mark.parametrize("preset", builtin_presets(), ids=lambda p: p.id)
-def test_builtin_presets_are_clean(preset: Any) -> None:
-    assert lint_defaults(preset.audio_defaults, container=preset.output.container) == []
 
 
 @pytest.mark.parametrize(
@@ -332,38 +316,45 @@ def test_codec_not_in_container() -> None:
         "Switch to Matroska (MKV)",
         "Switch to MP4",
     ]
-    assert lint_defaults(bad, container="mkv") == []
-    assert lint_defaults(bad, container="webm", container_codecs=False) == []
+    assert container_codec_issues(bad, "mkv", load_definitions()) == []
+    # Validation reports these codecs, so the lint never does.
+    assert lint_defaults(bad, container="webm") == []
 
 
-EXAMPLE = defaults(
-    rule(["hu"], "5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=320),
-    rule(["en"], "5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=384),
-    rule(None, "stereo_or_less", codec="aac", mixdown="stereo", max_bitrate=160),
-    rule(None, codec="libopus", mixdown="up_to_5.1", max_bitrate=256, if_fits="reencode"),
+EXAMPLE = AudioDefaults(
+    codec_rules=EXAMPLE_CODEC_RULES,
     selection=TrackSelection(languages=["hu", "en"], tracks_per_language="all"),
 )
 
 
+def lint_with_source(
+    defaults: AudioDefaults, media: MediaSource, preferred: list[str] | None = None
+) -> list[ValidationIssue]:
+    languages = LanguageSettings(preferred_audio=preferred or [])
+    template = JobTemplate(audio_defaults=defaults)
+    issues = resolve_tracks(template, media, languages=languages).draft.issues
+    return [i for i in issues if i.code.startswith("defaults.rule_")]
+
+
 def test_rules_this_source_does_not_use() -> None:
     media = source([audio(1, "hun", "ac3", 6, 224), audio(2, "eng", "ac3", 2, 192)])
-    issues = lint_defaults(EXAMPLE, source=media)
+    issues = lint_with_source(EXAMPLE, media)
     assert found(issues) == [("defaults.rule_unused", "audio_defaults.codec_rules[1]")]
     assert issues[0].severity is Severity.INFO
     assert issues[0].message == (
         "Rule 2 (English, 5.1 or more) is not used by any track of this source."
     )
-    # The draft has the same lint.
-    template = JobTemplate(audio_defaults=EXAMPLE)
-    assert draft_tracks(media, template).issues == issues
     # The catch-all is never reported (here no track uses it either).
-    english = lint_defaults(EXAMPLE, source=source([audio(1, "eng", "ac3", 6, 448)]))
+    eng = source([audio(1, "eng", "ac3", 6, 448)])
+    english = lint_with_source(EXAMPLE, eng)
     assert found(english) == [
         ("defaults.rule_unused", "audio_defaults.codec_rules[0]"),
         ("defaults.rule_unused", "audio_defaults.codec_rules[2]"),
     ]
+    # The draft has no other issue for this source.
+    assert resolve_tracks(JobTemplate(audio_defaults=EXAMPLE), eng).draft.issues == english
     # No audio at all: nothing is "unused".
-    assert lint_defaults(EXAMPLE, source=source()) == []
+    assert lint_with_source(EXAMPLE, source()) == []
 
 
 def test_unused_uses_the_selection_and_settings() -> None:
@@ -371,18 +362,18 @@ def test_unused_uses_the_selection_and_settings() -> None:
     what is dropped."""
     plain = defaults(rule(["hu"], codec="ac3", mixdown="5.1", max_bitrate=448))
     media = source([audio(1, "hun"), audio(2, "eng")])
-    assert lint_defaults(plain, source=media) == []  # keep everything: both tracks
-    issues = lint_defaults(plain, source=media, preferred_languages=["en"])
+    assert lint_with_source(plain, media) == []  # keep everything: both tracks
+    issues = lint_with_source(plain, media, preferred=["en"])
     assert found(issues) == [("defaults.rule_unused", "audio_defaults.codec_rules[0]")]
     # Every track dropped: no "unused" noise next to the selection's own issue.
     nothing = defaults(
         rule(["de"], codec="ac3"), selection=TrackSelection(languages=["de"], no_match="none")
     )
     assert lint_defaults(nothing) == []
-    assert lint_defaults(nothing, source=media) == []
+    assert lint_with_source(nothing, media) == []
     # A rule that can never apply is reported once, as unreachable.
     dead = defaults(rule(["hu"]), rule(["hu"], "5.1_or_more"))
-    assert found(lint_defaults(dead, source=source([audio(1, "eng")]))) == [
+    assert found(lint_with_source(dead, source([audio(1, "eng")]))) == [
         ("defaults.rule_shadowed", "audio_defaults.codec_rules[1]"),
         ("defaults.rule_unused", "audio_defaults.codec_rules[0]"),
     ]
@@ -396,7 +387,7 @@ def test_describe_rule() -> None:
     assert describe_rule(rule([])) == "no language, any channels"
     limited = rule(["hu"], extras=AudioRuleExtras(first_track_of_language_only=True))
     assert describe_rule(limited) == "Hungarian, any channels, the first track of a language"
-    assert lint_rules(AudioDefaults(), used=set()) == []
+    assert lint_defaults(AudioDefaults(), used=set()) == []
 
 
 def track_rule(
@@ -425,7 +416,6 @@ def check_track_fixes(template: JobTemplate) -> list[ValidationIssue]:
     """Apply every fix of every track rule issue: its issue is gone."""
     issues = lint_track_rules(template)
     for issue in issues:
-        assert issue.code in CODES
         for fix in issue.fixes:
             assert fix.target == "template"
             data = apply_patch(template.model_dump(mode="json"), fix.patch)

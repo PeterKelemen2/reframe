@@ -61,6 +61,8 @@ def test_a_detected_crop_is_not_a_change() -> None:
     for mode in ("auto", "conservative"):
         base = edited(dimensions__crop={"mode": mode, "rect": None})
         assert diff(edited(dimensions__crop={"mode": mode, "rect": rect}), base) == []
+        failed = {"mode": mode, "rect": None, "detection_error": "Crop detection failed."}
+        assert diff(edited(dimensions__crop=failed), base) == []
 
 
 def test_a_manual_crop_is_a_change() -> None:

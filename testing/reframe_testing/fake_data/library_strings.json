@@ -192,10 +192,22 @@
         "string": "The minimum required Nvidia driver for nvenc is %s or newer\n"
       }
     ],
+    "This version of runtime doesn't support AV1 encoding": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "This version of runtime doesn't support AV1 encoding\n"
+      }
+    ],
     "Vulkan device does not support all required features": [
       {
         "file": "lib/libavfilter.so.12.1.102",
         "string": "Vulkan device does not support all required features!"
+      }
+    ],
+    "incompatible client key": [
+      {
+        "file": "lib/libavcodec.so.63.1.102",
+        "string": "incompatible client key"
       }
     ],
     "libamfrt64.so.1": [

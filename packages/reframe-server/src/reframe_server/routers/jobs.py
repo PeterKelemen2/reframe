@@ -9,7 +9,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict
 
 from reframe.chapters import chapter_export
-from reframe.dimensions import compute_geometry, source_geometry
+from reframe.dimensions import job_geometry, source_geometry
 from reframe.models import (
     AddOp,
     ChapterExport,
@@ -33,6 +33,7 @@ from reframe.models import (
     TrackDraft,
     ValidationIssue,
 )
+from reframe.naming.track_names import track_names
 from reframe.probe import ProbeError
 from reframe.service import Reframe
 from reframe_server import security
@@ -136,10 +137,6 @@ def job_issue(config: ServerConfig, job: JobSettings) -> ValidationIssue | None:
     return in_place_issue(config, job) or folder_issue(config, job.output.path)
 
 
-def without_output(job: JobSettings) -> JobSettings:
-    return job.model_copy(update={"output": job.output.model_copy(update={"path": None})})
-
-
 def jail_job(config: ServerConfig, job: JobSettings) -> tuple[ValidationIssue | None, JobSettings]:
     """:func:`security.jail_job`, except that an output the server may not write is the
     returned :func:`job_issue` instead of a 403. Also returns the job the facade may look at:
@@ -237,6 +234,19 @@ class JobGeometry(BaseModel):
     """``null`` when the video is copied or the source has no video."""
 
 
+class TrackNames(BaseModel):
+    """The name each track of a job is written with: a name template filled in."""
+
+    model_config = ConfigDict(extra="forbid", use_attribute_docstrings=True)
+
+    video: str | None
+    """``null`` keeps the source title; ``""`` writes no title."""
+    audio: list[str | None]
+    """In the order of the job's audio tracks."""
+    subtitles: list[str | None]
+    """In the order of the job's subtitle tracks."""
+
+
 @router.post("/jobs/draft")
 async def draft(
     body: DraftRequest, reframe: ReframeDep, registry: SourcesDep, config: ConfigDep
@@ -283,11 +293,7 @@ async def geometry(body: SingleJobRequest, reframe: ReframeDep, config: ConfigDe
     src = source_geometry(media.video[0])
     if job.video.passthrough:
         return JobGeometry(source=src, geometry=None)
-    # Deinterlace runs before the crop, so the crop snaps to the frame's grid, not the field's.
-    grid = src
-    if "deinterlace" in job.filters.root:
-        grid = src.model_copy(update={"interlaced": False})
-    return JobGeometry(source=src, geometry=compute_geometry(grid, job.dimensions))
+    return JobGeometry(source=src, geometry=job_geometry(media.video[0], job))
 
 
 @router.post("/jobs/explain")
@@ -383,6 +389,18 @@ async def rendered_tags(
     jail_job(config, body.job)
     media = await job_source(reframe, body.job)
     return reframe.jobs.rendered_tags(body.job, media)
+
+
+@router.post("/jobs/track-names", name="track_names")
+async def written_track_names(
+    body: SingleJobRequest, reframe: ReframeDep, config: ConfigDep
+) -> TrackNames:
+    """Each track's name as it will be written: a name with a track name variable
+    (``{lang_name} {channels} {codec}``) is filled in for its track."""
+    jail_job(config, body.job)
+    media = await job_source(reframe, body.job)
+    names = track_names(body.job, media, reframe.jobs.definitions)
+    return TrackNames(video=names.video, audio=names.audio, subtitles=names.subtitles)
 
 
 def _invalid(issues: list[ValidationIssue]) -> ProblemError:

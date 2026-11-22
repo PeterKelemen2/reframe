@@ -83,7 +83,7 @@ describe('reading a source again after an in-place edit', () => {
     expect(sources.reload).toHaveBeenCalledExactlyOnceWith('show')
   })
 
-  it('reads it for a stopped edit too: mkvpropedit may have written the file', async () => {
+  it('reads it for a stopped edit too: the header may have been written', async () => {
     await firstRead(job('a', 'running'), job('b', 'running', { source: 'movie' }))
     await become(job('a', 'cancelled'), job('b', 'failed', { source: 'movie' }))
     expect(sources.reload.mock.calls).toEqual([['show'], ['movie']])

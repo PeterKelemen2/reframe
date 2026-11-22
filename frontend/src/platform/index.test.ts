@@ -1,3 +1,4 @@
+import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 async function loadPlatform() {
@@ -28,13 +29,33 @@ describe('platform selector', () => {
 })
 
 describe('web platform', () => {
+  it('leaves playing video to the browser, which reports what it cannot play', async () => {
+    const platform = await loadPlatform()
+    expect(await platform.canPlayVideo()).toBe(true)
+  })
+
   it('shows taskbar progress in the document title', async () => {
+    setActivePinia(createPinia())
     document.title = 'Reframe'
     const platform = await loadPlatform()
-    platform.setTaskbarProgress(0.423)
+    platform.setTaskbarProgress(0.423, '42%')
     expect(document.title).toBe('42% · Reframe')
-    platform.setTaskbarProgress(null)
+    platform.setTaskbarProgress(null, null)
     expect(document.title).toBe('Reframe')
+  })
+
+  it('words the progress title with a message, which a translation may reorder', async () => {
+    document.title = 'Reframe'
+    const platform = await loadPlatform()
+    // The platform's own module graph: `loadPlatform` loaded it anew.
+    const { createAppI18n } = await import('@/i18n')
+    const { createApp } = await import('vue')
+    const i18n = createAppI18n()
+    i18n.global.mergeLocaleMessage('en', { app: { progressTitle: '{title} ({progress})' } })
+    const app = createApp({}).use(createPinia()).use(i18n)
+    app.runWithContext(() => platform.setTaskbarProgress(0.42, '42%'))
+    expect(document.title).toBe('Reframe (42%)')
+    app.runWithContext(() => platform.setTaskbarProgress(null, null))
   })
 
   it('opens the file browser for files and gives its choice, or nothing when cancelled', async () => {

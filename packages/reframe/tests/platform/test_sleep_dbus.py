@@ -3,19 +3,19 @@
 from __future__ import annotations
 
 import contextlib
+import functools
 import os
 import socket
 import struct
 import sys
-import tempfile
 import threading
-from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
 from reframe.platform import dbus
+from reframe_testing.fake_dbus import AF_UNIX, handshake, open_fds, read_message, serve_unix
 
 pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux only")
 
@@ -59,8 +59,7 @@ def _inhibit_call() -> bytes:
     )
 
 
-# Linux-only names, looked up at run time so that mypy --platform win32 accepts the module.
-AF_UNIX: int = vars(socket).get("AF_UNIX", 0)
+# A Linux-only name, looked up at run time so that mypy --platform win32 accepts the module.
 SCM_RIGHTS: int = vars(socket).get("SCM_RIGHTS", 0)
 
 
@@ -76,10 +75,6 @@ def _send_fds(conn: socket.socket, data: bytes, fds: list[int]) -> None:
 
 def _is_closed(connection: dbus.Connection) -> bool:
     return connection.closed  # through a function, so that mypy does not narrow it
-
-
-def _open_fds() -> set[int]:
-    return {int(name) for name in os.listdir("/proc/self/fd")}
 
 
 def test_method_call_matches_the_reference_bytes() -> None:
@@ -101,27 +96,13 @@ def test_encoded_call_decodes_back() -> None:
     assert parsed.reply_serial is None
 
 
-def test_big_endian_messages_decode() -> None:
-    raw = dbus.encode(
-        dbus.METHOD_RETURN,
-        7,
-        [(dbus.FIELD_REPLY_SERIAL, 2), (dbus.FIELD_UNIX_FDS, 1)],
-        [("h", 0)],
-        endian=">",
-    )
-    assert raw[0:1] == b"B"
-    fds = [100, 101]
-    parsed = dbus.decode_message(raw, fds)
-    assert parsed.reply_serial == 2
-    assert parsed.body == [0]
-    assert parsed.fds == [100]
-    assert fds == [101]  # the next message's descriptors stay queued
-
-
 def test_other_body_types_and_unknown_signatures() -> None:
     raw = dbus.encode(dbus.SIGNAL, 3, [(dbus.FIELD_SIGNATURE, "ibyx")])
     parsed = dbus.decode_message(raw, [])
-    assert parsed.body == []  # 'x' is not supported: the body is skipped, not misread
+    assert parsed.body == []  # unsupported types: the body is skipped, not misread
+    reply = dbus.encode(dbus.METHOD_RETURN, 4, [(dbus.FIELD_REPLY_SERIAL, 2)], [("u", 1)])
+    reply = reply.replace(b"\x08\x01g\x00\x01u\x00", b"\x08\x01g\x00\x01b\x00")
+    assert dbus.decode_message(reply, []).body == [1]  # a boolean, as HasInhibit returns
     with pytest.raises(ValueError, match="cannot contain NUL"):
         dbus.encode(dbus.METHOD_CALL, 1, [], [("s", "a\0b")])
     with pytest.raises(ValueError, match="unsupported type"):
@@ -132,6 +113,8 @@ def test_bad_messages_raise_protocol_errors() -> None:
     good = _inhibit_call()
     with pytest.raises(dbus.DBusProtocolError, match="endianness"):
         dbus.decode_message(b"X" + good[1:], [])
+    with pytest.raises(dbus.DBusProtocolError, match="endianness"):
+        dbus.decode_message(b"B" + good[1:], [])
     with pytest.raises(dbus.DBusProtocolError, match="protocol version"):
         dbus.decode_message(good[:3] + b"\x02" + good[4:], [])
     with pytest.raises(dbus.DBusProtocolError, match="ends early"):
@@ -246,122 +229,79 @@ def _error(serial: int, reply_serial: int, name: str, text: str) -> bytes:
     )
 
 
-def _serve(server: socket.socket, scenario: Scenario, stop: threading.Event) -> None:
-    conn, _ = server.accept()
-    with conn:
-        buf = bytearray()
-
-        def line() -> str:
-            while b"\r\n" not in buf:
-                chunk = conn.recv(4096)
-                if not chunk:
-                    raise ConnectionError
-                buf.extend(chunk)
-            text, _, rest = bytes(buf).partition(b"\r\n")
-            buf[:] = rest
-            return text.decode()
-
-        try:
-            first = line()
-            scenario.auth_lines.append(first)
-            conn.sendall(scenario.auth.encode() + b"\r\n")
-            if not scenario.auth.startswith("OK"):
-                return
-            negotiate = line()
-            scenario.auth_lines.append(negotiate)
-            conn.sendall(scenario.fd_answer.encode() + b"\r\n")
-            if scenario.fd_answer != "AGREE_UNIX_FD":
-                return
-            scenario.auth_lines.append(line())  # BEGIN
-            while not stop.is_set():
-                while len(buf) < 16:
-                    chunk = conn.recv(4096)
-                    if not chunk:
-                        return
-                    buf.extend(chunk)
-                total = dbus.message_length(bytes(buf[:16]))
-                while len(buf) < total:
-                    buf.extend(conn.recv(4096))
-                message = dbus.decode_message(bytes(buf[:total]), [])
-                del buf[:total]
-                scenario.received.append(message)
-                if message.serial == 1:
-                    if scenario.hello_error:
-                        conn.sendall(_error(1, 1, "org.freedesktop.DBus.Error.Failed", "no"))
-                        continue
-                    conn.sendall(_reply(1, 1, [("s", ":1.42")]))
-                    signal = dbus.encode(
-                        dbus.SIGNAL,
-                        2,
-                        [
-                            (dbus.FIELD_PATH, "/org/freedesktop/DBus"),
-                            (dbus.FIELD_INTERFACE, "org.freedesktop.DBus"),
-                            (dbus.FIELD_MEMBER, "NameAcquired"),
-                        ],
-                        [("s", ":1.42")],
-                    )
-                    conn.sendall(signal)
-                    # A reply to a call that was never made: ignored.
-                    conn.sendall(_reply(3, 99, [("s", "x")]))
-                    continue
-                if scenario.stray_fd:
-                    stray_r, stray_w = os.pipe()
-                    try:
-                        _send_fds(conn, _reply(90, 77, [("h", 0)], fds=1), [stray_r])
-                    finally:
-                        os.close(stray_r)
-                        os.close(stray_w)
-                if scenario.inhibit == "fd":
-                    read_end, write_end = os.pipe()
-                    try:
-                        data = _reply(100 + message.serial, message.serial, [("h", 0)], fds=1)
-                        _send_fds(conn, data, [read_end])
-                    finally:
-                        os.close(read_end)
-                        os.close(write_end)
-                elif scenario.inhibit == "two_fds":
-                    pipes = [os.pipe(), os.pipe()]
-                    try:
-                        data = _reply(100 + message.serial, message.serial, [("h", 1)], fds=2)
-                        _send_fds(conn, data, [pipes[0][0], pipes[1][0]])
-                    finally:
-                        for a, b in pipes:
-                            os.close(a)
-                            os.close(b)
-                elif scenario.inhibit == "error":
-                    conn.sendall(
-                        _error(
-                            100 + message.serial,
-                            message.serial,
-                            "org.freedesktop.DBus.Error.AccessDenied",
-                            "Permission denied",
-                        )
-                    )
-                elif scenario.inhibit == "close":
-                    return
-                else:  # silent
-                    stop.wait(5)
-                    return
-        except (ConnectionError, OSError):
+def _serve(scenario: Scenario, conn: socket.socket, stop: threading.Event) -> None:
+    buf = bytearray()
+    try:
+        if not handshake(
+            conn, buf, auth=scenario.auth, fd_answer=scenario.fd_answer, seen=scenario.auth_lines
+        ):
             return
+        while not stop.is_set():
+            message = read_message(conn, buf)
+            scenario.received.append(message)
+            if message.serial == 1:
+                if scenario.hello_error:
+                    conn.sendall(_error(1, 1, "org.freedesktop.DBus.Error.Failed", "no"))
+                    continue
+                conn.sendall(_reply(1, 1, [("s", ":1.42")]))
+                signal = dbus.encode(
+                    dbus.SIGNAL,
+                    2,
+                    [
+                        (dbus.FIELD_PATH, "/org/freedesktop/DBus"),
+                        (dbus.FIELD_INTERFACE, "org.freedesktop.DBus"),
+                        (dbus.FIELD_MEMBER, "NameAcquired"),
+                    ],
+                    [("s", ":1.42")],
+                )
+                conn.sendall(signal)
+                # A reply to a call that was never made: ignored.
+                conn.sendall(_reply(3, 99, [("s", "x")]))
+                continue
+            if scenario.stray_fd:
+                stray_r, stray_w = os.pipe()
+                try:
+                    _send_fds(conn, _reply(90, 77, [("h", 0)], fds=1), [stray_r])
+                finally:
+                    os.close(stray_r)
+                    os.close(stray_w)
+            if scenario.inhibit == "fd":
+                read_end, write_end = os.pipe()
+                try:
+                    data = _reply(100 + message.serial, message.serial, [("h", 0)], fds=1)
+                    _send_fds(conn, data, [read_end])
+                finally:
+                    os.close(read_end)
+                    os.close(write_end)
+            elif scenario.inhibit == "two_fds":
+                pipes = [os.pipe(), os.pipe()]
+                try:
+                    data = _reply(100 + message.serial, message.serial, [("h", 1)], fds=2)
+                    _send_fds(conn, data, [pipes[0][0], pipes[1][0]])
+                finally:
+                    for a, b in pipes:
+                        os.close(a)
+                        os.close(b)
+            elif scenario.inhibit == "error":
+                conn.sendall(
+                    _error(
+                        100 + message.serial,
+                        message.serial,
+                        "org.freedesktop.DBus.Error.AccessDenied",
+                        "Permission denied",
+                    )
+                )
+            elif scenario.inhibit == "close":
+                return
+            else:  # silent
+                stop.wait(5)
+                return
+    except (ConnectionError, OSError):
+        return
 
 
-@contextlib.contextmanager
-def fake_bus(scenario: Scenario) -> Iterator[str]:
-    with tempfile.TemporaryDirectory(prefix="rfbus") as tmp:
-        path = str(Path(tmp) / "bus")
-        server = socket.socket(AF_UNIX, socket.SOCK_STREAM)
-        server.bind(path)
-        server.listen(1)
-        stop = threading.Event()
-        thread = threading.Thread(target=_serve, args=(server, scenario, stop), daemon=True)
-        thread.start()
-        try:
-            yield f"unix:path={path}"
-        finally:
-            stop.set()
-            thread.join(timeout=10)
-            server.close()
+def fake_bus(scenario: Scenario) -> contextlib.AbstractContextManager[str]:
+    return serve_unix(functools.partial(_serve, scenario))
 
 
 def _call(address: str, timeout: float = 5.0) -> dbus.Reply:
@@ -378,7 +318,7 @@ def _call(address: str, timeout: float = 5.0) -> dbus.Reply:
 
 def test_call_returns_the_file_descriptor_and_leaks_nothing() -> None:
     scenario = Scenario()
-    before = _open_fds()
+    before = open_fds()
     with fake_bus(scenario) as address:
         reply = _call(address)
     assert reply.signature == "h"
@@ -387,7 +327,7 @@ def test_call_returns_the_file_descriptor_and_leaks_nothing() -> None:
     assert not os.get_inheritable(fd)  # received with MSG_CMSG_CLOEXEC
     os.fstat(fd)
     os.close(fd)
-    assert _open_fds() == before
+    assert open_fds() == before
     uid_hex = str(_getuid()).encode().hex()
     assert scenario.auth_lines == [f"\0AUTH EXTERNAL {uid_hex}", "NEGOTIATE_UNIX_FD", "BEGIN"]
     hello, inhibit = scenario.received
@@ -397,32 +337,14 @@ def test_call_returns_the_file_descriptor_and_leaks_nothing() -> None:
 
 
 def test_call_with_extra_descriptors_returns_them_all() -> None:
-    before = _open_fds()
+    before = open_fds()
     with fake_bus(Scenario(inhibit="two_fds")) as address:
         reply = _call(address)
     assert reply.body == [1]
     assert len(reply.fds) == 2
     for fd in reply.fds:
         os.close(fd)
-    assert _open_fds() == before
-
-
-def test_error_reply_raises_dbus_error() -> None:
-    before = _open_fds()
-    with fake_bus(Scenario(inhibit="error")) as address, pytest.raises(dbus.DBusError) as info:
-        _call(address)
-    assert info.value.name == "org.freedesktop.DBus.Error.AccessDenied"
-    assert info.value.message == "Permission denied"
-    assert str(info.value) == "org.freedesktop.DBus.Error.AccessDenied: Permission denied"
-    assert _open_fds() == before
-
-
-def test_hello_error_raises() -> None:
-    with (
-        fake_bus(Scenario(hello_error=True)) as address,
-        pytest.raises(dbus.DBusError, match=r"Error\.Failed: no"),
-    ):
-        _call(address)
+    assert open_fds() == before
 
 
 def test_refused_authentication_raises_protocol_error() -> None:
@@ -450,10 +372,10 @@ def test_connection_closed_before_the_reply() -> None:
 
 
 def test_silent_bus_times_out() -> None:
-    before = _open_fds()
+    before = open_fds()
     with fake_bus(Scenario(inhibit="silent")) as address, pytest.raises(TimeoutError):
         _call(address, timeout=0.3)
-    assert _open_fds() == before
+    assert open_fds() == before
 
 
 def test_missing_socket_and_unusable_address() -> None:
@@ -470,7 +392,13 @@ def test_abstract_socket_address_connects() -> None:
     server.listen(1)
     scenario = Scenario()
     stop = threading.Event()
-    thread = threading.Thread(target=_serve, args=(server, scenario, stop), daemon=True)
+
+    def accept() -> None:
+        conn, _ = server.accept()
+        with conn:
+            _serve(scenario, conn, stop)
+
+    thread = threading.Thread(target=accept, daemon=True)
     thread.start()
     try:
         reply = _call(f"unix:abstract={name}")
@@ -534,10 +462,9 @@ def test_session_bus_address(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
 
 def test_connection_stays_open_for_several_calls_and_closes() -> None:
     scenario = Scenario(stray_fd=True)
-    before = _open_fds()
+    before = open_fds()
     with fake_bus(scenario) as address:
         connection = dbus.Connection.open(address, timeout=5.0)
-        assert connection.unique_name == ":1.42"
         assert not connection.closed
         replies = [
             connection.call(
@@ -550,7 +477,7 @@ def test_connection_stays_open_for_several_calls_and_closes() -> None:
             )
             for i in range(3)
         ]
-        open_now = _open_fds()
+        open_now = open_fds()
         connection.close()
         connection.close()  # idempotent
         assert _is_closed(connection)
@@ -569,23 +496,30 @@ def test_connection_stays_open_for_several_calls_and_closes() -> None:
     for reply in replies:
         (fd,) = reply.fds
         os.close(fd)
-    assert _open_fds() == before
+    assert open_fds() == before
 
 
-def test_connection_context_manager_closes() -> None:
-    before = _open_fds()
+def test_connection_close_after_an_error_reply_frees_the_socket() -> None:
+    before = open_fds()
     with fake_bus(Scenario(inhibit="error")) as address:
-        with dbus.Connection.open(address) as connection, pytest.raises(dbus.DBusError):
-            connection.call(destination="x.y", path="/", interface="x.y", member="Z")
+        connection = dbus.Connection.open(address)
+        try:
+            with pytest.raises(dbus.DBusError) as info:
+                connection.call(destination="x.y", path="/", interface="x.y", member="Z")
+        finally:
+            connection.close()
         assert connection.closed
-    assert _open_fds() == before
+    assert info.value.name == "org.freedesktop.DBus.Error.AccessDenied"
+    assert info.value.message == "Permission denied"
+    assert str(info.value) == "org.freedesktop.DBus.Error.AccessDenied: Permission denied"
+    assert open_fds() == before
 
 
 def test_connection_open_failure_closes_the_socket() -> None:
-    before = _open_fds()
+    before = open_fds()
     with (
         fake_bus(Scenario(hello_error=True)) as address,
-        pytest.raises(dbus.DBusError),
+        pytest.raises(dbus.DBusError, match=r"Error\.Failed: no"),
     ):
         dbus.Connection.open(address)
-    assert _open_fds() == before
+    assert open_fds() == before

@@ -12,7 +12,7 @@ import os
 import tempfile
 import threading
 import time
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -20,11 +20,11 @@ from typing import Any, Literal
 from pydantic import ValidationError
 
 from reframe.events import EventBus
+from reframe.fsretry import replace_file
 from reframe.models.events import AppWarningEvent
 from reframe.models.issues import ValidationIssue
 from reframe.models.migrations import (
     MigrationError,
-    MigrationRegistry,
     UnsupportedSchemaVersion,
     current_version,
     migrate,
@@ -35,16 +35,13 @@ from reframe.models.text import json_text
 
 __all__ = [
     "MAX_DEPTH",
-    "REPLACE_ATTEMPTS",
     "SETTINGS_FILE",
     "DocumentRead",
     "JsonDocumentFile",
     "SettingsStore",
     "SettingsUpdate",
-    "document_version",
-    "is_newer",
-    "migrate_document",
-    "replace_file",
+    "StoreProblems",
+    "parse_document",
     "too_deep",
     "validation_detail",
 ]
@@ -52,11 +49,7 @@ __all__ = [
 log = logging.getLogger(__name__)
 
 SETTINGS_FILE = "settings.json"
-#: How often a replace that fails with ``PermissionError`` is tried on Windows.
-REPLACE_ATTEMPTS = 6
-#: The first pause between two tries (seconds); it doubles each time.
-REPLACE_DELAY = 0.05
-#: ``True`` on Windows: a ``PermissionError`` of ``os.replace`` is retried (tests set it).
+#: ``True`` on Windows (tests set it).
 WINDOWS = os.name == "nt"
 #: The deepest nesting (objects and lists, the document itself is level 1) that a settings or
 #: presets document may have. Far below the depth where the parser, Pydantic's ``model_dump``
@@ -93,29 +86,6 @@ def _link_target(path: Path) -> Path:
     except OSError:
         return path
     return Path(os.path.realpath(path))
-
-
-def _replace(source: Path, target: Path) -> None:
-    os.replace(source, target)
-
-
-def _sleep(seconds: float) -> None:
-    time.sleep(seconds)
-
-
-def replace_file(source: Path, target: Path) -> None:
-    """``os.replace(source, target)``; on Windows a ``PermissionError`` (the target is open
-    in another process) is retried a few times before it is raised."""
-    delay = REPLACE_DELAY
-    for attempt in range(REPLACE_ATTEMPTS):
-        try:
-            _replace(source, target)
-            return
-        except PermissionError:
-            if not WINDOWS or attempt == REPLACE_ATTEMPTS - 1:
-                raise
-            _sleep(delay)
-            delay *= 2
 
 
 @dataclass(frozen=True)
@@ -193,17 +163,17 @@ class JsonDocumentFile:
                 with contextlib.suppress(OSError):
                     tmp.unlink()
 
-    def backup(self, label: str = "corrupt") -> Path:
-        """Rename the file (a link's target) to ``<stem>.<label>-<time>[-n]<suffix>`` next to
+    def backup(self) -> Path:
+        """Rename the file (a link's target) to ``<stem>.corrupt-<time>[-n]<suffix>`` next to
         it and return the new path. Raises ``OSError`` when that fails."""
         source = self.target
         stamp = time.strftime("%Y%m%d-%H%M%S")
         stem, suffix = source.stem, source.suffix
-        target = source.with_name(f"{stem}.{label}-{stamp}{suffix}")
+        target = source.with_name(f"{stem}.corrupt-{stamp}{suffix}")
         number = 1
         while target.exists():
             number += 1
-            target = source.with_name(f"{stem}.{label}-{stamp}-{number}{suffix}")
+            target = source.with_name(f"{stem}.corrupt-{stamp}-{number}{suffix}")
         replace_file(source, target)
         return target
 
@@ -224,24 +194,22 @@ def _os_error(exc: OSError) -> str:
     return f"{exc.strerror or type(exc).__name__}: {exc.filename or ''}".rstrip(": ")
 
 
-def migrate_document(
-    kind: str, data: dict[str, Any], registry: MigrationRegistry | None = None
-) -> dict[str, Any]:
-    """The migrations of ``kind``: the real registry, or ``registry`` when one is given (tests).
-    Raises ``UnsupportedSchemaVersion`` / ``MigrationError``."""
-    return migrate(kind, data) if registry is None else registry.migrate(kind, data)
-
-
-def document_version(kind: str, registry: MigrationRegistry | None = None) -> int:
-    """The current schema version of ``kind`` (in ``registry`` when one is given: tests)."""
-    return current_version(kind) if registry is None else registry.current_version(kind)
-
-
-def is_newer(exc: UnsupportedSchemaVersion) -> bool:
-    """The document is from a newer Reframe (an integer version above ours), not just a bad
-    ``schema_version`` value (which makes the file damaged)."""
-    found = exc.found
-    return isinstance(found, int) and not isinstance(found, bool) and found > exc.current
+def parse_document[T](
+    kind: str, data: dict[str, Any], build: Callable[[dict[str, Any]], T]
+) -> T | UnsupportedSchemaVersion | str:
+    """``build`` of the migrated ``data``; the error of a document of a newer Reframe; or why
+    the document is damaged."""
+    try:
+        return build(migrate(kind, data))
+    except UnsupportedSchemaVersion as exc:
+        found = exc.found
+        # A bad ``schema_version`` value (not an integer above ours) makes the file damaged.
+        newer = isinstance(found, int) and not isinstance(found, bool) and found > exc.current
+        return exc if newer else str(exc)
+    except ValidationError as exc:
+        return validation_detail(exc)
+    except (MigrationError, LookupError, TypeError, ValueError) as exc:
+        return f"migration failed: {exc}"
 
 
 def validation_detail(exc: ValidationError, limit: int = 5) -> str:
@@ -277,77 +245,82 @@ class SettingsUpdate:
         return not self.issues
 
 
+class StoreProblems:
+    """The warnings of a store's last load and of its later failed writes, and why its file
+    is protected (newer or unreadable: never overwritten). Each warning is logged and
+    published."""
+
+    def __init__(self, events: EventBus | None) -> None:
+        self._events = events
+        self.problems: list[AppWarningEvent] = []
+        self.protected: str | None = None
+
+    def reset(self) -> None:
+        self.problems = []
+        self.protected = None
+
+    def warn(self, code: str, message: str, detail: str | None = None) -> AppWarningEvent:
+        event = AppWarningEvent(code=code, message=message, detail=detail)
+        self.problems.append(event)
+        log.warning("%s: %s (%s)", code, message, detail)
+        if self._events is not None:
+            self._events.publish(event)
+        return event
+
+    def protect(self, code: str, message: str, detail: str | None) -> None:
+        self.protected = message
+        self.warn(code, message, detail)
+
+
 class SettingsStore:
     """``<config>/settings.json``: load (migrations, corrupt-file handling) and atomic save."""
 
-    def __init__(
-        self,
-        config_dir: Path,
-        events: EventBus | None = None,
-        *,
-        registry: MigrationRegistry | None = None,
-    ) -> None:
+    def __init__(self, config_dir: Path, events: EventBus | None = None) -> None:
         self.path = Path(config_dir) / SETTINGS_FILE
         self._file = JsonDocumentFile(self.path)
-        self._events = events
-        self._registry = registry
-        self._problems: list[AppWarningEvent] = []
-        self._protected: str | None = None
+        self._warnings = StoreProblems(events)
         self._lock = threading.Lock()
 
     @property
     def problems(self) -> list[AppWarningEvent]:
         """The warnings of the last :meth:`load` and of later failed saves. The start-up ones
         are published before any UI can subscribe, so a UI reads them here."""
-        return list(self._problems)
+        return list(self._warnings.problems)
 
     @property
     def read_only(self) -> bool:
         """``True`` when the file must not be overwritten (it is newer or unreadable)."""
-        return self._protected is not None
+        return self._warnings.protected is not None
 
     def load(self) -> AppSettings:
         with self._lock:
-            self._problems = []
-            self._protected = None
+            self._warnings.reset()
             read = self._file.read()
             if read.status == "missing":
                 return AppSettings()
             if read.status == "unreadable":
-                self._protect(
+                self._warnings.protect(
                     "settings.unreadable",
                     f"The settings file {self.path} cannot be read. Reframe uses the default "
                     "settings and does not change the file.",
                     read.detail,
                 )
                 return AppSettings()
-            detail: str | None = read.detail
-            if read.status == "ok" and read.data is not None:
-                try:
-                    data = migrate_document("settings", read.data, self._registry)
-                    return AppSettings.model_validate(data)
-                except UnsupportedSchemaVersion as exc:
-                    if not is_newer(exc):
-                        return self._replace_corrupt(str(exc))
-                    self._protect(
-                        "settings.newer_version",
-                        f"The settings file {self.path} was written by a newer Reframe. "
-                        "Reframe uses the default settings for now and does not change the "
-                        "file; changes are not saved.",
-                        str(exc),
-                    )
-                    return AppSettings()
-                except ValidationError as exc:
-                    detail = validation_detail(exc)
-                except RecursionError:
-                    detail = TOO_DEEP
-                except (MigrationError, LookupError, TypeError, ValueError) as exc:
-                    detail = f"migration failed: {exc}"
-            return self._replace_corrupt(detail)
-
-    def save(self, settings: AppSettings) -> None:
-        """Write ``settings``. A failure is an ``app.warning`` event, not an exception."""
-        self.write(settings)
+            if read.data is None:
+                return self._replace_corrupt(read.detail)
+            parsed = parse_document("settings", read.data, AppSettings.model_validate)
+            if isinstance(parsed, UnsupportedSchemaVersion):
+                self._warnings.protect(
+                    "settings.newer_version",
+                    f"The settings file {self.path} was written by a newer Reframe. "
+                    "Reframe uses the default settings for now and does not change the "
+                    "file; changes are not saved.",
+                    str(parsed),
+                )
+                return AppSettings()
+            if isinstance(parsed, str):
+                return self._replace_corrupt(parsed)
+            return parsed
 
     def write(self, settings: AppSettings) -> AppWarningEvent | None:
         """Write ``settings``; returns the warning (also published) when it was not written.
@@ -356,20 +329,20 @@ class SettingsStore:
         is what this Reframe's model holds, and a newer number would make the next start
         treat the file as newer (and use the defaults)."""
         with self._lock:
-            if self._protected is not None:
-                return self._warn(
+            if self._warnings.protected is not None:
+                return self._warnings.warn(
                     "settings.not_saved",
-                    f"The settings were not saved: {self._protected}",
+                    f"The settings were not saved: {self._warnings.protected}",
                 )
             try:
                 data = settings.model_dump(mode="json")
             except (ValueError, TypeError, RecursionError) as exc:  # nested far too deeply
                 error: str | None = str(exc)
             else:
-                data["schema_version"] = document_version("settings", self._registry)
+                data["schema_version"] = current_version("settings")
                 error = self._file.write(data)
             if error is not None:
-                return self._warn(
+                return self._warnings.warn(
                     "settings.write_failed",
                     f"The settings could not be saved to {self.path}.",
                     error,
@@ -380,7 +353,7 @@ class SettingsStore:
         try:
             backup = self._file.backup()
         except OSError as exc:
-            self._protect(
+            self._warnings.protect(
                 "settings.corrupt",
                 f"The settings file {self.path} is damaged and could not be backed up. Reframe "
                 "uses the default settings and does not change the file.",
@@ -389,7 +362,7 @@ class SettingsStore:
             return AppSettings()
         settings = AppSettings()
         data = settings.model_dump(mode="json")
-        data["schema_version"] = document_version("settings", self._registry)
+        data["schema_version"] = current_version("settings")
         error = self._file.write(data)
         message = (
             f"The settings file was damaged. It was saved as {backup}, and the default settings "
@@ -397,17 +370,5 @@ class SettingsStore:
         )
         if error is not None:
             message += f" Writing the default settings failed: {error}"
-        self._warn("settings.corrupt", message, detail)
+        self._warnings.warn("settings.corrupt", message, detail)
         return settings
-
-    def _protect(self, code: str, message: str, detail: str | None) -> None:
-        self._protected = message
-        self._warn(code, message, detail)
-
-    def _warn(self, code: str, message: str, detail: str | None = None) -> AppWarningEvent:
-        event = AppWarningEvent(code=code, message=message, detail=detail)
-        self._problems.append(event)
-        log.warning("%s: %s (%s)", code, message, detail)
-        if self._events is not None:
-            self._events.publish(event)
-        return event

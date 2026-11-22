@@ -6,18 +6,15 @@ system that lists the season folder.
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from types import ModuleType
 
 from pydantic import TypeAdapter
 from syrupy.assertion import SnapshotAssertion
 
-from reframe.batch import group_sources, matrix_columns, output_size, resolve_group
+from reframe.batch import group_sources, matrix_columns, output_size, resolve
 from reframe.batch.report import matrix_lines
 from reframe.models import (
     AudioOutputSettings,
@@ -31,20 +28,8 @@ from reframe.models import (
 )
 from reframe.naming import FileTimes, resolve_output_name
 
+from . import anime as A
 
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-A = _load("anime")
 OPS = TypeAdapter(list[JsonPatchOp])
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
 
@@ -72,7 +57,8 @@ def matrix(
     by_path = {s.ref.path: s for s in sources}
     fs = SeasonFs(sources)
     rows = []
-    for row in resolve_group(group, template, sources, overrides):
+    for member in group.members:
+        row = resolve(template, by_path[member.path], (overrides or {}).get(str(member.path)))
         assert row.job is not None
         source = by_path[row.path]
         assert template.naming is not None
@@ -125,19 +111,7 @@ def test_the_season_groups_and_resolves_as_the_example_matrix(snapshot: Snapshot
     names = [r.job.output.path.name for r in resolution.rows if r.job and r.job.output.path]
     assert names[0] == "Anime Show - S01E01 - Pilot.mkv"
     assert names[10] == "Anime Show - S01E11 - Static.mkv"
-    group = resolution.group
-    assert group is not None
-    members = [
-        f"E{m.episode:02d} {m.match} {'; '.join(m.differences)}".rstrip() for m in group.members
-    ]
-    head = f"{group.name} · {len(group.members)} files · {group.level} match"
-    text = "\n".join([head, *members, "", *matrix_lines(resolution)])
-    assert text == snapshot
-
-
-def test_the_example_steps() -> None:
-    """E05's commentary track is not selected, because no rule asks for the ``commentary`` role."""
-    resolution = matrix(A.example_template(), A.season(1))
+    # The commentary track is not selected, because no rule asks for the ``commentary`` role.
     e05 = resolution.rows[4]
     assert [(d.source_stream, d.selected) for d in e05.decisions] == [
         (1, True),
@@ -147,6 +121,14 @@ def test_the_example_steps() -> None:
     assert e05.decisions[2].selection == "No track rule takes this track"
     assert e05.job is not None
     assert [t.source_stream for t in e05.job.audio] == [1, 2]
+    group = resolution.group
+    assert group is not None
+    members = [
+        f"E{m.episode:02d} {m.match} {'; '.join(m.differences)}".rstrip() for m in group.members
+    ]
+    head = f"{group.name} · {len(group.members)} files · {group.level} match"
+    text = "\n".join([head, *members, "", *matrix_lines(resolution)])
+    assert text == snapshot
 
 
 def test_e01s_audio_setup_gives_identical_audio_settings() -> None:
@@ -264,7 +246,7 @@ def test_matrix_labels_name_the_season_when_a_group_spans_seasons() -> None:
     sources = [*A.season(1)[:2], *A.season(2)[:2]]
     (group,) = group_sources(sources, "standard")
     template = A.example_template()
-    rows = resolve_group(group, template, sources)
+    rows = [resolve(template, source) for source in sources]
     resolution = BatchResolution(group=group, columns=matrix_columns(template), rows=rows)
     labels = [line.split()[0] for line in matrix_lines(resolution)[2:]]
     assert labels == ["S01E01", "S01E02", "S02E01", "S02E02"]

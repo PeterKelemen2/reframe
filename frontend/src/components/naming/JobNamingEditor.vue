@@ -561,8 +561,9 @@ function useDefaultFolder(): void {
         }}</code>
         <dl class="rf-kv-list job-naming__paths">
           <KeyValue :label="t('naming.job.folder')">
-            <span class="job-naming__folder" data-testid="job-folder">{{ folder ?? '—' }}</span>
-            <span class="job-naming__origin">{{
+            <span class="job-naming__folder" data-testid="job-folder">{{ folder ?? '—' }}</span
+            >{{ ' '
+            }}<span class="job-naming__origin">{{
               ownFolder ? t('naming.job.folderOwn') : t('naming.job.folderDefault')
             }}</span>
           </KeyValue>

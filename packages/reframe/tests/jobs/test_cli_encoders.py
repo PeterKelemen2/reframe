@@ -11,8 +11,7 @@ from reframe.cli import EXIT_NO_TOOL, EXIT_OK, encoder_text
 from reframe.models import CapabilitySnapshot, EncoderState, EncoderStatus
 from reframe_testing import fake_tools as ft
 from reframe_testing.capabilities import detect_rule
-
-from .conftest import invoke
+from reframe_testing.cli import invoke, run_cli
 
 NVENC_LINE = "hevc_nvenc — unavailable: NVIDIA driver not found"
 
@@ -37,35 +36,116 @@ def test_first_run_checks_then_lists_every_encoder(cli_env: ft.FakeTools) -> Non
     assert not any("checking…" in line for line in out)
 
 
-def test_second_run_prints_the_cache_at_once(cli_env: ft.FakeTools) -> None:
-    assert invoke("encoders").exit_code == EXIT_OK
-    result = invoke("encoders")
-    assert result.exit_code == EXIT_OK, result.output
-    out = lines(result.stdout)
+def test_the_cache_is_printed_then_the_changes(cli_env: ft.FakeTools) -> None:
+    assert invoke("encoders").exit_code == EXIT_OK  # every test encode works: cached
+    unchanged = invoke("encoders")
+    assert unchanged.exit_code == EXIT_OK, unchanged.output
+    out = lines(unchanged.stdout)
     assert "(cached result of " in out[0]
     assert "Checking again…" in out
     cached = out[1 : out.index("Checking again…")]
     assert "libx265 — available" in cached
     assert out[-1].endswith("(no changes).")
 
-
-def test_no_nvidia_driver(cli_env: ft.FakeTools) -> None:
-    """The real FFmpeg text of a machine without the NVIDIA driver."""
     cli_env.set_scenario(ft.Scenario([detect_rule("detect_hevc_nvenc_no_driver")]))
-    result = invoke("encoders")
-    assert result.exit_code == EXIT_OK, result.output
-    assert NVENC_LINE in lines(result.stdout)
-
-
-def test_a_status_that_changes_after_the_cache_is_printed_again(cli_env: ft.FakeTools) -> None:
-    assert invoke("encoders").exit_code == EXIT_OK  # every test encode works: cached
-    cli_env.set_scenario(ft.Scenario([detect_rule("detect_hevc_nvenc_no_driver")]))
-    result = invoke("encoders")
-    out = lines(result.stdout)
+    changed = invoke("encoders")
+    assert changed.exit_code == EXIT_OK, changed.output
+    out = lines(changed.stdout)
     checking_again = out.index("Checking again…")
     assert "hevc_nvenc — available" in out[:checking_again]
     assert NVENC_LINE in out[checking_again:]
     assert out[-1].endswith("(1 changed since the cached result).")
+
+
+def nvenc_driver_too_old(encoder: str) -> ft.Rule:
+    """The test encode of ``encoder`` fails as with an NVIDIA driver older than the build needs
+    (the real lines of the pinned build with driver 582.78)."""
+    text = (
+        f"[{encoder} @ 0x55] Driver does not support the required nvenc API version. Required: "
+        f"13.1 Found: 13.0\n[{encoder} @ 0x55] The minimum required Nvidia driver for nvenc is "
+        "610.00 or newer\nConversion failed!\n"
+    )
+    return ft.Rule(actions=[ft.stderr(text)], exit_code=1, argv_has=["-c:v", encoder])
+
+
+HINT = (
+    "hint: {} newer system software than this FFmpeg build expects: update the driver, or use "
+    "another build (reframe tools fetch --build compat, or REFRAME_FFMPEG / tools.ffmpeg)."
+)
+
+
+def test_a_build_mismatch_ends_with_a_hint(cli_env: ft.FakeTools) -> None:
+    cli_env.set_scenario(
+        ft.Scenario(
+            [
+                nvenc_driver_too_old("h264_nvenc"),
+                nvenc_driver_too_old("hevc_nvenc"),
+                detect_rule("detect_hevc_nvenc_no_driver", encoder="av1_nvenc"),
+            ]
+        )
+    )
+    result = invoke("encoders")
+    assert result.exit_code == EXIT_OK, result.output
+    out = lines(result.stdout)
+    too_old = "unavailable: NVIDIA driver too old: NVENC needs driver 610.00 or newer"
+    assert f"hevc_nvenc — {too_old}" in out
+    assert "av1_nvenc — unavailable: NVIDIA driver not found" in out
+    assert out[-2].startswith("Done in ")
+    assert out[-1] == HINT.format("h264_nvenc, hevc_nvenc need")
+
+    # tools status shows the hint of the cached result
+    status = invoke("tools", "status")
+    assert status.exit_code == EXIT_OK, status.output
+    assert lines(status.stdout)[-1] == HINT.format("h264_nvenc, hevc_nvenc need")
+
+    # without a build mismatch there is no hint
+    cli_env.set_scenario(ft.Scenario([nvenc_driver_too_old("hevc_nvenc")]))
+    out = lines(invoke("encoders").stdout)
+    assert out[-1] == HINT.format("hevc_nvenc needs")
+    cli_env.set_scenario(ft.Scenario([]))
+    assert not any(line.startswith("hint:") for line in lines(invoke("encoders").stdout))
+    assert not any(line.startswith("hint:") for line in lines(invoke("tools", "status").stdout))
+
+
+def system_library_missing(encoder: str) -> ft.Rule:
+    """The test encode of ``encoder`` fails as without the system's libva-drm (real line)."""
+    text = (
+        "implib-gen: libva-drm.so.2: failed to load library 'libva-drm.so.2' via dlopen: "
+        "libva-drm.so.2: cannot open shared object file: No such file or directory\n"
+    )
+    return ft.Rule(actions=[ft.stderr(text)], exit_code=134, argv_has=["-c:v", encoder])
+
+
+LIBRARY_HINT = (
+    "hint: {} a system library (libva) that is missing or older than this FFmpeg build "
+    "expects: install or update it, or use your own FFmpeg (REFRAME_FFMPEG / tools.ffmpeg). "
+    "The desktop app ships a libva that its downloaded FFmpeg uses."
+)
+
+
+def test_a_system_library_mismatch_names_the_library_not_another_build(
+    cli_env: ft.FakeTools,
+) -> None:
+    cli_env.set_scenario(
+        ft.Scenario([system_library_missing("h264_qsv"), system_library_missing("hevc_qsv")])
+    )
+    result = invoke("encoders")
+    assert result.exit_code == EXIT_OK, result.output
+    out = lines(result.stdout)
+    assert out[-1] == LIBRARY_HINT.format("h264_qsv, hevc_qsv need")
+    assert not any("--build" in line for line in out)
+    status = invoke("tools", "status")
+    assert lines(status.stdout)[-1] == LIBRARY_HINT.format("h264_qsv, hevc_qsv need")
+
+    # both causes: the driver's hint first, each with its own encoders
+    cli_env.set_scenario(
+        ft.Scenario([nvenc_driver_too_old("hevc_nvenc"), system_library_missing("h264_qsv")])
+    )
+    out = lines(invoke("encoders").stdout)
+    assert out[-2:] == [
+        HINT.format("hevc_nvenc needs"),
+        LIBRARY_HINT.format("h264_qsv needs"),
+    ]
 
 
 def test_json_waits_for_the_result(cli_env: ft.FakeTools) -> None:
@@ -128,32 +208,8 @@ def test_a_legacy_windows_console_encoding_does_not_crash(
 ) -> None:
     """cp1252 (a Windows console) has the dash but no arrow: what it cannot encode is
     replaced, never a ``UnicodeEncodeError``."""
-    import subprocess
-    import sys
-
-    from reframe.tools import ENV_VARS
-
-    env = cli_env.env()
-    for var in ENV_VARS.values():
-        env.pop(var, None)
-    env.update(
-        REFRAME_FFMPEG=str(cli_env.ffmpeg),
-        REFRAME_FFPROBE=str(cli_env.ffprobe),
-        REFRAME_CACHE_DIR=str(tmp_path / "cache-sub"),
-        REFRAME_CONFIG_DIR=str(tmp_path / "config-sub"),
-        REFRAME_DATA_DIR=str(tmp_path / "data-sub"),
-        PYTHONIOENCODING="cp1252",
-        COLUMNS="120",
-    )
-    env.pop("PYTHONUTF8", None)
     for args in (["encoders"], ["name", str(tmp_path / "Movie.2016.1080p" / "m→v.mkv")]):
-        result = subprocess.run(
-            [sys.executable, "-m", "reframe.cli", *args],
-            capture_output=True,
-            env=env,
-            timeout=60,
-            check=False,
-        )
+        result = run_cli(cli_env, tmp_path, *args, encoding="cp1252")
         assert result.returncode == 0, result.stderr.decode("cp1252", "replace")
         out = result.stdout.decode("cp1252")
         assert "Traceback" not in result.stderr.decode("cp1252", "replace")

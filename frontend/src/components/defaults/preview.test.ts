@@ -6,7 +6,9 @@ import { createAppI18n } from '@/i18n'
 
 import { outputLines } from './preview'
 
-const t = createAppI18n().global.t as (key: string, named?: Record<string, unknown>) => string
+const i18n = createAppI18n().global
+const t = i18n.t as (key: string, named?: Record<string, unknown>) => string
+const n = (value: number) => i18n.n(value)
 const definitions = trackDefinitions()
 const dtsHdMa = probedSource('dts-hd-ma').audio![0]!
 
@@ -44,6 +46,7 @@ function subtitle(output: object): string[] {
     undefined,
     definitions,
     t,
+    n,
   )
 }
 
@@ -56,8 +59,20 @@ describe('the output column of the preview', () => {
       dtsHdMa,
       definitions,
       t,
+      n,
     )
     expect(lines).toEqual(['AC-3 5.1 · 320 kb/s', 'AAC Stereo · 160 kb/s'])
+  })
+
+  it('writes the bitrate with the locale’s digit grouping', () => {
+    const lines = outputLines(
+      decision({ outputs: [audio({ encoder: 'flac', mixdown: '7.1', bitrate: 1536 })] }),
+      dtsHdMa,
+      definitions,
+      t,
+      n,
+    )
+    expect(lines).toEqual(['FLAC 7.1 · 1,536 kb/s'])
   })
 
   it('names a lossless output without a bitrate, and a kept layout without a mixdown', () => {
@@ -67,6 +82,7 @@ describe('the output column of the preview', () => {
         dtsHdMa,
         definitions,
         t,
+        n,
       ),
     ).toEqual(['FLAC'])
   })
@@ -78,6 +94,7 @@ describe('the output column of the preview', () => {
         dtsHdMa,
         definitions,
         t,
+        n,
       ),
     ).toEqual(['Passthru (DTS-HD MA)'])
   })

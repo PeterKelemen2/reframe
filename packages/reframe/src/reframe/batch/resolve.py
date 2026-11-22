@@ -1,4 +1,4 @@
-"""Resolving a template in one file and in a group: the job, the match report and the issues.
+"""Resolving a template in one file: the job, the match report and the issues.
 
 :func:`resolve` is the one way a job is made from a template. ``reframe.jobs.draft_from_preset``
 goes through it too, so a preset and a batch group make the same job for the same file.
@@ -8,22 +8,20 @@ Pure: no I/O. Naming and the file-system checks are made elsewhere.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from pathlib import Path
+from collections.abc import Sequence
 from typing import Literal
 
-from reframe import languages
+from reframe.batch.metadata import track_metadata
 from reframe.batch.overrides import apply_job_override, apply_template_override, split_override
 from reframe.batch.rules import (
     CompiledRule,
     Kind,
-    TrackResolution,
     compile_defaults,
     resolve_tracks,
 )
 from reframe.definitions import Definitions, load_definitions
-from reframe.dimensions import compute_geometry, source_geometry
-from reframe.models.batch import BatchGroup, MatrixColumn, Resolution, TrackMatch
+from reframe.dimensions import job_geometry
+from reframe.models.batch import MatrixColumn, Resolution, TrackMatch
 from reframe.models.defaults import TrackDraft
 from reframe.models.geometry import CropSettings, DimensionSettings
 from reframe.models.issues import JsonPatchOp, Severity, ValidationIssue
@@ -45,7 +43,6 @@ __all__ = [
     "matrix_columns",
     "output_size",
     "resolve",
-    "resolve_group",
     "row_status",
     "video_metadata",
 ]
@@ -59,19 +56,7 @@ VIDEO_COLUMN = MatrixColumn(kind="video", label="V")
 def video_metadata(stream: VideoStream) -> TrackMetadata:
     """The source video track's language, title and flags. The default flag is always set,
     because FFmpeg's Matroska muxer leaves it off a single stream."""
-    value = stream.language_ietf or stream.language
-    language = (languages.normalize(value) or value) if value else None
-    d = stream.disposition
-    return TrackMetadata(
-        language=language,
-        name=stream.title,
-        default=True,
-        forced=d.forced,
-        commentary=d.comment,
-        hearing_impaired=d.hearing_impaired,
-        visual_impaired=d.visual_impaired,
-        original=d.original,
-    )
+    return track_metadata(stream).model_copy(update={"default": True})
 
 
 def output_size(job: JobSettings, source: MediaSource) -> tuple[int, int] | None:
@@ -81,16 +66,14 @@ def output_size(job: JobSettings, source: MediaSource) -> tuple[int, int] | None
     stream = source.video[0]
     if job.video.passthrough:
         return (stream.width, stream.height)
-    src = source_geometry(stream)
-    if "deinterlace" in job.filters.root:
-        # Deinterlace runs before the crop, so the crop is on the progressive grid.
-        src = src.model_copy(update={"interlaced": False})
-    geometry = compute_geometry(src, job.dimensions)
+    geometry = job_geometry(stream, job)
     return (geometry.scaled_width, geometry.scaled_height)
 
 
 def _dimensions(template: JobTemplate, notes: list[str]) -> DimensionSettings:
     dims = template.dimensions.model_copy(deep=True)
+    if dims.crop.detection_error is not None:  # a failure in another file
+        dims.crop = dims.crop.model_copy(update={"detection_error": None})
     crop = dims.crop
     if crop.rect is None or crop.mode not in ("auto", "conservative"):
         return dims
@@ -162,35 +145,10 @@ def resolve(
     *,
     definitions: Definitions | None = None,
     languages: LanguageSettings | None = None,
-    container_codecs: bool = True,
 ) -> Resolution:
     """``template`` applied to ``source`` with its per-file ``override``: the job (no output
     path yet), the match report, one decision per source track and the issues. ``languages``:
-    the language settings, whose preferred languages the defaults use. ``container_codecs=False``
-    leaves out the ``defaults.codec_not_in_container`` lint, for a caller that reports those
-    codecs itself."""
-    resolution, _ = resolve_with_tracks(
-        template,
-        source,
-        override,
-        definitions=definitions,
-        languages=languages,
-        container_codecs=container_codecs,
-    )
-    return resolution
-
-
-def resolve_with_tracks(
-    template: JobTemplate,
-    source: MediaSource,
-    override: Sequence[JsonPatchOp] | None = None,
-    *,
-    definitions: Definitions | None = None,
-    languages: LanguageSettings | None = None,
-    container_codecs: bool = True,
-) -> tuple[Resolution, TrackResolution]:
-    """:func:`resolve`, with the :class:`~reframe.batch.rules.TrackResolution` (the matrix
-    columns of the patched template and the track draft)."""
+    the language settings, whose preferred languages the defaults use."""
     defs = definitions or load_definitions()
     template_ops, job_ops, issues = split_override(override)
     patched, found = apply_template_override(template, template_ops)
@@ -199,17 +157,11 @@ def resolve_with_tracks(
         if moved is not None:
             patched, found = template, [moved]
     issues += found
-    tracks = resolve_tracks(
-        patched,
-        source,
-        definitions=defs,
-        languages=languages,
-        container_codecs=container_codecs,
-    )
+    tracks = resolve_tracks(patched, source, definitions=defs, languages=languages)
     job, notes = build_job(patched, source, tracks.draft)
     job, found = apply_job_override(job, job_ops)
     issues = [*tracks.draft.issues, *issues, *found]
-    resolution = Resolution(
+    return Resolution(
         path=source.ref.path,
         job=job,
         matches=tracks.matches,
@@ -220,7 +172,6 @@ def resolve_with_tracks(
         subtitle_decisions=tracks.draft.subtitle_decisions,
         notes=notes,
     )
-    return resolution, tracks
 
 
 def _part(rule: CompiledRule) -> tuple[str, int | None]:
@@ -287,47 +238,3 @@ def matrix_columns(
     probe = source or MediaSource.model_validate({"ref": {"path": "columns"}})
     tracks = resolve_tracks(template, probe, definitions=definitions, languages=languages)
     return [VIDEO_COLUMN, *tracks.columns, NAME_COLUMN]
-
-
-def resolve_group(
-    group: BatchGroup,
-    template: JobTemplate,
-    sources: Mapping[Path, MediaSource] | Sequence[MediaSource],
-    overrides: Mapping[str, Sequence[JsonPatchOp]] | None = None,
-    *,
-    definitions: Definitions | None = None,
-    languages: LanguageSettings | None = None,
-) -> list[Resolution]:
-    """:func:`resolve` for every member of ``group``, in the group's order. ``sources``: the
-    probed members, by path or as a sequence; this module does not probe. ``overrides``:
-    per-file JSON patches keyed by the file's path as a string. A member without a source is an
-    error row."""
-    by_path = (
-        dict(sources)
-        if isinstance(sources, Mapping)
-        else {source.ref.path: source for source in sources}
-    )
-    patches = {str(Path(key)): value for key, value in (overrides or {}).items()}
-    defs = definitions or load_definitions()
-    rows: list[Resolution] = []
-    for member in group.members:
-        source = by_path.get(member.path)
-        if source is None:
-            issue = ValidationIssue(
-                severity=Severity.ERROR,
-                code="source.probe_failed",
-                path="source",
-                message=f"{member.path.name} was not probed: it cannot be resolved.",
-            )
-            rows.append(Resolution(path=member.path, issues=[issue], status="error"))
-            continue
-        rows.append(
-            resolve(
-                template,
-                source,
-                patches.get(str(member.path)),
-                definitions=defs,
-                languages=languages,
-            )
-        )
-    return rows

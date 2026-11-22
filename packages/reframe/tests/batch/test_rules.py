@@ -2,24 +2,20 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from collections.abc import Sequence
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
 
 from reframe.batch import (
     compile_defaults,
-    draft_tracks,
     resolve_tracks,
     rule_label,
 )
 from reframe.batch.explain import audio_stage, subtitle_stage
-from reframe.batch.lint import lint_rules
+from reframe.batch.lint import lint_defaults
 from reframe.batch.rules import literal_title, title_text
 from reframe.definitions import load_definitions
 from reframe.models import (
@@ -43,24 +39,11 @@ from reframe.models import (
 from reframe.presets import builtin_presets
 from reframe.probe import parse_ffprobe
 
+from . import anime as A
+from . import defaults_tracks as T
+
 DEFS = load_definitions()
 PROBES = Path(__file__).resolve().parents[4] / "testdata" / "probes"
-
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-A = _load("anime")
-T = _load("defaults_tracks")
 
 
 def selector(kind: str = "audio", **kw: Any) -> TrackSelector:
@@ -167,6 +150,15 @@ def test_fixed_settings_and_metadata() -> None:
     assert result.draft.issues == []
 
 
+def test_fixed_settings_are_named_with_what_is_written() -> None:
+    """A stereo source is not upmixed, and the bit rate is snapped to the encoder's."""
+    upmix = AudioOutputSettings(encoder="aac", mixdown="5.1", bitrate=900)
+    meta = TrackMetadataTemplate(name_template="{channels} {codec} {bitrate}")
+    rules = [audio_rule(upmix, meta, languages=["en"], roles=[TrackRole.COMMENTARY])]
+    (track,) = resolve_tracks(template(audio=rules), example(), definitions=DEFS).draft.audio
+    assert track.metadata.name == "2.0 AAC 512"
+
+
 def test_codec_rules_are_evaluated_for_each_matched_track() -> None:
     english = AudioCodecRule(
         languages=["en"], source_channels="5.1_or_more", codec="ac3", mixdown="5.1", max_bitrate=320
@@ -254,24 +246,6 @@ def test_subtitle_rules() -> None:
         resolve_tracks(mp4, example(), definitions=DEFS).draft.subtitle_decisions[0].selected
         is False
     )
-
-
-def test_settings_of_the_other_kind_are_an_error() -> None:
-    wrong_audio = OutputTrackRule(
-        selector=selector("audio", languages=["ja"]), settings=SubtitleOutputSettings()
-    )
-    wrong_sub = OutputTrackRule(
-        selector=selector("subtitle", title_pattern="^Full$"), settings=AudioOutputSettings()
-    )
-    result = resolve_tracks(
-        template(audio=[wrong_audio], subtitles=[wrong_sub]), example(), definitions=DEFS
-    )
-    assert result.draft.audio == []
-    assert result.draft.subtitles == []
-    assert [(i.code, i.path) for i in result.draft.issues] == [
-        ("batch.rule_settings", "audio_rules[0].settings"),
-        ("batch.rule_settings", "subtitle_rules[0].settings"),
-    ]
 
 
 def test_explicit_audio_with_subtitle_defaults_hears_the_explicit_audio() -> None:
@@ -444,11 +418,11 @@ def test_presets_resolve_as_the_selection_stage(languages: LanguageSettings | No
             issues = [
                 *audio.issues,
                 *subtitles.issues,
-                *lint_rules(
+                *lint_defaults(
                     preset.audio_defaults, container=container, definitions=DEFS, used=used
                 ),
             ]
-            draft = draft_tracks(source, preset, definitions=DEFS, languages=languages)
+            draft = resolve_tracks(preset, source, definitions=DEFS, languages=languages).draft
             assert draft.audio == audio.outputs, (path.name, preset.id)
             assert draft.subtitles == subtitles.outputs, (path.name, preset.id)
             assert draft.decisions == audio.decisions
@@ -498,9 +472,15 @@ def test_a_track_that_two_rules_take_is_the_first_of_its_language_for_both() -> 
 def test_a_rule_with_settings_of_the_other_kind_is_not_an_exact_cell() -> None:
     e05 = A.recorded(1, 5)
     wrong = audio_rule(languages=["jpn"], settings=SubtitleOutputSettings())
-    result = resolve_tracks(JobTemplate(audio_rules=[wrong]), e05, definitions=DEFS)
-    assert result.draft.audio == []
+    wrong_sub = sub_rule(AudioOutputSettings(), title_pattern="^Full$")
+    result = resolve_tracks(
+        JobTemplate(audio_rules=[wrong], subtitle_rules=[wrong_sub]), e05, definitions=DEFS
+    )
+    assert (result.draft.audio, result.draft.subtitles) == ([], [])
     (cell,) = [m for m in result.matches if m.kind == "audio"]
     assert (cell.status, cell.severity.value if cell.severity else None) == ("missing", "error")
     assert cell.message == "the rule has subtitle settings: it makes no audio track"
-    assert [i.code for i in result.draft.issues] == ["batch.rule_settings"]
+    assert [(i.code, i.path) for i in result.draft.issues] == [
+        ("batch.rule_settings", "audio_rules[0].settings"),
+        ("batch.rule_settings", "subtitle_rules[0].settings"),
+    ]

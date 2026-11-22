@@ -32,16 +32,17 @@ const detectionLine = computed(() => {
   if (found === null) return null
   switch (crop.mode) {
     case 'auto':
-      return t('dimensions.detection.auto', {
-        ...found.auto,
-        frames: found.auto_frames,
-        total: found.samples.length,
-      })
+      return t(
+        'dimensions.detection.auto',
+        { ...found.auto, frames: found.auto_frames, total: found.samples.length },
+        found.samples.length,
+      )
     case 'conservative':
-      return t('dimensions.detection.conservative', {
-        ...found.conservative,
-        total: found.samples.length,
-      })
+      return t(
+        'dimensions.detection.conservative',
+        { ...found.conservative, total: found.samples.length },
+        found.samples.length,
+      )
     default:
       return null
   }
@@ -56,11 +57,15 @@ function setMode(mode: unknown): void {
 }
 
 // What the inputs show: typed text until it is committed, then the stored (snapped) value.
+// Only an edge whose stored value changed is rewritten: a job update for another edge (the
+// answer to the previous edit) must not take the text being typed in this one.
 const drafts = reactive<Record<Edge, string>>({ top: '0', bottom: '0', left: '0', right: '0' })
 watch(
   shown,
-  (rect) => {
-    for (const edge of EDGES) drafts[edge] = String(rect[edge])
+  (rect, before) => {
+    for (const edge of EDGES) {
+      if (before === undefined || rect[edge] !== before[edge]) drafts[edge] = String(rect[edge])
+    }
   },
   { immediate: true },
 )

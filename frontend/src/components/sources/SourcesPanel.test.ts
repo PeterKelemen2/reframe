@@ -124,16 +124,33 @@ const $$ = (selector: string) => [...document.querySelectorAll<HTMLElement>(sele
 const item = (id: string) => $(`[data-key="source:${id}"]`) as HTMLElement
 const groupItem = () => $('[data-key="group:g1"]') as HTMLElement
 const text = (element: Element | null) => element?.textContent?.replace(/\s+/g, ' ').trim()
+/** A tree item's level and its place among its siblings. */
+const place = (row: HTMLElement) =>
+  ['aria-level', 'aria-posinset', 'aria-setsize'].map((name) => row.getAttribute(name))
 
-/** Text as a screen reader computes it: `aria-label` replaces content, hidden parts drop out. */
+const INLINE = new Set(['A', 'B', 'EM', 'I', 'SMALL', 'SPAN', 'STRONG'])
+
+/**
+ * Text as axe computes a name: `aria-label` replaces content, hidden parts drop out, and only
+ * block elements are set apart, so two spans with no space between them run together.
+ */
 function spoken(node: Node): string {
   if (node instanceof Element) {
     if (node.getAttribute('aria-hidden') === 'true') return ''
     const label = node.getAttribute('aria-label')
-    if (label !== null) return label
-    return [...node.childNodes].map(spoken).join(' ')
+    const content = label ?? [...node.childNodes].map(spoken).join('')
+    return INLINE.has(node.tagName) ? content : ` ${content} `
   }
   return node.nodeType === Node.TEXT_NODE ? (node.textContent ?? '') : ''
+}
+
+/** Text as the screen shows it: none of the text for screen readers only or of hidden parts. */
+function shown(node: Node): string {
+  if (node instanceof Element) {
+    if (node.matches('.rf-sr-only, [aria-hidden="true"]')) return ''
+    return [...node.childNodes].map(shown).filter(Boolean).join(' ')
+  }
+  return node.nodeType === Node.TEXT_NODE ? (node.textContent ?? '').trim() : ''
 }
 
 function referenced(element: HTMLElement, attribute: string): string | undefined {
@@ -169,24 +186,25 @@ describe('the sources panel', () => {
       'MKV · 1:05 · H.264 1920×1080',
     )
     expect($$('[data-field="warning"]').map(text)).toEqual([
-      'Probe warning: The container reports no duration.',
+      'The container reports no duration. (probe warning)',
     ])
     expect(item('movie.mkv').getAttribute('aria-selected')).toBe('true')
     expect(item('Show.S01E01.mkv').getAttribute('aria-selected')).toBe('false')
   })
 
-  it('names a source by its file and describes it by its line and warnings, without its buttons', async () => {
+  it('names a source by all its visible text in order, without its remove button', async () => {
     await mountPanel(withShow)
-    expect(referenced(item('movie.mkv'), 'aria-labelledby')).toBe('movie.mkv')
-    expect(referenced(item('movie.mkv'), 'aria-describedby')).toBe(
-      'MKV · 1:05 · H.264 1920×1080 Probe warning: The container reports no duration.',
+    expect(referenced(item('movie.mkv'), 'aria-labelledby')).toBe(
+      'movie.mkv MKV · 1:05 · H.264 1920×1080 The container reports no duration. (probe warning)',
     )
     expect(referenced(item('Show.S01E05.mkv'), 'aria-labelledby')).toBe(
-      'Near match: added with differences E05 Show.S01E05.mkv',
+      'Near match: added with differences E05 Show.S01E05.mkv 1 extra track (eng AC-3 2.0 "Commentary")',
     )
-    expect(referenced(item('Show.S01E05.mkv'), 'aria-describedby')).toBe(
-      '1 extra track (eng AC-3 2.0 "Commentary")',
-    )
+    // Speech input finds a row by what it shows (WCAG 2.5.3): its visible words, unbroken.
+    for (const row of [item('movie.mkv'), item('Show.S01E05.mkv')]) {
+      const name = referenced(row, 'aria-labelledby')?.replace(/ \(probe warning\)$/, '')
+      expect(name).toContain(shown(row))
+    }
   })
 
   it('shows a group with its size, level and near matches, its members by episode', async () => {
@@ -211,11 +229,25 @@ describe('the sources panel', () => {
     ])
   })
 
-  it('names a group by its name and its lines, without its buttons or members', async () => {
+  it('puts the members after their group as tree items of the next level, not inside it', async () => {
     await mountPanel(editing)
-    expect(referenced(groupItem(), 'aria-labelledby')).toBe(
-      'Show S01 Editing 3 files standard match 1 near match',
-    )
+    // Inside it, a group's name and visible text would hold every member's.
+    expect(groupItem().querySelector('[role="treeitem"]')).toBeNull()
+    const rows = $$('[role="tree"] > [role="treeitem"]')
+    expect(rows.map((row) => row.dataset.key)).toEqual([
+      'source:movie.mkv',
+      'group:g1',
+      'source:Show.S01E01.mkv',
+      'source:Show.S01E02.mkv',
+      'source:Show.S01E05.mkv',
+    ])
+    expect(rows.map(place)).toEqual([
+      ['1', '1', '2'],
+      ['1', '2', '2'],
+      ['2', '1', '3'],
+      ['2', '2', '3'],
+      ['2', '3', '3'],
+    ])
     expect($('.sources-panel__group-name')?.title).toBe('Show S01')
   })
 
@@ -366,6 +398,46 @@ describe('the sources panel', () => {
     expect(stop).toHaveBeenCalledOnce()
   })
 
+  it('moves to the item whose name starts with the typed keys', async () => {
+    const { select } = await mountPanel(withShow)
+    item('movie.mkv').focus()
+    await key('s')
+    expect(document.activeElement).toBe(groupItem())
+    await key('e')
+    expect(document.activeElement).toBe(groupItem())
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    await key('e')
+    expect(document.activeElement).toBe(item('Show.S01E01.mkv'))
+    await key('e')
+    expect(document.activeElement).toBe(item('Show.S01E02.mkv'))
+    await new Promise((resolve) => setTimeout(resolve, 600))
+    await key('M')
+    expect(document.activeElement).toBe(item('movie.mkv'))
+    expect(select).not.toHaveBeenCalled()
+  })
+
+  it('reads a changed source again from its context menu, for the keyboard', async () => {
+    const { sources } = await mountPanel((store) => {
+      store.entries = [{ id: 'gone.mkv', path: '/m/gone.mkv', source: null }, movie]
+    })
+    const open = vi.spyOn(sources, 'open').mockResolvedValue([])
+    item('movie.mkv').focus()
+    await key('ContextMenu')
+    expect(menuItems().some((found) => found.getAttribute('aria-label') === 'Read it again')).toBe(
+      false,
+    )
+    await menuKey('Escape', 'Escape')
+    item('gone.mkv').focus()
+    await key('ContextMenu')
+    await vi.waitFor(() =>
+      expect($('.p-contextmenu [role="menubar"]')?.getAttribute('aria-activedescendant')).toBe(
+        menuItem('Read it again').id,
+      ),
+    )
+    await menuKey('Enter', 'Enter')
+    expect(open).toHaveBeenCalledExactlyOnceWith(['/m/gone.mkv'], { select: false })
+  })
+
   it('offers to read a source again whose file changed or is gone', async () => {
     const { sources } = await mountPanel((store) => {
       store.entries = [{ id: 'gone.mkv', path: '/m/gone.mkv', source: null }]
@@ -443,6 +515,12 @@ describe('a batch group in the sources panel', () => {
     const { select, showFile } = await mountPanel(editing)
     expect(groupItem().getAttribute('aria-current')).toBe('true')
     expect(text(groupItem().querySelector('[data-field="editing"]'))).toBe('Editing')
+    // The group's mark runs down its members, which follow it in the tree, not the loose file.
+    expect($$('.sources-panel__member--edited').map((row) => row.dataset.key)).toEqual([
+      'source:Show.S01E01.mkv',
+      'source:Show.S01E02.mkv',
+      'source:Show.S01E05.mkv',
+    ])
     item('Show.S01E05.mkv').click()
     await flushPromises()
     item('Show.S01E02.mkv').focus()
@@ -478,6 +556,20 @@ describe('a batch group in the sources panel', () => {
     expect(groupItem().getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('leaves Enter and Space to a button of the group’s row', async () => {
+    await mountPanel(withShow)
+    const edit = groupItem().querySelector<HTMLElement>('[data-action="edit-group"]')!
+    edit.focus()
+    const events = ['Enter', ' '].map((name) => {
+      const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true })
+      edit.dispatchEvent(event)
+      return event
+    })
+    await flushPromises()
+    expect(events.map((event) => event.defaultPrevented)).toEqual([false, false])
+    expect(groupItem().getAttribute('aria-expanded')).toBe('true')
+  })
+
   it('checks the edited group without editing it again', async () => {
     const { editGroup } = await mountPanel(editing)
     const openMatrix = vi.spyOn(useUiStore(), 'openMatrix')
@@ -500,8 +592,12 @@ describe('a batch group in the sources panel', () => {
         .slice(0, 3)
         .map((found) => found.getAttribute('aria-label')),
     ).toEqual(['Edit group', 'Check group', 'Add group to queue'])
-    await menuKey('ArrowDown', 'ArrowDown')
-    await menuKey('Enter', 'Enter')
+    // The menu has the focus, on its first item.
+    const list = $('.p-contextmenu [role="menubar"]') as HTMLElement
+    await vi.waitFor(() => expect(document.activeElement).toBe(list))
+    expect(list.getAttribute('aria-activedescendant')).toBe(menuItems()[0]?.id)
+    list.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true }))
+    await flushPromises()
     expect(editGroup).toHaveBeenCalledExactlyOnceWith('g1')
 
     item('movie.mkv').focus()

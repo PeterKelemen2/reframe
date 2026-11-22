@@ -166,7 +166,11 @@ def test_untested_is_a_warning() -> None:
 
 
 def test_unavailable_with_a_fix() -> None:
-    (issue,) = encoder_issues("hevc_nvenc", caps(**NO_HEVC_HARDWARE), DEFS)
+    job = JobSettings.model_validate(
+        {"source": {"path": "/media/a.mkv"}, "video": {"encoder": "hevc_nvenc"}}
+    )
+    snapshot = caps(**NO_HEVC_HARDWARE)
+    (issue,) = encoder_issues(job.video.encoder, snapshot, DEFS)
     assert (issue.code, issue.severity, issue.path) == (
         "encoder.unavailable",
         Severity.ERROR,
@@ -180,6 +184,26 @@ def test_unavailable_with_a_fix() -> None:
     assert fix.label == "Use libx265 (closest match)"
     assert fix.patch == [ReplaceOp(path="/video/encoder", value="libx265")]
     assert fix.target == "job"
+    fixed = JobSettings.model_validate(apply_patch(job.model_dump(mode="json"), fix.patch))
+    assert fixed.video.encoder == "libx265"
+    assert encoder_issues(fixed.video.encoder, snapshot, DEFS) == []
+
+
+def test_a_build_mismatch_names_the_other_builds() -> None:
+    snapshot = caps(**NO_HEVC_HARDWARE)
+    snapshot.encoders["hevc_nvenc"] = snapshot.encoders["hevc_nvenc"].model_copy(
+        update={
+            "reason": "NVIDIA driver too old: NVENC needs driver 610.00 or newer",
+            "build_mismatch": True,
+            "build_mismatch_cause": "driver",
+        }
+    )
+    (issue,) = encoder_issues("hevc_nvenc", snapshot, DEFS)
+    assert issue.message == (
+        "hevc_nvenc (NVIDIA NVENC H.265) is not available: NVIDIA driver too old: NVENC needs "
+        "driver 610.00 or newer. Another FFmpeg build may work with this computer (Settings → "
+        "Tools, or reframe tools fetch --build)."
+    )
 
 
 def test_error_state_is_unavailable_too() -> None:
@@ -198,21 +222,6 @@ def test_unavailable_without_anything_available() -> None:
 
 
 def test_audio_encoder_unavailable_with_a_fix() -> None:
-    snapshot = caps(libfdk_aac=(UNAVAILABLE, "Not in this FFmpeg build"))
-    (issue,) = encoder_issues("libfdk_aac", snapshot, DEFS, path="audio[1].encoder")
-    assert (issue.code, issue.severity, issue.path) == (
-        "encoder.unavailable",
-        Severity.ERROR,
-        "audio[1].encoder",
-    )
-    assert issue.message == "libfdk_aac (AAC (FDK)) is not available: Not in this FFmpeg build."
-    (fix,) = issue.fixes
-    assert fix.label == "Use aac (closest match)"
-    assert fix.patch == [ReplaceOp(path="/audio/1/encoder", value="aac")]
-    assert fix.target == "job"
-
-
-def test_job_with_a_libfdk_aac_track() -> None:
     """A job whose second audio track uses libfdk_aac (not in GPL builds)."""
     job = JobSettings.model_validate(
         {
@@ -231,9 +240,16 @@ def test_job_with_a_libfdk_aac_track() -> None:
         for issue in encoder_issues(track.encoder, snapshot, DEFS, path=f"audio[{index}].encoder")
     ]
     (issue,) = issues
-    assert issue.path == "audio[1].encoder"
+    assert (issue.code, issue.severity, issue.path) == (
+        "encoder.unavailable",
+        Severity.ERROR,
+        "audio[1].encoder",
+    )
+    assert issue.message == "libfdk_aac (AAC (FDK)) is not available: Not in this FFmpeg build."
     (fix,) = issue.fixes
     assert fix.label == "Use aac (closest match)"
+    assert fix.patch == [ReplaceOp(path="/audio/1/encoder", value="aac")]
+    assert fix.target == "job"
     fixed = JobSettings.model_validate(apply_patch(job.model_dump(mode="json"), fix.patch))
     assert [track.encoder for track in fixed.audio] == ["ac3", "aac"]
     assert fixed.audio[1].bitrate == 160  # only the encoder changes
@@ -243,19 +259,6 @@ def test_job_with_a_libfdk_aac_track() -> None:
         for track in fixed.audio
         if track.encoder is not None
     )
-
-
-def test_job_fix_applies() -> None:
-    job = JobSettings.model_validate(
-        {"source": {"path": "/media/a.mkv"}, "video": {"encoder": "hevc_nvenc"}}
-    )
-    snapshot = caps(**NO_HEVC_HARDWARE)
-    (issue,) = encoder_issues(job.video.encoder, snapshot, DEFS)
-    fixed = JobSettings.model_validate(
-        apply_patch(job.model_dump(mode="json"), issue.fixes[0].patch)
-    )
-    assert fixed.video.encoder == "libx265"
-    assert encoder_issues(fixed.video.encoder, snapshot, DEFS) == []
 
 
 @pytest.mark.parametrize(

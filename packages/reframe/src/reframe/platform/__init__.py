@@ -1,1 +1,1 @@
-"""Platform services: child-process safety, sleep inhibit, power actions and notifications."""
+"""Platform services: child-process safety, sleep inhibit and power actions."""

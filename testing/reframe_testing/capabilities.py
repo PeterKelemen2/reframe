@@ -1,14 +1,27 @@
-"""Helpers for encoder-detection tests: a tool-discovery stand-in and replayed capture rules."""
+"""Helpers for encoder-detection and media-task tests: stand-ins for the tool, capability and
+source services, and replayed capture rules."""
 
 from __future__ import annotations
 
 import asyncio
+import os
+from collections.abc import Callable
 from pathlib import Path
 
-from reframe.models import ToolInfo, ToolName, ToolSet, ToolStatus
+from reframe.models import CapabilitySnapshot, MediaSource, ToolInfo, ToolSet, ToolStatus
+from reframe.probe import ProbeError
+from reframe.tools import CancelToken
 from reframe_testing import fake_tools as ft
 
-__all__ = ["PINNED_VERSION", "StubTools", "detect_rule", "ffmpeg_info", "tool_set"]
+__all__ = [
+    "PINNED_VERSION",
+    "FixedCaps",
+    "StubSources",
+    "StubTools",
+    "detect_rule",
+    "ffmpeg_info",
+    "tool_set",
+]
 
 #: ``ffmpeg -version`` of the pinned build (``tools/ffmpeg.toml``).
 PINNED_VERSION = "n9.0.2-17-g2a571b6068-20260930"
@@ -28,13 +41,9 @@ def ffmpeg_info(
 
 
 def tool_set(ffmpeg: ToolInfo) -> ToolSet:
-    """``ffmpeg`` plus a missing ffprobe, mkvpropedit and mediainfo."""
-    others: tuple[ToolName, ...] = ("ffprobe", "mkvpropedit", "mediainfo")
-    missing = {
-        name: ToolInfo(name=name, status=ToolStatus.MISSING, reason=f"{name} was not found.")
-        for name in others
-    }
-    return ToolSet(ffmpeg=ffmpeg, **missing)
+    """``ffmpeg`` plus a missing ffprobe."""
+    ffprobe = ToolInfo(name="ffprobe", status=ToolStatus.MISSING, reason="ffprobe was not found.")
+    return ToolSet(ffmpeg=ffmpeg, ffprobe=ffprobe)
 
 
 class StubTools:
@@ -57,6 +66,42 @@ class StubTools:
         if self.gate is not None:
             await self.gate.wait()
         return self.tools
+
+
+class FixedCaps:
+    """An empty capability snapshot that never changes."""
+
+    @property
+    def snapshot(self) -> CapabilitySnapshot:
+        return CapabilitySnapshot()
+
+    async def wait(self) -> CapabilitySnapshot:
+        return CapabilitySnapshot()
+
+
+class StubSources:
+    """Probes give a copy of ``outcome``; each update appends its result to ``stored``, applied
+    to the last stored source (else to the given one)."""
+
+    def __init__(self, outcome: MediaSource | ProbeError) -> None:
+        self.outcome = outcome
+        self.stored: list[MediaSource] = []
+
+    async def probe(
+        self,
+        path: str | os.PathLike[str],
+        *,
+        use_cache: bool = True,
+        cancel: CancelToken | None = None,
+    ) -> MediaSource | ProbeError:
+        if isinstance(self.outcome, MediaSource):
+            return self.outcome.model_copy(deep=True)
+        return self.outcome
+
+    async def update(
+        self, source: MediaSource, change: Callable[[MediaSource], MediaSource]
+    ) -> None:
+        self.stored.append(change(self.stored[-1] if self.stored else source))
 
 
 def detect_rule(name: str, *, encoder: str | None = None, ten_bit: bool = False) -> ft.Rule:

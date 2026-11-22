@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { RouterView, useRoute } from 'vue-router'
+import { computed, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
+import { RouterView, useRoute, useRouter } from 'vue-router'
 
 import { desktopBackend } from '@/api/boot'
 import DefaultsDialog from '@/components/defaults/DefaultsDialog.vue'
@@ -8,10 +9,12 @@ import PowerBanner from '@/components/queue/PowerBanner.vue'
 import BackendErrorScreen from '@/components/shell/BackendErrorScreen.vue'
 import BootScreen from '@/components/shell/BootScreen.vue'
 import LoginScreen from '@/components/shell/LoginScreen.vue'
+import MenuEntryOffer from '@/components/shell/MenuEntryOffer.vue'
 import NavRail from '@/components/shell/NavRail.vue'
 import PrivateQueueBanner from '@/components/shell/PrivateQueueBanner.vue'
 import QuitDialog from '@/components/shell/QuitDialog.vue'
 import ReconnectOverlay from '@/components/shell/ReconnectOverlay.vue'
+import { refocusAfterNavigation } from '@/components/shell/focus'
 import ShellToasts from '@/components/shell/ShellToasts.vue'
 import FileBrowserDialog from '@/components/sources/FileBrowserDialog.vue'
 import { useInPlaceReload } from '@/components/summary/useInPlaceReload'
@@ -26,12 +29,14 @@ import { useSystemStore } from '@/stores/system'
 const system = useSystemStore()
 const queue = useQueueStore()
 const route = useRoute()
+const { n } = useI18n()
 
 // Follows the theme and density saved in the server's settings.
 useTheme()
 useShortcuts()
 useInPlaceReload()
 useOpenPaths()
+onUnmounted(refocusAfterNavigation(useRouter()))
 const quit = useQuitFlow()
 
 /** The desktop app's server restarts under a running app (before the first start: the boot screen). */
@@ -62,7 +67,11 @@ function answerQuit(choice: QuitAnswer): void {
 
 watch(
   () => queue.overallProgress,
-  (value) => platform.setTaskbarProgress(value),
+  (value) =>
+    platform.setTaskbarProgress(
+      value,
+      value === null ? null : n(value, { style: 'percent', maximumFractionDigits: 0 }),
+    ),
   { immediate: true },
 )
 </script>
@@ -91,6 +100,10 @@ watch(
   <FileBrowserDialog v-if="platform.kind === 'web'" />
   <QuitDialog :question="quit.question.value" @answer="answerQuit" />
   <DefaultsDialog v-if="system.phase === 'ready'" />
+  <MenuEntryOffer
+    v-if="system.phase === 'ready' && platform.desktop !== null"
+    :shell="platform.desktop"
+  />
 </template>
 
 <style scoped>

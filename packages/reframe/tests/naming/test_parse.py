@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import guessit as guessit_package
 import pytest
 from guessit import guessit
 from guessit.api import GuessitException
@@ -144,7 +145,7 @@ def test_guessit_failure_is_no_matches(monkeypatch: pytest.MonkeyPatch) -> None:
     def broken(*args: object, **kwargs: object) -> object:
         raise RuntimeError("guessit broke")
 
-    monkeypatch.setattr(parse_module, "guessit", broken)
+    monkeypatch.setattr(guessit_package, "guessit", broken)
     guess_matches.cache_clear()
     try:
         assert guess_matches("Some.Name.2016") == ()

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from reframe.validation.tracks import FORCED_ONLY_CODECS
+from reframe.probe.names import FORCED_ONLY_SUBTITLE_CODECS
 
 pytestmark = pytest.mark.needs_ffmpeg
 
@@ -59,7 +59,7 @@ def test_forced_subs_only_is_a_pgs_and_vobsub_decoder_option(
     help_text = run(tools()[0], "-hide_banner", "-h", f"decoder={decoder}").stdout
     assert ("-forced_subs_only" in help_text) is has_option
     if has_option:
-        assert decoder in {DECODERS[c] for c in FORCED_ONLY_CODECS}
+        assert decoder in {DECODERS[c] for c in FORCED_ONLY_SUBTITLE_CODECS}
 
 
 def test_copy_keeps_every_event(fixture_media: Media, tmp_path: Path) -> None:

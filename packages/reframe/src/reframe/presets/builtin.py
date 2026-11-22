@@ -11,7 +11,7 @@ from importlib import resources
 from reframe.models.migrations import migrate
 from reframe.models.preset import Preset, PresetFile
 
-__all__ = ["BUILTIN_FILE", "DEFAULT_BUILTIN_ID", "builtin_ids", "builtin_presets"]
+__all__ = ["BUILTIN_FILE", "DEFAULT_BUILTIN_ID", "builtin_presets"]
 
 # See decision 0015 for each id's HandBrake origin and its differences.
 BUILTIN_FILE = "builtin.json"
@@ -32,7 +32,3 @@ def _load() -> tuple[Preset, ...]:
 def builtin_presets() -> list[Preset]:
     """The built-in presets, in display order (copies: changing them changes nothing)."""
     return [preset.model_copy(deep=True) for preset in _load()]
-
-
-def builtin_ids() -> frozenset[str]:
-    return frozenset(preset.id for preset in _load())

@@ -4,51 +4,37 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import psutil
 import pytest
 
 import reframe
-from reframe.events import Subscription
 from reframe.models import (
     AppSettings,
-    Event,
     MediaSource,
-    TaskDoneEvent,
-    TaskProgressEvent,
-    TaskState,
+    SourceRef,
     ToolOrigin,
     ToolPaths,
     ToolsChangedEvent,
     ToolStatus,
 )
-from reframe.probe import mediainfo
 from reframe.service import (
-    FolderProbeResult,
     ProbeError,
     ProbeErrorKind,
     Reframe,
     ReframeClosedError,
-    tool_usable,
 )
-from reframe.tools import ENV_VARS
+from reframe.tools import CancelToken
 from reframe_testing import fake_tools as ft
+from reframe_testing.helpers import drain
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
 PROBES = Path(__file__).resolve().parents[3] / "testdata" / "probes"
 MULTITRACK = PROBES / "fixtures" / "multitrack.mkv.json"
-
-
-async def until(condition: Callable[[], bool], limit: float = 30.0) -> None:
-    """Wait (polling) until ``condition()`` is true."""
-    deadline = time.monotonic() + limit
-    while not condition():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.02)
 
 
 def alive(pids: list[int]) -> list[int]:
@@ -69,33 +55,6 @@ def stdout_file(path: Path) -> ft.Action:
 
 def probe_rule(*actions: ft.Action, exit_code: int = 0) -> ft.Rule:
     return ft.Rule(tool="ffprobe", argv_has=["-show_streams"], actions=actions, exit_code=exit_code)
-
-
-def drain(subscription: Subscription) -> list[Event]:
-    events = []
-    while (event := subscription.get_nowait()) is not None:
-        events.append(event)
-    return events
-
-
-@pytest.fixture
-def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """No tool overrides, user folders in ``tmp_path``, MediaInfo off (deterministic)."""
-    for var in ENV_VARS.values():
-        monkeypatch.delenv(var, raising=False)
-    for name in ("config", "data", "cache"):
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
-    return tmp_path
-
-
-@pytest.fixture
-def fake(env: Path, fake_tools: ft.FakeTools, monkeypatch: pytest.MonkeyPatch) -> ft.FakeTools:
-    """``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE`` point at the fake tools (multitrack probe)."""
-    monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
-    monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
-    fake_tools.set_scenario(ft.Scenario([probe_rule(stdout_file(MULTITRACK))]))
-    return fake_tools
 
 
 @pytest.fixture
@@ -126,16 +85,14 @@ async def test_create_returns_at_once_while_discovery_is_slow(
     elapsed = time.monotonic() - started
     try:
         assert elapsed < 0.5, f"create() took {elapsed:.2f} s"
-        before, discovering = app.tools.current, app.tools.discovering
+        before = app.tools.current
         assert before is None
-        assert discovering
         # probe() waits for the discovery and then uses the discovered ffprobe.
         source = await app.sources.probe(media)
         assert isinstance(source, MediaSource), source
         assert time.monotonic() - started >= 1.4
         after = app.tools.current
         assert after is not None
-        assert not app.tools.discovering
         assert after.ffprobe.origin is ToolOrigin.ENV
     finally:
         await app.close()
@@ -144,7 +101,7 @@ async def test_create_returns_at_once_while_discovery_is_slow(
 async def test_close_kills_a_hanging_discovery(fake: ft.FakeTools) -> None:
     fake.set_scenario(ft.Scenario([ft.Rule(argv_has=["-version"], actions=[ft.hang()])]))
     app = await Reframe.create()
-    await until(lambda: len(fake.calls()) >= 2)  # ffmpeg and ffprobe version checks run
+    await wait_until(lambda: len(fake.calls()) >= 2)  # ffmpeg and ffprobe version checks run
     pids = fake.pids()
     assert alive(pids)
     started = time.monotonic()
@@ -156,28 +113,11 @@ async def test_close_kills_a_hanging_discovery(fake: ft.FakeTools) -> None:
     await app.close()  # a second close does nothing
 
 
-async def test_close_cancels_folder_probe_and_kills_ffprobe(fake: ft.FakeTools, env: Path) -> None:
-    folder = env / "season"
-    folder.mkdir()
-    for n in range(1, 4):
-        (folder / f"Show.S01E0{n}.mkv").write_bytes(b"x")
-    fake.set_scenario(ft.Scenario([probe_rule(ft.hang())]))
-    app = await Reframe.create()
-    info = app.sources.probe_folder(folder)
-    await until(lambda: len(fake.calls("ffprobe")) >= 4)  # -version + 3 probes
-    pids = fake.pids()
-    await app.close()
-    assert alive(pids) == []
-    final = app.tasks.get(info.id)
-    assert final is not None
-    assert final.state is TaskState.CANCELLED
-
-
 async def test_close_cancels_a_running_probe(fake: ft.FakeTools, media: Path) -> None:
     fake.set_scenario(ft.Scenario([probe_rule(ft.hang())]))
     app = await Reframe.create()
     task = asyncio.create_task(app.sources.probe(media))
-    await until(lambda: len(fake.calls("ffprobe")) >= 2)
+    await wait_until(lambda: len(fake.calls("ffprobe")) >= 2)
     pids = fake.pids()
     await app.close()
     outcome = await task
@@ -192,7 +132,7 @@ async def test_probe_waiting_for_discovery_is_cancelled_by_close(
     fake.set_scenario(ft.Scenario([ft.Rule(argv_has=["-version"], actions=[ft.hang()])]))
     app = await Reframe.create()
     task = asyncio.create_task(app.sources.probe(media))
-    await until(lambda: len(fake.calls()) >= 2)
+    await wait_until(lambda: len(fake.calls()) >= 2)
     await app.close()
     outcome = await task
     assert isinstance(outcome, ProbeError)
@@ -209,8 +149,6 @@ async def test_async_with_closes(fake: ft.FakeTools, media: Path) -> None:
     with pytest.raises(ReframeClosedError):
         await app.sources.probe(media)
     with pytest.raises(ReframeClosedError):
-        app.sources.probe_folder(media.parent)
-    with pytest.raises(ReframeClosedError):
         await app.sources.get(media)
     with pytest.raises(ReframeClosedError):
         await app.tools.status()
@@ -221,15 +159,12 @@ async def test_async_with_closes(fake: ft.FakeTools, media: Path) -> None:
 
 
 async def test_folders_default_to_paths_and_can_be_given(env: Path) -> None:
-    app = Reframe(
-        config_dir=env / "c", data_dir=env / "d", cache_dir=env / "k", settings=AppSettings()
-    )
-    assert app.sources.cache.directory == env / "k" / "probe"
+    app = Reframe(config_dir=env / "c", data_dir=env / "d", cache_dir=env / "k")
+    assert app.cache_dir == env / "k"
     async with await Reframe.create() as default:
         assert default.config_dir == env / "config"
         assert default.data_dir == env / "data"
         assert default.cache_dir == env / "cache"
-        assert default.sources.cache.directory == env / "cache" / "probe"
     async with await Reframe.create(env / "c2", env / "d2", cache_dir=env / "k2") as given:
         assert (given.config_dir, given.data_dir, given.cache_dir) == (
             env / "c2",
@@ -257,7 +192,8 @@ async def test_settings_tool_paths_feed_discovery(
 ) -> None:
     fake_tools.set_scenario(ft.Scenario([probe_rule(stdout_file(MULTITRACK))]))
     settings = AppSettings(tools=ToolPaths(ffmpeg=fake_tools.ffmpeg, ffprobe=fake_tools.ffprobe))
-    monkeypatch.setattr(Reframe, "_load_settings", staticmethod(lambda config_dir: settings))
+    (env / "config").mkdir()
+    (env / "config" / "settings.json").write_text(settings.model_dump_json(), "utf-8")
     async with await Reframe.create() as app:
         assert app.settings_snapshot() == settings
         assert app.settings_snapshot() is not app.settings_snapshot()
@@ -279,7 +215,7 @@ async def test_missing_ffprobe_is_a_tool_error(
         assert outcome.detail is not None
         assert "REFRAME_FFPROBE" in outcome.detail
         tools = await app.tools.status()
-        assert not tool_usable(tools.ffprobe)
+        assert not tools.ffprobe.usable
         # A file problem is reported first: it is what the user must fix.
         missing = await app.sources.probe(env / "missing.mkv")
         assert isinstance(missing, ProbeError)
@@ -287,15 +223,6 @@ async def test_missing_ffprobe_is_a_tool_error(
         folder = await app.sources.probe(env)
         assert isinstance(folder, ProbeError)
         assert folder.kind is ProbeErrorKind.NOT_A_FILE
-        # A folder probe gives one tool error for the folder.
-        info = app.sources.probe_folder(env)
-        final = await app.tasks.wait(info.id)
-        assert final.state is TaskState.DONE
-        assert isinstance(final.result, dict)
-        errors = final.result["errors"]
-        assert isinstance(errors, list)
-        assert [e["kind"] for e in errors if isinstance(e, dict)] == ["tool_failed"]
-        assert app.sources.cache.directory == env / "cache" / "probe"
 
 
 async def test_probe_errors_are_values(fake: ft.FakeTools, media: Path, env: Path) -> None:
@@ -314,56 +241,121 @@ async def test_probe_errors_are_values(fake: ft.FakeTools, media: Path, env: Pat
         assert missing.kind is ProbeErrorKind.NOT_FOUND
 
 
-async def test_probe_folder_emits_task_events(fake: ft.FakeTools, env: Path) -> None:
-    folder = env / "season"
-    folder.mkdir()
-    files = [folder / f"Show.S01E{n:02d}.mkv" for n in range(1, 4)]
-    for path in files:
-        path.write_bytes(b"x")
-    (folder / "notes.txt").write_text("not media", encoding="utf-8")
+def touch(folder: Path, *names: str) -> list[Path]:
+    folder.mkdir(exist_ok=True)
+    for name in names:
+        (folder / name).write_bytes(b"x")
+    return [folder / name for name in names]
+
+
+def counting_probe(app: Reframe, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """Replaces ``app.sources.probe``: records how many run at once; ``*.bad.mkv`` fail."""
+    seen: dict[str, Any] = {"running": 0, "max_running": 0, "names": []}
+
+    async def probe(path: Any, *, cancel: Any = None) -> MediaSource | ProbeError:
+        seen["running"] += 1
+        seen["max_running"] = max(seen["max_running"], seen["running"])
+        seen["names"].append(Path(path).name)
+        try:
+            await asyncio.sleep(0.02)
+        finally:
+            seen["running"] -= 1
+        if str(path).endswith(".bad.mkv"):
+            return ProbeError(Path(path), ProbeErrorKind.FAILED, "bad")
+        return MediaSource(ref=SourceRef(path=Path(path)))
+
+    monkeypatch.setattr(app.sources, "probe", probe)
+    return seen
+
+
+async def test_probe_many_keeps_the_order_and_the_limit(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    files = touch(env / "season", *(f"E{i:02d}.mkv" for i in range(1, 13)), "E13.bad.mkv")
     async with await Reframe.create() as app:
-        events = app.events.subscribe(types={"task.progress", "task.done"})
-        info = app.sources.probe_folder(folder)
-        assert info.kind == "probe_folder"
-        assert info.state is TaskState.QUEUED
-        final = await app.tasks.wait(info.id)
-        assert final.state is TaskState.DONE
-        received = drain(events)
-        progress = [e for e in received if isinstance(e, TaskProgressEvent)]
-        done = [e for e in received if isinstance(e, TaskDoneEvent)]
-        assert len(progress) + len(done) == len(received)
-        assert all(e.task.id == info.id for e in progress)
-        assert all(e.task.id == info.id for e in done)
-        # The bus coalesces the progress of one task (only the latest is queued), and this
-        # test reads after the task ended: the last progress is always there.
-        messages = [e.task.message for e in progress]
-        assert set(messages) <= {
-            "Waiting for tool discovery",
-            "1/3 files",
-            "2/3 files",
-            "3/3 files",
-        }
-        assert messages[-1] == "3/3 files"
-        assert progress[-1].task.progress == 100.0
-        assert len(done) == 1
-        assert done[0].task.result == {
-            "folder": str(folder),
-            "total": 3,
-            "probed": [str(p) for p in files],
-            "errors": [],
-        }
-        value = app.tasks.value(info.id)
-        assert isinstance(value, FolderProbeResult)
-        assert [s.ref.path for s in value.sources] == files
-        # Every probed source is known now, without another ffprobe run.
-        calls = len(fake.calls("ffprobe"))
-        for path in files:
-            source = await app.sources.get(path)
-            assert source is not None
-            assert source.ref.path == path
-        assert len(fake.calls("ffprobe")) == calls
-        with pytest.raises(ValueError, match="concurrency"):
-            app.sources.probe_folder(folder, concurrency=0)
+        seen = counting_probe(app, monkeypatch)
+        progress: list[tuple[int, int]] = []
+        results = await app.sources.probe_many(
+            files, on_progress=lambda done, total: progress.append((done, total))
+        )
+        assert seen["max_running"] == 4
+        assert [r.ref.path if isinstance(r, MediaSource) else r.path for r in results] == files
+        assert isinstance(results[-1], ProbeError)
+        assert progress == [(i, 13) for i in range(1, 14)]
+        seen["max_running"] = 0
+        await app.sources.probe_many(files[:6], concurrency=2)
+        assert seen["max_running"] == 2
+
+
+async def test_probe_many_refuses_a_concurrency_below_one(env: Path) -> None:
+    async with await Reframe.create() as app:
+        with pytest.raises(ValueError, match="at least 1"):
+            await app.sources.probe_many([], concurrency=0)
+
+
+async def test_probe_many_starts_no_probe_after_a_cancel(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    files = touch(env / "season", *(f"E{i}.mkv" for i in range(5)))
+    token = CancelToken()
+    async with await Reframe.create() as app:
+        seen = counting_probe(app, monkeypatch)
+        progress: list[int] = []
+
+        def on_progress(done: int, total: int) -> None:
+            progress.append(done)
+            token.cancel()
+
+        results = await app.sources.probe_many(
+            files, concurrency=1, cancel=token, on_progress=on_progress
+        )
+        assert seen["names"] == ["E0.mkv"]
+        assert isinstance(results[0], MediaSource)
+        assert [r.kind for r in results[1:] if isinstance(r, ProbeError)] == [
+            ProbeErrorKind.CANCELLED
+        ] * 4
+        assert progress == [1, 2, 3, 4, 5]
+
+
+def probe_calls(fake: ft.FakeTools) -> int:
+    return len([c for c in fake.calls("ffprobe") if "-show_streams" in c])
+
+
+async def test_a_cancelled_probe_many_kills_every_ffprobe(fake: ft.FakeTools, env: Path) -> None:
+    files = touch(env / "season", *(f"E{i}.mkv" for i in range(8)))
+    fake.set_scenario(ft.Scenario([probe_rule(ft.hang())]))
+    token = CancelToken()
+    async with await Reframe.create() as app:
+        await app.tools.status()
+        before = set(fake.pids())
+        task = asyncio.create_task(app.sources.probe_many(files, cancel=token))
+        await wait_until(lambda: probe_calls(fake) >= 4)
+        pids = [p for p in fake.pids() if p not in before]
+        assert probe_calls(fake) == 4  # the limit: the rest wait
+        token.cancel()
+        results = await task
+        assert [r.kind for r in results if isinstance(r, ProbeError)] == [
+            ProbeErrorKind.CANCELLED
+        ] * 8
+        assert alive(pids) == []
+        assert probe_calls(fake) == 4  # no ffprobe started after the cancel
+
+
+async def test_cancelling_the_probe_many_task_reaps_every_ffprobe(
+    fake: ft.FakeTools, env: Path
+) -> None:
+    files = touch(env / "season", *(f"E{i}.mkv" for i in range(8)))
+    fake.set_scenario(ft.Scenario([probe_rule(ft.hang())]))
+    async with await Reframe.create() as app:
+        await app.tools.status()
+        before = set(fake.pids())
+        task = asyncio.create_task(app.sources.probe_many(files))
+        await wait_until(lambda: probe_calls(fake) >= 4)
+        pids = [p for p in fake.pids() if p not in before]
+        task.cancel()
+        await asyncio.wait({task})
+        assert alive(pids) == []
+        assert probe_calls(fake) == 4
 
 
 async def test_get_returns_known_unchanged_sources(fake: ft.FakeTools, media: Path) -> None:
@@ -419,9 +411,6 @@ async def test_rescan_publishes_tools_changed(fake: ft.FakeTools) -> None:
         first = await app.tools.status()
         second = await app.tools.rescan()
         assert second.ffprobe.path == first.ffprobe.path
-        versions = await app.tools.versions()
-        assert versions["ffprobe"] == "n9.0.2-17-g2a571b6068-20260930"  # the fake's version
-        assert set(versions) == {"ffmpeg", "ffprobe", "mkvpropedit", "mediainfo"}
         received = drain(events)
         # The first discovery may have ended before the subscription.
         assert 1 <= len(received) <= 2
@@ -432,28 +421,27 @@ async def test_rescan_replaces_a_running_discovery(fake: ft.FakeTools, media: Pa
     fake.set_scenario(ft.Scenario([ft.Rule(argv_has=["-version"], actions=[ft.hang()])]))
     async with await Reframe.create() as app:
         waiting = asyncio.create_task(app.tools.status())
-        await until(lambda: len(fake.calls()) >= 2)
+        await wait_until(lambda: len(fake.calls()) >= 2)
         hanging = fake.pids()
         fake.set_scenario(ft.Scenario([probe_rule(stdout_file(MULTITRACK))]))
         tools = await app.tools.rescan()
         assert tools.ffprobe.status is ToolStatus.FOUND
         # The waiter of the first (cancelled) discovery gets the new result.
         assert await waiting == tools
-        await until(lambda: alive(hanging) == [], limit=10)
+        await wait_until(lambda: alive(hanging) == [], limit=10)
 
 
 async def test_status_starts_a_discovery_if_none_ran(env: Path) -> None:
-    app = Reframe(
-        config_dir=env / "c", data_dir=env / "d", cache_dir=env / "k", settings=AppSettings()
-    )
+    app = Reframe(config_dir=env / "c", data_dir=env / "d", cache_dir=env / "k")
     try:
-        before = app.tools.current
+        before, task = app.tools.current, app.tools._task
         assert before is None
-        assert not app.tools.discovering
+        assert task is None
         tools = await app.tools.status()
         assert app.tools.current == tools
+        ran = app.tools._task
         app.tools.start()  # a discovery ran: no new one
-        assert not app.tools.discovering
+        assert app.tools._task is ran
     finally:
         await app.close()
 

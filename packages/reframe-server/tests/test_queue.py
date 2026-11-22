@@ -6,16 +6,16 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
-from collections.abc import Callable
-from typing import Any
+from pathlib import Path
 
 import pytest
 
-from reframe.models import JobDraft, JobSettings
+from reframe.models import AppWarningEvent, JobSettings
 from reframe_server.routers.queue import LOG_CHUNK
 from reframe_testing import fake_tools as ft
+from reframe_testing.helpers import drain
 from reframe_testing.server import PROBE_RULE, Api, ApiFactory
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
@@ -32,35 +32,11 @@ HANG = ft.Scenario(
 """Each encode prints one progress block, then runs until it is stopped."""
 
 
-async def draft_job(api: Api, name: str = "Show S01E01.mkv") -> dict[str, Any]:
-    """A job for a new file below the media root, written below the output root, as a client
-    sends it."""
-    source = api.media_file(name)
-    draft = await api.reframe.jobs.draft(source, output=api.output / f"{source.stem}.mkv")
-    assert isinstance(draft, JobDraft)
-    data: dict[str, Any] = draft.job.model_dump(mode="json")
-    return data
-
-
-async def add_jobs(api: Api, *names: str) -> list[str]:
-    jobs = [await draft_job(api, name) for name in names]
-    response = await api.client.post("/api/queue", json={"jobs": jobs})
-    assert response.status_code == 201, response.text
-    return [job["id"] for job in response.json()]
-
-
 async def snapshot(api: Api) -> list[tuple[str, str]]:
     """``(id, state)`` of each job, in queue order."""
     response = await api.client.get("/api/queue")
     assert response.status_code == 200
     return [(job["id"], job["state"]) for job in response.json()["jobs"]]
-
-
-async def poll(condition: Callable[[], bool], limit: float = 20.0) -> None:
-    deadline = time.monotonic() + limit
-    while not condition():
-        assert time.monotonic() < deadline, "condition not met in time"
-        await asyncio.sleep(0.01)
 
 
 async def ended(api: Api, *job_ids: str) -> None:
@@ -75,12 +51,12 @@ async def encoding(api: Api, *job_ids: str) -> None:
         assert job is not None
         return job.progress is not None and job.progress.output_size is not None
 
-    await poll(lambda: all(started(job_id) for job_id in job_ids))
+    await wait_until(lambda: all(started(job_id) for job_id in job_ids))
 
 
 async def test_jobs_are_added_in_order_at_the_position(api: Api) -> None:
-    [old] = await add_jobs(api, "Old.mkv")
-    first, second = await draft_job(api, "First.mkv"), await draft_job(api, "Second.mkv")
+    [old] = await api.add_jobs("Old.mkv")
+    first, second = await api.draft_job("First.mkv"), await api.draft_job("Second.mkv")
     response = await api.client.post("/api/queue", json={"jobs": [first, second], "position": 0})
     assert response.status_code == 201
     added = response.json()
@@ -98,7 +74,7 @@ async def test_jobs_are_added_in_order_at_the_position(api: Api) -> None:
 
 async def test_a_job_without_an_output_path_is_refused(api: Api) -> None:
     """The jail cannot check an output that the queue would name later."""
-    named, unnamed = await draft_job(api, "Named.mkv"), await draft_job(api, "Unnamed.mkv")
+    named, unnamed = await api.draft_job("Named.mkv"), await api.draft_job("Unnamed.mkv")
     unnamed["output"]["path"] = None
     response = await api.client.post("/api/queue", json={"jobs": [named, unnamed]})
     assert response.status_code == 422
@@ -109,7 +85,7 @@ async def test_a_job_without_an_output_path_is_refused(api: Api) -> None:
 
 
 async def test_cancel_retry_and_remove_act_on_their_job(api: Api) -> None:
-    first, second = await add_jobs(api, "First.mkv", "Second.mkv")
+    first, second = await api.add_jobs("First.mkv", "Second.mkv")
     cancel = await api.client.post(f"/api/queue/{first}/cancel")
     assert (cancel.status_code, cancel.content) == (204, b"")
     assert await snapshot(api) == [(first, "cancelled"), (second, "waiting")]
@@ -121,14 +97,14 @@ async def test_cancel_retry_and_remove_act_on_their_job(api: Api) -> None:
 
 
 async def test_reorder_moves_the_named_jobs_among_their_places(api: Api) -> None:
-    a, b, c = await add_jobs(api, "A.mkv", "B.mkv", "C.mkv")
+    a, b, c = await api.add_jobs("A.mkv", "B.mkv", "C.mkv")
     response = await api.client.put("/api/queue/order", json={"job_ids": [c, a]})
     assert response.status_code == 204
     assert [job_id for job_id, _ in await snapshot(api)] == [c, b, a]
 
 
 async def test_reorder_with_a_job_twice_is_refused(api: Api) -> None:
-    a, b = await add_jobs(api, "A.mkv", "B.mkv")
+    a, b = await api.add_jobs("A.mkv", "B.mkv")
     response = await api.client.put("/api/queue/order", json={"job_ids": [b, a, b]})
     assert response.status_code == 422
     assert response.json()["errors"][0]["loc"] == ["body", "job_ids"]
@@ -136,7 +112,7 @@ async def test_reorder_with_a_job_twice_is_refused(api: Api) -> None:
 
 
 async def test_duplicate_adds_a_copy_right_after_the_job(api: Api) -> None:
-    first, second = await add_jobs(api, "First.mkv", "Second.mkv")
+    first, second = await api.add_jobs("First.mkv", "Second.mkv")
     response = await api.client.post(f"/api/queue/{first}/duplicate")
     assert response.status_code == 201
     copy = response.json()
@@ -154,7 +130,7 @@ async def test_duplicate_checks_the_saved_job_against_the_roots(api: Api) -> Non
         link.symlink_to(api.outside, target_is_directory=True)
     except OSError as exc:  # Windows without the symlink privilege
         pytest.skip(f"cannot make a symbolic link: {exc}")
-    job = JobSettings.model_validate(await draft_job(api))
+    job = JobSettings.model_validate(await api.draft_job())
     job.source.path = link / "Show.mkv"
     saved = await api.reframe.queue.add(job)
     response = await api.client.post(f"/api/queue/{saved.id}/duplicate")
@@ -174,7 +150,7 @@ async def test_an_unknown_job_is_404(api: Api, method: str, path: str) -> None:
 
 
 async def test_a_job_added_through_the_api_runs_to_done(api: Api) -> None:
-    [job_id] = await add_jobs(api, "Show.mkv")
+    [job_id] = await api.add_jobs("Show.mkv")
     response = await api.client.post("/api/queue/start")
     assert (response.status_code, response.content) == (204, b"")
     await ended(api, job_id)
@@ -189,7 +165,7 @@ async def test_a_job_added_through_the_api_runs_to_done(api: Api) -> None:
 
 async def test_a_running_job_is_cancelled_not_removed(api: Api) -> None:
     api.fake.set_scenario(HANG)
-    [job_id] = await add_jobs(api, "Show.mkv")
+    [job_id] = await api.add_jobs("Show.mkv")
     await api.client.post("/api/queue/start")
     await encoding(api, job_id)
     refused = await api.client.delete(f"/api/queue/{job_id}")
@@ -205,7 +181,7 @@ async def test_pause_and_resume_one_job_or_all(api: Api) -> None:
         [{"op": "replace", "path": "/queue/parallel_jobs", "value": 2}]
     )
     api.fake.set_scenario(HANG)
-    first, second = await add_jobs(api, "First.mkv", "Second.mkv")
+    first, second = await api.add_jobs("First.mkv", "Second.mkv")
     await api.client.post("/api/queue/start")
     await encoding(api, first, second)
     assert (await api.client.post(f"/api/queue/{first}/pause")).status_code == 204
@@ -221,7 +197,7 @@ async def test_pause_and_resume_one_job_or_all(api: Api) -> None:
 
 
 async def test_start_with_job_ids_leaves_the_other_jobs_waiting(api: Api) -> None:
-    first, second = await add_jobs(api, "First.mkv", "Second.mkv")
+    first, second = await api.add_jobs("First.mkv", "Second.mkv")
     response = await api.client.post("/api/queue/start", json={"job_ids": [second]})
     assert response.status_code == 204
     await ended(api, second)
@@ -230,7 +206,7 @@ async def test_start_with_job_ids_leaves_the_other_jobs_waiting(api: Api) -> Non
 
 async def test_stop_takes_no_new_job(api: Api) -> None:
     api.fake.set_scenario(HANG)
-    first, second = await add_jobs(api, "First.mkv", "Second.mkv")
+    first, second = await api.add_jobs("First.mkv", "Second.mkv")
     await api.client.post("/api/queue/start")
     await encoding(api, first)
     assert (await api.client.post("/api/queue/stop")).status_code == 204
@@ -241,7 +217,7 @@ async def test_stop_takes_no_new_job(api: Api) -> None:
 
 async def test_the_snapshot_says_which_waiting_jobs_the_queue_takes(api: Api) -> None:
     api.fake.set_scenario(HANG)
-    first, _ = await add_jobs(api, "First.mkv", "Second.mkv")
+    first, _ = await api.add_jobs("First.mkv", "Second.mkv")
 
     async def taken() -> tuple[bool, list[str] | None]:
         body = (await api.client.get("/api/queue")).json()
@@ -259,7 +235,7 @@ async def test_the_snapshot_says_which_waiting_jobs_the_queue_takes(api: Api) ->
 
 async def test_the_log_is_read_from_a_byte_offset(api: Api) -> None:
     """Before the first run there is no file: the answer is empty, not an error."""
-    [job_id] = await add_jobs(api, "Show.mkv")
+    [job_id] = await api.add_jobs("Show.mkv")
     url = f"/api/queue/{job_id}/log"
     assert (await api.client.get(url)).json() == {"text": "", "next": 0, "more": False}
     path = api.reframe.queue.log_path(job_id)
@@ -275,7 +251,7 @@ async def test_the_log_is_read_from_a_byte_offset(api: Api) -> None:
 
 
 async def test_a_character_cut_by_the_chunk_end_comes_whole_next_time(api: Api) -> None:
-    [job_id] = await add_jobs(api, "Show.mkv")
+    [job_id] = await api.add_jobs("Show.mkv")
     path = api.reframe.queue.log_path(job_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"a" * (LOG_CHUNK - 1) + "é!\n".encode())
@@ -291,8 +267,65 @@ async def test_when_done_is_saved_in_the_settings(api: Api) -> None:
     response = await api.client.put("/api/queue/when-done", json={"when_done": "sleep"})
     assert response.status_code == 200
     assert response.json() == {"when_done": "sleep"}
-    saved = json.loads(api.reframe.settings.path.read_text(encoding="utf-8"))
+    saved = json.loads((api.reframe.config_dir / "settings.json").read_text(encoding="utf-8"))
     assert saved["queue"]["when_done"] == "sleep"
+
+
+@pytest.mark.parametrize(
+    ("config", "refused", "allowed"),
+    [
+        ({"container": True}, ["quit", "sleep", "shutdown"], ["nothing", "notify"]),
+        ({}, ["quit"], ["sleep", "shutdown"]),
+        ({"mode": "desktop"}, [], ["quit", "sleep", "shutdown"]),
+    ],
+)
+async def test_when_done_refuses_what_the_server_cannot_do(
+    make_api: ApiFactory, config: dict[str, object], refused: list[str], allowed: list[str]
+) -> None:
+    async with make_api(**config) as api:
+        for when_done in refused:
+            response = await api.client.put("/api/queue/when-done", json={"when_done": when_done})
+            assert response.status_code == 403, when_done
+            problem = response.json()
+            assert problem["code"] == "queue.when_done_unavailable"
+            assert "is not available here" in problem["title"]
+            [issue] = problem["issues"]
+            assert (issue["path"], issue["severity"]) == ("queue.when_done", "error")
+            assert api.reframe.settings.get().queue.when_done == "nothing"
+            patch = [{"op": "replace", "path": "/queue/when_done", "value": when_done}]
+            response = await api.client.put("/api/settings", json=patch)
+            assert (response.status_code, response.json()["code"]) == (
+                403,
+                "queue.when_done_unavailable",
+            )
+        for when_done in allowed:
+            response = await api.client.put("/api/queue/when-done", json={"when_done": when_done})
+            assert response.status_code == 200, when_done
+        system = (await api.client.get("/api/system")).json()
+        assert system["container"] is config.get("container", False)
+
+
+async def test_a_container_runs_no_power_action_that_the_settings_file_still_has(
+    make_api: ApiFactory, tmp_path: Path
+) -> None:
+    config = tmp_path / "config"
+    config.mkdir(parents=True, exist_ok=True)
+    (config / "settings.json").write_text(
+        json.dumps({"queue": {"when_done": "shutdown"}}), encoding="utf-8"
+    )
+    async with make_api(container=True) as api:
+        subscription = api.reframe.events.subscribe()
+        [job_id] = await api.add_jobs("Show.mkv")
+        await api.client.post("/api/queue/start")
+        await ended(api, job_id)
+        seen: list[str] = []
+
+        def warned() -> bool:
+            seen.extend(e.code for e in drain(subscription) if isinstance(e, AppWarningEvent))
+            return "queue.when_done_unavailable" in seen
+
+        await wait_until(warned)
+        assert api.reframe.power.pending is None
 
 
 @pytest.mark.parametrize(("when_done", "kept"), [("sleep", False), ("shutdown", True)])
@@ -315,7 +348,7 @@ async def test_when_done_cancels_a_countdown_for_another_action(
 async def test_a_queue_answer_names_no_server_folder(api: Api) -> None:
     """The log is read through its route: a client is not told where the server keeps it."""
     data = str(api.reframe.data_dir)
-    added = await api.client.post("/api/queue", json={"jobs": [await draft_job(api)]})
+    added = await api.client.post("/api/queue", json={"jobs": [await api.draft_job()]})
     [job] = added.json()
     assert job["log_path"].startswith("<data>")
     await api.client.post(f"/api/queue/{job['id']}/cancel")
@@ -333,8 +366,29 @@ async def test_a_jobs_own_paths_come_back_as_sent(make_api: ApiFactory) -> None:
     """Desktop mode: the user may write into a folder the server also uses, and the editor
     loads the settings back."""
     async with make_api(mode="desktop") as api:
-        job = await draft_job(api)
+        job = await api.draft_job()
         job["output"]["path"] = str(api.reframe.data_dir / "Show.mkv")
         response = await api.client.post("/api/queue", json={"jobs": [job]})
         [added] = response.json()
         assert added["settings"]["output"]["path"] == job["output"]["path"]
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (None, {}),
+        ({"job_ids": ["a"]}, {"job_ids": ["a"], "own_batch": True}),
+        ({"job_ids": ["a"], "own_batch": False}, {"job_ids": ["a"], "own_batch": False}),
+    ],
+)
+async def test_start_says_whether_the_jobs_are_a_batch_of_their_own(
+    api: Api,
+    monkeypatch: pytest.MonkeyPatch,
+    body: dict[str, object] | None,
+    expected: dict[str, object],
+) -> None:
+    calls: list[dict[str, object]] = []
+    monkeypatch.setattr(api.reframe.queue, "start", lambda **kwargs: calls.append(kwargs))
+    response = await api.client.post("/api/queue/start", json=body)
+    assert response.status_code == 204
+    assert calls == [expected]

@@ -3,11 +3,6 @@ without a params argument, and parameters that set an advanced option. Runs no F
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-from pathlib import Path
-from types import ModuleType
-
 import pytest
 
 from reframe.jsonpatch import apply_patch
@@ -23,20 +18,7 @@ from reframe.presets import builtin_presets
 from reframe.validation import validate_template
 from reframe.validation import video as video_rules
 
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
+from . import scenario as sc
 
 
 def _issues(encoder: str, custom: str, **caps: EncoderStatus) -> list[tuple[str, str]]:
@@ -157,6 +139,31 @@ def test_a_key_only_ffmpegs_split_finds_is_removed_with_all_parameters() -> None
     assert [f.label for i in issues for f in i.fixes] == [
         "Remove 'c'sv=/home/u/x from the custom parameters"
     ]
+
+
+@pytest.mark.parametrize(
+    ("encoder", "param"),
+    [
+        ("libx265", r"csv=C:\Users\u\log.csv"),
+        ("libx265", r"csv='C:\Users\u\log.csv'"),
+        ("libx264", "dump-yuv=D:/u/frames.yuv"),
+        ("libvpx-vp9", r"vstats_file=C:\Users\u\v.log"),
+    ],
+)
+def test_the_fix_removes_a_windows_path_with_its_parameter(encoder: str, param: str) -> None:
+    """``C:\\x`` is split at the drive colon, by FFmpeg too: one issue, and its fix leaves no
+    ``\\x`` behind."""
+    s = sc.base()
+    s.job.video.encoder = encoder
+    s.job.video.preset = s.job.video.tune = s.job.video.profile = s.job.video.level = None
+    if encoder == "libvpx-vp9":
+        s.job.video.rate_control = ConstantQuality(value=30)
+    s.job.video.custom_params = f"lag-in-frames=16:{param}:speed=2"
+    [issue] = [i for i in s.validate() if i.path == "video.custom_params"]
+    assert issue.code == "encoder.custom_param_file"
+    [fix] = issue.fixes
+    assert fix.label == f"Remove {param} from the custom parameters"
+    assert s.apply(fix).job.video.custom_params == "lag-in-frames=16:speed=2"
 
 
 def test_presets_get_the_check_too() -> None:

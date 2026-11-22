@@ -5,14 +5,17 @@ from __future__ import annotations
 
 import hashlib
 import io
+import sys
 import tarfile
 import threading
 import time
 import zipfile
-from collections.abc import Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+import pytest
 
 from reframe.tools.fetch import host_platform
 from reframe_testing import fake_tools as ft
@@ -25,9 +28,18 @@ ROOTS = {"linux-x64": LINUX_ROOT, "windows-x64": WINDOWS_ROOT}
 FORMATS = {"linux-x64": "tar.xz", "windows-x64": "zip"}
 BLOCK = 64 * 1024
 
+POSIX_ONLY = pytest.mark.skipif(
+    sys.platform == "win32" or host_platform() != "linux-x64",
+    reason="the fake Linux build runs only on a linux-x64 host",
+)
+
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def archive_ext(platform: str) -> str:
+    return "zip" if platform == "windows-x64" else "tar.xz"
 
 
 def foreign_platform() -> str:
@@ -127,21 +139,33 @@ class Archive:
 
 
 def write_manifest(
-    path: Path, archives: Mapping[str, list[Archive]], *, version: str = FAKE_VERSION
+    path: Path,
+    archives: Mapping[str, list[Archive]],
+    *,
+    version: str = FAKE_VERSION,
+    versions: Mapping[str, str] | None = None,
+    offered: Collection[str] = (),
 ) -> Path:
-    """A manifest with one build per key of ``archives`` (``default`` must be one)."""
+    """A manifest with one build per key of ``archives`` (``default`` must be one); ``versions``
+    by build name override ``version``; the builds in ``offered`` are offered."""
     lines = ["schema_version = 1", ""]
     for name, entries in archives.items():
         lines += [
             f"[builds.{name}]",
-            f'version = "{version}"',
+            f'version = "{(versions or {}).get(name, version)}"',
             'release_version = "9.0.2"',
             'release_tag = "test"',
             'license = "GPL-3.0-or-later"',
             'source_repository = "https://example.invalid/ffmpeg"',
             'source_commit = "0000000"',
-            "",
         ]
+        if name in offered:
+            lines += [
+                "offered = true",
+                f'label = "Label of {name}"',
+                f'summary = "Summary of {name}."',
+            ]
+        lines.append("")
         for entry in entries:
             exe = ".exe" if entry.platform == "windows-x64" else ""
             lines += [
@@ -206,7 +230,9 @@ class LocalServer:
 
         self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         self._server.daemon_threads = True
-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread = threading.Thread(
+            target=self._server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
+        )
         self._thread.start()
 
     def url(self, path: str) -> str:

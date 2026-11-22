@@ -28,7 +28,7 @@ from reframe.models import (
     SameAsSource,
     VideoStream,
 )
-from reframe.probe import probe_file
+from reframe.probe import Prober
 
 pytestmark = pytest.mark.needs_ffmpeg
 
@@ -72,7 +72,7 @@ def stream_info(path: Path) -> dict[str, Any]:
 
 
 async def video_stream(path: Path) -> VideoStream:
-    outcome = await probe_file(path, tools()[1], use_mediainfo=False)
+    outcome = await Prober(tools()[1]).probe(path)
     assert isinstance(outcome, MediaSource), outcome
     return outcome.video[0]
 
@@ -224,17 +224,6 @@ async def test_letterbox_crop_and_fit(tmp_path: Path, fixture_media: Media) -> N
     assert (g.scaled_width, g.scaled_height) == (160, 68)
     out = encode(source, tmp_path / "letterbox.mkv", filter_chain(g))
     assert (out["width"], out["height"], sar_of(out)) == (160, 68, "1:1")
-
-
-@pytest.mark.anyio
-async def test_interlaced_fixture(fixture_media: Media) -> None:
-    src = source_geometry(await video_stream(fixture_media("interlaced")))
-    assert src.interlaced
-    assert (src.chroma_step_x, src.chroma_step_y) == (2, 2)
-    crop = CropSettings(mode="manual", rect=CropRect(top=6))
-    g = compute_geometry(src, DimensionSettings(crop=crop, size=SameAsSource()))
-    assert g.crop.top == 4
-    assert g.notes[0] == "Crop top 6 → 4 for interlaced 4:2:0."
 
 
 @pytest.fixture(scope="module")

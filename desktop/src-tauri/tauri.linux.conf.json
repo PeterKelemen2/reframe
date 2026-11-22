@@ -1,0 +1,18 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["deb", "rpm", "appimage"],
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      },
+      "deb": {
+        "desktopTemplate": "linux/Reframe.desktop.hbs"
+      },
+      "rpm": {
+        "desktopTemplate": "linux/Reframe.desktop.hbs",
+        "postRemoveScript": "linux/remove-app-dirs.sh"
+      }
+    }
+  }
+}

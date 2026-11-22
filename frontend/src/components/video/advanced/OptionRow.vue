@@ -31,7 +31,7 @@ const props = defineProps<{
   category?: string
 }>()
 
-const { t } = useI18n()
+const { t, n, locale } = useI18n()
 const editor = useEditorStore()
 const root = useTemplateRef<HTMLElement>('root')
 const defaultId = useId()
@@ -42,7 +42,7 @@ const pointer = computed(() => optionPointer(props.option.key))
 const stored = computed(() => video.value?.advanced?.[props.option.key])
 const changed = computed(() => stored.value !== undefined)
 const fallback = computed(() =>
-  video.value === null ? '' : defaultText(props.option, video.value, props.encoder, t),
+  video.value === null ? '' : defaultText(props.option, video.value, props.encoder, t, n),
 )
 const defaultShown = computed(() => changed.value || props.option.type === 'bool')
 const help = computed(() =>
@@ -50,6 +50,7 @@ const help = computed(() =>
 )
 const enumSetting = computed(() => ({
   choices: props.option.choices ?? [],
+  write_default: false,
   mapping: props.option.mapping,
   help: '',
 }))
@@ -141,6 +142,7 @@ async function reset(): Promise<void> {
           >
             <InputNumber
               :input-id="id"
+              :locale="locale"
               :model-value="typeof stored === 'number' ? stored : null"
               :min="option.min ?? undefined"
               :max="option.max ?? undefined"

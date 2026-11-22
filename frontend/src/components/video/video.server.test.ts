@@ -115,6 +115,30 @@ describe('against the real server', () => {
     )
   })
 
+  it('reads the line of a header edit: the step, its file, tracks, fields and values', async () => {
+    const { job } = await http<{ job: JobSettings }>(server, 'POST', '/api/jobs/draft-remux', {
+      source_id: sourceId,
+      edit_in_place: false,
+    })
+    job.audio![1]!.metadata!.language = 'pt-BR'
+    const plan = await http<Schemas['EncodePlan']>(server, 'POST', '/api/jobs/plan', { job })
+    const tokens = tokenize(plan.display)
+    expect(tokens.map((token) => token.text).join('')).toBe(plan.display)
+    const words = tokens.filter((token) => token.kind !== 'space')
+    const start = words.findIndex((token) => token.text === 'header_edit')
+    expect(words.slice(start, start + 9)).toEqual([
+      { text: 'header_edit', kind: 'step' },
+      { text: plan.output_tmp, kind: 'path' },
+      { text: 'audio', kind: 'track' },
+      { text: '2:', kind: 'track' },
+      { text: 'language=', kind: 'option' },
+      { text: 'por', kind: 'value' },
+      { text: 'language_ietf=', kind: 'option' },
+      { text: 'pt-BR', kind: 'value' },
+      { text: '&&', kind: 'operator' },
+    ])
+  })
+
   it('shows the command of a job, and the errors of a job without one', async () => {
     const editor = useEditorStore()
     await editor.open(sourceId)

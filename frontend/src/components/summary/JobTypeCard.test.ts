@@ -23,7 +23,7 @@ const ENCODE: JobTypeInfo = {
 const METADATA_EDIT: JobTypeInfo = {
   job_type: 'metadata_edit',
   reason:
-    'Metadata edit: only the track metadata changes, so mkvpropedit edits multitrack.mkv in place, in seconds.',
+    'Metadata edit: only the track metadata changes, so Reframe edits multitrack.mkv in place, in seconds.',
   in_place_blockers: [],
 }
 const REMUX: JobTypeInfo = {

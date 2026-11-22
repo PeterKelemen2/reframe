@@ -1,4 +1,4 @@
-"""``build_plan``: what it refuses, the argument order, steps, ranges and the display."""
+"""``build_plan``: the argument order, steps, ranges and the display."""
 
 from __future__ import annotations
 
@@ -7,21 +7,22 @@ from typing import Any
 
 import pytest
 
-from reframe.command import PlanError, build_plan, partial_path
+from reframe.command import build_plan, partial_path
 from reframe.command.builder import GLOBAL_ARGS, STEP_WEIGHTS
 from reframe.models import (
-    AudioOutputTrack,
     AverageBitrate,
     ChapterRange,
     EncodePlan,
     EncoderStatus,
     ExternalSubtitle,
     FrameRange,
+    HeaderEdit,
     JobSettings,
     MediaSource,
     PlanStep,
     SubtitleOutputTrack,
     TimeRange,
+    TrackHeaderEdit,
     TrackMetadata,
     resolve_argv,
 )
@@ -86,42 +87,6 @@ def test_partial_path() -> None:
     assert partial_path(Path("/o/noext")) == Path("/o/noext.part")
 
 
-def test_refusals() -> None:
-    src = recorded("multitrack.mkv")
-
-    def refuses(match: str, **change: Any) -> None:
-        source = change.pop("_source", src)
-        job = draft(source, video={"encoder": "libx264"})
-        for key, value in change.items():
-            target, _, attr = key.partition("__")
-            setattr(getattr(job, target) if attr else job, attr or target, value)
-        with pytest.raises(PlanError, match=match):
-            plan_of(job, source)
-
-    refuses("output path is not set", output__path=None)
-    refuses("unknown container", output__container="avi")
-    refuses("unknown video encoder", video__encoder="libx266")
-    refuses("H.264 cannot be written into WebM", output__container="webm")
-    refuses("no 10-bit mode", video__encoder="h264_amf", video__bit_depth=10)
-    refuses("no audio stream 9", audio=[AudioOutputTrack(source_stream=9)])
-    refuses("no audio stream None", audio=[AudioOutputTrack()])
-    refuses("range is empty", range=TimeRange(start=2.0, end=1.0))
-    job = draft(src)
-    with pytest.raises(PlanError, match="no video stream"):
-        plan_of(job, src.model_copy(update={"video": []}))
-    job = draft(src, container="webm", audio="passthru")
-    job.video.passthrough = True
-    with pytest.raises(PlanError, match="h264 video cannot be copied into WebM"):
-        plan_of(job, src)
-    no_rate = src.model_copy(deep=True)
-    no_rate.video[0].frame_rate = None
-    no_rate.video[0].avg_frame_rate = None
-    job = draft(src)
-    job.range = FrameRange(start=1, end=5)
-    with pytest.raises(PlanError, match="frame rate"):
-        plan_of(job, no_rate)
-
-
 def test_argument_order() -> None:
     src = recorded("chapters.mkv")
     job = draft(src, video={"encoder": "hevc_vaapi"}, container="mp4",
@@ -136,7 +101,7 @@ def test_argument_order() -> None:
         a.index("-init_hw_device"),
         a.index("-ss"),
         a.index(str(src.ref.path)),
-        a.index("/m/x.srt"),
+        a.index(str(Path("/m/x.srt"))),
         a.index("ffmetadata"),
         a.index("-map"),
         a.index("-t"),
@@ -160,9 +125,9 @@ def test_two_pass_with_loudnorm_steps_and_weights() -> None:
     job.audio[0].loudness = "ebu_r128"
     job.audio[1].metadata = TrackMetadata(language="pt-BR")
     plan = plan_of(job, src)
-    assert [s.kind for s in plan.steps] == ["analyse", "pass1", "pass2", "mkvpropedit", "finalize"]
+    assert [s.kind for s in plan.steps] == ["analyse", "pass1", "pass2", "header_edit", "finalize"]
     assert [s.progress_weight for s in plan.steps] == [
-        STEP_WEIGHTS[k] for k in ("analyse", "pass1", "pass2", "mkvpropedit", "finalize")
+        STEP_WEIGHTS[k] for k in ("analyse", "pass1", "pass2", "header_edit", "finalize")
     ]
     analyse, pass1, pass2, edit, final = plan.steps
     assert analyse.measures[0].id == "a0"
@@ -173,28 +138,18 @@ def test_two_pass_with_loudnorm_steps_and_weights() -> None:
     values["a0.target_offset"] = "0.5"
     resolved = resolve_argv(pass2.argv, values)
     assert any("measured_I=-20.0" in arg for arg in resolved)
-    assert edit.tool == "mkvpropedit"
-    assert argv(edit) == [
-        str(plan.output_tmp), "--edit", "track:a2",
-        "--set", "language=por", "--set", "language-ietf=pt-BR",
-    ]  # fmt: skip
+    assert edit.tool is None
+    assert edit.header_edit == HeaderEdit(
+        path=plan.output_tmp,
+        tracks=[
+            TrackHeaderEdit(track_type="audio", number=2, language="por", language_ietf="pt-BR")
+        ],
+    )
     assert final.tool is None
     assert final.description == "Rename multitrack.part.mkv to multitrack.mkv"
     assert "<a0.input_i>" in plan.display
     assert plan.display.count(" && ") == 4
     assert plan.temp_files[0] == Path("/out/multitrack.part.passlog")
-
-
-def test_no_mkvpropedit_step_without_the_tool_or_for_webm() -> None:
-    src = recorded("multitrack.mkv")
-    job = draft(src)
-    job.audio[0].metadata = TrackMetadata(language="pt-BR")
-    assert "mkvpropedit" not in [
-        s.kind for s in plan_of(job, src, tools=tools(mkvpropedit=False)).steps
-    ]
-    webm = draft(src, container="webm", audio_encoder="libopus", video={"encoder": "libsvtav1"})
-    webm.audio[0].metadata = TrackMetadata(language="pt-BR")
-    assert "mkvpropedit" not in [s.kind for s in plan_of(webm, src).steps]
 
 
 def test_strict_is_written_once() -> None:

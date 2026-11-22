@@ -39,6 +39,11 @@ def test_the_event_websocket_messages_are_in_the_components(document: dict[str, 
     }
     assert _ref("JobProgressEvent") in schemas["EventMessage"]["properties"]["event"]["oneOf"]
     assert set(schemas["AuthMessage"]["properties"]) == {"type", "token"}
+    assert schemas["ClientMessage"]["discriminator"]["mapping"] == {
+        "auth": _ref("AuthMessage")["$ref"],
+        "detach": _ref("DetachMessage")["$ref"],
+    }
+    assert "client_id" in schemas["Hello"]["required"]
     # No HTTP operation for the WebSocket: a generated client would call it.
     assert "webhooks" not in document
     assert not [path for path in document["paths"] if path.startswith("/api/events")]
@@ -71,7 +76,7 @@ def test_the_export_is_the_served_document_whatever_the_process_and_its_environm
 ) -> None:
     """The committed types stay comparable: the same document, in the same order, from a
     process with another hash seed and the developer's ``REFRAME_*`` variables (this host
-    would need an auth mode)."""
+    would need an auth mode), as UTF-8 with LF line ends on every platform."""
     environment = {
         key: value for key, value in os.environ.items() if not key.startswith("REFRAME_")
     }
@@ -80,10 +85,9 @@ def test_the_export_is_the_served_document_whatever_the_process_and_its_environm
         [sys.executable, str(EXPORT)],
         env=environment | {"PYTHONHASHSEED": seed, "REFRAME_HOST": "0.0.0.0"},
         capture_output=True,
-        text=True,
-        encoding="utf-8",
         check=True,
         timeout=60,
     ).stdout
+    assert b"\r" not in exported
     # Compared as text so that the order of the keys counts.
-    assert json.dumps(json.loads(exported)) == json.dumps(document)
+    assert json.dumps(json.loads(exported.decode("utf-8"))) == json.dumps(document)

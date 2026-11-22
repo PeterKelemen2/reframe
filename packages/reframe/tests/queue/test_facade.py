@@ -10,7 +10,6 @@ import pytest
 
 from reframe.events import EventBus
 from reframe.models import JobState, NamingOptions
-from reframe.probe import mediainfo
 from reframe.queue import QueueService
 from reframe.service import Reframe
 from reframe.tools import ENV_VARS
@@ -37,7 +36,6 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_tools: ft.FakeTool
         monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
     monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
     (tmp_path / "config").mkdir()
     (tmp_path / "config" / "settings.json").write_text(
         json.dumps({"encoders": {"hardware_tests": False}, "queue": {"sleep_inhibit": False}}),

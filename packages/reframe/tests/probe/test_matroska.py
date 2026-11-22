@@ -1,75 +1,20 @@
-"""The Matroska track reader, and the prober's ``language_ietf`` without MediaInfo."""
+"""The Matroska track reader, and the prober's ``language_ietf``."""
 
 from __future__ import annotations
 
+import io
 import json
 import shutil
+import struct
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from reframe.models import MediaSource
-from reframe.probe import matroska, mediainfo
+from reframe.probe import matroska
 from reframe.probe.matroska import MatroskaError, read_matroska, tracks_by_kind
-from reframe.probe.prober import Prober, apply_matroska
-
-from .conftest import parse_probe
-
-
-def vint_size(size: int) -> bytes:
-    return bytes([0x01]) + size.to_bytes(7, "big")
-
-
-def element(element_id: int, payload: bytes, *, unknown: bool = False) -> bytes:
-    raw_id = element_id.to_bytes((element_id.bit_length() + 7) // 8, "big")
-    size = (
-        bytes([0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF])
-        if unknown
-        else vint_size(len(payload))
-    )
-    return raw_id + size + payload
-
-
-def uint(element_id: int, value: int) -> bytes:
-    return element(element_id, value.to_bytes(1, "big"))
-
-
-def text(element_id: int, value: str) -> bytes:
-    return element(element_id, value.encode())
-
-
-def header(doc_type: str = "matroska") -> bytes:
-    return element(0x1A45DFA3, text(0x4282, doc_type))
-
-
-def track(number: int, kind: int, **values: object) -> bytes:
-    body = uint(0xD7, number) + uint(0x83, kind)
-    if "name" in values:
-        body += text(0x536E, str(values["name"]))
-    if "language" in values:
-        body += text(0x22B59C, str(values["language"]))
-    if "ietf" in values:
-        body += text(0x22B59D, str(values["ietf"]))
-    if "default" in values:
-        body += uint(0x88, int(bool(values["default"])))
-    if "commentary" in values:
-        body += uint(0x55AF, int(bool(values["commentary"])))
-    body += element(0xEC, b"\0\0")  # a Void inside the entry is skipped
-    return element(0xAE, body)
-
-
-def tracks(*entries: bytes) -> bytes:
-    return element(0x1654AE6B, b"".join(entries))
-
-
-def info(title: str) -> bytes:
-    return element(0x1549A966, text(0x7BA9, title))
-
-
-def cluster() -> bytes:
-    return element(0x1F43B675, b"\0" * 16)
+from reframe_testing.ebml import cluster, element, header, info, track, tracks, uint
 
 
 def write(tmp_path: Path, data: bytes, name: str = "t.mkv") -> Path:
@@ -148,6 +93,32 @@ def test_damaged_files_raise_matroska_error(tmp_path: Path, data: bytes, message
         read_matroska(write(tmp_path, data))
 
 
+@pytest.mark.parametrize(
+    "entry",
+    [
+        element(0x1549A966, element(0x2AD7B1, b"\x01" + b"\0" * 129)),  # TimestampScale
+        element(0x1549A966, element(0x2AD7B1, b"\0" * 8 + b"\x01")),
+        tracks(element(0xAE, element(0xD7, b"\0" * 8 + b"\x01") + uint(0x83, 1))),
+    ],
+    ids=["scale-of-130-bytes", "scale-of-9-bytes", "track-number-of-9-bytes"],
+)
+def test_an_unsigned_integer_over_eight_bytes_is_damaged(tmp_path: Path, entry: bytes) -> None:
+    data = header() + element(0x18538067, entry + tracks(track(1, 1)))
+    with pytest.raises(MatroskaError, match="over 8 bytes"):
+        read_matroska(write(tmp_path, data))
+
+
+def test_a_duration_too_large_for_a_float_is_none(tmp_path: Path) -> None:
+    scale = element(0x2AD7B1, (1 << 63).to_bytes(8, "big"))
+    duration = element(0x4489, struct.pack(">d", 1e300))
+    data = header() + element(
+        0x18538067, element(0x1549A966, scale + duration) + tracks(track(1, 1))
+    )
+    found = read_matroska(write(tmp_path, data))
+    assert found.timestamp_scale == 1 << 63
+    assert found.duration is None
+
+
 def test_webm_doc_type_and_large_element_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -164,30 +135,6 @@ def test_scan_gives_up_after_max_top_level(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setattr(matroska, "MAX_TOP_LEVEL", 3)
     with pytest.raises(MatroskaError, match="no Tracks"):
         read_matroska(write(tmp_path, data))
-
-
-def test_apply_matroska_sets_ietf_by_kind_and_order() -> None:
-    source = parse_probe("fixtures/multitrack.mkv")
-    data = matroska.MatroskaFile(
-        doc_type="matroska",
-        tracks=[
-            matroska.MatroskaTrack(kind="video"),
-            matroska.MatroskaTrack(kind="audio", language_ietf="pt-BR"),
-            matroska.MatroskaTrack(kind="audio"),
-            matroska.MatroskaTrack(kind="audio", language_ietf="en-GB"),
-            *(matroska.MatroskaTrack(kind="subtitle") for _ in range(3)),
-        ],
-    )
-    assert apply_matroska(source, data)
-    assert [a.language_ietf for a in source.audio] == ["pt-BR", None, "en-GB"]
-    data.tracks.pop()
-    fresh = parse_probe("fixtures/multitrack.mkv")
-    assert not apply_matroska(fresh, data)
-    assert fresh.warnings[-1] == (
-        "The file has 2 subtitle tracks, ffprobe shows 3: the BCP 47 languages (LanguageIETF) "
-        "were not read."
-    )
-    assert all(a.language_ietf is None for a in fresh.audio)
 
 
 def _tool(name: str) -> str:
@@ -244,33 +191,12 @@ def test_generated_fixture_and_mkvpropedit_edits(
     assert read_matroska(copy).tracks[1].name == long
 
 
-@pytest.mark.needs_ffmpeg
-@pytest.mark.anyio
-async def test_probe_shows_language_ietf_without_mediainfo(
-    fixture_media: Callable[[str], Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    mkvpropedit = _tool("mkvpropedit")
-    ffprobe = _tool("ffprobe")
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
-    copy = tmp_path / "m.mkv"
-    shutil.copyfile(fixture_media("multitrack"), copy)
-    propedit(
-        mkvpropedit, copy, "--edit", "track:a1", "--set", "language=hun", "--set",
-        "language-ietf=hu", "--edit", "track:a2", "--set", "language=por", "--set",
-        "language-ietf=pt-BR",
-    )  # fmt: skip
-    source = await Prober(ffprobe).probe(copy)
-    assert isinstance(source, MediaSource)
-    assert [(a.language, a.language_ietf) for a in source.audio] == [
-        ("hun", "hu"), ("por", "pt-BR"), ("eng", None),
-    ]  # fmt: skip
-    # A file the reader cannot read keeps ffprobe's view (no warning: only BCP 47 is unknown).
-    monkeypatch.setattr(matroska, "read_matroska", _raise)
-    again = await Prober(ffprobe).probe(copy)
-    assert isinstance(again, MediaSource)
-    assert [a.language_ietf for a in again.audio] == [None, None, None]
-    assert not any("Matroska" in w for w in again.warnings)
+class _ShortReads(io.BytesIO):
+    def read(self, size: int | None = -1, /) -> bytes:
+        return super().read(min(3, size if size is not None and size >= 0 else 3))
 
 
-def _raise(path: object) -> matroska.MatroskaFile:
-    raise MatroskaError("damaged")
+def test_read_exactly_joins_short_reads_and_stops_at_the_end() -> None:
+    handle = _ShortReads(bytes(range(20)))
+    assert matroska.read_exactly(handle, 2, 10) == bytes(range(2, 12))
+    assert matroska.read_exactly(handle, 15, 10) == bytes(range(15, 20))

@@ -1,0 +1,133 @@
+diff --git a/packages/reframe/tests/languages/test_equivalence.py b/packages/reframe/tests/languages/test_equivalence.py
+index ab202c4..d5dc266 100644
+--- a/packages/reframe/tests/languages/test_equivalence.py
++++ b/packages/reframe/tests/languages/test_equivalence.py
+@@ -168,10 +168,10 @@ TAG_FUNCTIONS = (
+ 
+ 
+ def _differences(values: Iterable[str], functions: Iterable[str]) -> list[tuple[Any, ...]]:
++    pairs = [(name, getattr(languages, name), getattr(oracle, name)) for name in functions]
+     diffs = []
+-    for name in functions:
+-        ours, theirs = getattr(languages, name), getattr(oracle, name)
+-        for value in values:
++    for value in values:
++        for name, ours, theirs in pairs:
+             got, want = _call(ours, value), _call(theirs, value)
+             if got != want:
+                 diffs.append((name, value, want, got))
+@@ -189,10 +189,11 @@ def test_listed_languages_with_sample_regions_and_scripts() -> None:
+ 
+ 
+ @pytest.mark.slow
+-def test_listed_languages_with_every_region_and_script() -> None:
++@pytest.mark.parametrize("part", range(8))
++def test_listed_languages_with_every_region_and_script(part: int) -> None:
+     regions = _plain(_subtags("region"))
+     scripts = _plain(_subtags("script"))
+-    tags = _combined(_listed_bases(), regions, scripts)
++    tags = _combined(_listed_bases(), regions, scripts)[part::8]
+     functions = ("normalize", "english_name", "native_name", "to_matroska_legacy", "to_mp4")
+     assert _differences(tags, functions)[:20] == []
+ 
+@@ -273,8 +274,9 @@ def test_search_names_in_other_locales() -> None:
+ 
+ 
+ @pytest.mark.slow
+-def test_search_every_name_in_every_locale() -> None:
+-    assert _search_differences(_locale_names())[:20] == []
++@pytest.mark.parametrize("part", range(4))
++def test_search_every_name_in_every_locale(part: int) -> None:
++    assert _search_differences(_locale_names()[part::4])[:20] == []
+ 
+ 
+ @functools.cache
+diff --git a/packages/reframe/tests/tools/fetch_server.py b/packages/reframe/tests/tools/fetch_server.py
+index 48fe540..a377b49 100644
+--- a/packages/reframe/tests/tools/fetch_server.py
++++ b/packages/reframe/tests/tools/fetch_server.py
+@@ -206,7 +206,9 @@ class LocalServer:
+ 
+         self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+         self._server.daemon_threads = True
+-        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
++        self._thread = threading.Thread(
++            target=self._server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True
++        )
+         self._thread.start()
+ 
+     def url(self, path: str) -> str:
+diff --git a/packages/reframe/tests/tools/test_runner.py b/packages/reframe/tests/tools/test_runner.py
+index f172ca4..459cda1 100644
+--- a/packages/reframe/tests/tools/test_runner.py
++++ b/packages/reframe/tests/tools/test_runner.py
+@@ -22,7 +22,7 @@ from hypothesis import strategies as st
+ from reframe.tools import CancelToken, kill_process_tree, run, run_streaming
+ from reframe.tools import runner as runner_mod
+ from reframe_testing import fake_tools as ft
+-from reframe_testing.waiting import wait_until
++from reframe_testing.waiting import wait_until, wait_until_sync
+ 
+ pytestmark = pytest.mark.anyio
+ 
+@@ -558,8 +558,8 @@ def test_kill_process_tree_can_keep_the_root(tmp_path: Path) -> None:
+         while len(tools.pids()) < 2 and time.monotonic() < deadline:
+             time.sleep(0.02)
+         grandchildren = [inv.pid for inv in tools.invocations() if inv.role == "grandchild"]
+-        killed = kill_process_tree(proc.pid, kill_root=False)
+-        psutil.wait_procs(killed, timeout=5)
++        kill_process_tree(proc.pid, kill_root=False)
++        wait_until_sync(lambda: not any(_alive(pid) for pid in grandchildren), 5)
+         assert not any(_alive(pid) for pid in grandchildren)
+         root = psutil.Process(proc.pid)
+         assert root.status() != psutil.STATUS_STOPPED  # resumed after the kill
+@@ -629,7 +629,7 @@ async def test_the_pid_lets_the_caller_suspend_and_resume_the_tree() -> None:
+     # The queue runner pauses a job with psutil suspend()/resume().
+     lines: list[str] = []
+     pids: list[int] = []
+-    code = "import time\nfor i in range(400):\n    print(i, flush=True)\n    time.sleep(0.01)"
++    code = "import time\nfor i in range(100):\n    print(i, flush=True)\n    time.sleep(0.01)"
+     task = asyncio.ensure_future(
+         run_streaming(
+             [ft.PYTHON, "-c", code],  # not a Windows venv launcher, whose child prints on
+@@ -649,7 +649,7 @@ async def test_the_pid_lets_the_caller_suspend_and_resume_the_tree() -> None:
+     proc.resume()
+     result = await asyncio.wait_for(task, 60)
+     assert result.ok
+-    assert lines[-1] == "399"
++    assert lines[-1] == "99"
+ 
+ 
+ async def test_a_raising_on_start_kills_the_process_and_propagates() -> None:
+diff --git a/pyproject.toml b/pyproject.toml
+index 6d524a0..33c8c70 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -102,6 +102,8 @@ addopts = [
+     # pytest-xdist: every run is parallel (decision 0084); `-n 0` runs in one process.
+     "-n",
+     "auto",
++    "--dist",
++    "worksteal",
+ ]
+ xfail_strict = true
+ markers = [
+diff --git a/testing/reframe_testing/fake_tools.py b/testing/reframe_testing/fake_tools.py
+index 09e4981..65d91d9 100644
+--- a/testing/reframe_testing/fake_tools.py
++++ b/testing/reframe_testing/fake_tools.py
+@@ -437,10 +437,12 @@ class FakeTools:
+ def posix_launcher(tool: Tool, *, python: str, script: Path, scenario: Path, log: Path) -> str:
+     """Text of the POSIX launcher for ``tool``."""
+     body = (
+-        "import os, runpy, sys\n"
++        "import os, sys\n"
+         f"os.environ.setdefault({SCENARIO_ENV!r}, {str(scenario)!r})\n"
+         f"os.environ.setdefault({LOG_ENV!r}, {str(log)!r})\n"
+-        f"sys.exit(runpy.run_path({str(script)!r})['main']({tool!r}, sys.argv[1:]))\n"
++        f"sys.path.append({str(script.parent)!r})\n"
++        f"import {script.stem}\n"
++        f"sys.exit({script.stem}.main({tool!r}, sys.argv[1:]))\n"
+     )
+     if len(python) <= _MAX_SHEBANG and not any(c.isspace() for c in python):
+         return (

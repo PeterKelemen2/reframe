@@ -20,8 +20,8 @@
     "groupMedia": "Output media",
     "groupHandbrake": "HandBrake variables",
     "empty": "empty",
-    "insert": "Insert {name} (now: {value})",
-    "insertEmpty": "Insert {name} (empty for this file)"
+    "insert": "Insert {name}: {value}",
+    "insertEmpty": "Insert {name}: empty for this file"
   },
   "source": {
     "auto": "Auto",

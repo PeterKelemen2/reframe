@@ -1,6 +1,6 @@
 # 0034 — Metadata edit in place, the post-mux fix-up and the re-probe check
 
-- Status: accepted
+- Status: accepted; the tool (mkvpropedit) is superseded by [0080](0080-own-matroska-header-writer.md) (Reframe's own Matroska header writer)
 - Date: 2026-10-15
 - Steps: C-13 (also C-7, C-8, C-11, C-3, C-16)
 - Amends: [0027](0027-one-process-owns-the-queue-store.md) item 5 (one exact exception)

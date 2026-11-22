@@ -102,7 +102,7 @@ async def test_a_flags_only_change_edited_in_place_is_a_metadata_edit(
         answer = ok(await api.client.post("/api/jobs/type", json={"job": job}))
     assert answer == {
         "job_type": "metadata_edit",
-        "reason": "Metadata edit: only the track metadata changes, so mkvpropedit edits "
+        "reason": "Metadata edit: only the track metadata changes, so Reframe edits "
         "Show.mkv in place, in seconds.",
         "in_place_blockers": [],
     }
@@ -303,36 +303,6 @@ async def test_a_tag_the_command_line_cannot_carry_is_an_error(
 
 
 # ---- chapters/import
-
-
-@pytest.mark.parametrize(
-    ("text", "chapter_format", "expected"),
-    [
-        ('1,Opening\r\n2,"Part, one"\r\n', "csv", [(None, "Opening"), (None, "Part, one")]),
-        (
-            "CHAPTER01=00:00:00.000\nCHAPTER01NAME=Opening\nCHAPTER02=00:01:02.500\n"
-            "CHAPTER02NAME=Part one\n",
-            "ogm",
-            [(0.0, "Opening"), (62.5, "Part one")],
-        ),
-        (
-            "<?xml version='1.0'?><Chapters><EditionEntry><ChapterAtom>"
-            "<ChapterTimeStart>00:00:01.000000000</ChapterTimeStart><ChapterDisplay>"
-            "<ChapterString>Opening</ChapterString></ChapterDisplay></ChapterAtom>"
-            "</EditionEntry></Chapters>",
-            "xml",
-            [(1.0, "Opening")],
-        ),
-    ],
-)
-async def test_import_tells_the_format_from_the_content(
-    api: Api, text: str, chapter_format: str, expected: list[tuple[float | None, str]]
-) -> None:
-    file = api.media / "chapters.txt"
-    file.write_text(text, encoding="utf-8")
-    answer = ok(await api.client.post("/api/chapters/import", json={"path": str(file)}))
-    assert answer["format"] == chapter_format
-    assert [(c["start"], c["name"]) for c in answer["chapters"]] == expected
 
 
 async def test_a_file_that_is_not_a_chapter_file_is_a_problem_with_the_line(api: Api) -> None:

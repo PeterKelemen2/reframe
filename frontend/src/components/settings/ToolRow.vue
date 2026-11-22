@@ -5,13 +5,23 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { ApiError } from '@/api/client'
+import type { ValidationIssue } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import KeyValue from '@/components/base/KeyValue.vue'
 import StatusDot from '@/components/base/StatusDot.vue'
+import { formatList } from '@/components/shell/format'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 
-import { setByEnvironment, type ToolInfo, toolTone } from './tools'
+import {
+  originText,
+  resetOps,
+  setByEnvironment,
+  TOOL_NAMES,
+  type ToolInfo,
+  toolTone,
+} from './tools'
+import { useBundledTools } from './useBundledTools'
 import { readPointer, useSetting } from './useSetting'
 
 const props = defineProps<{
@@ -22,7 +32,7 @@ const props = defineProps<{
   locked: boolean
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const settings = useSettingsStore()
 const system = useSystemStore()
 
@@ -43,6 +53,28 @@ watch(saved, (now, before) => {
   if (draft.value === (before ?? '')) draft.value = now ?? ''
 })
 const shown = computed(() => (byEnvironment.value ? (props.tool.path ?? '') : draft.value))
+
+const bundled = useBundledTools()
+const bundledIssues = shallowRef<ValidationIssue[]>([])
+/**
+ * With a bundled build the reset is *Use bundled*, for both tools: an ffprobe path left
+ * behind would still win over the bundled ffprobe.
+ */
+const canUseBundled = computed(
+  () => props.tool.bundled && !byEnvironment.value && saved.value !== null,
+)
+/** The other tool, when *Use bundled* removes its Settings path too. */
+const alsoReset = computed(() =>
+  canUseBundled.value
+    ? TOOL_NAMES.filter(
+        (name) => name !== props.tool.name && resetOps([name], settings.settings?.tools).length > 0,
+      )
+    : [],
+)
+const alsoResetNote = computed(() =>
+  t('settings.tools.useBundledAlso', { tools: formatList(alsoReset.value, locale.value, 'and') }),
+)
+const fieldIssues = computed(() => [...override.issues.value, ...bundledIssues.value])
 
 interface Outcome {
   ok: boolean
@@ -67,21 +99,8 @@ function statusText(status: ToolInfo['status']): string {
 }
 const statusLabel = computed(() => statusText(props.tool.status))
 
-function originText(tool: ToolInfo): string {
-  switch (tool.origin) {
-    case 'env':
-      return t('settings.tools.origin.env', { variable: tool.env_var ?? '' })
-    case 'settings':
-      return t('settings.tools.origin.settings')
-    case 'bundled':
-      return t('settings.tools.origin.bundled')
-    case 'path':
-      return t('settings.tools.origin.path')
-    default:
-      return t('settings.tools.origin.none')
-  }
-}
-const originLabel = computed(() => originText(props.tool))
+const originLabel = computed(() => originText(props.tool, t))
+const reason = computed(() => props.tool.reason ?? null)
 
 const note = computed(() => {
   const variable = props.tool.env_var ?? ''
@@ -145,9 +164,22 @@ async function putBack(previous: string | null): Promise<void> {
   }
 }
 
+async function useBundled(): Promise<void> {
+  testing.value = true
+  outcome.value = null
+  bundledIssues.value = []
+  try {
+    bundledIssues.value = await bundled.use(props.tool.name)
+    if (bundledIssues.value.length === 0) draft.value = ''
+  } finally {
+    testing.value = false
+  }
+}
+
 async function remove(): Promise<void> {
   testing.value = true
   outcome.value = null
+  bundledIssues.value = []
   try {
     if (!(await override.save(null))) return
     draft.value = ''
@@ -177,9 +209,9 @@ async function remove(): Promise<void> {
         <span v-else class="tool-row__muted">{{ t('settings.tools.noBinary') }}</span>
       </KeyValue>
     </dl>
-    <p v-if="tool.reason" class="tool-row__reason" data-field="reason">{{ tool.reason }}</p>
+    <p v-if="reason" class="tool-row__reason" data-field="reason">{{ reason }}</p>
 
-    <Field :label="t('settings.tools.override')" :issues="override.issues.value" stacked>
+    <Field :label="t('settings.tools.override')" :issues="fieldIssues" stacked>
       <template #default="{ id, invalid }">
         <div class="tool-row__override">
           <InputText
@@ -189,6 +221,7 @@ async function remove(): Promise<void> {
             :invalid="invalid"
             :class="{ 'tool-row__input--readonly': !editable }"
             :placeholder="t('settings.tools.automatic')"
+            :aria-label="t('settings.tools.overrideOf', { tool: tool.name })"
             fluid
             spellcheck="false"
             autocomplete="off"
@@ -198,6 +231,7 @@ async function remove(): Promise<void> {
           />
           <Button
             :label="t('settings.tools.test')"
+            :aria-label="t('settings.tools.testTool', { tool: tool.name })"
             severity="secondary"
             outlined
             :loading="testing"
@@ -205,8 +239,19 @@ async function remove(): Promise<void> {
             @click="test"
           />
           <Button
-            v-if="saved !== null && !byEnvironment"
+            v-if="canUseBundled"
+            :label="t('settings.tools.useBundledTool')"
+            :aria-label="t('settings.tools.useBundledToolOf', { tool: tool.name })"
+            severity="secondary"
+            text
+            :disabled="locked || testing || bundled.fetching.value"
+            data-action="use-bundled"
+            @click="useBundled"
+          />
+          <Button
+            v-else-if="saved !== null && !byEnvironment"
             :label="t('settings.tools.removeOverride')"
+            :aria-label="t('settings.tools.removeOverrideOf', { tool: tool.name })"
             severity="secondary"
             text
             :disabled="locked || testing"
@@ -216,6 +261,9 @@ async function remove(): Promise<void> {
         </div>
       </template>
     </Field>
+    <p v-if="alsoReset.length > 0" class="tool-row__note" data-field="bundled-note">
+      {{ alsoResetNote }}
+    </p>
     <p v-if="note" class="tool-row__note" data-field="note">{{ note }}</p>
 
     <div
@@ -292,9 +340,9 @@ async function remove(): Promise<void> {
   flex: 1 1 18rem;
 }
 
+/* Read-only, not disabled: its text keeps the contrast of text (muted on this fill is 4:1 in dark). */
 .tool-row__input--readonly {
   background: var(--p-inputtext-disabled-background);
-  color: var(--rf-color-text-muted);
 }
 
 .tool-row__outcome {

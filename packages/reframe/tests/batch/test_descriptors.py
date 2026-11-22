@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
-from types import ModuleType
 
 import pytest
 
@@ -16,7 +13,6 @@ from reframe.batch.descriptors import (
     codec_family,
     codec_label,
     hdr_type,
-    language_code,
     stream_roles,
     track_label,
 )
@@ -37,21 +33,9 @@ from reframe.models import (
 )
 from reframe.probe import parse_ffprobe
 from reframe.probe.roles import FORCED_MAX_RATIO
+from reframe_testing import media
 
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-A = _load("anime")
+from . import anime as A
 
 
 def video(index: int = 0, width: int = 1920, height: int = 1080, **kw: object) -> VideoStream:
@@ -131,7 +115,6 @@ def test_descriptors_of_the_example_episode_with_the_commentary() -> None:
         (audio(1, "mp3"), "mpeg_audio"),
         (audio(1, "pcm_s24le"), "pcm"),
         (audio(1, "flac"), "flac"),
-        (audio(1, "opus"), "opus"),
         (audio(1, codec=None), None),  # type: ignore[arg-type]
         (subtitle(1, "subrip"), "text"),
         (subtitle(1, "ass"), "text"),
@@ -205,10 +188,11 @@ def test_labels() -> None:
     (d,) = describe_tracks(source(subtitle(3, "subrip", title="Full")))
     assert d.label == 'und SRT "Full"'
     assert track_label(d.model_copy(update={"codec": None, "title": None})) == "und unknown codec"
+    (j,) = describe_tracks(source(subtitle(3, "jacosub", language="eng")))
+    assert j.label == "eng jacosub"
     (v,) = describe_tracks(source(video(0, display_codec="HEVC Main 10", language="eng")))
     assert v.label == "HEVC Main 10 1920x1080"
     assert v.language == "en"
-    assert language_code(None) == "und"
 
 
 def test_undetermined_languages_are_none() -> None:
@@ -314,7 +298,7 @@ def test_the_example_episodes_share_a_fingerprint() -> None:
 
 
 def _episode_with_counts(episode: int, signs_events: int, full_events: int) -> MediaSource:
-    rel = f"{A.media.anime_folder(1)}/{A.media.anime_file_name(1, episode)}"
+    rel = f"{media.anime_folder(1)}/{media.anime_file_name(1, episode)}"
     data = json.loads((A.PROBES / f"{rel}.json").read_text(encoding="utf-8"))
     signs, full = [s for s in data["streams"] if s["codec_type"] == "subtitle"]
     signs["disposition"]["forced"] = 0

@@ -10,15 +10,36 @@ import re
 import signal
 from collections.abc import Sequence
 
+from reframe.models.issues import Severity, ValidationIssue
+from reframe.models.queue import JobState, QueueJob
+
 __all__ = [
+    "ENCODER_UNAVAILABLE",
     "JobStateError",
     "QueueError",
     "UnknownJobError",
-    "closed_error",
+    "encoder_unavailable",
     "exit_text",
     "printable",
     "stderr_reason",
 ]
+
+ENCODER_UNAVAILABLE = "encoder.unavailable"
+
+
+def encoder_unavailable(job: QueueJob) -> ValidationIssue | None:
+    """The error of a failed job whose encoder was not available when the job was checked
+    (``Failed — encoder unavailable``), with its fixes; ``None`` for any other job."""
+    if job.state is not JobState.FAILED:
+        return None
+    return next(
+        (
+            issue
+            for issue in job.issues
+            if issue.code == ENCODER_UNAVAILABLE and issue.severity is Severity.ERROR
+        ),
+        None,
+    )
 
 
 class QueueError(Exception):
@@ -40,13 +61,6 @@ class JobStateError(QueueError):
     """The job is in a state that does not allow the call (``remove`` of a running job)."""
 
 
-def closed_error() -> type[Exception]:
-    """``reframe.service.ReframeClosedError``: what a queue call after ``close()`` raises."""
-    from reframe.service import ReframeClosedError  # reframe.service imports this package
-
-    return ReframeClosedError
-
-
 #: Causes that say more than any other line; the first one found wins.
 _KNOWN_CAUSES = (
     ("No space left on device", "No space left on device: the disk is full."),
@@ -54,6 +68,12 @@ _KNOWN_CAUSES = (
     ("Permission denied", "Permission denied."),
     ("Read-only file system", "The output folder is on a read-only file system."),
     ("Cannot allocate memory", "Not enough memory."),
+    # NVENC's answer at the GeForce session limit; FFmpeg's own lines blame the parameters.
+    (
+        "OpenEncodeSessionEx failed: incompatible client key (21)",
+        "Every NVENC session of the GPU is in use by other programs (GeForce cards run only a "
+        "few at once). Run the job again when they finish.",
+    ),
 )
 _ERROR_WORDS = re.compile(
     r"error|failed|invalid|cannot|can't|could not|unable|not supported|unsupported|"
@@ -67,6 +87,23 @@ _GENERIC = re.compile(
     r"error while filtering: |nothing was written into output file|"
     r"error closing file: invalid argument|press \[q\])",
     re.IGNORECASE,
+)
+#: Follow-up lines that read like errors but only guess or repeat: used when nothing else says
+#: more. A hardware encoder that refuses a setting skips the GPU, so "No capable devices" follows.
+_FOLLOW_UP = re.compile(
+    r"^(error while opening encoder - maybe incorrect parameters|"
+    r"error sending frames to consumers|no capable devices found)",
+    re.IGNORECASE,
+)
+#: An NVENC encoder's own line names the cause even without an error word (at the default
+#: log level NVENC prints nothing else).
+_HW_ENCODER = re.compile(r"^\[\w+_nvenc @ 0x[0-9a-fA-F]+\]")
+#: Encoder texts that need a word of explanation: (pattern, text).
+_EXPLAINED = (
+    (
+        re.compile(r"Max B-frames \d+ exceed 0\b"),
+        "This GPU has no B-frames for this codec: set B-frames to 0.",
+    ),
 )
 _PREFIX = re.compile(r"^(\[[^\]]+ @ 0x[0-9a-fA-F]+\]\s*)+")
 #: How many lines from the end are searched.
@@ -89,15 +126,21 @@ def stderr_reason(lines: Sequence[str], *, last_line: bool = True) -> str | None
     for needle, text in _KNOWN_CAUSES:
         if any(needle in line for line in tail):
             return text
+    for pattern, text in _EXPLAINED:
+        if any(pattern.search(line) for line in tail):
+            return text
     candidates: list[str] = []
+    follow_ups: list[str] = []
     for line in tail:
         text = _clean(line)
         if not text or line.startswith((" ", "\t")) or _GENERIC.match(text):
             continue
-        if _ERROR_WORDS.search(text) and text not in candidates:
-            candidates.append(text)
-    if candidates:
-        return _shorten("; ".join(candidates[:2]))
+        found = follow_ups if _FOLLOW_UP.match(text) else candidates
+        cause = _ERROR_WORDS.search(text) or _HW_ENCODER.match(line.strip())
+        if cause and text not in found:
+            found.append(text)
+    if candidates or follow_ups:
+        return _shorten("; ".join((candidates or follow_ups)[:2]))
     if not last_line:
         return None
     for line in reversed(tail):

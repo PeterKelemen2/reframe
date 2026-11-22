@@ -13,7 +13,7 @@ import { useEditorStore } from '@/stores/editor'
 type Size = NonNullable<DimensionSettings['size']>
 type SizeMode = Size['mode']
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const editor = useEditorStore()
 const crop = useCropStore()
 const boxId = useId()
@@ -133,6 +133,7 @@ function setNumber(pointer: string, value: number | null | undefined): void {
           <template v-if="size.mode === 'fit' && box === CUSTOM">
             <InputNumber
               :model-value="size.width"
+              :locale="locale"
               :min="1"
               :use-grouping="false"
               :disabled="locked"
@@ -144,6 +145,7 @@ function setNumber(pointer: string, value: number | null | undefined): void {
             <span aria-hidden="true">×</span>
             <InputNumber
               :model-value="size.height"
+              :locale="locale"
               :min="1"
               :use-grouping="false"
               :disabled="locked"
@@ -155,6 +157,7 @@ function setNumber(pointer: string, value: number | null | undefined): void {
           </template>
           <InputNumber
             v-else-if="size.mode === 'width'"
+            :locale="locale"
             :model-value="size.width"
             :min="1"
             :use-grouping="false"
@@ -166,6 +169,7 @@ function setNumber(pointer: string, value: number | null | undefined): void {
           />
           <InputNumber
             v-else-if="size.mode === 'height'"
+            :locale="locale"
             :model-value="size.height"
             :min="1"
             :use-grouping="false"

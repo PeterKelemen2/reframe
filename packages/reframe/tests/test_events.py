@@ -40,12 +40,12 @@ def _state(job: str, state: JobState = JobState.DONE) -> JobStateEvent:
 
 def _task_progress(task: str, percent: float) -> TaskProgressEvent:
     return TaskProgressEvent(
-        task=TaskInfo(id=task, kind="probe_folder", state=TaskState.RUNNING, progress=percent)
+        task=TaskInfo(id=task, kind="probe_sources", state=TaskState.RUNNING, progress=percent)
     )
 
 
 def _task_done(task: str) -> TaskDoneEvent:
-    return TaskDoneEvent(task=TaskInfo(id=task, kind="probe_folder", state=TaskState.DONE))
+    return TaskDoneEvent(task=TaskInfo(id=task, kind="probe_sources", state=TaskState.DONE))
 
 
 async def _drain(sub: Subscription, count: int) -> list[object]:
@@ -197,10 +197,7 @@ def _tool_set() -> ToolSet:
     from reframe.models import ToolInfo, ToolStatus
 
     return ToolSet(
-        **{
-            name: ToolInfo(name=name, status=ToolStatus.MISSING)
-            for name in ("ffmpeg", "ffprobe", "mkvpropedit", "mediainfo")
-        }
+        **{name: ToolInfo(name=name, status=ToolStatus.MISSING) for name in ("ffmpeg", "ffprobe")}
     )
 
 

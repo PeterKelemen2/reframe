@@ -5,10 +5,9 @@ from __future__ import annotations
 import builtins
 import json
 import os
-import shutil
 import subprocess
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -39,6 +38,7 @@ from reframe.probe import ProbeError, Prober, parse_ffprobe
 from reframe.tasks import TaskManager
 from reframe.tools import CancelToken
 from reframe_testing import media
+from reframe_testing.capabilities import StubTools
 
 ROOT = Path(__file__).resolve().parents[4]
 PROBES = ROOT / "testdata" / "probes"
@@ -80,28 +80,19 @@ def tool(name: ToolName, path: str | None) -> ToolInfo:
     return ToolInfo(name=name, status=ToolStatus.FOUND, path=Path(path))
 
 
-def real_tools(*, mkvpropedit: bool = True) -> ToolSet:
+def real_tools() -> ToolSet:
+    """The real FFmpeg and ffprobe."""
     return ToolSet(
         ffmpeg=tool("ffmpeg", media.find_ffmpeg()),
         ffprobe=tool("ffprobe", media.find_ffprobe()),
-        mkvpropedit=tool("mkvpropedit", shutil.which("mkvpropedit") if mkvpropedit else None),
-        mediainfo=tool("mediainfo", None),
     )
-
-
-class Tools:
-    def __init__(self, tools: ToolSet) -> None:
-        self.tools = tools
-
-    async def status(self) -> ToolSet:
-        return self.tools
 
 
 class Sources:
     """Probes with the real ffprobe, memoised by path."""
 
     def __init__(self, ffprobe: str) -> None:
-        self.prober = Prober(ffprobe, use_mediainfo=False)
+        self.prober = Prober(ffprobe)
         self.known: dict[str, MediaSource] = {}
         self.calls = 0
 
@@ -170,11 +161,12 @@ def make_env(
     snapshot: CapabilitySnapshot | None = None,
     settings: AppSettings | None = None,
     tools: ToolSet | None = None,
+    limits: Mapping[str, int] | None = None,
 ) -> Env:
     """A context with the real FFmpeg (``media.find_ffmpeg``), call it inside a running
     event loop (the task manager needs one)."""
     events = EventBus()
-    tasks = TaskManager(events)
+    tasks = TaskManager(events, limits=limits)
     toolset = tools if tools is not None else real_tools()
     ffprobe = toolset.ffprobe.path
     assert ffprobe is not None
@@ -183,11 +175,10 @@ def make_env(
     current = settings if settings is not None else AppSettings()
     ctx = MediaTaskContext(
         tasks=tasks,
-        tools=Tools(toolset),
+        tools=StubTools(toolset),
         sources=sources,
         capabilities=capabilities,
         settings=lambda: current,
-        events=events,
         cache_dir=cache_dir,
         definitions=load_definitions,
     )

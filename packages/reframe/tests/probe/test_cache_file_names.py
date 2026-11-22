@@ -30,7 +30,20 @@ def _source(path: str, title: str = "A") -> MediaSource:
     return src
 
 
-@pytest.mark.parametrize("path", [POSIX_NAME, WINDOWS_NAME], ids=["byte-0xff", "lone-surrogate"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param(
+            POSIX_NAME,
+            id="byte-0xff",
+            marks=pytest.mark.skipif(
+                sys.platform == "win32",
+                reason="a POSIX path: Windows file names are UTF-16, no name holds the byte 0xFF",
+            ),
+        ),
+        pytest.param(WINDOWS_NAME, id="lone-surrogate"),
+    ],
+)
 def test_a_path_that_is_not_utf8_is_stored_and_read_back(tmp_path: Path, path: str) -> None:
     cache = ProbeCache(tmp_path)
     key = CacheKey(path, 10, 123)
@@ -66,7 +79,6 @@ def test_an_entry_that_cannot_be_serialised_is_not_an_error(
     key = CacheKey(POSIX_NAME, 10, 123)
     assert cache.put(key, _source(POSIX_NAME), tool=TOOL) is False
     assert list(tmp_path.iterdir()) == []
-    assert cache.get(key, tool=TOOL) == _source(POSIX_NAME)  # the memory layer has it
 
 
 @pytest.mark.anyio

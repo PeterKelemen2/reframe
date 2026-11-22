@@ -104,6 +104,18 @@ async def test_a_run_and_its_events_in_order(harness: Harness) -> None:
     assert h.leftovers() == []
 
 
+async def test_a_track_name_template_is_written_filled_in(harness: Harness) -> None:
+    h = harness
+    h.scenario(encode_rule(ft.write_output()))
+    job = h.job()
+    job.audio[0].metadata.name = "{lang_name} {channels} {codec}"
+    ended = await h.run_one(job)
+    assert ended.state is JobState.DONE
+    assert ended.plan is not None
+    assert "title=Japanese 5.1 AAC" in ended.plan.steps[0].argv
+    assert ended.settings.audio[0].metadata.name == "{lang_name} {channels} {codec}"
+
+
 async def test_job_log_events_are_rate_limited(harness: Harness) -> None:
     h = harness
     h.queue._runner.log_interval = 30.0  # one batch at the end
@@ -314,27 +326,6 @@ async def test_cancel_a_running_job(harness: Harness, paused: bool) -> None:
     assert "Job cancelled" in h.log_text(added.id)
 
 
-async def test_cancel_all_cancels_waiting_jobs_too(harness: Harness) -> None:
-    h = harness
-    h.settings.queue.parallel_jobs = 2
-    h.scenario(LONG)
-    first = await h.queue.add(h.job("A"))
-    third = await h.queue.add(h.job("C"))
-    second = await h.queue.add(h.job("B"), position=2)
-    h.queue.start()
-    await h.first_event(first.id, "job.progress", limit=20)
-    await h.first_event(third.id, "job.progress", limit=20)
-    parts = [h.tmp / "out" / "A.part.mkv", h.tmp / "out" / "C.part.mkv"]
-    await h.wait_for(lambda: all(p.exists() for p in parts))
-    await h.queue.cancel()
-    assert [j.state for j in h.queue.list()] == [JobState.CANCELLED] * 3
-    assert not any(p.exists() for p in parts)
-    assert h.leftovers() == []
-    assert h.states(second.id) == [(None, "waiting"), ("waiting", "cancelled")]
-    assert h.of_type("notification") == []  # cancelled by the user: no when-done
-    await h.queue.cancel(first.id)  # an ended job: nothing happens
-
-
 async def test_cancel_a_job_that_was_just_scheduled(harness: Harness) -> None:
     h = harness
     added = await h.queue.add(h.job())
@@ -375,23 +366,6 @@ async def test_two_restored_jobs_with_one_output_never_run_together(harness: Har
         h.tmp / "out" / "Same (1).mkv",
         h.tmp / "out" / "Other.mkv",
     }
-
-
-async def test_stop_takes_no_new_jobs(harness: Harness) -> None:
-    h = harness
-    h.settings.queue.when_done = "notify"
-    h.scenario(encode_rule(ft.progress(blocks=3, interval=0.05), ft.write_output()))
-    first = await h.queue.add(h.job("A"))
-    second = await h.queue.add(h.job("B"))
-    h.queue.start()
-    await h.first_event(first.id, "job.state", state="running")
-    await h.queue.stop()
-    assert not h.queue._processing
-    await h.queue.wait([first.id])
-    await asyncio.sleep(0.1)
-    assert h.queue.get(second.id).state is JobState.WAITING  # type: ignore[union-attr]
-    assert queue_notifications(h) == []  # the queue is not empty: no when-done
-    assert job_notifications(h) == [(first.id, "success")]  # the job's own
 
 
 async def test_start_with_job_ids_leaves_other_waiting_jobs_alone(harness: Harness) -> None:
@@ -811,10 +785,10 @@ async def test_a_store_that_cannot_be_written(harness: Harness) -> None:
     h = harness
     (h.tmp / "data").write_text("a file where the data folder should be")
     added = await h.queue.add(h.job())
-    assert added.state is JobState.WAITING  # the queue goes on in a private store in memory
+    assert added.state is JobState.WAITING  # the queue goes on in a read-only store
     [warning] = h.of_type("app.warning")
     assert warning.code == "queue.unreadable"  # type: ignore[union-attr]
-    assert h.queue._store.memory
+    assert h.queue._store.read_only
     assert h.queue._store.path.parent.is_file()
 
 

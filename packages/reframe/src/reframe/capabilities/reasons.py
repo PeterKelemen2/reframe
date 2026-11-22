@@ -1,7 +1,8 @@
 """Turn a failed hardware test encode into a plain-language reason. Pure.
 
-A known text gives ``unavailable`` with its reason. Anything else gives ``error`` ("the check
-itself failed") with the most informative line (:func:`informative_line`). The same mapping
+A known text gives ``unavailable`` with its reason (``error`` when it says the GPU is busy).
+Anything else gives ``error`` ("the check itself failed") with the most informative line
+(:func:`informative_line`). The same mapping
 explains a failed filter run test.
 
 The texts that FFmpeg prints are recorded in ``testdata/README.md`` ("Hardware encoder
@@ -15,7 +16,8 @@ import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from reframe.models.capabilities import EncoderState
+from reframe.models.capabilities import BuildMismatchCause, EncoderState
+from reframe.tools.exitcodes import crashed
 
 __all__ = [
     "Failure",
@@ -66,6 +68,14 @@ class Failure:
     reason: str
     detail: str | None = None
     """The FFmpeg line the reason comes from (pointer addresses removed)."""
+    cause: BuildMismatchCause | None = None
+    """What the build needs that the computer lacks (``EncoderStatus.build_mismatch_cause``)."""
+    busy: bool = False
+    """Other programs held the GPU's encoder: the same test may pass a little later."""
+
+    @property
+    def build_mismatch(self) -> bool:
+        return self.cause is not None
 
 
 _Reason = Callable[[re.Match[str], TestContext, Sequence[str]], str]
@@ -77,6 +87,9 @@ class _Rule:
     reason: _Reason
     families: frozenset[str] | None = None
     """Only for these encoder families (``None``: any)."""
+    mismatch: BuildMismatchCause | None = None
+    busy: bool = False
+    """The text says the GPU is busy: ``error`` (not checked), never ``unavailable``."""
 
 
 def _fixed(text: str) -> _Reason:
@@ -87,11 +100,18 @@ def _codec(ctx: TestContext) -> str:
     return ctx.codec_label or "this format"
 
 
+_NVENC_DRIVER = re.compile(r"minimum required Nvidia driver for nvenc is (?P<driver>\S+?) or newer")
+
+
+def _nvenc_driver(driver: str) -> str:
+    return f"NVIDIA driver too old: NVENC needs driver {driver} or newer"
+
+
 def _nvenc_too_old(match: re.Match[str], _ctx: TestContext, texts: Sequence[str]) -> str:
     for text in texts:
-        minimum = re.search(r"minimum required Nvidia driver for nvenc is (\S+?) or newer", text)
+        minimum = _NVENC_DRIVER.search(text)
         if minimum is not None:
-            return f"NVIDIA driver too old: NVENC needs driver {minimum[1]} or newer"
+            return _nvenc_driver(minimum["driver"])
     return f"NVIDIA driver too old (NVENC API {match['found']}, needs {match['required']})"
 
 
@@ -106,8 +126,6 @@ def _vaapi_driver(match: re.Match[str], ctx: TestContext, _texts: Sequence[str])
 
 
 def _device_creation(match: re.Match[str], ctx: TestContext, _texts: Sequence[str]) -> str:
-    if ctx.family == "qsv":
-        return _NO_QSV
     if ctx.family == "vaapi":
         return f"No VAAPI device ({ctx.device or match['value']})"
     return f"The hardware device could not be created ({match['value']})"
@@ -123,7 +141,22 @@ def _with_rest(prefix: str, fallback: str = "") -> _Reason:
     return reason
 
 
-_NO_QSV = "No Intel QSV device (needs an Intel GPU with its media driver)"
+def _library_not_loaded(match: re.Match[str], _ctx: TestContext, _texts: Sequence[str]) -> str:
+    if match["missing"]:
+        return f"The system library {match['missing']} is not installed"
+    error = re.sub(r"\s*\(required by [^)]*\)", "", match["error"])
+    error = re.sub(r"\S*/", "", error).strip().rstrip(".")
+    reason = f"The system library {match['lib']} could not be loaded"
+    return f"{reason} ({error})" if error else reason
+
+
+_NO_QSV = (
+    "No Intel QSV device or runtime (needs an Intel GPU, its media driver and its QSV runtime)"
+)
+NVENC_BUSY = (
+    "Every NVENC session of the GPU is in use by other programs (GeForce cards run only a few "
+    "at once). Check the encoders again when they finish"
+)
 _NVENC = frozenset({"nvenc"})
 
 #: Known texts, most specific first. The first rule that matches any line wins.
@@ -135,21 +168,27 @@ _RULES: tuple[_Rule, ...] = (
             r"Required: (?P<required>[\d.]+) Found: (?P<found>[\d.]+)"
         ),
         _nvenc_too_old,
+        mismatch="driver",
     ),
     _Rule(
         re.compile(r"Cannot load (?:libcuda\.so[\d.]*|nvcuda\.dll)"),
         _fixed("NVIDIA driver not found"),
     ),
-    _Rule(re.compile(r"No CUDA capable devices found"), _fixed("No NVIDIA GPU found")),
+    # A driver without its NVENC library (a container without the "video" capability): FFmpeg
+    # prints the driver requirement after it, but another build would not help.
     _Rule(
-        re.compile(r"^No capable devices found"),
-        lambda _m, ctx, _t: f"No NVIDIA GPU that can encode {_codec(ctx)}",
-        _NVENC,
+        re.compile(r"Cannot load (?P<lib>libnvidia-encode\.so[\d.]*|nvEncodeAPI(?:64)?\.dll)"),
+        lambda m, _ctx, _t: f"The NVIDIA driver has no NVENC library ({m['lib']})",
     ),
+    _Rule(_NVENC_DRIVER, lambda m, _ctx, _t: _nvenc_driver(m["driver"]), mismatch="driver"),
+    _Rule(re.compile(r"No CUDA capable devices found"), _fixed("No NVIDIA GPU found")),
+    # A GPU whose session or capability check fails is skipped, so "No capable devices found"
+    # follows: the line before it is the cause. Status 21 is the GeForce session limit.
     _Rule(
-        re.compile(r"^Codec not supported$"),
-        lambda _m, ctx, _t: f"This NVIDIA GPU cannot encode {_codec(ctx)}",
+        re.compile(r"OpenEncodeSessionEx failed: incompatible client key \(21\)"),
+        _fixed(NVENC_BUSY),
         _NVENC,
+        busy=True,
     ),
     _Rule(
         re.compile(r"OpenEncodeSessionEx failed:?\s*(?P<rest>.*)$"),
@@ -160,8 +199,24 @@ _RULES: tuple[_Rule, ...] = (
         _fixed("10-bit is not supported by this GPU"),
         _NVENC,
     ),
+    _Rule(
+        re.compile(r"^No capable devices found"),
+        lambda _m, ctx, _t: f"No NVIDIA GPU that can encode {_codec(ctx)}",
+        _NVENC,
+    ),
+    _Rule(
+        re.compile(r"^Codec not supported$"),
+        lambda _m, ctx, _t: f"This NVIDIA GPU cannot encode {_codec(ctx)}",
+        _NVENC,
+    ),
     # Intel QSV (oneVPL): libavcodec/qsv.c, libavutil/hwcontext_qsv.c
     _Rule(re.compile(r"Error (?:creating|initializing|querying) an? MFX session"), _fixed(_NO_QSV)),
+    # The runtime that an older Intel GPU's driver brings (UHD 620) has no AV1 encoder.
+    _Rule(
+        re.compile(r"^This version of runtime doesn't support AV1 encoding"),
+        _fixed("This Intel GPU cannot encode AV1"),
+        frozenset({"qsv"}),
+    ),
     # VAAPI: libavutil/hwcontext_vaapi.c
     _Rule(re.compile(r"No VA display found for device (?P<device>\S+?)\.?$"), _vaapi_device),
     _Rule(re.compile(r"No VA display found for any default device"), _vaapi_device),
@@ -170,6 +225,16 @@ _RULES: tuple[_Rule, ...] = (
         _vaapi_driver,
     ),
     _Rule(re.compile(r"Failed to create a VAAPI device"), _vaapi_device),
+    # libavcodec/vaapi_encode.c: the driver has no encoder for the codec (no profile at all, as
+    # Fedora's Mesa for H.264 and H.265, or no encode entrypoint for the profile).
+    _Rule(
+        re.compile(
+            r"No usable encoding (?:entrypoint found for profile (?P<profile>\w+)|profile found)"
+        ),
+        lambda m, ctx, _t: (
+            f"The VAAPI driver has no {ctx.codec_label or m['profile'] or 'such'} encoder"
+        ),
+    ),
     # AMD AMF: libavutil/hwcontext_amf.c, libavcodec/amfenc*.c
     _Rule(
         re.compile(r"DLL (?P<lib>\S+) failed to open"),
@@ -194,6 +259,26 @@ _RULES: tuple[_Rule, ...] = (
         re.compile(r"Failed creating instance: (?P<code>VK_\w+)"),
         lambda m, _ctx, _t: f"No working Vulkan driver ({m['code']})",
     ),
+    # Without a Vulkan loader (no vulkan-1.dll / libvulkan.so.1) libplacebo also sees 1.0.
+    _Rule(
+        re.compile(
+            r"Instance API version (?P<have>[\d.]+) is lower than the minimum required "
+            r"version of (?P<need>[\d.]+)"
+        ),
+        lambda m, _ctx, _t: (
+            f"No Vulkan runtime, or one too old for libplacebo "
+            f"(Vulkan {m['have']}, needs {m['need']})"
+        ),
+    ),
+    _Rule(
+        re.compile(
+            r"Device API version (?P<have>[\d.]+) is lower than the minimum required "
+            r"version of (?P<need>[\d.]+)"
+        ),
+        lambda m, _ctx, _t: (
+            f"The Vulkan driver is too old for libplacebo (Vulkan {m['have']}, needs {m['need']})"
+        ),
+    ),
     _Rule(
         re.compile(r"Found no suitable device, giving up"),
         _fixed("No Vulkan device that libplacebo can use"),
@@ -205,6 +290,24 @@ _RULES: tuple[_Rule, ...] = (
     _Rule(
         re.compile(r"Failed creating logical device"),
         _fixed("The Vulkan device could not be opened"),
+    ),
+    # The build loads system libraries (libva, …) at run time through implib-gen stubs, which
+    # abort when the library is missing or lacks a function the build was compiled against.
+    _Rule(
+        re.compile(r"^implib-gen: (?P<lib>\S+): failed to resolve symbol '(?P<symbol>[^']+)'"),
+        lambda m, _ctx, _t: (
+            f"The system's {m['lib']} is too old for this FFmpeg build (it has no {m['symbol']})"
+        ),
+        mismatch="system_library",
+    ),
+    _Rule(
+        # The dlopen error names the library that is missing: the stub's own, or one it needs.
+        re.compile(
+            r"^implib-gen: (?P<lib>\S+): failed to load library .*via dlopen: "
+            r"(?:(?P<missing>[^:\s]+): cannot open shared object file|(?P<error>.*))"
+        ),
+        _library_not_loaded,
+        mismatch="system_library",
     ),
     # A hardware device option failed (fftools) and no device line said why.
     _Rule(
@@ -270,7 +373,11 @@ def explain_failure(stderr: str, ctx: TestContext, *, returncode: int | None = N
         for line, text in lines:
             match = rule.pattern.search(text)
             if match is not None:
-                return Failure(EncoderState.UNAVAILABLE, rule.reason(match, ctx, texts), line)
+                reason = rule.reason(match, ctx, texts)
+                # libplacebo falls back to zscale: a filter never asks for another build.
+                cause = rule.mismatch if ctx.family != "filter" else None
+                state = EncoderState.ERROR if rule.busy else EncoderState.UNAVAILABLE
+                return Failure(state, reason, line, cause=cause, busy=rule.busy)
     detail = informative_line(stderr, ctx.encoder)
     test = f"the {ctx.encoder} test" if ctx.family == "filter" else "the test encode"
     crash = _crash(returncode)
@@ -283,10 +390,8 @@ def explain_failure(stderr: str, ctx: TestContext, *, returncode: int | None = N
 
 
 def _crash(returncode: int | None) -> str | None:
-    if returncode is None:
+    if returncode is None or not crashed(returncode):
         return None
     if returncode < 0:
         return f"signal {-returncode}"
-    if returncode >= 0xC0000000:  # a Windows NTSTATUS error (0xC0000005: access violation)
-        return f"exit code 0x{returncode:08X}"
-    return None
+    return f"exit code 0x{returncode:08X}"

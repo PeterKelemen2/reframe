@@ -1,31 +1,36 @@
 <script setup lang="ts">
-import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
-import { computed, useId } from 'vue'
+import { computed, onMounted, useId } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { Schemas } from '@/api/types'
 import Field from '@/components/base/Field.vue'
 import Section from '@/components/base/Section.vue'
 import NamingOptionsEditor from '@/components/naming/NamingOptionsEditor.vue'
+import { usePresetsStore } from '@/stores/presets'
 import { useSourcesStore } from '@/stores/sources'
-import { useSystemStore } from '@/stores/system'
 
 import RefusalList from './RefusalList.vue'
 import { useNamingSetting } from './useNamingSetting'
 import { useSetting, useSettingsLocked } from './useSetting'
 
 type OutputDefaults = Schemas['OutputDefaults']
-type Container = OutputDefaults['default_container']
 
 const { t } = useI18n()
-const system = useSystemStore()
 const sources = useSourcesStore()
+const presets = usePresetsStore()
 const locked = useSettingsLocked()
+
+onMounted(() => void presets.ensureLoaded().catch(() => undefined))
+
+/** The preset decides the container: the preview names as the default preset would. */
+const container = computed(() => {
+  const id = presets.defaultId
+  return (id === null ? undefined : presets.byId(id)?.output?.container) ?? 'mkv'
+})
 
 const naming = useNamingSetting()
 const namingTitle = useId()
-const container = useSetting<Container>('/output/default_container')
 const collision = useSetting<OutputDefaults['collision']>('/output/collision')
 const partialFile = useSetting<OutputDefaults['partial_file']>('/output/partial_file')
 
@@ -34,10 +39,6 @@ const sourceIds = computed(() =>
   sources.entries.filter((entry) => entry.source !== null).map((entry) => entry.id),
 )
 
-const CONTAINERS: readonly Container[] = ['mkv', 'mp4', 'webm']
-const containerOptions = computed(() =>
-  CONTAINERS.map((id) => ({ value: id, label: system.definitions?.containers?.[id]?.label ?? id })),
-)
 const collisionOptions = computed(() => [
   { value: 'ask', label: t('settings.output.collision.ask') },
   { value: 'auto_rename', label: t('settings.output.collision.autoRename') },
@@ -52,22 +53,6 @@ const partialOptions = computed(() => [
 <template>
   <Section :title="t('settings.output.title')">
     <div class="output-section__fields">
-      <Field :label="t('settings.output.container')" :issues="container.issues.value">
-        <template #default="{ id, labelId, invalid }">
-          <Select
-            :label-id="id"
-            :ariaLabelledby="labelId"
-            :model-value="container.value.value"
-            :options="containerOptions"
-            option-label="label"
-            option-value="value"
-            :invalid="invalid"
-            :disabled="locked"
-            data-field="default-container"
-            @update:model-value="container.save($event)"
-          />
-        </template>
-      </Field>
       <Field
         :label="t('settings.output.collisionLabel')"
         :help="t('settings.output.collisionHelp')"
@@ -116,7 +101,7 @@ const partialOptions = computed(() => [
         v-if="naming.naming.value"
         :model-value="naming.naming.value"
         :source-ids="sourceIds"
-        :container="container.value.value ?? 'mkv'"
+        :container="container"
         :disabled="locked"
         @update:model-value="naming.edit"
       />

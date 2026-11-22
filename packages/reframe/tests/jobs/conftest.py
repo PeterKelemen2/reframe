@@ -10,10 +10,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from typer.testing import CliRunner, Result
 
 from reframe import cli
-from reframe.cli import build_app
 from reframe.definitions import load_definitions
 from reframe.models import (
     AppSettings,
@@ -32,16 +30,14 @@ from reframe.models import (
     ValidationIssue,
 )
 from reframe.presets import builtin_presets
-from reframe.probe import ProbeError, ProbeErrorKind, mediainfo, parse_ffprobe
+from reframe.probe import ProbeError, ProbeErrorKind, parse_ffprobe
 from reframe.service import Reframe
-from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
 
 from .fake_queue import Behaviour, FakeQueue
 
 ROOT = Path(__file__).resolve().parents[4]
 PROBES = ROOT / "testdata" / "probes"
-WIDTH = "200"
 
 
 def probe_json(name: str) -> Path:
@@ -100,15 +96,13 @@ def checking() -> CapabilitySnapshot:
     return snap.model_copy(update={"encoders": encoders})
 
 
-def toolset(*, mkvpropedit: bool = True) -> ToolSet:
-    def info(name: ToolName, found: bool = True) -> ToolInfo:
-        return ToolInfo(name=name, status=ToolStatus.FOUND if found else ToolStatus.MISSING)
+def toolset() -> ToolSet:
+    def info(name: ToolName) -> ToolInfo:
+        return ToolInfo(name=name, status=ToolStatus.FOUND)
 
     return ToolSet(
         ffmpeg=info("ffmpeg"),
         ffprobe=info("ffprobe"),
-        mkvpropedit=info("mkvpropedit", mkvpropedit),
-        mediainfo=info("mediainfo", False),
     )
 
 
@@ -168,23 +162,14 @@ class Stubs:
 
 
 @pytest.fixture
-def cli_env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fake_tools: ft.FakeTools
-) -> ft.FakeTools:
-    """Fake ffmpeg and ffprobe, and private config, data and cache folders (never the user's).
-    ``encode`` and ``batch`` run their jobs in-process (``tests/remote`` covers the server)."""
+def dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Path]:
+    """Private config, data and cache folders for the CLI (in-process and subprocesses), whose
+    jobs run in its own process."""
     monkeypatch.setenv(cli.IN_PROCESS_ENV, "1")
-    for var in ENV_VARS.values():
-        monkeypatch.delenv(var, raising=False)
-    for name in ("config", "data", "cache"):
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
-    monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
-    monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
-    monkeypatch.setenv("REFRAME_MKVPROPEDIT", str(tmp_path / "no-mkvpropedit"))
-    monkeypatch.delenv("NO_COLOR", raising=False)
-    monkeypatch.delenv("FORCE_COLOR", raising=False)
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
-    return fake_tools
+    found = {name: tmp_path / name for name in ("config", "data", "cache")}
+    for name, path in found.items():
+        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(path))
+    return found
 
 
 def probe_rule(probe: Path, file: Path | None = None) -> ft.Rule:
@@ -220,8 +205,23 @@ def media_file(folder: Path, name: str) -> Path:
     return path
 
 
-def invoke(*args: str, env: dict[str, str] | None = None) -> Result:
-    return CliRunner().invoke(build_app(), list(args), env={"COLUMNS": WIDTH, **(env or {})})
+def draft_path(source: Path, name: str) -> Path:
+    """The output a draft names ``name`` next to ``source``. Where the file system ignores case
+    (Windows), ``Movie.mkv`` is the source ``movie.mkv`` itself, so the draft takes the next
+    free name."""
+    path = source.with_name(name)
+    if path.exists() and path.samefile(source):
+        return path.with_name(f"{path.stem} (1){path.suffix}")
+    return path
+
+
+def user_preset(preset_id: str, name: str, **changes: Any) -> dict[str, Any]:
+    """A user preset (a copy of *Fast 1080p30*) as JSON."""
+    base = next(p for p in builtin_presets() if p.id == "fast-1080p30")
+    preset = base.model_copy(
+        update={"id": preset_id, "name": name, "category": "Custom", "built_in": False, **changes}
+    )
+    return preset.model_dump(mode="json")
 
 
 class Queues:

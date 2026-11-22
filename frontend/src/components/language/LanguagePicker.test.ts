@@ -1,7 +1,8 @@
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AppSettings } from '@/api/types'
+import { installStillPointerFilter } from '@/components/base/stillPointer'
 import { mountShell } from '@/components/shell/testing'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
@@ -11,7 +12,15 @@ import { languages } from './testing'
 
 const mounted: VueWrapper[] = []
 
+// The app installs it in main.ts: a mousemove of a pointer that did not move never comes.
+let removeStillPointerFilter = () => {}
+
+beforeEach(() => {
+  removeStillPointerFilter = installStillPointerFilter()
+})
+
 afterEach(() => {
+  removeStillPointerFilter()
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.replaceChildren()
 })
@@ -66,6 +75,15 @@ async function type(text: string): Promise<void> {
   const input = search()!
   input.value = text
   input.dispatchEvent(new Event('input', { bubbles: true }))
+  await flushPromises()
+}
+
+const optionOf = (tag: string) =>
+  [...document.querySelectorAll(`[role="option"][data-tag="${tag}"]`)].at(-1) ?? null
+
+/** A mousemove on `target` at `x`: the same `x` twice is a pointer that did not move. */
+async function moveOn(target: Element | null, x: number): Promise<void> {
+  target?.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: x, clientY: 40 }))
   await flushPromises()
 }
 
@@ -146,6 +164,51 @@ describe('the language picker', () => {
     await mountPicker({ modelValue: 'fr' })
     await open()
     expect(activeTag()).toBe('fr')
+  })
+
+  it('opens on the chosen language again after a search, so Enter keeps it', async () => {
+    const { changes } = await mountPicker({ modelValue: 'hu' })
+    await open()
+    await type('fren')
+    await key(search(), 'Enter')
+    expect(changes).toEqual(['fr'])
+    await key(trigger(), 'ArrowDown')
+    expect(search()?.value).toBe('')
+    expect(activeTag()).toBe('fr')
+    await key(search(), 'Enter')
+    expect(changes).toEqual(['fr'])
+  })
+
+  it('keeps the active option of the keys under a pointer that does not move, follows one that does', async () => {
+    const { changes } = await mountPicker({ modelValue: 'hu' })
+    // WebKit's mousemove at the same point when the list appears, filters or scrolls.
+    await moveOn(trigger(), 20)
+    await open()
+    await moveOn(optionOf('de'), 20)
+    expect(activeTag()).toBe('hu')
+    await type('portug')
+    await moveOn(optionOf('pt-BR'), 20)
+    expect(activeTag()).toBe('pt')
+    // The pointer rests beside the options while the keys empty the search.
+    await moveOn(document.querySelector('.language-picker__panel'), 60)
+    await type('')
+    await moveOn(optionOf('de'), 60)
+    expect(activeTag()).toBe('egy')
+    await moveOn(optionOf('de'), 64)
+    expect(activeTag()).toBe('de')
+    await key(search(), 'Escape')
+    await open()
+    // The first move after the list opens takes the option at once, too.
+    await moveOn(optionOf('fr'), 70)
+    expect(activeTag()).toBe('fr')
+    await key(search(), 'Enter')
+    expect(changes).toEqual(['fr'])
+  })
+
+  it('keeps the list out of the tab order: the search moves through it', async () => {
+    await mountPicker()
+    await open()
+    expect($('[role="listbox"]')?.getAttribute('tabindex')).toBe('-1')
   })
 
   it('lists the favourites of the settings first, and a new favourite at once', async () => {

@@ -47,7 +47,10 @@
     "scopeFile": "This file only ({label})",
     "inGroup": "In group “{name}”",
     "matrixError": "The group could not be checked: {reason}",
-    "retry": "Try again"
+    "retry": "Try again",
+    "detecting": "Detecting the crop…",
+    "cancelDetection": "Cancel",
+    "cancelDetectionLabel": "Cancel the crop detection: nothing is queued"
   },
   "apply": {
     "title": "Apply to group “{name}”",
@@ -56,6 +59,11 @@
     "cancel": "Cancel",
     "apply": "Apply",
     "applied": "Applied to “{name}”: {sections}"
+  },
+  "chapterNames": {
+    "label": "Chapter names",
+    "source": "From each file",
+    "generated": "Chapter 1, Chapter 2, …"
   },
   "preset": {
     "title": "Save the group as a preset",

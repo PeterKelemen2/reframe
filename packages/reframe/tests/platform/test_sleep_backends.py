@@ -25,6 +25,7 @@ from reframe.platform.sleep import (
     SleepInhibitor,
     WindowsExecutionStateBackend,
 )
+from reframe_testing.fake_dbus import open_fds
 
 PM = "org.freedesktop.PowerManagement.Inhibit"
 PORTAL = "org.freedesktop.portal.Inhibit"
@@ -138,10 +139,6 @@ async def test_windows_backend_without_kernel32_is_unavailable() -> None:
     await backend.free()
 
 
-def _open_fds() -> set[int]:
-    return {int(name) for name in os.listdir("/proc/self/fd")}
-
-
 def _fd(backend: LogindBackend) -> int | None:
     return backend.fd  # through a function, so that mypy does not narrow the property
 
@@ -160,7 +157,7 @@ class FakeCall:
 
 @linux_only
 async def test_logind_holds_the_returned_fd_and_closes_it_on_free() -> None:
-    before = _open_fds()
+    before = open_fds()
     read_end, write_end = os.pipe()
     os.set_inheritable(read_end, True)
     call = FakeCall(dbus.Reply("h", [0], [read_end]))
@@ -184,12 +181,12 @@ async def test_logind_holds_the_returned_fd_and_closes_it_on_free() -> None:
         os.fstat(read_end)
     await backend.free()
     os.close(write_end)
-    assert _open_fds() == before
+    assert open_fds() == before
 
 
 @linux_only
 async def test_logind_closes_extra_fds_and_rejects_a_reply_without_one() -> None:
-    before = _open_fds()
+    before = open_fds()
     a, b = os.pipe()
     backend = LogindBackend(call=FakeCall(dbus.Reply("h", [1], [a, b])))
     assert await backend.hold("x") is None
@@ -203,7 +200,7 @@ async def test_logind_closes_extra_fds_and_rejects_a_reply_without_one() -> None
     assert bad.fd is None
     empty = LogindBackend(call=FakeCall(dbus.Reply("", [], [])))
     assert await empty.hold("x") == "Inhibit returned no file descriptor (signature '')"
-    assert _open_fds() == before
+    assert open_fds() == before
 
 
 @pytest.mark.parametrize(
@@ -414,19 +411,6 @@ async def test_session_free_closes_the_connection_when_ending_fails() -> None:
     await backend.free()
     assert conn.calls[-1]["member"] == "UnInhibit"
     assert conn.closed == 1
-
-
-async def test_session_portal_only_and_unknown_interfaces() -> None:
-    conn = FakeConnection({PORTAL: dbus.Reply("o", ["/r"])})
-    _, connect = _connector(conn)
-    backend = SessionInhibitBackend(
-        address="unix:path=/fake", connect=connect, interfaces=(PORTAL,)
-    )
-    assert await backend.hold("x") is None
-    assert [c["interface"] for c in conn.calls] == [PORTAL]
-    await backend.free()
-    with pytest.raises(ValueError, match="unknown session inhibit interfaces"):
-        SessionInhibitBackend(interfaces=("org.example.Nope",))
 
 
 async def test_session_without_any_service_fails_and_closes_the_connection() -> None:

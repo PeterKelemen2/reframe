@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import json
 import sqlite3
+import sys
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -23,24 +24,18 @@ from reframe.models import (
     SourceRef,
     ValidationIssue,
 )
-from reframe.queue import QueueService
 from reframe.queue.store import QueueStore, row_of
 from reframe.settings import MAX_DEPTH, TOO_DEEP, too_deep
+from reframe_testing.helpers import nested
 
-from .conftest import Harness
+from .conftest import Harness, queue_at
 
 NOW = datetime(2026, 10, 15, 12, 0, tzinfo=UTC)
 
 #: Deep enough for ``json.loads`` to raise ``RecursionError`` on any thread.
 PARSER_DEPTH = 200_000
-
-
-def nested(levels: int) -> list[Any]:
-    """A list nested ``levels`` deep (``[]`` is one level)."""
-    value: list[Any] = []
-    for _ in range(levels - 1):
-        value = [value]
-    return value
+#: A depth that Pydantic's serializer still dumps (pydantic-core's limit is 100 on Windows).
+DUMP_DEPTH = 100 if sys.platform == "win32" else 255
 
 
 def deep_text(levels: int) -> str:
@@ -140,7 +135,8 @@ def test_python_facts_behind_the_rule() -> None:
     settings = JobSettings.model_validate(settings_of(300))  # validation: any depth
     with pytest.raises(ValueError, match="depth exceeded"):
         settings.model_dump(mode="json")
-    assert JobSettings.model_validate(settings_of(255)).model_dump(mode="json")
+    assert JobSettings.model_validate(settings_of(DUMP_DEPTH)).model_dump(mode="json")
+    assert MAX_DEPTH < DUMP_DEPTH
 
 
 @pytest.mark.parametrize("levels", [MAX_DEPTH + 1, 300, 1000, PARSER_DEPTH])
@@ -280,28 +276,13 @@ def test_deep_issues_are_never_written(tmp_path: Path) -> None:
 
 
 def test_a_store_that_saves_nothing_gives_no_warning(tmp_path: Path) -> None:
-    """A private store in memory (another process owns the file) never says "not saved" for
+    """A store that writes nothing (another process owns the file) never says "not saved" for
     one job: nothing of it is saved anyway."""
     store = store_at(tmp_path / "queue.sqlite3")
-    store.use_memory()
+    store.read_only = True
     run(store, lambda: store.upsert([row_of(job("deep", extra=nested(MAX_DEPTH)))]))
     assert store.warnings == []
     store.close()
-
-
-def queue_at(h: Harness) -> QueueService:
-    """A second queue on the same data folder (a restarted Reframe)."""
-    from reframe.platform.sleep import SleepInhibitor
-
-    return QueueService(
-        h.events,
-        lambda: h.settings.model_copy(deep=True),
-        data_dir=h.tmp / "data",
-        tools=h.tools,
-        capabilities=h.caps,
-        sources=h.sources,
-        inhibitor=SleepInhibitor([], h.events),
-    )
 
 
 def codes(h: Harness) -> list[str]:

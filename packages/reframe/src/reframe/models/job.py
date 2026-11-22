@@ -165,7 +165,7 @@ class OutputSettings(OutputOptions):
     """The final output path once naming resolved it; ``None`` until then."""
     naming: JobNaming = Field(default_factory=JobNaming)
     edit_in_place: bool = False
-    """Remux-only jobs on MKV: edit metadata in place with mkvpropedit."""
+    """Remux-only jobs on MKV: edit the metadata of the source in place, with no new file."""
 
 
 class FilterConfig(DocumentModel):

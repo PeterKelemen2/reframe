@@ -67,8 +67,6 @@ def test_choice_setting_helpers() -> None:
     assert isinstance(profiles, ChoiceSetting)
     assert profiles.values(10) == ["main10"]
     assert profiles.values() == ["main", "main10"]
-    assert profiles.default_for(10) == "main10"
-    assert profiles.default_for(8) == "main"
     assert profiles.get("nope") is None
     level = load_definitions().video_encoders["libsvtav1"].levels
     assert level is not None
@@ -144,9 +142,6 @@ def test_filter_order_is_the_plan_order() -> None:
     assert [step for step in order if step in plan] == plan
     assert order.index("interlace_detection") == order.index("deinterlace") - 1
     assert order.index("crop") < order.index("custom") < order.index("scale")
-    defs = load_definitions()
-    assert [f.id for f in defs.ordered_filters()] == [s for s in order if s in defs.filters]
-    assert defs.filters["denoise"].position == order.index("denoise")
 
 
 def test_filter_implementation_choice() -> None:
@@ -237,7 +232,7 @@ def test_containers_answer_the_validation_questions() -> None:
     assert c["mp4"].model_dump()["video"]["copy"]  # serialised under the alias
     flags = load_definitions().track_flags
     assert flags["commentary"].disposition == "comment"
-    assert flags["hearing_impaired"].mkvpropedit == "flag-hearing-impaired"
+    assert flags["hearing_impaired"].disposition == "hearing_impaired"
 
 
 def test_passthru_and_mixdowns() -> None:

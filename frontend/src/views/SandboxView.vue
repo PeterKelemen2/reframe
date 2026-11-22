@@ -35,7 +35,7 @@ import { useSystemStore } from '@/stores/system'
 import { useUiStore } from '@/stores/ui'
 import { useValidationStore } from '@/stores/validation'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { theme, density, dark, setTheme, setDensity } = useTheme()
 const ui = useUiStore()
 const validation = useValidationStore()
@@ -309,7 +309,13 @@ void loadNamingSources().catch(() => undefined)
         </Field>
         <Field :label="t('sandbox.field.withHelp')" :help="t('sandbox.field.help')">
           <template #default="{ id, invalid }">
-            <InputNumber :input-id="id" :model-value="22" :invalid="invalid" fluid />
+            <InputNumber
+              :input-id="id"
+              :model-value="22"
+              :locale="locale"
+              :invalid="invalid"
+              fluid
+            />
           </template>
         </Field>
         <Field :label="t('sandbox.field.error')" :issues="errorIssues">
@@ -319,7 +325,13 @@ void loadNamingSources().catch(() => undefined)
         </Field>
         <Field :label="t('sandbox.field.warning')" :issues="warningIssues">
           <template #default="{ id, invalid }">
-            <InputNumber v-model="bitrate" :input-id="id" :invalid="invalid" fluid />
+            <InputNumber
+              v-model="bitrate"
+              :input-id="id"
+              :locale="locale"
+              :invalid="invalid"
+              fluid
+            />
           </template>
         </Field>
         <Field :label="t('sandbox.field.info')" :issues="infoIssues">

@@ -10,19 +10,23 @@ reframe-server = { workspace = true }
 
 [dependency-groups]
 dev = [
-    "reframe[cli,mediainfo]",
+    "reframe[cli]",
     "reframe-server",
     "anyio>=4.15.1",
     "hypothesis>=6.169.0",
+    "langcodes>=3.5.1",
+    "language-data>=1.4.0",
     "mypy>=2.4.0",
     "pip-audit>=2.10.1",
     "pyinstaller>=6.22.3",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
+    "pytest-timeout>=2.4.0",
     "ruff>=0.17.0",
     "syrupy>=6.1.1",
     "types-psutil>=7.2.2.20260906",
     "httpx>=0.28.1",
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.uv]
@@ -96,15 +100,31 @@ addopts = [
     "-ra",
     "-p",
     "reframe_testing.pytest_plugin",
+    # pytest-xdist: every run is parallel (decision 0084); `-n 0` runs in one process.
+    "-n",
+    "auto",
+    "--dist",
+    "worksteal",
 ]
 xfail_strict = true
 markers = [
     "slow: long-running test (seconds, not milliseconds)",
     "needs_ffmpeg: needs a real ffmpeg/ffprobe (and the generated fixtures in testdata/media)",
     "needs_gpu: needs a real GPU encoder; never run in CI",
+    "needs_mkvtoolnix: uses mkvmerge, mkvinfo and mkvpropedit as a test oracle (skipped without them)",
     "benchmark: performance budget check; runs in the non-blocking CI benchmark job",
 ]
-filterwarnings = ["error"]
+# A hung test ends its worker after 600 s and xdist starts a new one. "thread" is the only method
+# that works on Windows and does not need the main thread to get back to Python. Under xdist only
+# faulthandler's dump (a little earlier) reaches the terminal.
+timeout = 600
+timeout_method = "thread"
+faulthandler_timeout = 590
+filterwarnings = [
+    "error",
+    # syrupy warns at session end after a worker crash; as an error it would hide the summary.
+    "ignore:syrupy:UserWarning",
+]
 
 # --------------------------------------------------------------------------- coverage
 

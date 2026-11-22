@@ -1,4 +1,4 @@
-"""Parse the version output of FFmpeg, ffprobe, mkvpropedit and MediaInfo.
+"""Parse the version output of FFmpeg and ffprobe.
 
 A git master build has no release number, so its release series comes from its libavcodec and
 libavformat major versions. A major version is bumped on master some time before the release
@@ -14,11 +14,8 @@ from dataclasses import dataclass, field
 __all__ = [
     "MIN_FFMPEG",
     "FfmpegVersion",
-    "SimpleVersion",
     "lib_major_to_series",
     "parse_ffmpeg_version",
-    "parse_mediainfo_version",
-    "parse_mkvpropedit_version",
 ]
 
 #: The oldest FFmpeg release series that Reframe accepts.
@@ -57,10 +54,6 @@ class FfmpegVersion:
     """The library versions the binary runs with, by name."""
 
     @property
-    def is_git_build(self) -> bool:
-        return self.release is None
-
-    @property
     def release_text(self) -> str | None:
         if self.release is None:
             return None
@@ -84,11 +77,6 @@ class FfmpegVersion:
     def build_flags(self) -> list[str]:
         """The ``--enable-*`` / ``--disable-*`` options of the configuration."""
         return [a for a in self.configuration if a.startswith(("--enable-", "--disable-"))]
-
-    def meets_minimum(self, minimum: tuple[int, int] = MIN_FFMPEG) -> bool | None:
-        """True / False, or ``None`` when the version cannot be determined."""
-        series = self.series
-        return None if series is None else series >= minimum
 
 
 def parse_ffmpeg_version(text: str) -> FfmpegVersion | None:
@@ -127,32 +115,3 @@ def parse_ffmpeg_version(text: str) -> FfmpegVersion | None:
         configuration=configuration,
         libraries=libraries,
     )
-
-
-@dataclass(frozen=True)
-class SimpleVersion:
-    """The version of mkvpropedit or MediaInfo, as printed and as its numbers."""
-
-    version: str
-    parts: tuple[int, ...]
-
-
-_MKVPROPEDIT_RE = re.compile(r"^mkvpropedit v(?P<v>\d+(?:\.\d+)*)")
-_MEDIAINFO_RE = re.compile(r"MediaInfoLib - v(?P<v>\d+(?:\.\d+)*)")
-
-
-def _simple(match: re.Match[str] | None) -> SimpleVersion | None:
-    if match is None:
-        return None
-    text = match["v"]
-    return SimpleVersion(text, tuple(int(p) for p in text.split(".")))
-
-
-def parse_mkvpropedit_version(text: str) -> SimpleVersion | None:
-    """The version from ``mkvpropedit --version`` output; ``None`` if it is not one."""
-    return _simple(_MKVPROPEDIT_RE.match(text.strip()))
-
-
-def parse_mediainfo_version(text: str) -> SimpleVersion | None:
-    """The MediaInfoLib version from ``--Version`` output; ``None`` if it is not one."""
-    return _simple(_MEDIAINFO_RE.search(text))

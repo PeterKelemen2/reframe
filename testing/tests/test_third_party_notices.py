@@ -1,0 +1,841 @@
+"""scripts/third-party-notices.py: which components get a notice, and what each notice says."""
+
+from __future__ import annotations
+
+import hashlib
+import itertools
+import json
+import re
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from reframe_testing.scripts import load_script
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SIDECAR = REPO_ROOT / "desktop" / "src-tauri" / "resources" / "sidecar"
+
+
+tpn = load_script("third-party-notices.py")
+
+needs_sidecar = pytest.mark.skipif(
+    not (SIDECAR / "reframe-server").is_file(),
+    reason="no frozen sidecar: run uv run python desktop/sidecar/build.py",
+)
+
+
+def test_every_distribution_that_provides_a_shipped_module_is_listed() -> None:
+    packages = {
+        "pydantic": ["pydantic"],
+        "pydantic_core": ["pydantic_core"],
+        "yaml": ["PyYAML"],
+        "reframe": ["reframe"],
+        "reframe_server": ["reframe-server"],
+        "_pytest": ["pytest"],
+    }
+    shipped = {"pydantic", "pydantic_core", "yaml", "reframe", "reframe_server", "json", "asyncio"}
+
+    found = tpn.shipped_distributions(shipped, packages)
+
+    assert found == ["pydantic", "pydantic-core", "pyinstaller", "pyyaml"]
+
+
+@needs_sidecar
+def test_the_frozen_sidecars_modules_and_libraries_are_read() -> None:
+    names = tpn.shipped_top_level_names(SIDECAR)
+
+    # pydantic is pure Python inside the executables' archives; pydantic_core is a folder in
+    # _internal.
+    assert {"pydantic", "guessit", "uvicorn", "typer", "pydantic_core"} <= names
+    # The language tables replace these libraries; MediaInfo is not used.
+    assert not {"langcodes", "language_data", "marisa_trie", "pymediainfo"} & names
+
+
+def test_a_missing_sidecar_is_an_error(tmp_path: Path) -> None:
+    with pytest.raises(tpn.NoticesError, match="no frozen sidecar"):
+        tpn.shipped_top_level_names(tmp_path)
+
+
+def _pip_row(name: str, text: str = "Copyright text", notice: str = "UNKNOWN") -> dict[str, str]:
+    return {
+        "Name": name,
+        "Version": "1.0",
+        "License": "MIT",
+        "URL": "UNKNOWN",
+        "LicenseText": text,
+        "NoticeText": notice,
+    }
+
+
+def test_pip_licenses_rows_keep_licence_and_notice_texts() -> None:
+    rows = [_pip_row("Foo_Bar", notice="Notice of foo"), _pip_row("baz", text="UNKNOWN")]
+
+    entries = tpn.parse_pip_licenses(rows, ["foo-bar", "baz"])
+
+    assert [(e.name, e.url, e.text) for e in entries] == [
+        ("baz", "", ""),
+        ("Foo_Bar", "", "Copyright text\n\nNotice of foo"),
+    ]
+
+
+def test_a_shipped_distribution_that_pip_licenses_skipped_is_an_error() -> None:
+    with pytest.raises(tpn.NoticesError, match="no data for missing"):
+        tpn.parse_pip_licenses([_pip_row("present")], ["present", "missing"])
+
+
+def test_license_checker_reads_licence_files_but_not_readmes(tmp_path: Path) -> None:
+    (tmp_path / "LICENSE.md").write_text("MIT License, Vue authors")
+    (tmp_path / "README.md").write_text("# rfc6902\nusage …")
+    report = {
+        "@vue/shared@3.5.0": {
+            "licenses": "MIT",
+            "repository": "https://github.com/vuejs/core",
+            "licenseFile": str(tmp_path / "LICENSE.md"),
+        },
+        "rfc6902@5.3.0": {
+            "licenses": ["MIT", "BSD-2-Clause"],
+            "licenseFile": str(tmp_path / "README.md"),
+        },
+    }
+
+    entries = tpn.parse_license_checker(report)
+
+    assert [(e.name, e.version, e.license, e.text) for e in entries] == [
+        ("@vue/shared", "3.5.0", "MIT", "MIT License, Vue authors"),
+        ("rfc6902", "5.3.0", "MIT AND BSD-2-Clause", ""),
+    ]
+
+
+def _crate(name: str, version: str) -> dict[str, Any]:
+    return {"crate": {"name": name, "version": version}}
+
+
+def test_cargo_about_licences_list_the_crates_but_not_reframes_own() -> None:
+    report = {
+        "licenses": [
+            {
+                "name": "MIT License",
+                "id": "MIT",
+                "text": "MIT text",
+                "used_by": [_crate("serde", "1.0.0"), _crate("tauri", "2.12.5")],
+            },
+            {
+                "name": "GNU General Public License v3.0 or later",
+                "id": "GPL-3.0-or-later",
+                "text": "GPL text",
+                "used_by": [_crate("reframe-desktop", "0.1.0")],
+            },
+        ]
+    }
+
+    entries = tpn.parse_cargo_about(report)
+
+    assert len(entries) == 1
+    assert entries[0].license == "MIT"
+    assert entries[0].text == "Used by: serde 1.0.0, tauri 2.12.5\n\nMIT text"
+
+
+@pytest.mark.parametrize("platform", ["linux-x64", "windows-x64"])
+def test_cargo_about_is_limited_to_the_packages_target(platform: str) -> None:
+    config = tpn._about_config(tpn.RUST_TARGETS[platform])
+
+    assert f'targets = ["{tpn.RUST_TARGETS[platform]}"]' in config
+    assert "ignore-build-dependencies = true" in config
+
+
+def _libva(tools: Path) -> Path:
+    """The Linux tools layout: ``libva/`` with its licence."""
+    (tools / "libva").mkdir(parents=True)
+    (tools / "libva" / "LICENSE-libva.txt").write_text("libva licence text")
+    return tools
+
+
+def test_the_packaged_libva_gets_its_pin_with_the_source_links(tmp_path: Path) -> None:
+    tools = _libva(tmp_path / "resources" / "tools")
+    manifests = REPO_ROOT / "tools"
+
+    [libva] = tpn.library_entries(tools, manifests, "linux-x64")
+
+    pin = tpn.tomllib.loads((manifests / "bundled-tools.toml").read_text())["libraries"]["libva"]
+    assert (libva.name, libva.version, libva.license, libva.url) == (
+        "libva",
+        pin["version"],
+        pin["license"],
+        pin["release_url"],
+    )
+    for value in (
+        pin["source_repository"],
+        pin["source_tag"],
+        pin["platforms"]["linux-x64"]["url"],
+        pin["platforms"]["linux-x64"]["sha256"],
+        "tools/libva/LICENSE-libva.txt",
+    ):
+        assert value in libva.text
+    assert libva.text.endswith("libva licence text")
+
+
+def test_a_pinned_library_without_its_licence_file_is_an_error(tmp_path: Path) -> None:
+    with pytest.raises(tpn.NoticesError, match=r"LICENSE-libva\.txt"):
+        tpn.library_entries(tmp_path / "missing", REPO_ROOT / "tools", "linux-x64")
+
+    assert tpn.library_entries(tmp_path / "missing", REPO_ROOT / "tools", "windows-x64") == []
+
+
+def test_another_manifests_library_is_found(tmp_path: Path) -> None:
+    manifests = tmp_path / "manifests"
+    manifests.mkdir()
+    (manifests / "example.toml").write_text(
+        "[libraries.example]\n"
+        'version = "1.0"\nlicense = "MIT"\n'
+        'source_url = "https://example.invalid/example-1.0.tar.xz"\n'
+        "[libraries.example.platforms.windows-x64]\n"
+        'url = "https://example.invalid/example-1.0.tar.xz"\n'
+    )
+    tools = tmp_path / "tools"
+    (tools / "example").mkdir(parents=True)
+    (tools / "example" / "LICENSE-example.txt").write_text("example licence text")
+
+    [entry] = tpn.library_entries(tools, manifests, "windows-x64")
+
+    assert (entry.name, entry.version, entry.license) == ("example", "1.0", "MIT")
+    assert "source_url: https://example.invalid/example-1.0.tar.xz" in entry.text
+    assert "windows-x64.url: https://example.invalid/example-1.0.tar.xz" in entry.text
+    assert entry.text.endswith("example licence text")
+
+
+@pytest.mark.parametrize("platform", ["linux-x64", "windows-x64"])
+@pytest.mark.parametrize("folder", ["ffmpeg", "mkvtoolnix", "mediainfo"])
+def test_a_tool_folder_in_the_layout_stops_the_desktop_notices(
+    tmp_path: Path, folder: str, platform: str
+) -> None:
+    """No package ships FFmpeg or another tool: a stale folder would ship without notices."""
+    tools = _libva(tmp_path / "tools") if platform == "linux-x64" else tmp_path / "tools"
+    (tools / folder).mkdir(parents=True)
+    (tools / folder / "LICENSE.txt").write_text("licence text")
+
+    with pytest.raises(
+        tpn.NoticesError, match=rf"{folder} is bundled but no manifest in .* pins it"
+    ):
+        tpn.library_entries(tools, REPO_ROOT / "tools", platform)
+
+
+def test_every_entry_and_its_text_are_written() -> None:
+    sections = [
+        ("Bundled libraries", [tpn.Entry("libva", "2.24", "MIT", "https://x", "MIT text")]),
+        ("Rust crates", [tpn.Entry("MIT License", "", "MIT", text="Used by: a 1\n\nMIT")]),
+    ]
+
+    text = tpn.render(sections, version="0.1.0", platform="linux-x64")
+
+    for line in (
+        "Third-party notices for Reframe 0.1.0 (linux-x64)",
+        "Bundled libraries",
+        "libva 2.24",
+        "Licence: MIT",
+        "URL: https://x",
+        "Rust crates",
+        "MIT License",
+        "Used by: a 1",
+    ):
+        assert line in text.splitlines()
+
+
+def test_the_header_names_the_packages_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for name in ("shipped_top_level_names", "shipped_distributions", "python_entries"):
+        monkeypatch.setattr(tpn, name, lambda *args: [])
+    for name in ("javascript_entries", "rust_entries"):
+        monkeypatch.setattr(tpn, name, lambda *args: [])
+    monkeypatch.setattr(tpn, "python_interpreter_entry", lambda: tpn.Entry("Python", "3", "PSF"))
+    tools = _libva(tmp_path / "tools")
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out), "--tools", str(tools)]) == 0
+
+    config = json.loads((REPO_ROOT / "desktop" / "src-tauri" / "tauri.conf.json").read_text())
+    lines = out.read_text().splitlines()
+    assert lines[0] == f"Third-party notices for Reframe {config['version']} (linux-x64)"
+    assert tpn.LANGUAGE_DATA in lines
+    assert "Unicode CLDR 40" in lines
+
+
+DATA_NAMES = [
+    "Unicode CLDR",
+    "IANA Language Subtag Registry",
+    "Wiktionary: List of languages",
+    "langcodes",
+    "language_data",
+]
+
+
+def test_the_language_tables_name_the_sources_of_their_data() -> None:
+    """Every package ships the language tables: CLDR's licence text, the IANA registry, the
+    Wiktionary names' CC BY-SA terms and the MIT notices of the libraries they are built from."""
+    entries = {entry.name: entry for entry in tpn.data_entries()}
+
+    assert list(entries) == DATA_NAMES
+    cldr = entries["Unicode CLDR"].text
+    assert "UNICODE, INC. LICENSE AGREEMENT - DATA FILES AND SOFTWARE" in cldr
+    assert "Copyright © 1991-2021 Unicode, Inc. All rights reserved." in cldr
+    assert "Attribution-ShareAlike" in entries["Wiktionary: List of languages"].text
+    for name in ("langcodes", "language_data"):
+        assert entries[name].license == "MIT"
+        assert "Permission is hereby granted, free of charge" in entries[name].text
+
+
+def test_the_language_data_notices_follow_the_libraries_the_tables_are_built_from() -> None:
+    """A new langcodes or language_data rebuilds the tables (gen-language-data.py --check in
+    CI): the notices must then name that version and its registry."""
+    import importlib.metadata
+    import importlib.resources
+
+    entries = {entry.name: entry for entry in tpn.data_entries()}
+    for name in ("langcodes", "language_data"):
+        assert entries[name].version == importlib.metadata.version(name)
+    registry = importlib.resources.files("language_data") / "data" / "language-subtag-registry.txt"
+    file_date = registry.read_text(encoding="utf-8").splitlines()[0]
+    assert entries["IANA Language Subtag Registry"].version == file_date.replace(":", "")
+    assert f"of {file_date.replace(':', '')}," in entries["IANA Language Subtag Registry"].text
+
+
+def test_a_language_data_table_without_its_text_stops_the_notices(tmp_path: Path) -> None:
+    texts = tmp_path / "licence-texts.toml"
+    texts.write_text('[data."Unicode CLDR"]\nversion = "40"\nlicense = "Unicode-DFS-2016"\n')
+
+    with pytest.raises(tpn.NoticesError, match=r"data\.Unicode CLDR needs its license and text"):
+        tpn.data_entries(texts)
+    texts.write_text("")
+    with pytest.raises(tpn.NoticesError, match=r"has no \[data\] tables"):
+        tpn.data_entries(texts)
+
+
+def test_the_notices_ship_in_every_desktop_package() -> None:
+    config = json.loads((REPO_ROOT / "desktop" / "src-tauri" / "tauri.conf.json").read_text())
+
+    assert config["bundle"]["resources"]["resources/notices/"] == "notices/"
+    assert tpn.DEFAULT_OUT.parent == REPO_ROOT / "desktop" / "src-tauri" / "resources" / "notices"
+
+
+ALL_FFMPEG = ["linux-arm64", "linux-x64", "windows-x64"]
+#: A small source manifest: archive name → (kind, platforms), one of each kind of entry that
+#: decides which package bundles it. The FFmpeg build's sources go to no package.
+MANIFEST = {
+    "ffmpeg-2a571b606854.tar.xz": ("git", ALL_FFMPEG),
+    "ffmpeg-builds-6c9aec5d1a2b.tar.xz": ("git", ALL_FFMPEG),
+    "btbn-x264-0123456789ab.tar.xz": ("btbn-stage", ALL_FFMPEG),
+    "btbn-davs2-0123456789ab.tar.xz": ("btbn-stage", ["linux-x64"]),
+    "btbn-mingw-0123456789ab.tar.xz": ("btbn-stage", ["windows-x64"]),
+    "btbn-armonly-0123456789ab.tar.xz": ("btbn-stage", ["linux-arm64"]),
+    "example-1.0.tar.xz": ("url", ["windows-x64"]),
+    "libva-2.24.1.tar.bz2": ("url", ["linux-x64"]),
+    "ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar": ("ubuntu-source", ["linux-x64"]),
+    "type2-runtime-dd6cebedcbdd.tar.xz": ("repository", ["linux-x64"]),
+}
+BUNDLED = {
+    "linux-x64": [
+        "libva-2.24.1.tar.bz2",
+        "ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar",
+        "type2-runtime-dd6cebedcbdd.tar.xz",
+    ],
+    "windows-x64": ["example-1.0.tar.xz"],
+    "docker-linux-x64": [],
+    "docker-linux-arm64": [],
+}
+SOURCES_URL = "https://github.com/owner/reframe/releases/tag/sources-0123456789ab"
+
+
+def _checksum(archive: str) -> str:
+    return hashlib.sha256(archive.encode()).hexdigest()
+
+
+#: The Ubuntu source package's binary packages, as the manifest names them.
+GTK_PACKAGES = ["libgtk-3-0:amd64", "libgtk-3-common"]
+
+
+def _texts(manifest: Mapping[str, tuple[str, list[str]]] = MANIFEST) -> dict[str, Any]:
+    """One licence file per archive but the Ubuntu one, as sources-fetch.py writes them."""
+    return {
+        name: [{"path": "COPYING", "text": f"the licence of {name}"}]
+        for name, (kind, _) in manifest.items()
+        if kind != "ubuntu-source"
+    }
+
+
+def _sources(
+    folder: Path,
+    manifest: Mapping[str, tuple[str, list[str]]] = MANIFEST,
+    sums: str = "",
+    texts: Mapping[str, Any] | None = None,
+) -> list[str]:
+    """The ``--sources-*`` options for ``manifest``, its sums (by default one line each and one
+    for the licence texts) and its licence texts, ``--doc-root`` with the Ubuntu packages'
+    copyright files, and ``--tools``."""
+    entries = [
+        {"archive": name, "kind": kind, "name": name, "platforms": platforms}
+        | ({"binary_packages": GTK_PACKAGES} if kind == "ubuntu-source" else {})
+        for name, (kind, platforms) in sorted(manifest.items())
+    ]
+    path = folder / "manifest.json"
+    path.write_text(json.dumps({"schema_version": 1, "entries": entries}))
+    if not sums:
+        names = sorted([*manifest, tpn.TEXTS])
+        sums = "".join(f"{_checksum(name)}  {name}\n" for name in names)
+    (folder / "SHA256SUMS").write_text(sums)
+    texts_file = folder / tpn.TEXTS
+    archives = _texts(manifest) if texts is None else texts
+    texts_file.write_text(json.dumps({"schema_version": 1, "archives": archives}))
+    doc = folder / "doc"
+    for package in GTK_PACKAGES:
+        (doc / package.partition(":")[0]).mkdir(parents=True, exist_ok=True)
+        (doc / package.partition(":")[0] / "copyright").write_text("GTK+ is LGPL-2.1+\n")
+    return [
+        "--sources-url",
+        SOURCES_URL,
+        "--sources-sums",
+        str(folder / "SHA256SUMS"),
+        "--sources-manifest",
+        str(path),
+        "--sources-texts",
+        str(texts_file),
+        "--doc-root",
+        str(doc),
+        "--tools",
+        str(folder),
+    ]
+
+
+@pytest.fixture
+def no_sections(monkeypatch: pytest.MonkeyPatch) -> None:
+    entry = tpn.Entry("libva", "2.24", "MIT")
+    monkeypatch.setattr(tpn, "docker_sections", lambda *args: [("Bundled tools", [entry])])
+    monkeypatch.setattr(tpn, "desktop_sections", lambda *args: [("Bundled tools", [entry])])
+
+
+def _listed_archives(text: str) -> list[str]:
+    return [line.split()[1] for line in text.splitlines() if re.match(r"^  [0-9a-f]{64}  ", line)]
+
+
+@pytest.mark.usefixtures("no_sections")
+@pytest.mark.parametrize("platform", ["linux-x64", "windows-x64"])
+def test_the_notices_list_and_carry_the_texts_of_only_the_archives_the_platform_bundles(
+    tmp_path: Path, platform: str
+) -> None:
+    """The owner's rule: every bundled part's licence text, not only its name and link."""
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    code = tpn.main(["--platform", platform, "--out", str(out), *_sources(tmp_path)])
+
+    assert code == 0
+    text = out.read_text()
+    assert f"  {SOURCES_URL}" in text.splitlines()
+    assert sorted(_listed_archives(text)) == sorted(BUNDLED[platform])
+    for name in BUNDLED[platform]:
+        assert f"  {_checksum(name)}  {name}" in text.splitlines()
+    section = _section(text, TEXTS_SECTION)
+    for name, (kind, _) in MANIFEST.items():
+        licence = "GTK+ is LGPL-2.1+" if kind == "ubuntu-source" else f"the licence of {name}"
+        assert (f"Source archive: {name}" in section) is (name in BUNDLED[platform])
+        assert (licence in section) is (name in BUNDLED[platform])
+
+
+@pytest.mark.parametrize(
+    ("archive", "platforms"),
+    [
+        ("example-1.0.tar.xz", {"windows-x64"}),
+        ("ubuntu-gtk_3.0_3.24.33-1ubuntu2.2.tar", {"linux-x64"}),
+        ("libva-2.24.1.tar.bz2", {"linux-x64"}),
+        ("btbn-armonly-0123456789ab.tar.xz", set()),
+        ("btbn-mingw-0123456789ab.tar.xz", set()),
+        ("btbn-davs2-0123456789ab.tar.xz", set()),
+        ("ffmpeg-2a571b606854.tar.xz", set()),
+        ("ffmpeg-builds-6c9aec5d1a2b.tar.xz", set()),
+        ("type2-runtime-dd6cebedcbdd.tar.xz", {"linux-x64"}),
+    ],
+)
+def test_each_kind_of_source_goes_to_the_packages_that_bundle_it(
+    archive: str, platforms: set[str]
+) -> None:
+    kind, ffmpeg_platforms = MANIFEST[archive]
+    entry = {"archive": archive, "kind": kind, "platforms": ffmpeg_platforms}
+
+    assert {p for p in BUNDLED if tpn.bundles(entry, p)} == platforms
+
+
+def test_the_platforms_with_notices_all_have_a_sources_selection() -> None:
+    assert set(BUNDLED) == {*tpn.RUST_TARGETS, *tpn.DOCKER_PLATFORMS}
+
+
+def test_an_unknown_kind_of_source_is_an_error() -> None:
+    with pytest.raises(tpn.NoticesError, match="unknown source kind"):
+        tpn.bundles({"archive": "x.tar", "kind": "svn", "platforms": ["linux-x64"]}, "linux-x64")
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_an_archive_in_the_sums_that_no_manifest_entry_names_is_an_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sums = "".join(f"{_checksum(n)}  {n}\n" for n in [*MANIFEST, "btbn-stray-0123.tar.xz"])
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    code = tpn.main(["--platform", "linux-x64", "--out", str(out), *_sources(tmp_path, sums=sums)])
+
+    assert code == 1
+    assert "btbn-stray-0123.tar.xz" in capsys.readouterr().err
+    assert not out.exists()
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_a_bundled_archive_missing_from_the_sums_is_an_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    sums = "".join(f"{_checksum(n)}  {n}\n" for n in MANIFEST if not n.startswith("libva"))
+    options = _sources(tmp_path, sums=sums)
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    code = tpn.main(["--platform", "linux-x64", "--out", str(out), *options])
+
+    assert code == 1
+    assert "the sums have no line for libva-2.24.1.tar.bz2" in capsys.readouterr().err
+    assert not out.exists()
+    # Another platform does not bundle libva, so the missing line is not its concern.
+    assert tpn.main(["--platform", "windows-x64", "--out", str(out), *options]) == 0
+
+
+@pytest.mark.usefixtures("no_sections")
+@pytest.mark.parametrize("platform", ["docker-linux-x64", "docker-linux-arm64", "windows-x64"])
+def test_a_package_that_bundles_nothing_from_the_sources_release_does_not_name_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], platform: str
+) -> None:
+    manifest = {name: entry for name, entry in MANIFEST.items() if name != "example-1.0.tar.xz"}
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    code = tpn.main(["--platform", platform, "--out", str(out), *_sources(tmp_path, manifest)])
+
+    assert code == 1
+    assert f"no source of {platform}: its notices take no --sources-*" in capsys.readouterr().err
+    assert tpn.main(["--platform", platform, "--out", str(out)]) == 0
+    assert SOURCES_URL not in out.read_text()
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "not json",
+        '{"schema_version": 2, "entries": [{"archive": "a.tar", "platforms": []}]}',
+        '{"schema_version": 1, "entries": []}',
+        '{"schema_version": 1, "entries": [{"archive": "a.tar"}]}',
+        "[]",
+    ],
+)
+def test_a_file_that_is_not_a_source_manifest_is_an_error(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "manifest.json"
+    path.write_text(content)
+
+    with pytest.raises(tpn.NoticesError):
+        tpn.read_sources_manifest(path)
+
+
+@pytest.mark.parametrize(
+    "given",
+    [list(c) for size in (1, 3) for c in itertools.combinations(range(4), size)],
+)
+def test_the_sources_options_are_given_all_four_or_none(tmp_path: Path, given: list[int]) -> None:
+    options = _sources(tmp_path)
+    pairs = [options[i : i + 2] for i in range(0, 8, 2)]
+    partial = [word for i in given for word in pairs[i]]
+
+    with pytest.raises(SystemExit) as exit_info:
+        tpn.main(["--platform", "linux-x64", "--out", str(tmp_path / "N"), *partial])
+
+    assert exit_info.value.code == 2
+
+
+@pytest.mark.parametrize("content", ["", "abc  file.tar\n", f"{'a' * 64}  ../file.tar\n"])
+def test_a_sums_file_that_is_not_sha256sums_output_is_an_error(
+    tmp_path: Path, content: str
+) -> None:
+    sums = tmp_path / "SHA256SUMS"
+    sums.write_text(content)
+
+    with pytest.raises(tpn.NoticesError):
+        tpn.read_sources_sums(sums)
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_the_sources_release_comes_before_the_entries_in_the_written_file(tmp_path: Path) -> None:
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out), *_sources(tmp_path)]) == 0
+    text = out.read_text()
+    assert text.index(SOURCES_URL) < text.index("libva 2.24")
+
+    assert tpn.main(["--platform", "docker-linux-arm64", "--out", str(out)]) == 0
+    text = out.read_text()
+    assert text.splitlines()[0].endswith("(docker-linux-arm64)")
+    assert text.index("Debian packages") < text.index("libva 2.24")
+
+
+EXPORT = """\
+annotated-types==0.8.0
+colorama==0.4.6 ; sys_platform == 'win32'
+fastapi==0.159.1
+reframe-server==0.1.0
+uvloop==0.21.0 ; platform_machine == 'x86_64'
+Typing_Extensions==4.16.0
+"""
+
+
+@pytest.mark.parametrize(("machine", "extra"), [("x86_64", ["uvloop"]), ("aarch64", [])])
+def test_the_images_python_packages_are_those_its_platform_installs(
+    machine: str, extra: list[str]
+) -> None:
+    assert tpn.parse_uv_export(EXPORT, machine) == sorted(
+        ["annotated-types", "fastapi", "typing-extensions", *extra]
+    )
+
+
+def test_the_export_selects_the_packages_the_images_uv_sync_installs() -> None:
+    syncs = [line.split() for line in tpn.DOCKERFILE.read_text().splitlines() if "uv sync" in line]
+
+    assert syncs
+    for words in syncs:
+        selection = [w for w in words if w in {"--frozen", "--no-dev", "--all-packages"}]
+        extras = [arg for i, w in enumerate(words) if w == "--extra" for arg in (w, words[i + 1])]
+        assert not {"--group", "--all-extras", "--only-group", "--dev"} & set(words)
+        assert (*selection, *extras) == tpn.DOCKER_EXPORT
+
+
+def test_the_image_notices_refuse_another_python_than_the_images(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(tpn.host_platform, "python_version", lambda: "3.13.0")
+
+    with pytest.raises(tpn.NoticesError, match=r"uv run --python 3\.\d+\.\d+"):
+        tpn.docker_sections("docker-linux-x64")
+
+
+@pytest.fixture
+def stub_sections(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every section but the tools and static builds empty, without npx, cargo or pip-licenses."""
+    python = tpn.Entry("CPython", "3.14.8", "PSF-2.0")
+    monkeypatch.setattr(tpn.host_platform, "python_version", tpn.docker_python_version)
+    monkeypatch.setattr(tpn, "python_interpreter_entry", lambda: python)
+    for name in ("python_entries", "javascript_entries", "rust_entries"):
+        monkeypatch.setattr(tpn, name, lambda *args: [])
+    monkeypatch.setattr(tpn, "docker_distributions", lambda machine: [])
+    monkeypatch.setattr(tpn, "shipped_top_level_names", lambda sidecar: set())
+
+
+@pytest.mark.usefixtures("stub_sections")
+def test_the_image_notices_list_no_ffmpeg_and_no_desktop_part(tmp_path: Path) -> None:
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    assert tpn.main(["--platform", "docker-linux-x64", "--out", str(out)]) == 0
+
+    text = out.read_text()
+    assert "ffmpeg" not in text.lower()
+    sections = dict(tpn.docker_sections("docker-linux-x64"))
+    assert "Bundled libraries" not in sections
+    assert "Statically linked libraries" not in sections
+    assert [entry.name for entry in sections[tpn.LANGUAGE_DATA]] == DATA_NAMES
+
+
+@pytest.mark.usefixtures("stub_sections")
+def test_the_desktop_notices_list_each_library_a_static_build_links(tmp_path: Path) -> None:
+    sections = dict(tpn.desktop_sections("linux-x64", _libva(tmp_path / "tools")))
+
+    [entry] = sections["Statically linked libraries"]
+    assert "AppImage type 2 runtime" in entry.name
+    for part in (
+        "libfuse 3.15.0 (LGPL-2.1-only); fuse-3.15.0.tar.xz",
+        "squashfuse 0.5.2 (BSD-2-Clause); squashfuse-0.5.2.tar.gz",
+    ):
+        assert f"  {part}" in entry.text.splitlines()
+
+
+@pytest.mark.usefixtures("stub_sections")
+def test_the_windows_notices_name_no_static_build(tmp_path: Path) -> None:
+    sections = dict(tpn.desktop_sections("windows-x64", tmp_path / "no-tools"))
+
+    assert sections["Statically linked libraries"] == []
+    assert sections["Bundled libraries"] == []
+
+
+def _section(text: str, title: str) -> str:
+    return text.split(f"{title}\n{'=' * 78}\n", 1)[1]
+
+
+LINE = "-" * 78
+TEXTS_SECTION = "Licence texts of the parts in the sources release"
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_a_licence_text_seen_before_is_named_not_repeated(tmp_path: Path) -> None:
+    texts = _texts()
+    texts["libva-2.24.1.tar.bz2"] = [{"path": "COPYING", "text": "MIT text\n"}]
+    texts["type2-runtime-dd6cebedcbdd.tar.xz"] = [{"path": "COPYING", "text": "MIT text"}]
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    code = tpn.main(
+        ["--platform", "linux-x64", "--out", str(out), *_sources(tmp_path, texts=texts)]
+    )
+
+    assert code == 0
+    section = _section(out.read_text(), TEXTS_SECTION)
+    assert section.count("MIT text") == 1
+    assert "COPYING: the same text as COPYING in libva-2.24.1.tar.bz2." in section
+    assert section.count("GTK+ is LGPL-2.1+") == 1
+    assert "/libgtk-3-common/copyright: the same text as " in section
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_a_bundled_archive_without_licence_texts_is_an_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    texts = _texts()
+    del texts["libva-2.24.1.tar.bz2"]
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+    options = _sources(tmp_path, texts=texts)
+
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out), *options]) == 1
+    assert "the licence texts have none for libva-2.24.1.tar.bz2" in capsys.readouterr().err
+    assert not out.exists()
+    assert tpn.main(["--platform", "windows-x64", "--out", str(out), *options]) == 0
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_the_common_licences_that_a_copyright_file_names_are_carried_once(tmp_path: Path) -> None:
+    options = _sources(tmp_path)
+    (tmp_path / "doc" / "libgtk-3-0" / "copyright").write_text(
+        "GTK+ is LGPL-2.1+: see /usr/share/common-licenses/LGPL-2.1.\n"
+    )
+    (tmp_path / "doc" / "libgtk-3-common" / "copyright").write_text(
+        "On Debian systems, /usr/share/common-licenses/LGPL-2.1 and\n"
+        "/usr/share/common-licenses/GPL-2 have the texts.\n"
+    )
+    common = tmp_path / "common-licenses"
+    common.mkdir()
+    (common / "LGPL-2.1").write_text("GNU LESSER GENERAL PUBLIC LICENSE Version 2.1\n")
+    (common / "GPL-2").write_text("GNU GENERAL PUBLIC LICENSE Version 2\n")
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out), *options]) == 0
+    section = _section(out.read_text(), TEXTS_SECTION)
+    assert section.count("GNU LESSER GENERAL PUBLIC LICENSE Version 2.1") == 1
+    assert section.count("GNU GENERAL PUBLIC LICENSE Version 2") == 1
+    assert f"{common.as_posix()}/LGPL-2.1:" in section
+
+    (common / "GPL-2").unlink()
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out), *options]) == 1
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_an_ubuntu_package_without_its_copyright_file_is_an_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    options = _sources(tmp_path)
+    (tmp_path / "doc" / "libgtk-3-common" / "copyright").unlink()
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out), *options]) == 1
+    err = capsys.readouterr().err
+    assert str(Path("libgtk-3-common", "copyright")) in err
+    assert "build image" in err
+    assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    "content",
+    ["not json", '{"schema_version": 2, "archives": {}}', '{"schema_version": 1}', "[]"],
+)
+def test_a_file_that_is_not_the_licence_texts_is_an_error(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "licence-texts.json"
+    path.write_text(content)
+
+    with pytest.raises(tpn.NoticesError, match="not the licence texts"):
+        tpn.read_sources_texts(path)
+
+
+def test_the_scripts_agree_on_the_licence_texts_file_name() -> None:
+    names = set()
+    for script in ("sources-fetch.py", "release-workflow.py", "third-party-notices.py"):
+        text = (REPO_ROOT / "scripts" / script).read_text(encoding="utf-8")
+        names |= set(re.findall(r'^TEXTS = "([^"]+)"$', text, re.MULTILINE))
+    assert names == {tpn.TEXTS}
+
+
+def test_a_package_without_a_licence_text_gets_the_committed_one() -> None:
+    entries = [
+        tpn.Entry("rfc6902", "5.3.0", "MIT"),
+        tpn.Entry("@rolldown/binding-win32-x64-msvc", "1.2.13", "MIT"),
+        tpn.Entry("vue", "3.5.0", "MIT", text="the vue licence"),
+    ]
+
+    found = tpn.with_texts(entries, "npm")
+
+    assert "Christopher Brown" in found[0].text
+    assert "VoidZero" in found[1].text
+    assert found[2].text == "the vue licence"
+
+
+@pytest.mark.parametrize("registry", ["npm", "pypi"])
+def test_a_package_without_any_licence_text_is_an_error(registry: str) -> None:
+    with pytest.raises(tpn.NoticesError, match=f"no licence text for the {registry} packages"):
+        tpn.with_texts([tpn.Entry("left-pad", "1.3.0", "WTFPL")], registry)
+
+
+def test_each_committed_licence_text_says_where_it_was_read() -> None:
+    data = tpn.tomllib.loads(tpn.LICENCE_TEXTS.read_text(encoding="utf-8"))
+    for registry, packages in data.items():
+        for name, table in packages.items():
+            assert registry in ("npm", "pypi", "sources", "data")
+            assert table["source"].startswith("https://"), name
+            assert table["version"], name
+            assert re.search(r"copyright", table["text"], re.IGNORECASE), name
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_a_source_without_a_licence_file_gets_its_committed_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A source whose licence is only in each header: the fetch finds no file."""
+    committed = {"sources": [("example-*.tar.xz", "Copyright (c) the example authors")]}
+    monkeypatch.setattr(tpn, "read_licence_texts", lambda: committed)
+    texts = _texts() | {"example-1.0.tar.xz": []}
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+    options = _sources(tmp_path, texts=texts)
+
+    assert tpn.main(["--platform", "windows-x64", "--out", str(out), *options]) == 0
+
+    section = _section(out.read_text(), TEXTS_SECTION)
+    entry = section.split("Source archive: example-1.0.tar.xz", 1)[1]
+    assert "Copyright (c) the example authors" in entry.split(LINE, 1)[0]
+
+
+@pytest.mark.usefixtures("no_sections")
+def test_a_source_with_neither_a_licence_file_nor_a_committed_text_is_an_error(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    texts = _texts() | {"type2-runtime-dd6cebedcbdd.tar.xz": []}
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    code = tpn.main(
+        ["--platform", "linux-x64", "--out", str(out), *_sources(tmp_path, texts=texts)]
+    )
+
+    assert code == 1
+    assert "have none for type2-runtime-dd6cebedcbdd.tar.xz" in capsys.readouterr().err
+
+
+def test_the_frontend_packages_without_a_licence_file_get_the_committed_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    report = {"rfc6902@5.3.0": {"licenses": "MIT", "licenseFile": str(tmp_path / "README.md")}}
+    monkeypatch.setattr(tpn, "_run", lambda *args, **kwargs: json.dumps(report))
+
+    [entry] = tpn.javascript_entries(tmp_path)
+
+    assert "Copyright © 2014-2021 Christopher Brown" in entry.text

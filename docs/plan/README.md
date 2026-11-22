@@ -23,8 +23,8 @@ This folder holds the plan. Each file covers one part. What is already built is 
 
 | Topic | Decision | Where |
 |-------|----------|-------|
-| Encoding backend | FFmpeg/FFprobe as subprocesses. MKVToolNix (`mkvpropedit`) is optional, for metadata-only edits | [02](02-architecture.md#encoding-backend) |
-| FFmpeg distribution | The same pinned build is bundled in every artefact (Docker, Linux, Windows). The path to each tool can be overridden (env var or Settings) | [02](02-architecture.md#bundled-ffmpeg) |
+| Encoding backend | FFmpeg/FFprobe as subprocesses. Metadata-only edits of MKV files use Reframe's own Matroska header writer; MKVToolNix is a development tool only ([0080](../decisions/0080-own-matroska-header-writer.md)) | [02](02-architecture.md#encoding-backend) |
+| FFmpeg distribution | Pinned builds that no artefact contains: the desktop app and the Docker image download an offered build at the first run (or install it from a file). The path to each tool can be overridden (env var or Settings) ([0093](../decisions/0093-ffmpeg-download-and-build-choice.md), [0094](../decisions/0094-docker-image-without-ffmpeg.md)) | [02](02-architecture.md#bundled-ffmpeg) |
 | Core | One Python package, `reframe`. It has no UI or web imports, is async, and uses Pydantic v2 models | [05](05-core.md) |
 | Web | FastAPI + WebSocket events, Vue 3 + TypeScript + Vite + Pinia + PrimeVue | [06](06-web-app.md) |
 | Desktop | Tauri 2 shell. It reuses the same Vue frontend and runs the Python server as a sidecar process | [07](07-desktop-app.md#decision-tauri-2) |

@@ -41,16 +41,21 @@
     "submit": "Sign in",
     "wrongToken": "The server does not accept this token.",
     "wrongPassword": "The password is wrong.",
-    "required": "Enter a value first."
+    "required": "Enter a value first.",
+    "refused": "{title}: {detail}"
   },
   "firstRun": {
     "title": "FFmpeg cannot be used",
+    "welcomeTitle": "Welcome to Reframe",
+    "welcomeIntro": "Reframe runs these programs to read and encode videos. To use other ones, set their paths in Settings → Tools.",
+    "continue": "Continue",
+    "openSettings": "Open Settings → Tools",
     "intro": "Reframe needs FFmpeg and FFprobe to read and encode videos. Until they work, the workspace is not available; presets and settings can still be used.",
     "tools": "The tools Reframe found",
     "useBundled": "Use bundled FFmpeg",
     "choosePath": "Choose path",
     "checkAgain": "Check again",
-    "downloading": "Downloading FFmpeg…",
+    "downloading": "Installing FFmpeg…",
     "notFound": "No binary was found",
     "status": {
       "found": "Found",
@@ -61,14 +66,17 @@
     "origin": {
       "env": "From an environment variable",
       "settings": "From a path in the settings",
-      "bundled": "Bundled with Reframe",
+      "bundled": "From the downloaded build",
       "path": "From the system PATH",
       "none": "Not found anywhere"
     },
     "version": "Version {version}",
     "envNote": "The server's environment sets the path ({variables}), and that wins over Settings and a bundled build: change or unset it there, then restart the server.",
-    "webNote": "In a browser, Reframe cannot choose the programs the server runs: use the bundled FFmpeg, or set {variables} on the server and restart it.",
-    "unchanged": "Checked again at {time}: nothing has changed."
+    "webNote": "In a browser, Reframe cannot choose the programs the server runs: download a build or install one from a file, or set {variables} on the server and restart it.",
+    "unchanged": "Checked again at {time}: nothing has changed.",
+    "builds": "Get FFmpeg",
+    "buildsIntro": "Download a build that Reframe is tested with, or install one from an archive file.",
+    "problems": "Problems at the server's start"
   },
   "keys": {
     "open": "Ctrl+O"

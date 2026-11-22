@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import PurePath
 
 from reframe.command import planned_audio
+from reframe.command.subtitles import EXTERNAL_FORMATS
 from reframe.definitions import AudioEncoderDef, ContainerDef, Definitions
 from reframe.models.issues import Fix, JsonPatchOp
 from reframe.models.job import AudioOutputTrack, Container, Mixdown, SubtitleOutputTrack
@@ -15,9 +16,6 @@ from reframe.validation.common import DEFAULT_AUDIO_ENCODER, replace, switch_con
 from reframe.validation.context import JobContext
 
 __all__ = [
-    "BITMAP_CODECS",
-    "EXTERNAL_FORMATS",
-    "FORCED_ONLY_CODECS",
     "EncodedAudio",
     "SubtitleInput",
     "encoded_audio",
@@ -29,20 +27,6 @@ __all__ = [
     "track_encoder",
     "track_stream",
 ]
-
-#: ffprobe codec names of bitmap subtitles.
-BITMAP_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"})
-#: Subtitle codecs whose FFmpeg decoder has ``forced_subs_only``.
-FORCED_ONLY_CODECS = frozenset({"hdmv_pgs_subtitle", "dvd_subtitle"})
-#: External subtitle files by extension: (ffprobe codec name, kind). The command builder reads
-#: these too; any other file is refused.
-EXTERNAL_FORMATS: dict[str, tuple[str, SubtitleKind]] = {
-    ".srt": ("subrip", "text"),
-    ".ass": ("ass", "text"),
-    ".ssa": ("ass", "text"),
-    ".vtt": ("webvtt", "text"),
-    ".sup": ("hdmv_pgs_subtitle", "bitmap"),
-}
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,7 +91,7 @@ def track_stream(ctx: JobContext, track: AudioOutputTrack) -> AudioStream | None
 
 def passthru_copies(ctx: JobContext, track: AudioOutputTrack) -> bool:
     """A passthru track whose source codec the container can hold (no encoder runs)."""
-    if track.action != "passthru" or ctx.container is None:
+    if track.action != "passthru":
         return False
     stream = track_stream(ctx, track)
     return (
@@ -208,7 +192,6 @@ def switch_container(ctx: JobContext, allowed: Sequence[Container]) -> list[Fix]
         allowed,
         ctx.job.output.container,
         ctx.definitions,
-        target=ctx.target,
         output=ctx.job.output.path,
         holds=lambda container: job_fits(ctx, container),
     )

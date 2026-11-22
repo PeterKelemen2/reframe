@@ -7,8 +7,9 @@ from typing import Any
 
 import pytest
 
-from reframe.definitions import Definitions, lint_definitions, load_definitions
+from reframe.definitions import OPTION_CATEGORIES, Definitions, load_definitions
 from reframe.definitions.loader import load_raw
+from reframe_testing.definitions_lint import lint_definitions
 
 
 def test_the_packaged_definitions_are_clean() -> None:
@@ -40,6 +41,27 @@ def _has(problems: list[str], *needles: str) -> bool:
 def test_missing_help_is_reported() -> None:
     problems = _lint_mutated(lambda raw: _option(raw, "libx264", "bframes").update(help=""))
     assert _has(problems, "libx264.options.bframes", "help")
+
+
+@pytest.mark.parametrize(
+    "help_text",
+    [
+        "How many earlier frames a frame can reference.",
+        "Like the setting of x264, H.265 and AV1 encoders.",
+    ],
+)
+def test_a_number_whose_help_states_no_value_is_reported(help_text: str) -> None:
+    problems = _lint_mutated(lambda raw: _option(raw, "libx264", "ref").update(help=help_text))
+    assert _has(problems, "libx264.options.ref", "range or a typical value"), problems
+
+
+def test_a_number_whose_help_states_a_range_is_clean() -> None:
+    def mutate(raw: dict[str, Any]) -> None:
+        _option(raw, "libx264", "ref")["help"] = "Reference frames, 1 to 16."
+        _option(raw, "libx264", "deblock-beta")["help"] = "Deblock threshold (-6 … 6)."
+        _option(raw, "libx264", "me")["help"] = "Motion search method of x264."
+
+    assert _lint_mutated(mutate) == []
 
 
 def test_bad_mappings_are_reported() -> None:
@@ -158,14 +180,12 @@ def test_identity_problems_are_reported() -> None:
     def mutate(raw: dict[str, Any]) -> None:
         enc = raw["video_encoders"]["libx264"]
         enc["handbrake_key"] = "x265"
-        enc["hardware"] = True
         enc["pix_fmts"] = {"10": "yuv420p10le"}
         raw["video_encoders"]["libx265"]["label"] = ""
         raw["video_encoders"]["libsvtav1"]["id"] = "other"
 
     problems = _lint_mutated(mutate)
     assert _has(problems, "handbrake_key 'x265' also used")
-    assert _has(problems, "libx264", "hardware must be true")
     assert _has(problems, "libx264", "no 8-bit")
     assert _has(problems, "libx265", "must not be empty")
     assert _has(problems, "libsvtav1", "differs from the table key")
@@ -349,7 +369,6 @@ def test_container_problems_are_reported() -> None:
         mp4["audio"]["encode"] = ["aac", "vorbis"]
         mp4["subtitles"]["encode"] = ["pgs"]
         mp4["audio"]["copy_args"] = {"vorbis": ["-strict", "-2"]}
-        mp4["mkvpropedit_flags"] = ["default"]
         raw["containers"]["webm"]["flags"] = ["forced"]
         raw["containers"]["webm"]["subtitles"] = {"copy": [], "encode": []}
         raw["containers"]["webm"]["audio"]["copy_except"] = ["aac"]
@@ -366,7 +385,6 @@ def test_container_problems_are_reported() -> None:
         "unknown formats ['pgs']",
         "text_subtitle_target",
         "vorbis is not copyable",
-        "both muxer-written and mkvpropedit-written",
         "webm: every muxer writes the default flag",
         "webm.subtitles: holds nothing",
         "webm.audio.copy_except: only needed with copy = ['*']",
@@ -442,6 +460,24 @@ def test_filter_problems_are_reported() -> None:
         assert _has(problems, needle), needle
 
 
+def test_filter_presets_and_tunes_without_help_are_reported() -> None:
+    def mutate(raw: dict[str, Any]) -> None:
+        nlmeans = _impl(raw, "denoise", "nlmeans")
+        nlmeans["presets"][0]["help"] = ""
+        nlmeans["tunes"][0]["help"] = " "
+        del _impl(raw, "sharpen", "unsharp")["tunes"][1]["help"]
+        _impl(raw, "denoise", "hqdn3d")["presets"][-1].pop("help")
+
+    problems = _lint_mutated(mutate)
+    for needle in (
+        "denoise.nlmeans.presets.ultralight: needs help text",
+        "denoise.nlmeans.tunes.film: needs help text",
+        "sharpen.unsharp.tunes.fine: needs help text",
+        "denoise.hqdn3d.presets.custom: needs help text",
+    ):
+        assert _has(problems, needle), (needle, problems)
+
+
 def test_only_audio_encoders_missing_from_gpl_builds_fall_back() -> None:
     audio = load_definitions().audio_encoders
     assert audio["libfdk_aac"].fallback == ["aac"]
@@ -464,3 +500,39 @@ def test_audio_fallback_problems_are_reported() -> None:
     assert _has(problems, "libfdk_aac.fallback", "duplicate")
     assert _has(problems, "ac3.fallback", "must end in an encoder of every GPL build")
     assert _has(problems, "eac3.fallback", "needs a fallback chain")
+
+
+def test_every_option_is_in_a_category_of_the_panel() -> None:
+    for encoder in load_definitions().video_encoders.values():
+        for option in encoder.options:
+            assert option.category in OPTION_CATEGORIES, (encoder.id, option.key)
+    problems = _lint_mutated(lambda raw: _option(raw, "libx265", "rect").update(category="Misc"))
+    assert any("libx265.options.rect" in p and "unknown category" in p for p in problems)
+
+
+@pytest.mark.parametrize(
+    ("encoder", "key", "mapping", "needle"),
+    [
+        ("libx265", "amp", {"kind": "x26x_param", "name": "rect"}, "like option 'rect'"),
+        ("hevc_nvenc", "gpu", {"kind": "ffmpeg_arg", "arg": "-bf"}, "like option 'bf'"),
+        ("libx265", "rect", {"kind": "x26x_param", "name": "level-idc"}, "levels already"),
+        ("hevc_nvenc", "gpu", {"kind": "private_opt", "name": "cq"}, "rate control already"),
+        ("libsvtav1", "lp", {"kind": "x26x_param", "name": "fast-decode"}, "fast decode"),
+        ("libvpx-vp9", "threads", {"kind": "private_opt", "name": "row-mt"}, "extra_args"),
+    ],
+)
+def test_an_option_that_writes_what_something_else_writes(
+    encoder: str, key: str, mapping: dict[str, str], needle: str
+) -> None:
+    problems = _lint_mutated(lambda raw: _option(raw, encoder, key).update(mapping=mapping))
+    assert any(f"{encoder}.options.{key}" in p and needle in p for p in problems), problems
+
+
+def test_nvenc_multipass_may_share_the_argument_of_2_pass() -> None:
+    """The option is for constant quality, NVENC's 2-pass for average bitrate."""
+
+    def bitrate_too(raw: dict[str, Any]) -> None:
+        _option(raw, "hevc_nvenc", "multipass")["requires"] = []
+
+    problems = _lint_mutated(bitrate_too)
+    assert any("hevc_nvenc.options.multipass" in p and "2-pass" in p for p in problems)

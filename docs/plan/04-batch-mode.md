@@ -164,7 +164,8 @@ E11         │ ✓ 1080p    │ ✓ #1                   │ ✗ none          
 
 - Some settings are per-file by nature, and the template holds a **policy** for them, not a
   value:
-  - **Crop**: "auto-detect per file" (default) or "same manual crop for all".
+  - **Crop**: "auto-detect per file" (default: each file's crop is detected when the group is
+    queued) or "same manual crop for all".
   - **Chapter names**: from source, or generated.
   - **Tags and output name**: templates.
   - **Range**: full file (default).
@@ -217,8 +218,9 @@ as the matrix above shows; [0040](../decisions/0040-batch-engine-and-reframe-bat
 2. **Edit group**. In Audio: A1 = jpn TrueHD → Opus 5.1 448k, name `Japanese 5.1`, default.
    A2 = eng DTS-HD MA → AC-3 5.1 640k, name `English 5.1`. In Subtitles: S1 = Signs (forced
    flag), S2 = Full (default).
-3. **Check group** → all ✓. E05's commentary track is not selected, because no rule asks for
-   the `commentary` role.
+3. **Check group**. E05 is ⚠: its commentary track is not selected, because no rule asks
+   for the `commentary` role. E11 has no English dub (A2 ✗) and its signs track matches
+   without the title (≈). **Make the rule optional** on A2 skips it for E11.
 4. **Add group to queue** → 12 jobs.
 
 ## Core API (implemented in `C-12`)
@@ -228,11 +230,12 @@ def describe_tracks(source: MediaSource) -> list[TrackDescriptor]
 def fingerprint(source: MediaSource, level: MatchLevel) -> Fingerprint
 def group_sources(sources: list[MediaSource], level: MatchLevel) -> list[BatchGroup]
 def derive_template(job: JobSettings, source: MediaSource, sections: set[Section]) -> JobTemplate
-def merge_template(base: JobTemplate, incoming: JobTemplate, sections: set[Section]) -> JobTemplate
 def resolve(template: JobTemplate, source: MediaSource, override: JsonPatch | None) -> Resolution
-def resolve_group(group: BatchGroup, template: JobTemplate, sources: dict[Path, MediaSource],
-                  overrides: dict[SourceId, JsonPatch]) -> list[Resolution]   # the probed members
 ```
+
+A group is resolved file by file with `resolve` (`Reframe.batch.resolve` and `resolve_batch`).
+*Apply to group* is `derive_template` with a `base`; a client copies sections itself
+([decision 0090](../decisions/0090-batch-api-and-draft-path.md)).
 
 Done when:
 

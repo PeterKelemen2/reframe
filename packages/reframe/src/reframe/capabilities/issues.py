@@ -7,10 +7,18 @@ while its encoder is still being checked, and nothing is wrong yet.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from reframe.definitions import Definitions
 from reframe.models.capabilities import CapabilitySnapshot, EncoderState, EncoderStatus
-from reframe.models.issues import Fix, FixTarget, ReplaceOp, Severity, ValidationIssue
+from reframe.models.issues import (
+    Fix,
+    FixTarget,
+    JsonPatchOp,
+    ReplaceOp,
+    Severity,
+    ValidationIssue,
+)
 
 __all__ = ["closest_available", "encoder_issues", "field_pointer"]
 
@@ -65,6 +73,11 @@ def _unavailable_text(status: EncoderStatus) -> str:
     reason = status.reason or "no reason given"
     if status.state is EncoderState.ERROR:
         return f"could not be checked: {reason}"
+    if status.build_mismatch:
+        return (
+            f"is not available: {reason}. Another FFmpeg build may work with this computer "
+            "(Settings → Tools, or reframe tools fetch --build)"
+        )
     return f"is not available: {reason}"
 
 
@@ -76,6 +89,7 @@ def encoder_issues(
     path: str = "video.encoder",
     target: FixTarget = "job",
     subject: str | None = None,
+    fix_ops: Callable[[str], tuple[list[JsonPatchOp], str | None]] | None = None,
 ) -> list[ValidationIssue]:
     """The issues of using ``encoder_id`` now.
 
@@ -84,6 +98,8 @@ def encoder_issues(
     :param target: the document the fix patches (``job``; ``template`` for a preset).
     :param subject: the document that uses the encoder, named in the message
         (``Preset "X" uses …``).
+    :param fix_ops: the patch and a note for switching to the closest encoder; ``None``
+        replaces only the encoder field.
     """
     if not _known(encoder_id, definitions):
         message = f"Unknown encoder {encoder_id!r}: Reframe has no definition for it."
@@ -132,13 +148,12 @@ def encoder_issues(
     fixes: list[Fix] = []
     closest = closest_available(encoder_id, caps, definitions)
     if closest is not None and closest != encoder_id:
-        fixes.append(
-            Fix(
-                label=f"Use {closest} (closest match)",
-                patch=[ReplaceOp(path=field_pointer(path), value=closest)],
-                target=target,
-            )
-        )
+        if fix_ops is not None:
+            ops, note = fix_ops(closest)
+        else:
+            ops, note = [ReplaceOp(path=field_pointer(path), value=closest)], None
+        detail = "closest match" + (f"; {note}" if note else "")
+        fixes.append(Fix(label=f"Use {closest} ({detail})", patch=ops, target=target))
     return [
         ValidationIssue(
             severity=Severity.ERROR,

@@ -1,17 +1,15 @@
 """The desktop sidecar of ``desktop/sidecar/build.py``: the frozen server starts, answers from the
-data files and the MediaInfo library it must bundle, and ends with its encode when the process
-that started it ends; the frozen CLI next to it uses it as its owner. CI does not build the
-sidecar, so those tests are skipped without it. The package scripts that link the CLI as
-``/usr/bin/reframe`` run on any Linux."""
+data files it must bundle, and ends with its encode when the process that started it ends; the
+frozen CLI next to it uses it as its owner. CI does not build the sidecar, so those tests are
+skipped without it. The package scripts that link the CLI as ``/usr/bin/reframe`` run on any
+Linux."""
 
 from __future__ import annotations
 
 import json
 import os
-import queue
 import subprocess
 import sys
-import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -26,6 +24,7 @@ import reframe
 from reframe_server import parent
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
+from reframe_testing.processes import ready_port
 from reframe_testing.server import PROBE_RULE
 
 REPO = Path(__file__).resolve().parents[3]
@@ -52,17 +51,6 @@ class Frozen:
 
 class StartFrozen(Protocol):
     def __call__(self, parent_pid: int | None = None, *, real_tools: bool = False) -> Frozen: ...
-
-
-def ready_port(process: subprocess.Popen[bytes], limit: float = 30.0) -> int:
-    lines: queue.Queue[bytes] = queue.Queue()
-    stdout = process.stdout
-    assert stdout is not None
-    threading.Thread(target=lambda: lines.put(stdout.readline()), daemon=True).start()
-    ready = json.loads(lines.get(timeout=limit))
-    assert ready["event"] == "ready"
-    port: int = ready["port"]
-    return port
 
 
 @pytest.fixture
@@ -170,19 +158,45 @@ def probe(client: httpx.Client, path: Path) -> dict[str, Any]:
 @pytest.mark.needs_ffmpeg
 @pytest.mark.slow
 @needs_sidecar
-def test_the_frozen_server_reads_bit_rates_with_its_bundled_mediainfo(
+def test_the_frozen_server_estimates_the_bit_rates_that_ffprobe_does_not_give(
     start_frozen: StartFrozen, fixture_media: Callable[[str], Path], tmp_path: Path
 ) -> None:
-    """Without MediaInfo in the build the probe still works, but a stream that ffprobe gives no
-    bit rate for keeps an unknown one, and every rule that reads bit rates treats it as too high."""
+    """A stream without a bit rate keeps an unknown one, and every rule that reads bit rates
+    treats it as too high."""
     source = tmp_path / "media" / "vfr.mkv"
     source.parent.mkdir()
     source.write_bytes(fixture_media("vfr-mkv").read_bytes())
     client = start_frozen(real_tools=True).client
     source_id = probe(client, source)["id"]
     [video] = client.get(f"/api/sources/{source_id}").json()["video"]
-    assert video["bitrate"]["source"] == "mediainfo"
+    assert video["bitrate"]["source"] == "estimated"
     assert video["bitrate"]["value"] > 0
+    assert video["bitrate"]["samples"] > 0
+
+
+@pytest.mark.needs_ffmpeg
+@pytest.mark.slow
+@needs_sidecar
+def test_the_frozen_cli_names_languages_from_its_bundled_tables(
+    frozen_env: dict[str, str], fixture_media: Callable[[str], Path], tmp_path: Path
+) -> None:
+    """The language libraries are not in the build: without the tables every language is an
+    unknown code and every track rule that matches a language fails."""
+    tables = SIDECAR / "_internal" / "reframe" / "definitions" / "data"
+    assert sorted(p.name for p in tables.glob("language-*.json.gz")) == [
+        "language-core.json.gz",
+        "language-locale-names.json.gz",
+        "language-search.json.gz",
+    ]
+    env = frozen_env | {"REFRAME_FFMPEG": str(media.find_ffmpeg())}
+    env["REFRAME_FFPROBE"] = str(media.find_ffprobe())
+    # Wide enough that "jpn Japanese" stays on one table line; an xdist worker has no COLUMNS.
+    env["COLUMNS"] = "200"
+    result = run_cli(FROZEN_CLI, "probe", str(fixture_media("multitrack")), env=env, cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "jpn Japanese" in result.stdout
+    assert "eng English" in result.stdout
+    assert "unknown code" not in result.stdout
 
 
 def older_stand_in() -> subprocess.Popen[bytes]:

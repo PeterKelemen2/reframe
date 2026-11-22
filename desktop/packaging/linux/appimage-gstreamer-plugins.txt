@@ -1,0 +1,39 @@
+# The GStreamer plugins that the AppImage carries, for WebKitGTK's <video>: its player, the
+# Matroska and MP4 demuxers, the decoders of GStreamer's core, base and good sets, and the AV1
+# and VA-API decoders of the bad set. One plugin per line, the name of its file without `libgst`
+# and `.so`. build-in-container.sh copies them from the build image; the packages they come
+# from are in appimage-packages.txt.
+# No FFmpeg: gst-libav links FFmpeg's libraries, which no package may contain. No openh264,
+# x264 or x265 either.
+
+# core (libgstreamer1.0-0)
+coreelements
+
+# base (gstreamer1.0-plugins-base)
+app
+audioconvert
+audioresample
+opus
+pbtypes
+playback
+typefindfunctions
+videoconvert
+videoscale
+volume
+vorbis
+
+# good (gstreamer1.0-plugins-good)
+audioparsers
+autodetect
+flac
+isomp4
+matroska
+mpg123
+pulseaudio
+vpx
+
+# bad (gstreamer1.0-plugins-bad): AV1 in software (libaom), H.264, HEVC and AV1 on the GPU
+# through the host's libva and VA-API driver, and the parsers that those decoders need
+aom
+va
+videoparsersbad

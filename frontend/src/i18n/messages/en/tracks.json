@@ -3,6 +3,7 @@
   "noJob": "No job is open.",
   "units": {
     "kbps": "{value} kb/s",
+    "kbpsEstimated": "≈ {value} kb/s",
     "khz": "{value} kHz",
     "bits": "{bits}-bit",
     "rateDepth": "{rate} / {bits}-bit",
@@ -47,16 +48,17 @@
     "bitrateFrom": {
       "stream": "stream",
       "statsTag": "statistics tags",
-      "mediainfo": "MediaInfo",
+      "estimated": "estimated",
+      "estimatedFrom": "estimated from one sample | estimated from {n} samples",
       "measured": "measured",
       "unknown": "Unknown"
     },
     "bitrateHelp": {
       "stream": "From the stream's own bitrate",
       "statsTag": "From the Matroska statistics tags (BPS, or NUMBER_OF_BYTES over DURATION)",
-      "mediainfo": "From MediaInfo",
+      "estimated": "Estimated from a sample of the file's clusters",
       "measured": "Measured from the packet sizes",
-      "unknown": "Unknown: the stream, the statistics tags and MediaInfo do not give it"
+      "unknown": "Unknown: the stream, the statistics tags and a sample of the file do not give it"
     },
     "eventsFrom": {
       "statsTag": "From the NUMBER_OF_FRAMES tag",
@@ -154,6 +156,7 @@
     "keepLanguageOf": "As the source ({language})",
     "fileLanguageUnset": "Not set (written as und)",
     "name": "Name",
+    "nameHelp": "Text, or a name template that is filled in for this track: {example} gives {result}. Variables: {variables}. Write {open} and {close} for a brace.",
     "nameKeep": "As the source: {title}",
     "nameKeepUntitled": "As the source (no title)",
     "nameNone": "No title",

@@ -30,7 +30,7 @@ def plan_for(path: Path) -> tuple[EncodePlan, MediaSource]:
     source = recorded("multitrack.mkv", path)
     job = remux_job(JobSettings(source=SourceRef(path=path)), source)
     job.audio[0].metadata.name = "Renamed"
-    tools = tool_set(Path("/usr/bin/ffmpeg"), mkvpropedit=Path("/usr/bin/mkvpropedit"))
+    tools = tool_set(Path("/usr/bin/ffmpeg"))
     plan = build_plan(job, source, all_caps(), tools)
     assert plan.job_type == "metadata_edit"
     return plan, source
@@ -54,8 +54,9 @@ def test_a_plan_that_edits_only_its_source_is_accepted(copy: Path) -> None:
         lambda p, d: setattr(p, "output_final", d / "Other.mkv"),
         lambda p, d: setattr(p.steps[0], "tool", "ffmpeg"),
         lambda p, d: setattr(p.steps[0], "kind", "encode"),
-        lambda p, d: p.steps[0].argv.__setitem__(0, str(d / "Other.mkv")),
-        lambda p, d: setattr(p.steps[0], "argv", []),
+        lambda p, d: setattr(p.steps[0].header_edit, "path", d / "Other.mkv"),
+        lambda p, d: setattr(p.steps[0], "header_edit", None),
+        lambda p, d: setattr(p.steps[0], "argv", ["x"]),
     ],
 )
 def test_anything_else_is_refused(copy: Path, change: Callable[[EncodePlan, Path], None]) -> None:
@@ -121,7 +122,6 @@ def test_writable_file(tmp_path: Path) -> None:
 async def test_a_refused_in_place_job_fails_and_cleans_nothing(harness: Harness) -> None:
     """The source is not a real Matroska file, so the track check refuses the edit."""
     h = harness
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     job = remux_job(JobSettings(source=SourceRef(path=h.source_path)), h.sources.source)
     job.audio[0].metadata.name = "Renamed"
     before = h.source_path.read_bytes()
@@ -131,5 +131,6 @@ async def test_a_refused_in_place_job_fails_and_cleans_nothing(harness: Harness)
     assert ended.error.startswith("The Matroska track headers of Movie.Source.mkv cannot be read")
     assert [i.code for i in ended.issues][-1] == "inplace.tracks_mismatch"
     assert h.source_path.read_bytes() == before
-    assert h.fake.invocations() == []  # mkvpropedit never ran
+    assert h.fake.invocations() == []
+    assert h.writer.edits == []
     assert "Clean-up" not in h.log_text(ended.id)

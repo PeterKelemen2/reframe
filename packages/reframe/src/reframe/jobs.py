@@ -10,24 +10,26 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
 from reframe import metadata, preview
-from reframe.batch import draft_tracks, output_size, video_metadata
-from reframe.batch.resolve import resolve_with_tracks
+from reframe.batch import output_size, video_metadata
+from reframe.batch.lint import container_codec_issues
+from reframe.batch.resolve import resolve
+from reframe.batch.rules import resolve_tracks
 from reframe.command import PlanError, build_plan, job_type_info, output_chapters
 from reframe.command.metadata import rendered_tags
 from reframe.definitions import Definitions, EncoderOption, load_definitions
 from reframe.definitions import hdr_options as _hdr_options
 from reframe.definitions import search_options as _search_options
 from reframe.jsonpatch import escape_token
-from reframe.mediatask import MediaTaskContext
+from reframe.mediatask import CapabilitiesLookup, MediaTaskContext, ToolsLookup
 from reframe.models.capabilities import CapabilitySnapshot
-from reframe.models.defaults import TrackDecision, TrackDraft
+from reframe.models.defaults import TrackDraft
 from reframe.models.draft import JobDraft
 from reframe.models.issues import AddOp, JsonPatchOp, Severity, ValidationIssue
 from reframe.models.job import Container, JobNaming, JobSettings
@@ -39,7 +41,6 @@ from reframe.models.preset import Preset
 from reframe.models.settings import AppSettings, LanguageSettings
 from reframe.models.tasks import TaskInfo
 from reframe.models.template import JobTemplate
-from reframe.models.tools import ToolSet
 from reframe.naming import resolve_output_name
 from reframe.probe import ProbeError
 from reframe.probe.folder import list_media_files
@@ -50,20 +51,18 @@ from reframe.validation.dryrun import dry_run as _dry_run
 __all__ = [
     "DETECTION_WAIT",
     "WAIT_CODES",
-    "Capabilities",
     "JobService",
     "MediaFiles",
     "OutputClaims",
     "PresetLookup",
     "SourceProber",
-    "ToolDiscovery",
     "draft_from_preset",
     "file_key",
     "find_media_files",
     "has_errors",
     "is_partial_output",
-    "job_from_preset",
     "output_size",
+    "probe_issue",
     "video_metadata",
 ]
 
@@ -89,21 +88,6 @@ class PresetLookup(Protocol):
     def find(self, name_or_id: str) -> Preset | None: ...
 
     def default(self) -> Preset: ...
-
-
-class ToolDiscovery(Protocol):
-    """What the jobs service needs from ``Reframe.tools``."""
-
-    async def status(self) -> ToolSet: ...
-
-
-class Capabilities(Protocol):
-    """What the jobs service needs from ``Reframe.capabilities``."""
-
-    @property
-    def snapshot(self) -> CapabilitySnapshot: ...
-
-    async def wait(self) -> CapabilitySnapshot: ...
 
 
 def file_key(path: str | os.PathLike[str]) -> str:
@@ -243,7 +227,8 @@ def has_errors(issues: Sequence[ValidationIssue]) -> bool:
     return any(issue.severity is Severity.ERROR for issue in issues)
 
 
-def _probe_issue(error: ProbeError) -> ValidationIssue:
+def probe_issue(error: ProbeError) -> ValidationIssue:
+    """The ``source.probe_failed`` error of a source that cannot be read."""
     detail = f" ({error.detail})" if error.detail else ""
     return _issue(
         Severity.ERROR,
@@ -253,45 +238,28 @@ def _probe_issue(error: ProbeError) -> ValidationIssue:
     )
 
 
-def job_from_preset(
-    source: MediaSource,
-    preset: Preset,
-    *,
-    definitions: Definitions | None = None,
-    languages: LanguageSettings | None = None,
-) -> tuple[JobSettings, list[TrackDecision], list[str]]:
-    """The job settings of ``source`` encoded with ``preset`` (without the output path), the
-    audio track decisions, and notes about how preset options were applied. ``languages``:
-    the preferred languages of the track selection. Pure."""
-    job, tracks, notes = draft_from_preset(
-        source, preset, definitions=definitions, languages=languages
-    )
-    return job, tracks.decisions, notes
-
-
 def draft_from_preset(
     source: MediaSource,
     preset: Preset,
     *,
     definitions: Definitions | None = None,
     languages: LanguageSettings | None = None,
-    container_codecs: bool = True,
 ) -> tuple[JobSettings, TrackDraft, list[str]]:
-    """:func:`job_from_preset` with the whole :class:`~reframe.models.TrackDraft`: the audio and
-    subtitle decisions and the issues of the track stage. Pure.
-
-    ``container_codecs=False`` leaves out the defaults lint's ``defaults.codec_not_in_container``,
-    for a job that is validated later, which reports ``container.codec_unsupported`` instead.
+    """The job settings of ``source`` encoded with ``preset`` (without the output path), the
+    :class:`~reframe.models.TrackDraft` (the audio and subtitle decisions and the issues of the
+    track stage), and notes about how preset options were applied. ``languages``: the
+    preferred languages of the track selection. Pure.
     """
-    resolution, tracks = resolve_with_tracks(
-        preset,
-        source,
-        definitions=definitions,
-        languages=languages,
-        container_codecs=container_codecs,
-    )
+    resolution = resolve(preset, source, definitions=definitions, languages=languages)
     assert resolution.job is not None  # resolve always makes a job
-    return resolution.job, tracks.draft, resolution.notes
+    draft = TrackDraft(
+        audio=resolution.job.audio,
+        subtitles=resolution.job.subtitles,
+        decisions=resolution.decisions,
+        subtitle_decisions=resolution.subtitle_decisions,
+        issues=resolution.issues,
+    )
+    return resolution.job, draft, resolution.notes
 
 
 class JobService:
@@ -315,8 +283,8 @@ class JobService:
         *,
         sources: SourceProber,
         presets: PresetLookup,
-        tools: ToolDiscovery,
-        capabilities: Capabilities,
+        tools: ToolsLookup,
+        capabilities: CapabilitiesLookup,
         settings: Callable[[], AppSettings],
         definitions: Definitions | None = None,
         fs: FileSystemView | None = None,
@@ -341,16 +309,13 @@ class JobService:
             self._definitions = load_definitions()
         return self._definitions
 
-    @property
-    def detection_wait(self) -> float:
-        return self._detection_wait
-
     async def draft(
         self,
         source: str | os.PathLike[str] | MediaSource,
         preset: Preset | str | None = None,
         *,
         output: Path | None = None,
+        validate: Callable[[JobSettings], Awaitable[list[ValidationIssue]]] | None = None,
     ) -> JobDraft | ProbeError:
         """The job for ``source`` with ``preset`` (``None``: the default preset; a string: a
         preset id or name), validated.
@@ -360,6 +325,9 @@ class JobService:
         extension; an existing folder gets the template name inside it. ``None``: the naming
         template, in the output folder of the naming options. A template name that is the
         source file itself gets the next free name.
+
+        ``validate``: validates the drafted job instead of this service (a client whose queue's
+        owner decides).
         """
         media = source if isinstance(source, MediaSource) else await self._sources.probe(source)
         if isinstance(media, ProbeError):
@@ -374,7 +342,11 @@ class JobService:
         track_issues = [
             i for i in tracks.issues if i.severity is Severity.ERROR or i.code.startswith("batch.")
         ]
-        issues = [*issues, *track_issues, *await self._validate(job, media, naming)]
+        if validate is None:
+            checked = await self._validate(job, media, naming)
+        else:
+            checked = await validate(job)
+        issues = [*issues, *track_issues, *checked]
         return JobDraft(
             job=job,
             decisions=tracks.decisions,
@@ -415,14 +387,8 @@ class JobService:
         naming: NamingOptions,
         output: Path | None,
     ) -> tuple[JobSettings, TrackDraft, NameResult, list[str]]:
-        # Validation reports a codec the container cannot hold, so the defaults lint does not
-        # say it again: one issue per problem.
         job, tracks, notes = draft_from_preset(
-            media,
-            preset,
-            definitions=self.definitions,
-            languages=self._settings().languages,
-            container_codecs=False,
+            media, preset, definitions=self.definitions, languages=self._settings().languages
         )
         job, name, more = self._name(job, media, naming, output)
         return job, tracks, name, [*notes, *more]
@@ -564,7 +530,7 @@ class JobService:
         if source is not None:
             return source
         probed = await self._sources.probe(job.source.path)
-        return [_probe_issue(probed)] if isinstance(probed, ProbeError) else probed
+        return [probe_issue(probed)] if isinstance(probed, ProbeError) else probed
 
     async def _validate(
         self, job: JobSettings, media: MediaSource, naming: NamingOptions
@@ -646,8 +612,21 @@ class JobService:
             chosen.output.container = container
         languages = self._settings().languages
         draft = await asyncio.to_thread(
-            draft_tracks, media, chosen, definitions=self.definitions, languages=languages
+            lambda: (
+                resolve_tracks(
+                    chosen, media, definitions=self.definitions, languages=languages
+                ).draft
+            )
         )
+        # No validation runs here to report a codec the container cannot hold, so the preview
+        # adds it, where the defaults decide the audio.
+        if not chosen.audio_rules:
+            draft.issues = [
+                *draft.issues,
+                *container_codec_issues(
+                    chosen.audio_defaults, chosen.output.container, self.definitions
+                ),
+            ]
         if issues:
             draft.issues = [*issues, *draft.issues]
         return draft
@@ -670,9 +649,7 @@ class JobService:
         media = source if isinstance(source, MediaSource) else await self._sources.probe(source)
         if isinstance(media, ProbeError):
             return media
-        job = metadata.remux_job(
-            draft.job, media, edit_in_place=edit_in_place, definitions=self.definitions
-        )
+        job = metadata.remux_job(draft.job, media, edit_in_place=edit_in_place)
         naming = self._naming_options(self._job_preset(job))
         issues = await self._validate(job, media, naming)
         keep = [issue for issue in draft.issues if issue.code == "preset.not_found"]

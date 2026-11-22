@@ -4,7 +4,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
-import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 
 import type {
   DesktopBackend,
@@ -15,6 +15,7 @@ import type {
 } from '../types'
 
 import { openPreviewWindow, setSettings, settings } from './comfort'
+import { menuEntry, setMenuEntry } from './menuEntry'
 import { onOpenPaths } from './openPaths'
 import { subscribe } from './subscribe'
 import { openReadable } from './unreadable'
@@ -104,6 +105,8 @@ export function createDesktopPlatform(): Platform {
     settings,
     setSettings,
     openPreviewWindow,
+    menuEntry,
+    setMenuEntry,
   }
 
   return {
@@ -141,7 +144,16 @@ export function createDesktopPlatform(): Platform {
     },
 
     openExternal(target) {
-      return openUrl(target)
+      return invoke('open_external', { url: target })
+    },
+
+    async canPlayVideo() {
+      try {
+        return await invoke<boolean>('webview_plays_video')
+      } catch (error) {
+        console.error('platform.canPlayVideo failed', error)
+        return true
+      }
     },
 
     async notify(title, body) {

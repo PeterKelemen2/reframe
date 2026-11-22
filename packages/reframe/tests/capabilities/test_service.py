@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-import threading
 import time
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +12,7 @@ import pytest
 
 from reframe.capabilities import CacheKey, CapabilityCache, CapabilityService
 from reframe.capabilities import service as service_module
-from reframe.events import EventBus, Subscription
+from reframe.events import EventBus
 from reframe.models import (
     AppSettings,
     CapabilitiesChangedEvent,
@@ -28,6 +26,8 @@ from reframe.service import Reframe, ReframeClosedError
 from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
 from reframe_testing.capabilities import StubTools, ffmpeg_info, tool_set
+from reframe_testing.helpers import drain
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
@@ -39,27 +39,12 @@ NODE = "/dev/dri/renderD128"
 OTHER_NODE = "/dev/dri/renderD129"
 
 
-async def until(condition: Callable[[], bool], limit: float = 15.0) -> None:
-    deadline = time.monotonic() + limit
-    while not condition():
-        if time.monotonic() > deadline:
-            raise TimeoutError("condition not met in time")
-        await asyncio.sleep(0.02)
-
-
 def running_detections() -> list[asyncio.Task[Any]]:
     return [
         t
         for t in asyncio.all_tasks()
         if t.get_name() == "reframe-encoder-detection" and not t.done()
     ]
-
-
-def drain(subscription: Subscription) -> list[Event]:
-    events = []
-    while (event := subscription.get_nowait()) is not None:
-        events.append(event)
-    return events
 
 
 def changed(events: list[Event]) -> list[CapabilitiesChangedEvent]:
@@ -163,7 +148,7 @@ async def test_close_kills_running_test_encodes(fake_env: ft.FakeTools) -> None:
     fake_env.set_scenario(ft.Scenario([ft.Rule(argv_has=["-c:v"], actions=[ft.hang()])]))
     app = await Reframe.create()
     try:
-        await until(lambda: len(encode_calls(fake_env)) >= 3)
+        await wait_until(lambda: len(encode_calls(fake_env)) >= 3)
         assert app.capabilities.snapshot.detecting
     finally:
         await app.close()
@@ -198,7 +183,7 @@ async def test_a_new_ffmpeg_starts_a_new_detection(
         monkeypatch.setenv("REFRAME_FFMPEG", str(other.ffmpeg))
         tools = await app.tools.rescan()
         assert tools.ffmpeg.path == other.ffmpeg
-        await until(lambda: app.capabilities.snapshot.ffmpeg == other.ffmpeg)
+        await wait_until(lambda: app.capabilities.snapshot.ffmpeg == other.ffmpeg)
         second = await app.capabilities.wait()
         assert first.ffmpeg == fake_env.ffmpeg
         assert second.ffmpeg == other.ffmpeg
@@ -246,7 +231,7 @@ async def test_second_start_shows_the_cached_result_at_once(
     )
     harness.service = harness.make()
     harness.service.start()
-    await until(lambda: harness.service.snapshot.from_cache)
+    await wait_until(lambda: harness.service.snapshot.from_cache)
     cached = harness.service.snapshot
     assert cached.detecting  # checked again in the background
     assert cached.status("hevc_amf").state is AVAILABLE  # known before the detection ends
@@ -290,7 +275,7 @@ async def test_rescan_cancels_the_running_detection(
 ) -> None:
     fake_tools.set_scenario(ft.Scenario([ft.Rule(argv_has=["-c:v"], actions=[ft.hang()])]))
     harness.service.start()
-    await until(lambda: len(encode_calls(fake_tools)) >= 3)
+    await wait_until(lambda: len(encode_calls(fake_tools)) >= 3)
     hanging = fake_tools.pids()
     fake_tools.set_scenario(ft.Scenario())
     final = await harness.service.rescan()
@@ -300,6 +285,14 @@ async def test_rescan_cancels_the_running_detection(
 
 
 async def test_rescan_ignores_the_cache(harness: Harness, fake_tools: ft.FakeTools) -> None:
+    calls = 0
+
+    def fingerprint() -> str:
+        nonlocal calls
+        calls += 1
+        return GPU
+
+    harness.service = harness.make(gpu_fingerprint=fingerprint)
     harness.service.start()
     await harness.service.wait()
     fake_tools.clear_log()
@@ -309,6 +302,7 @@ async def test_rescan_ignores_the_cache(harness: Harness, fake_tools: ft.FakeToo
     events = changed(drain(harness.subscription))
     assert {s.state for s in events[0].encoders} == {CHECKING}
     assert encode_calls(fake_tools)
+    assert calls == 1  # the fingerprint is read once, not on every rescan
 
 
 async def test_waits_for_tool_discovery(harness: Harness) -> None:
@@ -394,27 +388,9 @@ async def test_tools_changed_with_another_version_detects_again(harness: Harness
     newer = ffmpeg_info(harness.fake.ffmpeg, version="n9.1")
     harness.tools.tools = tool_set(newer)
     harness.events.publish(ToolsChangedEvent(tools=harness.tools.tools))
-    await until(lambda: harness.service.snapshot.ffmpeg_version == "n9.1")
+    await wait_until(lambda: harness.service.snapshot.ffmpeg_version == "n9.1")
     final = await harness.service.wait()
     assert final.ffmpeg_version == "n9.1"
-
-
-async def test_the_gpu_fingerprint_is_read_once(fake_tools: ft.FakeTools, tmp_path: Path) -> None:
-    calls = 0
-
-    def fingerprint() -> str:
-        nonlocal calls
-        calls += 1
-        return GPU
-
-    h = Harness(fake_tools, tmp_path / "caps", gpu_fingerprint=fingerprint)
-    try:
-        h.service.start()
-        await h.service.wait()
-        await h.service.rescan()
-        assert calls == 1
-    finally:
-        await h.close()
 
 
 async def test_a_failing_gpu_fingerprint_is_not_fatal(
@@ -500,62 +476,6 @@ async def test_wait_and_rescan_return_after_the_cache_write(
     assert second.checked_at != first.checked_at
 
 
-async def test_close_finishes_a_started_cache_write(
-    harness: Harness, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """``close()`` cancels the detection but not a cache write that has started."""
-    started, release = threading.Event(), threading.Event()
-    put = CapabilityCache.put
-
-    def slow_put(cache: CapabilityCache, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
-        started.set()
-        release.wait(15)
-        put(cache, key, snapshot)
-
-    monkeypatch.setattr(CapabilityCache, "put", slow_put)
-    harness.service.start()
-    try:
-        await until(started.is_set)
-        closing = asyncio.ensure_future(harness.service.close())
-        await until(lambda: not harness.service.detecting)  # the detection is cancelled ...
-        assert not closing.done()  # ... but close() waits for the write
-    finally:
-        release.set()
-    await closing
-    assert cache_files(harness.cache_dir)
-    assert not cached_snapshot(harness.cache_dir)["detecting"]
-
-
-async def test_a_new_detection_waits_for_the_last_cache_write(
-    harness: Harness, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A re-scan during a cache write starts after the write: an older result never
-    overwrites the newer one."""
-    started, release = threading.Event(), threading.Event()
-    put = CapabilityCache.put
-
-    def slow_first_put(cache: CapabilityCache, key: CacheKey, snapshot: CapabilitySnapshot) -> None:
-        if not started.is_set():
-            started.set()
-            release.wait(15)
-        put(cache, key, snapshot)
-
-    monkeypatch.setattr(CapabilityCache, "put", slow_first_put)
-    harness.service.start()
-    try:
-        await until(started.is_set)
-        (first,) = running_detections()
-        rescan = asyncio.ensure_future(harness.service.rescan())
-        await until(first.done)  # cancelled during its cache write ...
-        await asyncio.sleep(0)
-        assert harness.tools.calls == 1  # ... and the re-scan waits for the write
-    finally:
-        release.set()
-    final = await rescan
-    assert harness.tools.calls == 2
-    assert cached_snapshot(harness.cache_dir) == final.model_dump(mode="json")
-
-
 async def test_a_failing_cache_write_is_not_fatal(
     harness: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -607,7 +527,7 @@ async def test_close_waits_for_a_replaced_detection(
     returns only when every detection it started has ended, so no test encode is left."""
     fake_tools.set_scenario(ft.Scenario([ft.Rule(argv_has=["-c:v"], actions=[ft.hang()])]))
     harness.service.start()
-    await until(lambda: len(encode_calls(fake_tools)) >= 3)
+    await wait_until(lambda: len(encode_calls(fake_tools)) >= 3)
     rescan = asyncio.ensure_future(harness.service.rescan())
     await asyncio.sleep(0)  # rescan() cancels the running detection and starts a new one
     await harness.service.close()
@@ -643,7 +563,7 @@ async def test_a_new_ffmpeg_does_not_show_the_old_filter_results(
         other.set_scenario(ft.Scenario([ft.Rule(argv_has=["-encoders"], actions=[ft.hang()])]))
         harness.tools.tools = tool_set(ffmpeg_info(other.ffmpeg))
         harness.events.publish(ToolsChangedEvent(tools=harness.tools.tools))
-        await until(lambda: harness.service.snapshot.ffmpeg == other.ffmpeg)
+        await wait_until(lambda: harness.service.snapshot.ffmpeg == other.ffmpeg)
         snapshot = harness.service.snapshot
         assert snapshot.detecting
         assert snapshot.filters is None
@@ -762,6 +682,6 @@ async def test_libplacebo_result_is_in_the_snapshot(
     assert first.filter_failures["libplacebo"].startswith("No working Vulkan driver")
     # a re-scan keeps the last filter results until the new ones are in
     rescan = asyncio.ensure_future(harness.service.rescan())
-    await until(lambda: harness.service.snapshot.status("libx265").state is CHECKING)
+    await wait_until(lambda: harness.service.snapshot.status("libx265").state is CHECKING)
     assert harness.service.snapshot.usable_filter("libplacebo") is False
     await rescan

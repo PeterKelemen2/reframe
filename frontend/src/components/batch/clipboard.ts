@@ -24,7 +24,7 @@ export const SECTIONS: readonly TemplateSection[] = [
   'naming',
 ]
 
-/** The template fields of each section: the core's `SECTION_FIELDS`. */
+/** The template fields of each section. */
 const SECTION_FIELDS: Record<TemplateSection, readonly (keyof JobTemplate)[]> = {
   dimensions: ['dimensions', 'crop_policy'],
   filters: ['filters'],
@@ -157,7 +157,9 @@ export async function pasteIntoFile(sourceId: string, copied: Copied): Promise<v
         )
       : withSection(base ?? copied.template, copied.template, copied.section)
   const answer = unwrap(
-    await api.POST('/api/batch/resolve', { body: { template, source_ids: [sourceId] } }),
+    await api.POST('/api/batch/resolve', {
+      body: { template, source_ids: [sourceId] },
+    }),
   )
   const target = editor.target
   // Another file was opened while the requests were on their way.

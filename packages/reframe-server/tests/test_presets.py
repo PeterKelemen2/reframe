@@ -10,7 +10,6 @@ from typing import Any
 
 import pytest
 
-from reframe.models import MediaSource
 from reframe_server.config import ServerMode
 from reframe_server.routers import presets
 from reframe_testing.server import Api, ApiFactory
@@ -18,13 +17,6 @@ from reframe_testing.server import Api, ApiFactory
 pytestmark = pytest.mark.anyio
 
 BUILT_IN = "h265-mkv-1080p"
-
-
-async def add_source(api: Api, name: str = "Show S01E01.mkv") -> str:
-    path = api.media_file(name)
-    assert isinstance(await api.reframe.sources.probe(path), MediaSource)
-    sid: str = api.app.state.sources.add(path)
-    return sid
 
 
 async def create(api: Api, name: str = "Mine", **template: Any) -> dict[str, Any]:
@@ -223,7 +215,7 @@ def outputs(draft: dict[str, Any]) -> list[tuple[Any, ...]]:
 
 
 async def test_the_defaults_preview_of_a_template_is_what_apply_drafts(api: Api) -> None:
-    sid = await add_source(api)
+    sid = await api.add_source()
     preset = (await api.client.get(f"/api/presets/{BUILT_IN}")).json()
     template = {k: v for k, v in preset.items() if k not in ("id", "name", "category", "built_in")}
     template["audio_rules"] = [ENGLISH_AT_96]
@@ -253,7 +245,7 @@ async def test_the_defaults_preview_of_a_template_is_what_apply_drafts(api: Api)
 
 
 async def test_defaults_preview_explains_each_source(api: Api) -> None:
-    first, second = await add_source(api), await add_source(api, "Show S01E02.mkv")
+    first, second = await api.add_source(), await api.add_source("Show S01E02.mkv")
     response = await api.client.post(
         "/api/presets/defaults/preview",
         json={

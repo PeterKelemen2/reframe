@@ -1,0 +1,30 @@
+# The libva source that the Linux layout builds.
+#
+# `scripts/bundle-tools.py` downloads each archive and verifies its size and SHA-256 before it
+# extracts anything. No package bundles MKVToolNix or MediaInfo: Reframe writes Matroska
+# headers and probes files itself. See tools/README.md for how to update a pin.
+
+schema_version = 1
+
+# The BtbN Linux build loads the system's libva at run time and calls functions that the libva
+# of Ubuntu 22.04 / 24.04 and Debian 12 lacks (vaMapBuffer2), so the Linux packages ship their
+# own, built from source by scripts/bundle-tools.py (DRM only) into the tools folder's libva/;
+# the app copies it into a downloaded FFmpeg's lib/, where the build finds it first. A VA driver built against a newer VA-API than this libva's is not
+# loaded, so keep this pin at the newest libva release. Build it on the oldest supported distro
+# (its glibc is the one the library needs).
+[libraries.libva]
+description = "libva 2.24.1 (VA-API 1.24), DRM only"
+version = "2.24.1"
+release_url = "https://github.com/intel/libva/releases/tag/2.24.1"
+license = "MIT"
+license_file = "COPYING"
+source_repository = "https://github.com/intel/libva"
+source_tag = "2.24.1"
+
+[libraries.libva.platforms.linux-x64]
+# The release's own tarball; its SHA-256 equals the release asset's digest on GitHub.
+url = "https://github.com/intel/libva/releases/download/2.24.1/libva-2.24.1.tar.bz2"
+sha256 = "eec6050b52876f229bd35e9df17cd31a06785e18e6f7990c445b584628483d67"
+size = 557422
+format = "tar.bz2"
+root = "libva-2.24.1"

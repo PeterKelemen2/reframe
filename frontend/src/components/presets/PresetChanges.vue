@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { FieldChange } from '@/api/types'
+import { formatList } from '@/components/shell/format'
 import { useSystemStore } from '@/stores/system'
 
 import { pathWords, valueWords, type Words } from './format'
@@ -13,7 +14,7 @@ import { pathWords, valueWords, type Words } from './format'
  */
 const props = defineProps<{ changes: FieldChange[]; encoder?: string | null }>()
 
-const { t, tm, rt, locale } = useI18n()
+const { t, n, tm, rt, locale } = useI18n()
 const system = useSystemStore()
 
 type Members = Record<string, unknown>
@@ -27,12 +28,13 @@ function rateControl(value: Members, encoder: string | null | undefined): string
     const scale = encoder
       ? system.definitions?.video_encoders?.[encoder]?.rate_control?.quality?.label
       : undefined
+    const quality = typeof value.value === 'number' ? n(value.value) : String(value.value ?? '')
     return t('presets.value.quality', {
-      quality: [scale, value.value].filter((part) => part !== undefined && part !== '').join(' '),
+      quality: scale ? t('presets.value.onScale', { scale, value: quality }) : quality,
     })
   }
   if (value.mode === 'bitrate' && typeof value.kbps === 'number') {
-    const kbps = new Intl.NumberFormat(locale.value).format(value.kbps)
+    const kbps = n(value.kbps)
     return value.two_pass === true
       ? t('presets.value.bitrateTwoPass', { kbps })
       : t('presets.value.bitrate', { kbps })
@@ -92,6 +94,10 @@ function wordsFor(encoder: string | null | undefined): Words {
     empty: t('presets.value.empty'),
     on: t('presets.value.on'),
     off: t('presets.value.off'),
+    number: (value) => n(value),
+    list: (items) => formatList(items, locale.value),
+    member: (field, value) => t('presets.value.member', { field, value }),
+    item: (field, number) => t('presets.value.item', { field, number }),
     known: (path, value) => knownWords(path, value, encoder),
   }
 }

@@ -142,8 +142,6 @@ export function taskName(kind: string, t: Translate): string {
   switch (kind) {
     case 'probe_sources':
       return t('queue.activity.taskKind.probe_sources')
-    case 'probe_folder':
-      return t('queue.activity.taskKind.probe_folder')
     case 'encoders_rescan':
       return t('queue.activity.taskKind.encoders_rescan')
     case 'tools_fetch':
@@ -212,9 +210,7 @@ export function describeEntry(
         kind: 'system',
         tone: usable ? 'ok' : 'error',
         text: t('queue.activity.tools'),
-        detail: [tools.ffmpeg, tools.ffprobe, tools.mkvpropedit, tools.mediainfo]
-          .map((tool) => toolText(tool, t))
-          .join(' · '),
+        detail: [tools.ffmpeg, tools.ffprobe].map((tool) => toolText(tool, t)).join(' · '),
       }
     }
     case 'capabilities.changed':
@@ -223,7 +219,12 @@ export function describeEntry(
         tone: event.encoders.some((encoder) => encoder.state === 'error') ? 'warn' : 'off',
         text: t('queue.activity.encoders', { n: event.encoders.length }),
         detail: event.encoders
-          .map((encoder) => `${encoder.id}: ${encoderState(encoder.state, t)}`)
+          .map((encoder) =>
+            t('queue.activity.encoderLine', {
+              encoder: encoder.id,
+              state: encoderState(encoder.state, t),
+            }),
+          )
           .join(' · '),
       }
     case 'app.warning':

@@ -12,12 +12,12 @@ from pathlib import Path
 
 import pytest
 
-from reframe.batch import draft_tracks
+from reframe.batch import resolve_tracks
 from reframe.jobs import (
     JobService,
+    draft_from_preset,
     find_media_files,
     is_partial_output,
-    job_from_preset,
     output_size,
     video_metadata,
 )
@@ -25,6 +25,7 @@ from reframe.models import (
     AudioCodecRule,
     EncodePlan,
     JobDraft,
+    JobSettings,
     NamingOptions,
     Severity,
     TrackDraft,
@@ -33,7 +34,7 @@ from reframe.models import (
 )
 from reframe.probe import ProbeError
 
-from .conftest import Stubs, caps, checking, media_file, preset, recorded
+from .conftest import Stubs, caps, checking, draft_path, media_file, preset, recorded
 
 pytestmark = pytest.mark.anyio
 
@@ -88,7 +89,7 @@ async def test_draft_with_the_default_preset(movie: tuple[Stubs, Path]) -> None:
     assert job.chapters.enabled == default.chapters.enabled
     assert job.tags == default.tags
     # Tracks: every audio track through the rules, every subtitle copied.
-    tracks = draft_tracks(source, default)
+    tracks = resolve_tracks(default, source).draft
     assert job.audio == tracks.audio
     assert job.subtitles == tracks.subtitles
     assert draft.decisions == tracks.decisions
@@ -98,8 +99,8 @@ async def test_draft_with_the_default_preset(movie: tuple[Stubs, Path]) -> None:
     assert job.video.metadata == video_metadata(source.video[0])
     # The name: the folder name wins over "movie", next to the source.
     assert draft.naming.source == "folder"
-    assert job.output.path == file.parent / "Movie.mkv"
-    assert draft.naming.path == job.output.path
+    assert draft.naming.path == file.parent / "Movie.mkv"
+    assert job.output.path == draft_path(file, "Movie.mkv")
     assert job.output.naming.mode == "template"
     assert errors(draft.issues) == []
     assert "dimensions.crop_not_detected" in codes(draft.issues)
@@ -300,7 +301,7 @@ def test_generated_chapter_names(tmp_path: Path) -> None:
     source = recorded("chapters", tmp_path / "x.mkv")
     assert source.chapters
     template = preset("h265-mkv-1080p").model_copy(update={"chapter_name_policy": "generated"})
-    job, _decisions, notes = job_from_preset(source, template)
+    job, _tracks, notes = draft_from_preset(source, template)
     assert job.chapters.names == [f"Chapter {i}" for i in range(1, len(source.chapters) + 1)]
     assert notes
 
@@ -335,6 +336,25 @@ async def test_validate_waits_for_detection(movie: tuple[Stubs, Path]) -> None:
     assert "encoder.checking" not in codes(draft.issues)
 
 
+async def test_a_given_validator_replaces_the_services_validation(
+    movie: tuple[Stubs, Path],
+) -> None:
+    stubs, file = movie
+    stubs.snapshot = checking()
+    owner = ValidationIssue(severity=Severity.WARNING, code="owner.says", path="", message="")
+    validated: list[JobSettings] = []
+
+    async def validate(job: JobSettings) -> list[ValidationIssue]:
+        validated.append(job)
+        return [owner]
+
+    draft = await service(stubs).draft(file, validate=validate)
+    assert isinstance(draft, JobDraft)
+    assert validated == [draft.job]
+    assert draft.issues[-1] == owner
+    assert stubs.waits == 0
+
+
 async def test_validate_wait_is_bounded(movie: tuple[Stubs, Path]) -> None:
     stubs, file = movie
     stubs.snapshot = checking()
@@ -366,7 +386,7 @@ async def test_detection_wait_default_is_read_at_creation(
     import reframe.jobs as jobs_module
 
     monkeypatch.setattr(jobs_module, "DETECTION_WAIT", 1.5)
-    assert service(Stubs()).detection_wait == 1.5
+    assert service(Stubs())._detection_wait == 1.5
 
 
 async def test_plan_of_a_drafted_job(movie: tuple[Stubs, Path]) -> None:
@@ -376,8 +396,9 @@ async def test_plan_of_a_drafted_job(movie: tuple[Stubs, Path]) -> None:
     assert isinstance(draft, JobDraft)
     plan = await jobs.plan(draft.job)  # probes the source again (the stub)
     assert isinstance(plan, EncodePlan)
-    assert plan.output_final == file.parent / "Movie.mkv"
-    assert plan.output_tmp == file.parent / "Movie.part.mkv"
+    final = draft_path(file, "Movie.mkv")
+    assert plan.output_final == final
+    assert plan.output_tmp == final.with_name(f"{final.stem}.part.mkv")
     assert "libx265" in plan.display
     assert stubs.probes == 2
 
@@ -487,7 +508,7 @@ def test_output_size_of_a_deinterlaced_job_matches_the_builder(tmp_path: Path) -
 
     source = recorded("interlaced", tmp_path / "interlaced.mkv")
     stream = source.video[0]
-    job, _decisions, _notes = job_from_preset(source, preset("h265-mkv-1080p"))
+    job, _tracks, _notes = draft_from_preset(source, preset("h265-mkv-1080p"))
     job.dimensions.crop = CropSettings(mode="manual", rect=CropRect(top=2))
     job.dimensions.size = SameAsSource()
     job.filters.root["deinterlace"] = FilterConfig()
@@ -521,7 +542,7 @@ async def test_a_codec_the_container_cannot_hold_is_one_issue(tmp_path: Path) ->
     codes = [issue.code for issue in draft.issues]
     assert "container.codec_unsupported" in codes
     assert "defaults.codec_not_in_container" not in codes
-    # The pure engine without validation still reports it.
+    # The preview, which does not validate, reports it.
     explained = await jobs.explain(file, webm)
     assert isinstance(explained, TrackDraft)
     assert "defaults.codec_not_in_container" in [i.code for i in explained.issues]

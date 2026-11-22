@@ -5,9 +5,10 @@ import { reactive } from 'vue'
 
 import { ApiError } from '@/api/client'
 import { deferred } from '@/api/testing/fakes'
-import type { JobSettings } from '@/api/types'
+import type { Fix, JobSettings, QueueJob } from '@/api/types'
 import { SourceOpenError } from '@/stores/sources'
 import { useSystemStore } from '@/stores/system'
+import { useUiStore } from '@/stores/ui'
 
 import QueueTable from './QueueTable.vue'
 import { job, mountQueue, queueDouble, resetQueue } from './testing'
@@ -68,6 +69,37 @@ function presetCell(id: string): (string | undefined)[] {
     row(id).querySelector(`[data-field="${field}"]`)?.textContent?.trim(),
   )
 }
+
+const FIX: Fix = {
+  label: 'Use libx265 (closest match)',
+  patch: [{ op: 'replace', path: '/video/encoder', value: 'libx265' }],
+  target: 'job',
+}
+
+const encoderFixes = () => document.querySelector('[data-field="encoder-fixes"]')
+
+function fixButton(label: string): HTMLButtonElement {
+  const found = [...(encoderFixes()?.querySelectorAll('button') ?? [])].find(
+    (candidate) => candidate.textContent?.trim() === label,
+  )
+  if (!found) throw new Error(`no fix button ${label}`)
+  return found
+}
+
+const unavailable = (): QueueJob =>
+  job('a', 'failed', {
+    error: 'The job has errors: hevc_nvenc is not available: NVIDIA driver not found.',
+    settings: nvencSettings('a', { encoder: 'hevc_nvenc' }),
+    issues: [
+      {
+        severity: 'error',
+        code: 'encoder.unavailable',
+        path: 'video.encoder',
+        message: 'hevc_nvenc is not available: NVIDIA driver not found.',
+        fixes: [FIX, { label: 'Save in the preset', patch: [], target: 'template' }],
+      },
+    ],
+  })
 
 const order = () =>
   [...document.querySelectorAll('[data-job]')].map((el) => el.getAttribute('data-job'))
@@ -146,6 +178,29 @@ describe('the queue table', () => {
     button('a', `[data-action="${action}"]`).click()
     await flushPromises()
     expect(queue[method]).toHaveBeenCalledWith('a')
+  })
+
+  it('starts one waiting job by its Start, while the queue is stopped', async () => {
+    queue.jobs = [job('a'), job('b')]
+    await mountTable()
+    const start = button('b', '[data-action="start"]')
+    expect(start.getAttribute('aria-label')).toBe('Start b.mkv')
+    start.click()
+    await flushPromises()
+    expect(queue.start).toHaveBeenCalledWith(['b'])
+  })
+
+  it('offers Start only on waiting jobs that the runner does not take', async () => {
+    queue.jobs = [job('a'), job('b'), job('c', 'failed')]
+    queue.processing = true
+    queue.only = ['a']
+    await mountTable()
+    expect(actions('a')).not.toContain('start')
+    expect(actions('b')[0]).toBe('start')
+    expect(actions('c')).not.toContain('start')
+    queue.only = null
+    await flushPromises()
+    expect(actions('b')).not.toContain('start')
   })
 
   it('offers only the actions that fit the state', async () => {
@@ -237,7 +292,7 @@ describe('the queue table', () => {
   it.each([
     ['running', 'pause', 'paused', 'resume'],
     ['paused', 'resume', 'running', 'pause'],
-    ['failed', 'retry', 'waiting', 'cancel'],
+    ['failed', 'retry', 'waiting', 'start'],
     ['waiting', 'cancel', 'cancelled', 'retry'],
     ['running', 'cancel', 'cancelled', 'retry'],
   ] as const)(
@@ -253,6 +308,29 @@ describe('the queue table', () => {
       pressed.click()
       await flushPromises()
       expect(pressed.isConnected).toBe(false)
+      expect(document.activeElement).toBe(button('a', `[data-action="${replacement}"]`))
+    },
+  )
+
+  it.each([
+    ['waiting', 'start', 'waiting', 'log'],
+    ['waiting', 'start', 'running', 'pause'],
+    ['failed', 'retry', 'waiting', 'log'],
+  ] as const)(
+    'after a %s job’s %s, the %s job’s focus goes to %s, never to Cancel',
+    async (state, action, next, replacement) => {
+      queue.jobs = [job('x', 'done'), job('a', state)]
+      await mountTable()
+      queue[action].mockImplementationOnce(async () => {
+        queue.processing = true
+        queue.only = ['a']
+        queue.jobs = [job('x', 'done'), job('a', next)]
+      })
+      const pressed = button('a', `[data-action="${action}"]`)
+      pressed.focus()
+      pressed.click()
+      await flushPromises()
+      expect(actions('a')).toContain('cancel')
       expect(document.activeElement).toBe(button('a', `[data-action="${replacement}"]`))
     },
   )
@@ -329,7 +407,7 @@ describe('the queue table', () => {
     target.dispatchEvent(new MouseEvent('mouseenter'))
     await vi.waitFor(() =>
       expect(document.querySelector('.p-tooltip')?.textContent).toBe(
-        'mkvpropedit changes /media/a.mkv itself: no new file is written.',
+        'Reframe writes the changes into /media/a.mkv itself: no new file is written.',
       ),
     )
     expect(row('b').querySelector('[data-field="output"]')?.textContent?.trim()).toBe('b.mkv')
@@ -346,7 +424,7 @@ describe('the queue table', () => {
     const target = row('a').querySelector<HTMLElement>('[data-field="output"]')!
     expect(target.tabIndex).toBe(0)
     target.focus()
-    const tip = 'mkvpropedit changes /media/a.mkv itself: no new file is written.'
+    const tip = 'Reframe writes the changes into /media/a.mkv itself: no new file is written.'
     await vi.waitFor(() => expect(document.querySelector('.p-tooltip')?.textContent).toBe(tip))
     const described = document.getElementById(target.getAttribute('aria-describedby') ?? '')
     expect(described?.textContent).toBe(tip)
@@ -422,6 +500,60 @@ describe('the queue table', () => {
       [...(problem?.querySelectorAll('li') ?? [])].map((li) => li.textContent?.trim()),
     ).toEqual(['Note: Crop did not run'])
     expect(problem?.textContent?.split(claimed)).toHaveLength(2)
+  })
+
+  describe('a job whose encoder became unavailable', () => {
+    it('is marked so, with the fix actions of the Video tab’s banner', async () => {
+      queue.jobs = [unavailable(), job('b', 'failed', { error: 'Other' })]
+      await mountTable()
+      expect(row('a').querySelector('.rf-status-dot')?.textContent?.trim()).toBe(
+        'Failed — encoder unavailable',
+      )
+      expect(row('b').textContent).not.toContain('encoder unavailable')
+      expect(document.querySelectorAll('[data-field="encoder-fixes"]')).toHaveLength(1)
+      expect(encoderFixes()?.getAttribute('aria-label')).toBe('Fixes for a.mkv')
+      expect(
+        [...(encoderFixes()?.querySelectorAll('button') ?? [])].map((b) => b.textContent?.trim()),
+      ).toEqual(['Use libx265 (closest match)', 'Choose encoder', 'Check again'])
+    })
+
+    it('replaces the job with its fixed settings', async () => {
+      queue.jobs = [unavailable()]
+      await mountTable()
+      fixButton('Use libx265 (closest match)').click()
+      await flushPromises()
+      expect(queue.retryWith).toHaveBeenCalledWith('a', FIX)
+    })
+
+    it('opens the job at its encoder for Choose encoder', async () => {
+      queue.jobs = [unavailable()]
+      const { router } = await mountTable()
+      const ui = useUiStore()
+      fixButton('Choose encoder').click()
+      await flushPromises()
+      expect(editor.loadJob).toHaveBeenCalledWith(queue.jobs[0]?.settings)
+      expect(router.currentRoute.value.name).toBe('workspace')
+      expect(ui.activeTab).toBe('video')
+      expect(ui.revealed?.path).toBe('video.encoder')
+    })
+
+    it.each([
+      ['available', ['a']],
+      ['unavailable', []],
+    ] as const)(
+      'detects the encoders again and retries the job when its encoder is %s now',
+      async (state, retried) => {
+        queue.jobs = [unavailable()]
+        await mountTable()
+        const system = useSystemStore()
+        const rescan = vi.spyOn(system, 'rescanEncoders').mockResolvedValue()
+        vi.spyOn(system, 'encoderStatus').mockReturnValue({ id: 'hevc_nvenc', state } as never)
+        fixButton('Check again').click()
+        await flushPromises()
+        expect(rescan).toHaveBeenCalledOnce()
+        expect(queue.retry.mock.calls.map(([id]) => id)).toEqual(retried)
+      },
+    )
   })
 
   it('says that the queue is empty and links to the workspace', async () => {

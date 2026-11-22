@@ -12,7 +12,7 @@ Tauri 2 desktop app. FFmpeg/FFprobe run as subprocesses.
   Update it in the same commit as each step that lands.
 - If the plan is wrong or cannot be done, do not quietly change course: write a decision
   record (below) and update the affected plan file **in the same commit**.
-- Do not rely on memory for FFmpeg, ffprobe, mkvpropedit, guessit or library behaviour. Check
+- Do not rely on memory for FFmpeg, ffprobe, Matroska, MKVToolNix, guessit or library behaviour. Check
   it against the real tools and record the result in a test or a decision record.
 
 ## Step IDs
@@ -25,7 +25,10 @@ Tauri 2 desktop app. FFmpeg/FFprobe run as subprocesses.
 | `D-x.y` | Tauri desktop shell | `07-desktop-app.md` |
 | `Q-x.y` | quality, CI, release | `09-quality-and-release.md` |
 
-Commit after each step, with the step ID first: `C-5: dimension maths with property tests`.
+Commit after each step as a conventional commit with the step ID as scope:
+`feat(C-5): dimension maths with property tests`, `fix(F-17): …`, `docs(status): …`. Types:
+`feat`, `fix`, `perf`, `refactor`, `test`, `docs`, `build`, `ci`, `chore`, `revert`; `!` or a
+`BREAKING CHANGE:` footer for a breaking change. The changelog is made from them (decision 0079).
 One branch per milestone (`m0-foundations`, `m1-read-media`, …), merged into `main` when the
 milestone demo passes. Never push.
 
@@ -39,12 +42,15 @@ uv run ruff check                         # lint
 uv run ruff format --check                # format check (uv run ruff format to fix)
 uv run mypy                               # strict type check (files listed in pyproject.toml)
 uv run mypy --platform win32              # the same, as the Windows CI runner sees it
-uv run pytest                             # all tests
-uv run pytest -m "not needs_gpu"          # what CI runs
+uv run pytest                             # all tests, in parallel (pytest-xdist `-n auto` is in addopts)
+uv run pytest -m "not needs_gpu"          # what CI runs (~6 min on 12 cores)
+uv run pytest -n 0 path/to/test.py --pdb  # one process: debugging, --pdb (decision 0084)
+uv run pytest -m benchmark -n 0           # time budgets; they skip under xdist
+uv run pytest --timeout 60                # per-test limit, default 600 s: a hung test's worker ends (0084)
 uv run pytest --cov=reframe --cov-report=term-missing  # coverage
 uv run python scripts/make-testdata.py    # generate test media into testdata/media/ (git-ignored)
 uv run --no-project python scripts/fetch-tools.py   # pinned FFmpeg (tools/ffmpeg.toml) into .tools/, prints its bin dir
-uv run python -m reframe.tools            # which ffmpeg/ffprobe/mkvpropedit/mediainfo discovery picks, and why
+uv run python -m reframe.tools            # which ffmpeg/ffprobe discovery picks, and why
 ```
 
 Tests that need real media use the `fixture_media("multitrack")` pytest fixture (generated on

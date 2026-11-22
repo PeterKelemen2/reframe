@@ -29,6 +29,7 @@
       dict({
         'bit_depth': 16,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 133718,
         }),
@@ -95,6 +96,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 128453,
         }),
@@ -202,12 +204,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'dd9470c5b62eb6a9',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'anime-ass-fonts.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -340,6 +342,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 9151834,
         }),
@@ -430,6 +433,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 127268,
         }),
@@ -526,12 +530,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'c9594df883363b89',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'song-cover.m4a',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -548,6 +552,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 1413353,
         }),
@@ -614,6 +619,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -702,12 +708,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '6645449807a7b55f',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-dts-hd-ma.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -779,6 +785,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 9151834,
         }),
@@ -869,6 +876,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 1416768,
         }),
@@ -935,6 +943,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 448000,
         }),
@@ -1024,12 +1033,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '8398e1b212f5657b',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-dts-x.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -1040,6 +1049,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 8266018,
         }),
@@ -1153,12 +1163,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '980fdcf8dafffb4c',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-dv-p8.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -1169,6 +1179,7 @@
         }),
         'bit_depth': 10,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 2974824,
         }),
@@ -1289,6 +1300,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -1345,6 +1357,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -1423,12 +1436,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '98d92b515ceba50c',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'dvd-title-interlaced.vob',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'dvd_subtitle',
@@ -1543,6 +1556,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -1625,6 +1639,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -1690,6 +1705,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -1796,12 +1812,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '1706453431c1d241',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'dvd-title-interlaced.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'dvd_subtitle',
@@ -1934,6 +1950,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 5163636,
         }),
@@ -2024,6 +2041,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 640000,
         }),
@@ -2113,12 +2131,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'c2f413efc6e3e8f1',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'show-eac3-atmos.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -2315,6 +2333,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 9151834,
         }),
@@ -2405,6 +2424,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -2465,6 +2485,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -2548,12 +2569,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E01.Pilot.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -2681,6 +2702,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -2765,6 +2787,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -2825,6 +2848,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -2908,12 +2932,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E02.Departure.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -3041,6 +3065,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -3125,6 +3150,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -3185,6 +3211,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -3268,12 +3295,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E03.Storm.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -3401,6 +3428,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -3485,6 +3513,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -3545,6 +3574,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -3628,12 +3658,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E04.Signal.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -3761,6 +3791,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -3845,6 +3876,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -3905,6 +3937,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -3964,6 +3997,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 96000,
         }),
@@ -4048,12 +4082,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ca1ddc39d9d34b3c',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E05.Echoes.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -4181,6 +4215,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -4265,6 +4300,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -4325,6 +4361,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -4408,12 +4445,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E06.Harbor.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -4541,6 +4578,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -4625,6 +4663,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -4685,6 +4724,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -4768,12 +4808,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E07.Embers.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -4901,6 +4941,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -4985,6 +5026,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -5045,6 +5087,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -5128,12 +5171,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E08.Drift.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -5261,6 +5304,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -5345,6 +5389,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -5405,6 +5450,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -5488,12 +5534,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E09.Lantern.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -5621,6 +5667,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -5705,6 +5752,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -5765,6 +5813,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -5848,12 +5897,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E10.Tides.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -5981,6 +6030,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -6065,6 +6115,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -6149,12 +6200,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'e2d0f30873bda1f9',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E11.Static.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -6282,6 +6333,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -6366,6 +6418,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -6426,6 +6479,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -6509,12 +6563,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S01.BluRay.x264-GRP/Anime.Show.S01E12.Homecoming.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -6642,6 +6696,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -6726,6 +6781,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -6786,6 +6842,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -6869,12 +6926,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S02.BluRay.x264-GRP/Anime.Show.S02E01.Return.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -7002,6 +7059,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -7086,6 +7144,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -7146,6 +7205,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -7229,12 +7289,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S02.BluRay.x264-GRP/Anime.Show.S02E02.Ashes.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -7362,6 +7422,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -7446,6 +7507,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -7506,6 +7568,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -7589,12 +7652,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ea72ece8f0825ea4',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'Anime.Show.S02.BluRay.x264-GRP/Anime.Show.S02E03.Northbound.BluRay.x264-GRP.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -7722,6 +7785,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -7829,12 +7893,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '9ee537eb9a03436d',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'anamorphic.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -7845,6 +7909,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -7921,6 +7986,250 @@
     ]),
   })
 # ---
+# name: test_media_source_snapshot[fixtures/av-offset.mkv.json]
+  dict({
+    'attachments': list([
+    ]),
+    'audio': list([
+      dict({
+        'bit_depth': None,
+        'bitrate': dict({
+          'samples': None,
+          'source': 'unknown',
+          'value': None,
+        }),
+        'channel_layout': 'mono',
+        'channels': 1,
+        'codec': 'aac',
+        'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': -0.6,
+        'display_codec': 'AAC-LC',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': True,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 4.621,
+        'frame_count': None,
+        'index': 1,
+        'kind': 'audio',
+        'language': 'eng',
+        'language_ietf': None,
+        'lossless': False,
+        'profile': 'LC',
+        'roles': list([
+          dict({
+            'detail': 'disposition default',
+            'evidence': 'flag',
+            'role': 'main',
+          }),
+        ]),
+        'sample_fmt': 'fltp',
+        'sample_rate': 48000,
+        'start_time': 0.0,
+        'tags': dict({
+          'DURATION': '00:00:04.621000000',
+          'ENCODER': 'Lavc63.1.102 aac',
+          'language': 'eng',
+        }),
+        'title': None,
+        'type_index': 0,
+      }),
+      dict({
+        'bit_depth': None,
+        'bitrate': dict({
+          'samples': None,
+          'source': 'stream',
+          'value': 96000,
+        }),
+        'channel_layout': 'mono',
+        'channels': 1,
+        'codec': 'ac3',
+        'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.4,
+        'display_codec': 'AC-3',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': False,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 4.605,
+        'frame_count': None,
+        'index': 2,
+        'kind': 'audio',
+        'language': 'eng',
+        'language_ietf': None,
+        'lossless': False,
+        'profile': None,
+        'roles': list([
+          dict({
+            'detail': 'no commentary, description or music evidence',
+            'evidence': 'heuristic',
+            'role': 'main',
+          }),
+        ]),
+        'sample_fmt': 'fltp',
+        'sample_rate': 48000,
+        'start_time': 1.0,
+        'tags': dict({
+          'DURATION': '00:00:04.605000000',
+          'ENCODER': 'Lavc63.1.102 ac3',
+          'language': 'eng',
+        }),
+        'title': None,
+        'type_index': 1,
+      }),
+    ]),
+    'chapters': list([
+    ]),
+    'container': dict({
+      'bitrate': 426582,
+      'creation_time': None,
+      'display_name': 'MKV',
+      'duration': 4.621,
+      'format_long_name': 'Matroska / WebM',
+      'format_name': 'matroska,webm',
+      'size': 246405,
+      'start_time': 0.0,
+      'tags': dict({
+        'ENCODER': 'Lavf63.1.102',
+      }),
+      'title': None,
+    }),
+    'cover_art': list([
+    ]),
+    'data': list([
+    ]),
+    'probe_tool': None,
+    'probed_at': None,
+    'ref': dict({
+      'fingerprint': dict({
+        'mtime': 0.0,
+        'probe_hash': None,
+        'size': 0,
+      }),
+      'path': 'av-offset.mkv',
+    }),
+    'schema_version': 2,
+    'subtitles': list([
+    ]),
+    'video': list([
+      dict({
+        'avg_frame_rate': dict({
+          'den': 1,
+          'num': 25,
+        }),
+        'bit_depth': 8,
+        'bitrate': dict({
+          'samples': None,
+          'source': 'unknown',
+          'value': None,
+        }),
+        'closed_captions': False,
+        'codec': 'h264',
+        'codec_long': 'H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10',
+        'color': dict({
+          'chroma_location': 'left',
+          'matrix': None,
+          'primaries': None,
+          'range': 'tv',
+          'transfer': None,
+        }),
+        'dar': dict({
+          'den': 9,
+          'num': 16,
+        }),
+        'delay': 0.0,
+        'display_codec': 'H.264 Constrained Baseline',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': False,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 4.6,
+        'field_order': 'progressive',
+        'frame_count': None,
+        'frame_rate': dict({
+          'den': 1,
+          'num': 25,
+        }),
+        'hdr': None,
+        'height': 180,
+        'index': 0,
+        'kind': 'video',
+        'language': None,
+        'language_ietf': None,
+        'level': 12,
+        'pix_fmt': 'yuv420p',
+        'profile': 'Constrained Baseline',
+        'rotation': 0,
+        'sar': dict({
+          'den': 1,
+          'num': 1,
+        }),
+        'start_time': 0.6,
+        'tags': dict({
+          'DURATION': '00:00:04.600000000',
+          'ENCODER': 'Lavc63.1.102 libx264',
+        }),
+        'title': None,
+        'type_index': 0,
+        'vfr': False,
+        'width': 320,
+      }),
+    ]),
+    'warnings': list([
+    ]),
+  })
+# ---
 # name: test_media_source_snapshot[fixtures/chapters.mkv.json]
   dict({
     'attachments': list([
@@ -7929,6 +8238,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -8048,12 +8358,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '313573079ad47e78',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'chapters.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -8064,6 +8374,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -8148,6 +8459,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -8207,6 +8519,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 224000,
         }),
@@ -8267,6 +8580,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -8350,12 +8664,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '28fd6cd75b9ae47d',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'dts-hd-ma.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -8366,6 +8680,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -8473,12 +8788,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'e4a103dc2b3edb97',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'hdr10-4k.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -8489,6 +8804,7 @@
         }),
         'bit_depth': 10,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -8618,12 +8934,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '16909152e3ab639a',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'hdr10.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -8634,6 +8950,7 @@
         }),
         'bit_depth': 10,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -8763,12 +9080,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'b464dca7c6d3783b',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'interlaced.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -8779,6 +9096,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -8886,12 +9204,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '7e74121c4d798800',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'letterbox.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -8902,6 +9220,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -8986,6 +9305,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -9046,6 +9366,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -9106,6 +9427,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -9190,12 +9512,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'multitrack.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -9379,6 +9701,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -9486,12 +9809,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '542eb0746cc26721',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'pgs.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'hdmv_pgs_subtitle',
@@ -9612,6 +9935,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -9696,6 +10020,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -9756,6 +10081,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -9816,6 +10142,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -9900,12 +10227,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E01.Title.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -10089,6 +10416,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -10173,6 +10501,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -10233,6 +10562,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -10293,6 +10623,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -10377,12 +10708,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E02.Title.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -10566,6 +10897,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -10650,6 +10982,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -10710,6 +11043,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -10770,6 +11104,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -10854,12 +11189,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E03.Title.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -11043,6 +11378,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -11127,6 +11463,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -11187,6 +11524,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -11247,6 +11585,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -11331,12 +11670,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E04.Title.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -11520,6 +11859,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -11604,6 +11944,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -11664,6 +12005,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -11724,6 +12066,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -11784,6 +12127,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 96000,
         }),
@@ -11868,12 +12212,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '3d3bc2ec50ae6508',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E05.Title.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -12057,6 +12401,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -12141,6 +12486,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -12201,6 +12547,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -12261,6 +12608,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -12345,12 +12693,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E06.Title.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -12534,6 +12882,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -12618,6 +12967,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -12678,6 +13028,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -12738,6 +13089,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -12822,12 +13174,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E07.Title.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -13011,6 +13363,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -13095,6 +13448,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -13155,6 +13509,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -13215,6 +13570,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -13299,12 +13655,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E08.Title.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -13488,6 +13844,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -13572,6 +13929,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -13632,6 +13990,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -13716,12 +14075,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '1a30e7aad8566369',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E09.Title.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -13905,6 +14264,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -13989,6 +14349,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -14049,6 +14410,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -14109,6 +14471,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -14193,12 +14556,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E10.Title.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -14382,6 +14745,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -14466,6 +14830,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -14526,6 +14891,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -14586,6 +14952,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -14670,12 +15037,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E11.Title.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -14859,6 +15226,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -14943,6 +15311,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -15003,6 +15372,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -15063,6 +15433,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -15147,12 +15518,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4f9cc9199084c957',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'season/Show.S01E12.Title.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -15336,6 +15707,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -15442,12 +15814,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'fe51ae599319ed62',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'text-subs.en.ass',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'ass',
@@ -15539,12 +15911,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ee9bee065a674fd9',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'text-subs.en.srt',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -15625,6 +15997,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -15707,12 +16080,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'ce2ea698d72d33ee',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'text-subs.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'subrip',
@@ -15835,6 +16208,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -15942,12 +16316,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'f0c7dd4145bb19ee',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'vfr.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -15955,6 +16329,7 @@
         'avg_frame_rate': None,
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -16065,12 +16440,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'f0c7dd4145bb19ee',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'vfr.mp4',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -16081,6 +16456,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 489048,
         }),
@@ -16189,12 +16565,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'bd089c15b01ada82',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'vobsub.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'dvd_subtitle',
@@ -16317,6 +16693,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -16424,12 +16801,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '980fdcf8dafffb4c',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-hdr10-sei.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -16440,6 +16817,7 @@
         }),
         'bit_depth': 10,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 3333504,
         }),
@@ -16552,6 +16930,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 640000,
         }),
@@ -16640,12 +17019,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'bb01091f216c942f',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-hdr10-2160p.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -16656,6 +17035,7 @@
         }),
         'bit_depth': 10,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 10633000,
         }),
@@ -16768,6 +17148,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 127757,
         }),
@@ -16856,12 +17237,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '20b85e0303050edc',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'broadcast-hlg.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -16872,6 +17253,7 @@
         }),
         'bit_depth': 10,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 3886968,
         }),
@@ -16970,6 +17352,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 127820,
         }),
@@ -17058,12 +17441,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '4ce7bef83ddd37f2',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'phone-vfr-mkvmerge.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -17074,6 +17457,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 5332167,
         }),
@@ -17163,6 +17547,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 448000,
         }),
@@ -17251,12 +17636,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': 'a22126e93801e301',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-pgs.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
       dict({
         'codec': 'hdmv_pgs_subtitle',
@@ -17513,6 +17898,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 9151834,
         }),
@@ -17603,6 +17989,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 127990,
         }),
@@ -17701,12 +18088,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '55769fdd6e4569cf',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'phone-rotated.mov',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -17717,6 +18104,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 4639264,
         }),
@@ -17796,6 +18184,1164 @@
     ]),
   })
 # ---
+# name: test_media_source_snapshot[real/mkvmerge15-episode-pgs.json]
+  dict({
+    'attachments': list([
+    ]),
+    'audio': list([
+      dict({
+        'bit_depth': None,
+        'bitrate': dict({
+          'samples': None,
+          'source': 'stats_tag',
+          'value': 149359,
+        }),
+        'channel_layout': 'stereo',
+        'channels': 2,
+        'codec': 'aac',
+        'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.009,
+        'display_codec': 'AAC-LC',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': True,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 1441.451,
+        'frame_count': 67568,
+        'index': 1,
+        'kind': 'audio',
+        'language': 'eng',
+        'language_ietf': None,
+        'lossless': False,
+        'profile': 'LC',
+        'roles': list([
+          dict({
+            'detail': 'disposition default',
+            'evidence': 'flag',
+            'role': 'main',
+          }),
+        ]),
+        'sample_fmt': 'fltp',
+        'sample_rate': 48000,
+        'start_time': 0.009,
+        'tags': dict({
+          'BPS': '149359',
+          'BPS-eng': '149359',
+          'DURATION': '00:24:01.451000000',
+          'DURATION-eng': '00:24:01.451000000',
+          'NUMBER_OF_BYTES': '26911747',
+          'NUMBER_OF_BYTES-eng': '26911747',
+          'NUMBER_OF_FRAMES': '67568',
+          'NUMBER_OF_FRAMES-eng': '67568',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_TAGS-eng': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v15.0.0 ('Duel with the Devil') 64-bit",
+          '_STATISTICS_WRITING_APP-eng': "mkvmerge v15.0.0 ('Duel with the Devil') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2020-01-01 00:00:00',
+          '_STATISTICS_WRITING_DATE_UTC-eng': '2020-01-01 00:00:00',
+          'language': 'eng',
+        }),
+        'title': None,
+        'type_index': 0,
+      }),
+      dict({
+        'bit_depth': None,
+        'bitrate': dict({
+          'samples': None,
+          'source': 'stats_tag',
+          'value': 150887,
+        }),
+        'channel_layout': 'stereo',
+        'channels': 2,
+        'codec': 'aac',
+        'codec_long': 'AAC (Advanced Audio Coding)',
+        'delay': 0.009,
+        'display_codec': 'AAC-LC',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': False,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 1441.451,
+        'frame_count': 67568,
+        'index': 2,
+        'kind': 'audio',
+        'language': 'jpn',
+        'language_ietf': None,
+        'lossless': False,
+        'profile': 'LC',
+        'roles': list([
+          dict({
+            'detail': 'no commentary, description or music evidence',
+            'evidence': 'heuristic',
+            'role': 'main',
+          }),
+        ]),
+        'sample_fmt': 'fltp',
+        'sample_rate': 48000,
+        'start_time': 0.009,
+        'tags': dict({
+          'BPS': '150887',
+          'BPS-eng': '150887',
+          'DURATION': '00:24:01.451000000',
+          'DURATION-eng': '00:24:01.451000000',
+          'NUMBER_OF_BYTES': '27187036',
+          'NUMBER_OF_BYTES-eng': '27187036',
+          'NUMBER_OF_FRAMES': '67568',
+          'NUMBER_OF_FRAMES-eng': '67568',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_TAGS-eng': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v15.0.0 ('Duel with the Devil') 64-bit",
+          '_STATISTICS_WRITING_APP-eng': "mkvmerge v15.0.0 ('Duel with the Devil') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2020-01-01 00:00:00',
+          '_STATISTICS_WRITING_DATE_UTC-eng': '2020-01-01 00:00:00',
+          'language': 'jpn',
+        }),
+        'title': None,
+        'type_index': 1,
+      }),
+    ]),
+    'chapters': list([
+      dict({
+        'end': 187.145292,
+        'index': 0,
+        'start': 0.0,
+        'tags': dict({
+          'title': 'Chapter 01',
+        }),
+        'title': 'Chapter 01',
+      }),
+      dict({
+        'end': 269.143875,
+        'index': 1,
+        'start': 187.145292,
+        'tags': dict({
+          'title': 'Chapter 02',
+        }),
+        'title': 'Chapter 02',
+      }),
+      dict({
+        'end': 728.352625,
+        'index': 2,
+        'start': 269.143875,
+        'tags': dict({
+          'title': 'Chapter 03',
+        }),
+        'title': 'Chapter 03',
+      }),
+      dict({
+        'end': 1369.659958,
+        'index': 3,
+        'start': 728.352625,
+        'tags': dict({
+          'title': 'Chapter 04',
+        }),
+        'title': 'Chapter 04',
+      }),
+      dict({
+        'end': 1441.44,
+        'index': 4,
+        'start': 1369.659958,
+        'tags': dict({
+          'title': 'Chapter 05',
+        }),
+        'title': 'Chapter 05',
+      }),
+    ]),
+    'container': dict({
+      'bitrate': 3042312,
+      'creation_time': '2020-01-01T00:00:00Z',
+      'display_name': 'MKV',
+      'duration': 1441.46,
+      'format_long_name': 'Matroska / WebM',
+      'format_name': 'matroska,webm',
+      'size': 548171435,
+      'start_time': 0.0,
+      'tags': dict({
+        'creation_time': '2020-01-01T00:00:00.000000Z',
+        'encoder': 'libebml v1.3.5 + libmatroska v1.4.5',
+      }),
+      'title': None,
+    }),
+    'cover_art': list([
+    ]),
+    'data': list([
+    ]),
+    'probe_tool': None,
+    'probed_at': None,
+    'ref': dict({
+      'fingerprint': dict({
+        'mtime': 0.0,
+        'probe_hash': None,
+        'size': 0,
+      }),
+      'path': 'mkvmerge15-episode-pgs.mkv',
+    }),
+    'schema_version': 2,
+    'subtitles': list([
+      dict({
+        'codec': 'hdmv_pgs_subtitle',
+        'codec_long': 'HDMV Presentation Graphic Stream subtitles',
+        'delay': 0.0,
+        'display_codec': 'PGS',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': True,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 1441.46,
+        'event_count': 360,
+        'event_count_source': 'stats_tag',
+        'forced_event_count': None,
+        'frame_count': 360,
+        'height': None,
+        'index': 3,
+        'kind': 'subtitle',
+        'language': 'eng',
+        'language_ietf': None,
+        'profile': None,
+        'roles': list([
+          dict({
+            'detail': 'disposition default',
+            'evidence': 'flag',
+            'role': 'main',
+          }),
+        ]),
+        'start_time': 0.0,
+        'subtitle_kind': 'bitmap',
+        'tags': dict({
+          'BPS': '24432',
+          'BPS-eng': '24432',
+          'DURATION': '00:23:43.463000000',
+          'DURATION-eng': '00:23:43.463000000',
+          'NUMBER_OF_BYTES': '4347408',
+          'NUMBER_OF_BYTES-eng': '4347408',
+          'NUMBER_OF_FRAMES': '360',
+          'NUMBER_OF_FRAMES-eng': '360',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_TAGS-eng': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v15.0.0 ('Duel with the Devil') 64-bit",
+          '_STATISTICS_WRITING_APP-eng': "mkvmerge v15.0.0 ('Duel with the Devil') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2020-01-01 00:00:00',
+          '_STATISTICS_WRITING_DATE_UTC-eng': '2020-01-01 00:00:00',
+          'language': 'eng',
+        }),
+        'title': None,
+        'type_index': 0,
+        'width': None,
+      }),
+      dict({
+        'codec': 'hdmv_pgs_subtitle',
+        'codec_long': 'HDMV Presentation Graphic Stream subtitles',
+        'delay': 0.0,
+        'display_codec': 'PGS',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': False,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 1441.46,
+        'event_count': 2,
+        'event_count_source': 'stats_tag',
+        'forced_event_count': None,
+        'frame_count': 2,
+        'height': None,
+        'index': 4,
+        'kind': 'subtitle',
+        'language': 'eng',
+        'language_ietf': None,
+        'profile': None,
+        'roles': list([
+          dict({
+            'detail': '2 events, 1 % of the 360 events of track #3 in the same language (eng)',
+            'evidence': 'heuristic',
+            'role': 'forced',
+          }),
+        ]),
+        'start_time': 0.0,
+        'subtitle_kind': 'bitmap',
+        'tags': dict({
+          'BPS': '22830',
+          'BPS-eng': '22830',
+          'DURATION': '00:00:05.964000000',
+          'DURATION-eng': '00:00:05.964000000',
+          'NUMBER_OF_BYTES': '17020',
+          'NUMBER_OF_BYTES-eng': '17020',
+          'NUMBER_OF_FRAMES': '2',
+          'NUMBER_OF_FRAMES-eng': '2',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_TAGS-eng': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v15.0.0 ('Duel with the Devil') 64-bit",
+          '_STATISTICS_WRITING_APP-eng': "mkvmerge v15.0.0 ('Duel with the Devil') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2020-01-01 00:00:00',
+          '_STATISTICS_WRITING_DATE_UTC-eng': '2020-01-01 00:00:00',
+          'language': 'eng',
+        }),
+        'title': None,
+        'type_index': 1,
+        'width': None,
+      }),
+    ]),
+    'video': list([
+      dict({
+        'avg_frame_rate': dict({
+          'den': 1001,
+          'num': 24000,
+        }),
+        'bit_depth': 10,
+        'bitrate': dict({
+          'samples': None,
+          'source': 'stats_tag',
+          'value': 2731530,
+        }),
+        'closed_captions': False,
+        'codec': 'hevc',
+        'codec_long': 'H.265 / HEVC (High Efficiency Video Coding)',
+        'color': dict({
+          'chroma_location': 'left',
+          'matrix': None,
+          'primaries': None,
+          'range': 'tv',
+          'transfer': None,
+        }),
+        'dar': dict({
+          'den': 9,
+          'num': 16,
+        }),
+        'delay': 0.0,
+        'display_codec': 'HEVC Main 10',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': True,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 1441.44,
+        'field_order': 'unknown',
+        'frame_count': 34560,
+        'frame_rate': dict({
+          'den': 1001,
+          'num': 24000,
+        }),
+        'hdr': None,
+        'height': 1080,
+        'index': 0,
+        'kind': 'video',
+        'language': None,
+        'language_ietf': None,
+        'level': 186,
+        'pix_fmt': 'yuv420p10le',
+        'profile': 'Main 10',
+        'rotation': 0,
+        'sar': dict({
+          'den': 1,
+          'num': 1,
+        }),
+        'start_time': 0.0,
+        'tags': dict({
+          'BPS': '2731530',
+          'BPS-eng': '2731530',
+          'DURATION': '00:24:01.440000000',
+          'DURATION-eng': '00:24:01.440000000',
+          'NUMBER_OF_BYTES': '492167226',
+          'NUMBER_OF_BYTES-eng': '492167226',
+          'NUMBER_OF_FRAMES': '34560',
+          'NUMBER_OF_FRAMES-eng': '34560',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_TAGS-eng': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v15.0.0 ('Duel with the Devil') 64-bit",
+          '_STATISTICS_WRITING_APP-eng': "mkvmerge v15.0.0 ('Duel with the Devil') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2020-01-01 00:00:00',
+          '_STATISTICS_WRITING_DATE_UTC-eng': '2020-01-01 00:00:00',
+        }),
+        'title': None,
+        'type_index': 0,
+        'vfr': False,
+        'width': 1920,
+      }),
+    ]),
+    'warnings': list([
+    ]),
+  })
+# ---
+# name: test_media_source_snapshot[real/mkvmerge93-remux-pgs.json]
+  dict({
+    'attachments': list([
+    ]),
+    'audio': list([
+      dict({
+        'bit_depth': None,
+        'bitrate': dict({
+          'samples': None,
+          'source': 'stream',
+          'value': 384000,
+        }),
+        'channel_layout': '5.1(side)',
+        'channels': 6,
+        'codec': 'ac3',
+        'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
+        'display_codec': 'AC-3',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': True,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 6006.208,
+        'frame_count': 187694,
+        'index': 1,
+        'kind': 'audio',
+        'language': 'hun',
+        'language_ietf': None,
+        'lossless': False,
+        'profile': None,
+        'roles': list([
+          dict({
+            'detail': 'disposition default',
+            'evidence': 'flag',
+            'role': 'main',
+          }),
+        ]),
+        'sample_fmt': 'fltp',
+        'sample_rate': 48000,
+        'start_time': 0.0,
+        'tags': dict({
+          'BPS': '384000',
+          'DURATION': '01:40:06.208000000',
+          'NUMBER_OF_BYTES': '288297984',
+          'NUMBER_OF_FRAMES': '187694',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v93.0 ('Goblu') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2020-01-01 00:00:00',
+          'language': 'hun',
+        }),
+        'title': None,
+        'type_index': 0,
+      }),
+      dict({
+        'bit_depth': 24,
+        'bitrate': dict({
+          'samples': None,
+          'source': 'stats_tag',
+          'value': 4083673,
+        }),
+        'channel_layout': '5.1(side)',
+        'channels': 6,
+        'codec': 'dts',
+        'codec_long': 'DCA (DTS Coherent Acoustics)',
+        'delay': 0.0,
+        'display_codec': 'DTS-HD MA',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': False,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 6006.048,
+        'frame_count': 563067,
+        'index': 2,
+        'kind': 'audio',
+        'language': 'eng',
+        'language_ietf': None,
+        'lossless': True,
+        'profile': 'DTS-HD MA',
+        'roles': list([
+          dict({
+            'detail': 'no commentary, description or music evidence',
+            'evidence': 'heuristic',
+            'role': 'main',
+          }),
+        ]),
+        'sample_fmt': 's32p',
+        'sample_rate': 48000,
+        'start_time': 0.0,
+        'tags': dict({
+          'BPS': '4083673',
+          'DURATION': '01:40:06.048000000',
+          'NUMBER_OF_BYTES': '3065842196',
+          'NUMBER_OF_FRAMES': '563067',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v93.0 ('Goblu') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2020-01-01 00:00:00',
+          'language': 'eng',
+        }),
+        'title': None,
+        'type_index': 1,
+      }),
+      dict({
+        'bit_depth': None,
+        'bitrate': dict({
+          'samples': None,
+          'source': 'stream',
+          'value': 640000,
+        }),
+        'channel_layout': '5.1(side)',
+        'channels': 6,
+        'codec': 'ac3',
+        'codec_long': 'ATSC A/52A (AC-3)',
+        'delay': 0.0,
+        'display_codec': 'AC-3',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': False,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 6006.08,
+        'frame_count': 187690,
+        'index': 3,
+        'kind': 'audio',
+        'language': 'eng',
+        'language_ietf': None,
+        'lossless': False,
+        'profile': None,
+        'roles': list([
+          dict({
+            'detail': 'no commentary, description or music evidence',
+            'evidence': 'heuristic',
+            'role': 'main',
+          }),
+        ]),
+        'sample_fmt': 'fltp',
+        'sample_rate': 48000,
+        'start_time': 0.0,
+        'tags': dict({
+          'BPS': '640000',
+          'DURATION': '01:40:06.080000000',
+          'NUMBER_OF_BYTES': '480486400',
+          'NUMBER_OF_FRAMES': '187690',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v93.0 ('Goblu') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2020-01-01 00:00:00',
+          'language': 'eng',
+        }),
+        'title': None,
+        'type_index': 2,
+      }),
+    ]),
+    'chapters': list([
+      dict({
+        'end': 334.625958,
+        'index': 0,
+        'start': 0.0,
+        'tags': dict({
+          'title': 'Chapter 01',
+        }),
+        'title': 'Chapter 01',
+      }),
+      dict({
+        'end': 508.0075,
+        'index': 1,
+        'start': 334.625958,
+        'tags': dict({
+          'title': 'Chapter 02',
+        }),
+        'title': 'Chapter 02',
+      }),
+      dict({
+        'end': 651.609292,
+        'index': 2,
+        'start': 508.0075,
+        'tags': dict({
+          'title': 'Chapter 03',
+        }),
+        'title': 'Chapter 03',
+      }),
+      dict({
+        'end': 802.468333,
+        'index': 3,
+        'start': 651.609292,
+        'tags': dict({
+          'title': 'Chapter 04',
+        }),
+        'title': 'Chapter 04',
+      }),
+      dict({
+        'end': 928.385792,
+        'index': 4,
+        'start': 802.468333,
+        'tags': dict({
+          'title': 'Chapter 05',
+        }),
+        'title': 'Chapter 05',
+      }),
+      dict({
+        'end': 1084.166417,
+        'index': 5,
+        'start': 928.385792,
+        'tags': dict({
+          'title': 'Chapter 06',
+        }),
+        'title': 'Chapter 06',
+      }),
+      dict({
+        'end': 1332.956625,
+        'index': 6,
+        'start': 1084.166417,
+        'tags': dict({
+          'title': 'Chapter 07',
+        }),
+        'title': 'Chapter 07',
+      }),
+      dict({
+        'end': 1513.428583,
+        'index': 7,
+        'start': 1332.956625,
+        'tags': dict({
+          'title': 'Chapter 08',
+        }),
+        'title': 'Chapter 08',
+      }),
+      dict({
+        'end': 1705.995958,
+        'index': 8,
+        'start': 1513.428583,
+        'tags': dict({
+          'title': 'Chapter 09',
+        }),
+        'title': 'Chapter 09',
+      }),
+      dict({
+        'end': 1928.051125,
+        'index': 9,
+        'start': 1705.995958,
+        'tags': dict({
+          'title': 'Chapter 10',
+        }),
+        'title': 'Chapter 10',
+      }),
+      dict({
+        'end': 2104.560792,
+        'index': 10,
+        'start': 1928.051125,
+        'tags': dict({
+          'title': 'Chapter 11',
+        }),
+        'title': 'Chapter 11',
+      }),
+      dict({
+        'end': 2383.589542,
+        'index': 11,
+        'start': 2104.560792,
+        'tags': dict({
+          'title': 'Chapter 12',
+        }),
+        'title': 'Chapter 12',
+      }),
+      dict({
+        'end': 2754.00125,
+        'index': 12,
+        'start': 2383.589542,
+        'tags': dict({
+          'title': 'Chapter 13',
+        }),
+        'title': 'Chapter 13',
+      }),
+      dict({
+        'end': 2930.385792,
+        'index': 13,
+        'start': 2754.00125,
+        'tags': dict({
+          'title': 'Chapter 14',
+        }),
+        'title': 'Chapter 14',
+      }),
+      dict({
+        'end': 3181.219708,
+        'index': 14,
+        'start': 2930.385792,
+        'tags': dict({
+          'title': 'Chapter 15',
+        }),
+        'title': 'Chapter 15',
+      }),
+      dict({
+        'end': 3304.259292,
+        'index': 15,
+        'start': 3181.219708,
+        'tags': dict({
+          'title': 'Chapter 16',
+        }),
+        'title': 'Chapter 16',
+      }),
+      dict({
+        'end': 3562.350458,
+        'index': 16,
+        'start': 3304.259292,
+        'tags': dict({
+          'title': 'Chapter 17',
+        }),
+        'title': 'Chapter 17',
+      }),
+      dict({
+        'end': 3872.785583,
+        'index': 17,
+        'start': 3562.350458,
+        'tags': dict({
+          'title': 'Chapter 18',
+        }),
+        'title': 'Chapter 18',
+      }),
+      dict({
+        'end': 4046.834458,
+        'index': 18,
+        'start': 3872.785583,
+        'tags': dict({
+          'title': 'Chapter 19',
+        }),
+        'title': 'Chapter 19',
+      }),
+      dict({
+        'end': 4437.68325,
+        'index': 19,
+        'start': 4046.834458,
+        'tags': dict({
+          'title': 'Chapter 20',
+        }),
+        'title': 'Chapter 20',
+      }),
+      dict({
+        'end': 4619.823542,
+        'index': 20,
+        'start': 4437.68325,
+        'tags': dict({
+          'title': 'Chapter 21',
+        }),
+        'title': 'Chapter 21',
+      }),
+      dict({
+        'end': 4751.955542,
+        'index': 21,
+        'start': 4619.823542,
+        'tags': dict({
+          'title': 'Chapter 22',
+        }),
+        'title': 'Chapter 22',
+      }),
+      dict({
+        'end': 4957.994708,
+        'index': 22,
+        'start': 4751.955542,
+        'tags': dict({
+          'title': 'Chapter 23',
+        }),
+        'title': 'Chapter 23',
+      }),
+      dict({
+        'end': 5135.296833,
+        'index': 23,
+        'start': 4957.994708,
+        'tags': dict({
+          'title': 'Chapter 24',
+        }),
+        'title': 'Chapter 24',
+      }),
+      dict({
+        'end': 5266.51125,
+        'index': 24,
+        'start': 5135.296833,
+        'tags': dict({
+          'title': 'Chapter 25',
+        }),
+        'title': 'Chapter 25',
+      }),
+      dict({
+        'end': 5375.703667,
+        'index': 25,
+        'start': 5266.51125,
+        'tags': dict({
+          'title': 'Chapter 26',
+        }),
+        'title': 'Chapter 26',
+      }),
+      dict({
+        'end': 5558.010792,
+        'index': 26,
+        'start': 5375.703667,
+        'tags': dict({
+          'title': 'Chapter 27',
+        }),
+        'title': 'Chapter 27',
+      }),
+      dict({
+        'end': 6006.041708,
+        'index': 27,
+        'start': 5558.010792,
+        'tags': dict({
+          'title': 'Chapter 28',
+        }),
+        'title': 'Chapter 28',
+      }),
+    ]),
+    'container': dict({
+      'bitrate': 39865283,
+      'creation_time': '2020-01-01T00:00:00Z',
+      'display_name': 'MKV',
+      'duration': 6006.208,
+      'format_long_name': 'Matroska / WebM',
+      'format_name': 'matroska,webm',
+      'size': 29929897720,
+      'start_time': 0.0,
+      'tags': dict({
+        'creation_time': '2020-01-01T00:00:00.000000Z',
+        'encoder': 'libebml v1.4.5 + libmatroska v1.7.1',
+      }),
+      'title': None,
+    }),
+    'cover_art': list([
+    ]),
+    'data': list([
+    ]),
+    'probe_tool': None,
+    'probed_at': None,
+    'ref': dict({
+      'fingerprint': dict({
+        'mtime': 0.0,
+        'probe_hash': None,
+        'size': 0,
+      }),
+      'path': 'mkvmerge93-remux-pgs.mkv',
+    }),
+    'schema_version': 2,
+    'subtitles': list([
+      dict({
+        'codec': 'subrip',
+        'codec_long': 'SubRip subtitle',
+        'delay': 0.0,
+        'display_codec': 'SRT',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': False,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 6006.208,
+        'event_count': 589,
+        'event_count_source': 'stats_tag',
+        'forced_event_count': None,
+        'frame_count': 589,
+        'height': None,
+        'index': 4,
+        'kind': 'subtitle',
+        'language': 'hun',
+        'language_ietf': None,
+        'profile': None,
+        'roles': list([
+          dict({
+            'detail': 'no forced, SDH, signs or commentary evidence',
+            'evidence': 'heuristic',
+            'role': 'main',
+          }),
+        ]),
+        'start_time': 0.0,
+        'subtitle_kind': 'text',
+        'tags': dict({
+          'BPS': '25',
+          'DURATION': '01:39:11.289000000',
+          'NUMBER_OF_BYTES': '19005',
+          'NUMBER_OF_FRAMES': '589',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v93.0 ('Goblu') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2020-01-01 00:00:00',
+          'language': 'hun',
+        }),
+        'title': None,
+        'type_index': 0,
+        'width': None,
+      }),
+      dict({
+        'codec': 'hdmv_pgs_subtitle',
+        'codec_long': 'HDMV Presentation Graphic Stream subtitles',
+        'delay': 0.0,
+        'display_codec': 'PGS',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': False,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 6006.208,
+        'event_count': 2652,
+        'event_count_source': 'stats_tag',
+        'forced_event_count': None,
+        'frame_count': 2652,
+        'height': None,
+        'index': 5,
+        'kind': 'subtitle',
+        'language': 'eng',
+        'language_ietf': None,
+        'profile': None,
+        'roles': list([
+          dict({
+            'detail': 'no forced, SDH, signs or commentary evidence',
+            'evidence': 'heuristic',
+            'role': 'main',
+          }),
+        ]),
+        'start_time': 0.0,
+        'subtitle_kind': 'bitmap',
+        'tags': dict({
+          'BPS': '39096',
+          'DURATION': '01:39:54.697000000',
+          'NUMBER_OF_BYTES': '29296387',
+          'NUMBER_OF_FRAMES': '2652',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v93.0 ('Goblu') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2020-01-01 00:00:00',
+          'language': 'eng',
+        }),
+        'title': None,
+        'type_index': 1,
+        'width': None,
+      }),
+    ]),
+    'video': list([
+      dict({
+        'avg_frame_rate': dict({
+          'den': 1001,
+          'num': 24000,
+        }),
+        'bit_depth': 8,
+        'bitrate': dict({
+          'samples': None,
+          'source': 'stats_tag',
+          'value': 34737365,
+        }),
+        'closed_captions': False,
+        'codec': 'h264',
+        'codec_long': 'H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10',
+        'color': dict({
+          'chroma_location': 'left',
+          'matrix': None,
+          'primaries': None,
+          'range': None,
+          'transfer': None,
+        }),
+        'dar': dict({
+          'den': 9,
+          'num': 16,
+        }),
+        'delay': 0.0,
+        'display_codec': 'H.264 High',
+        'disposition': dict({
+          'attached_pic': False,
+          'captions': False,
+          'clean_effects': False,
+          'comment': False,
+          'default': True,
+          'dependent': False,
+          'descriptions': False,
+          'dub': False,
+          'forced': False,
+          'hearing_impaired': False,
+          'karaoke': False,
+          'lyrics': False,
+          'metadata': False,
+          'multilayer': False,
+          'non_diegetic': False,
+          'original': False,
+          'still_image': False,
+          'timed_thumbnails': False,
+          'visual_impaired': False,
+        }),
+        'duration': 6006.042,
+        'field_order': 'progressive',
+        'frame_count': 144001,
+        'frame_rate': dict({
+          'den': 1001,
+          'num': 24000,
+        }),
+        'hdr': None,
+        'height': 1080,
+        'index': 0,
+        'kind': 'video',
+        'language': 'eng',
+        'language_ietf': None,
+        'level': 41,
+        'pix_fmt': 'yuv420p',
+        'profile': 'High',
+        'rotation': 0,
+        'sar': dict({
+          'den': 1,
+          'num': 1,
+        }),
+        'start_time': 0.0,
+        'tags': dict({
+          'BPS': '34737365',
+          'DURATION': '01:40:06.042000000',
+          'NUMBER_OF_BYTES': '26079259308',
+          'NUMBER_OF_FRAMES': '144001',
+          '_STATISTICS_TAGS': 'BPS DURATION NUMBER_OF_FRAMES NUMBER_OF_BYTES',
+          '_STATISTICS_WRITING_APP': "mkvmerge v93.0 ('Goblu') 64-bit",
+          '_STATISTICS_WRITING_DATE_UTC': '2020-01-01 00:00:00',
+          'language': 'eng',
+        }),
+        'title': None,
+        'type_index': 0,
+        'vfr': False,
+        'width': 1920,
+      }),
+    ]),
+    'warnings': list([
+    ]),
+  })
+# ---
 # name: test_media_source_snapshot[stale-stats.json]
   dict({
     'attachments': list([
@@ -17827,12 +19373,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '976b392befe2afee',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-stale-stats.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -17843,6 +19389,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'unknown',
           'value': None,
         }),
@@ -17934,6 +19481,7 @@
       dict({
         'bit_depth': 24,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 385232,
         }),
@@ -18000,6 +19548,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 640000,
         }),
@@ -18066,6 +19615,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stream',
           'value': 192000,
         }),
@@ -18155,12 +19705,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '9829bf9a8bb53b5c',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'movie-truehd-atmos.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -18171,6 +19721,7 @@
         }),
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 8266018,
         }),
@@ -18261,6 +19812,7 @@
       dict({
         'bit_depth': None,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 128158,
         }),
@@ -18349,12 +19901,12 @@
     'ref': dict({
       'fingerprint': dict({
         'mtime': 0.0,
-        'probe_hash': '6b2d2707086411cf',
+        'probe_hash': None,
         'size': 0,
       }),
       'path': 'phone-vfr.mkv',
     }),
-    'schema_version': 1,
+    'schema_version': 2,
     'subtitles': list([
     ]),
     'video': list([
@@ -18362,6 +19914,7 @@
         'avg_frame_rate': None,
         'bit_depth': 8,
         'bitrate': dict({
+          'samples': None,
           'source': 'stats_tag',
           'value': 5380430,
         }),

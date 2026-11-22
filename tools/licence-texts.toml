@@ -1,0 +1,494 @@
+# Licence texts that the notices cannot find by themselves: npm and PyPI packages whose installed
+# copy has no licence file (pip-licenses and license-checker find no text), and archives of the
+# sources release whose licence is only in their files' headers (sources-fetch.py finds no
+# licence file). scripts/third-party-notices.py takes the text of the first matching name (a
+# glob) and stops when a part has neither; sources-fetch.py stops on such an archive. Find the
+# licence upstream (at the version given) and add it here; `source` says where it was read. The
+# [data] tables at the end are the notices of the language tables' data, each its own entry.
+
+[npm."rfc6902"]
+version = "5.3.0"
+# The README's "License" section points to this page with the years 2014-2021.
+source = "https://github.com/chbrown/rfc6902/blob/v5.3.0/README.md#license, https://chbrown.github.io/licenses/MIT/#2014-2021"
+text = """MIT License
+
+Copyright © 2014-2021 Christopher Brown <io@henrian.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+"""
+
+[npm."@vue/devtools-api"]
+version = "6.6.4"
+source = "https://github.com/vuejs/devtools-v6/blob/v6.6.4/LICENSE"
+text = """The MIT License (MIT)
+
+Copyright (c) 2014-present Evan You
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+"""
+
+# The platform's native binding of rolldown (Vite's bundler): one name per platform.
+[npm."@rolldown/binding-*"]
+version = "1.2.13"
+source = "https://github.com/rolldown/rolldown/blob/v1.2.13/LICENSE"
+text = """MIT License
+
+Copyright (c) 2024-present VoidZero Inc. & Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+end of terms and conditions
+
+The licenses of externally maintained libraries from which parts of the Software is derived are
+listed in https://github.com/rolldown/rolldown/blob/v1.2.13/THIRD-PARTY-LICENSE.
+"""
+
+# nv-codec-headers (three SDK versions) has no licence file: each header starts with this notice
+# ("This copyright notice applies to this header file only"), with NVIDIA's years or 2016.
+[sources."btbn-*-ffnvcodec-*.tar.xz"]
+version = "nv-codec-headers eddcea9e27f6, ced4f8eba3ba, 833faee5f7b8"
+source = "https://github.com/FFmpeg/nv-codec-headers/blob/eddcea9e27f6b772057c9b3f87de2cc1737faffc/include/ffnvcodec/nvEncodeAPI.h"
+text = """The headers of nv-codec-headers (include/ffnvcodec/*.h) each carry this notice:
+
+This copyright notice applies to this header file only:
+
+Copyright (c) 2010-2026 NVIDIA Corporation
+(dynlink_cuda.h, dynlink_cuviddec.h, dynlink_loader.h, dynlink_nvcuvid.h: Copyright (c) 2016)
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the software, and to permit persons to whom the
+software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+"""
+
+# libglvnd has no licence file: its README.md ends with the licences of libglvnd and the code it
+# contains (X.Org, Mesa, uthash, buildconf, ax-pthread). This is that part of the README.
+[sources."btbn-*-libglvnd-*.tar.xz"]
+version = "libglvnd c046a760d845"
+source = "https://gitlab.freedesktop.org/glvnd/libglvnd/-/blob/c046a760d845416e98ac4128757b2b356c47fdaa/README.md"
+text = '''
+### libglvnd ###
+
+libglvnd itself (excluding components listed below) is licensed as follows:
+
+    Copyright (c) 2013, NVIDIA CORPORATION.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and/or associated documentation files (the
+    "Materials"), to deal in the Materials without restriction, including
+    without limitation the rights to use, copy, modify, merge, publish,
+    distribute, sublicense, and/or sell copies of the Materials, and to
+    permit persons to whom the Materials are furnished to do so, subject to
+    the following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    unaltered in all copies or substantial portions of the Materials.
+    Any additions, deletions, or changes to the original source files
+    must be clearly indicated in accompanying documentation.
+
+    THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+    EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+    MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+    IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+    CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+    TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+    MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.
+
+### X.Org ###
+
+libglvnd contains list.h, a linked list implementation from the X.Org project.
+Source code from the X.Org project is available from:
+
+    http://cgit.freedesktop.org/xorg/xserver
+
+list.h carries the following license:
+
+    Copyright © 2010 Intel Corporation
+    Copyright © 2010 Francisco Jerez <currojerez@riseup.net>
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice (including the next
+    paragraph) shall be included in all copies or substantial portions of the
+    Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+    IN THE SOFTWARE.
+
+### Mesa ###
+
+libglvnd contains code from the Mesa project. Source code from the Mesa project
+is available from:
+
+    http://cgit.freedesktop.org/mesa/mesa
+
+The default Mesa license is as follows:
+
+    Copyright (C) 1999-2007  Brian Paul   All Rights Reserved.
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included
+    in all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+    OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+    BRIAN PAUL BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+    AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+    CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+### uthash ###
+
+libglvnd uses the hash table implementation 'uthash':
+
+    http://troydhanson.github.io/uthash/
+
+This library carries the following copyright notice:
+
+    Copyright (c) 2005-2013, Troy D. Hanson
+    http://troydhanson.github.com/uthash/
+    All rights reserved.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions are met:
+
+        * Redistributions of source code must retain the above copyright
+          notice, this list of conditions and the following disclaimer.
+
+    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+    IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+    TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+    PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER
+    OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+    EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+    PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+    PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+    LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+### buildconf ###
+
+libglvnd uses the buildconf autotools bootstrapping script 'autogen.sh':
+
+    http://freecode.com/projects/buildconf
+
+This script carries the following copyright notice:
+
+    Copyright (c) 2005-2009 United States Government as represented by
+    the U.S. Army Research Laboratory.
+
+    Redistribution and use in source and binary forms, with or without
+    modification, are permitted provided that the following conditions
+    are met:
+
+    1. Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+
+    2. Redistributions in binary form must reproduce the above
+    copyright notice, this list of conditions and the following
+    disclaimer in the documentation and/or other materials provided
+    with the distribution.
+
+    3. The name of the author may not be used to endorse or promote
+    products derived from this software without specific prior written
+    permission.
+
+    THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS
+    OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+    WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+    ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+    DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+    DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+    GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+    INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+    WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+### ax-pthread ###
+
+libglvnd uses the `AX_PTHREAD` autoconf macro for detecting pthreads.
+The implementation of this macro carries the following license:
+
+    Copyright (c) 2008 Steven G. Johnson <stevenj@alum.mit.edu>
+    Copyright (c) 2011 Daniel Richard G. <skunk@iSKUNK.ORG>
+
+    This program is free software: you can redistribute it and/or modify it
+    under the terms of the GNU General Public License as published by the 
+    Free Software Foundation, either version 3 of the License, or (at your
+    option) any later version.
+
+    This program is distributed in the hope that it will be useful, but 
+    WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+    Public License for more details.
+
+    You should have received a copy of the GNU General Public License along
+    with this program. If not, see <http://www.gnu.org/licenses/>.
+
+    As a special exception, the respective Autoconf Macro's copyright owner
+    gives unlimited permission to copy, distribute and modify the configure
+    scripts that are the output of Autoconf when processing the Macro. You 
+    need not follow the terms of the GNU General Public License when using
+    or distributing such scripts, even though portions of the text of the 
+    Macro appear in them. The GNU General Public License (GPL) does govern
+    all other use of the material that constitutes the Autoconf Macro.
+
+    This special exception to the GPL applies to versions of the Autoconf
+    Macro released by the Autoconf Archive. When you make and distribute a
+    modified version of the Autoconf Macro, you may extend this special
+    exception to the GPL to apply to your modified version as well.
+
+libglvnd uses the cJSON library for reading JSON files:
+
+https://github.com/DaveGamble/cJSON
+
+This library carries the following copyright notice:
+
+    Copyright (c) 2009 Dave Gamble
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in
+    all copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+    THE SOFTWARE.
+'''
+
+# The data of Reframe's language tables (reframe/definitions/data/language-*.json.gz), which
+# scripts/gen-language-data.py builds from langcodes and language_data (dev dependencies that no
+# package ships). Every package ships the tables: the notices list each source of their data.
+[data."Unicode CLDR"]
+version = "40"
+license = "Unicode-DFS-2016 (Unicode, Inc. License Agreement - Data Files and Software)"
+url = "https://cldr.unicode.org/"
+source = "https://github.com/unicode-org/cldr/blob/release-40/unicode-license.txt"
+text = '''
+The language, script and region names and the likely-subtag and language matching data in
+Reframe's language tables come from the Unicode Common Locale Data Repository (CLDR), as
+language_data 1.4.0 (CLDR 40) and langcodes 3.5.1 carry it. Reframe has modified the data: it
+is extracted and converted into Reframe's own tables.
+
+UNICODE, INC. LICENSE AGREEMENT - DATA FILES AND SOFTWARE
+
+See Terms of Use for definitions of Unicode Inc.'s
+Data Files and Software.
+
+NOTICE TO USER: Carefully read the following legal agreement.
+BY DOWNLOADING, INSTALLING, COPYING OR OTHERWISE USING UNICODE INC.'S
+DATA FILES ("DATA FILES"), AND/OR SOFTWARE ("SOFTWARE"),
+YOU UNEQUIVOCALLY ACCEPT, AND AGREE TO BE BOUND BY, ALL OF THE
+TERMS AND CONDITIONS OF THIS AGREEMENT.
+IF YOU DO NOT AGREE, DO NOT DOWNLOAD, INSTALL, COPY, DISTRIBUTE OR USE
+THE DATA FILES OR SOFTWARE.
+
+COPYRIGHT AND PERMISSION NOTICE
+
+Copyright © 1991-2021 Unicode, Inc. All rights reserved.
+Distributed under the Terms of Use in https://www.unicode.org/copyright.html.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Unicode data files and any associated documentation
+(the "Data Files") or Unicode software and any associated documentation
+(the "Software") to deal in the Data Files or Software
+without restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, and/or sell copies of
+the Data Files or Software, and to permit persons to whom the Data Files
+or Software are furnished to do so, provided that either
+(a) this copyright and permission notice appear with all copies
+of the Data Files or Software, or
+(b) this copyright and permission notice appear in associated
+Documentation.
+
+THE DATA FILES AND SOFTWARE ARE PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT OF THIRD PARTY RIGHTS.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER OR HOLDERS INCLUDED IN THIS
+NOTICE BE LIABLE FOR ANY CLAIM, OR ANY SPECIAL INDIRECT OR CONSEQUENTIAL
+DAMAGES, OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE,
+DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THE DATA FILES OR SOFTWARE.
+
+Except as contained in this notice, the name of a copyright holder
+shall not be used in advertising or otherwise to promote the sale,
+use or other dealings in these Data Files or Software without prior
+written authorization of the copyright holder.
+'''
+
+[data."IANA Language Subtag Registry"]
+version = "File-Date 2021-08-06"
+license = "None stated: IANA publishes no licence for the registry"
+url = "https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry"
+source = "https://pypi.org/project/language-data/1.4.0/ (the wheel's language_data/data/language-subtag-registry.txt)"
+text = '''
+The language, script, region and variant subtags of Reframe's language tables, with their
+deprecations, preferred values and macrolanguages, come from the IANA Language Subtag Registry
+(BCP 47, RFC 5646) of File-Date 2021-08-06, the copy in language_data 1.4.0. IANA publishes
+the registry at
+https://www.iana.org/assignments/language-subtag-registry/language-subtag-registry and states
+no licence, copyright or terms of use for it.
+'''
+
+[data."Wiktionary: List of languages"]
+version = "as in language_data 1.4.0 (data/wiktionary/codes-en.csv)"
+license = "CC-BY-SA (Creative Commons Attribution-ShareAlike)"
+url = "https://en.wiktionary.org/wiki/Wiktionary:List_of_languages"
+source = "https://en.wiktionary.org/wiki/Wiktionary:Copyrights (read 2026-11-15)"
+text = '''
+Reframe's language name search (language-search.json.gz) also finds the language names of
+Wiktionary's list of languages, "Wiktionary:List of languages" by the Wiktionary contributors
+(https://en.wiktionary.org/wiki/Wiktionary:List_of_languages; its page history names them),
+from the copy that language_data 1.4.0 carries. Reframe has modified the list: it takes the
+codes and names only, folds the names for search and merges them with the CLDR and IANA names.
+
+Wiktionary's text is licensed under the Creative Commons Attribution-ShareAlike licence and the
+GNU Free Documentation License (https://en.wiktionary.org/wiki/Wiktionary:Copyrights; today
+CC BY-SA 4.0 International, https://creativecommons.org/licenses/by-sa/4.0/). The names that
+Reframe's search table takes from the list are under that licence.
+'''
+
+[data."langcodes"]
+version = "3.5.1"
+license = "MIT"
+url = "https://github.com/georgkrause/langcodes"
+source = "https://pypi.org/project/langcodes/3.5.1/ (the wheel's langcodes-3.5.1.dist-info/licenses/LICENSE.txt)"
+text = '''
+Reframe's reframe.languages module ports langcodes' algorithms (tag parsing and normalisation,
+name composition, language matching), and its tables hold langcodes' alias and matching data.
+
+Copyright (C) 2021 Robyn Speer (rspeer@arborelia.net)
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+'''
+
+[data."language_data"]
+version = "1.4.0"
+license = "MIT"
+url = "https://github.com/georgkrause/language_data"
+source = "https://pypi.org/project/language-data/1.4.0/ (the wheel's language_data-1.4.0.dist-info/licenses/LICENSE)"
+text = '''
+Reframe's language tables are built from language_data's curated name data and lists.
+
+Copyright 2024 Robyn Speer
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+'''

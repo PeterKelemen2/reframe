@@ -105,7 +105,7 @@ Differences from HandBrake, on purpose:
   the store checked those only from 2026-10-19), compared without case and repeated spaces. A clash is a
   `ValidationIssue` `preset.name_conflict` with a fix that sets the next free name
   (`Name (2)`). Built-ins cannot be changed, renamed or deleted (`preset.built_in`);
-  duplicating one makes a user preset in the `Custom` category.
+  duplicating one makes a user preset in the `Custom` category. (2026-11-16, [0085](0085-unused-preset-and-facade-members-removed.md): the store has no `duplicate` or `rename`; the UI copies or renames a preset through `create` / `save`, so this is a UI rule.)
 - If a newer Reframe adds a built-in with the name of an existing user preset, both stay and
   `find(name)` returns the user's preset.
 - The default is the user's choice, else HandBrake's default `Fast 1080p30`. Deleting the

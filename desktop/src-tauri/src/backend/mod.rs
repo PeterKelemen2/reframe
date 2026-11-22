@@ -260,6 +260,11 @@ impl Backend {
 
     /// Sends a request without a body to the current backend; returns the status code.
     pub async fn request(&self, method: &str, path: &str) -> Result<u16, String> {
+        self.send(method, path).await.map(|(status, _)| status)
+    }
+
+    /// [`Backend::request`] with the answer's body.
+    pub async fn send(&self, method: &str, path: &str) -> Result<(u16, Vec<u8>), String> {
         let BackendState::Ready { info } = self.state() else {
             return Err("The server is not ready".to_owned());
         };
@@ -272,7 +277,6 @@ impl Backend {
         let timeout = Duration::from_secs(2);
         owner::http(port, method, path, Some(&info.token), timeout)
             .await
-            .map(|(status, _)| status)
             .map_err(|error| error.to_string())
     }
 

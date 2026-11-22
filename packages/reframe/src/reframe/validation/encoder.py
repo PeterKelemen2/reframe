@@ -9,11 +9,11 @@ from collections.abc import Iterator
 
 from reframe.capabilities import encoder_issues
 from reframe.models.capabilities import CapabilitySnapshot
-from reframe.models.issues import Fix, FixTarget, ReplaceOp, ValidationIssue
+from reframe.models.issues import ValidationIssue
 from reframe.models.job import AudioOutputTrack
 from reframe.models.media import AudioStream
 from reframe.validation.context import JobContext, TemplateContext
-from reframe.validation.registry import job_rule, template_rule
+from reframe.validation.registry import job_rule, shared_rule, template_rule
 from reframe.validation.tracks import switch_audio_encoder, track_encoder, track_stream
 from reframe.validation.video import (
     video_availability_issues,
@@ -60,51 +60,47 @@ def audio_encoder_issues(
     *,
     track: AudioOutputTrack | None = None,
     stream: AudioStream | None = None,
-    target: FixTarget = "job",
 ) -> list[ValidationIssue]:
     """The encoder issues for an audio encoder at ``path``. The closest-match fix also snaps the
     job track's bitrate to the new encoder's values."""
-    result: list[ValidationIssue] = []
-    for issue in encoder_issues(
-        encoder_id, caps, ctx.definitions, path=path, target=target, subject=ctx.subject
-    ):
-        fixes: list[Fix] = []
-        for old in issue.fixes:
-            first = old.patch[0]
-            new = (
-                ctx.definitions.audio_encoders.get(first.value)
-                if isinstance(first, ReplaceOp) and isinstance(first.value, str)
-                else None
-            )
-            if new is None:  # pragma: no cover - encoder_issues makes only replace fixes
-                fixes.append(old)
-                continue
-            ops = switch_audio_encoder(path, new, ctx.definitions, track=track, stream=stream)
-            fixes.append(old.model_copy(update={"patch": ops}))
-        result.append(issue.model_copy(update={"fixes": fixes}))
-    return result
-
-
-@job_rule("encoder", *AVAILABILITY_CODES)
-def video_encoder(ctx: JobContext) -> list[ValidationIssue]:
-    if ctx.job.video.passthrough:
-        return []
-    return video_availability_issues(
-        ctx.job.video, ctx.caps, ctx.definitions, target=ctx.target, subject=ctx.subject
+    return encoder_issues(
+        encoder_id,
+        caps,
+        ctx.definitions,
+        path=path,
+        subject=ctx.subject,
+        fix_ops=lambda new: (
+            switch_audio_encoder(
+                path,
+                ctx.definitions.audio_encoders[new],
+                ctx.definitions,
+                track=track,
+                stream=stream,
+            ),
+            None,
+        ),
     )
 
 
-@job_rule("encoder", *SETTING_CODES)
-def video_encoder_settings(ctx: JobContext) -> Iterator[ValidationIssue]:
-    video = ctx.job.video
+@shared_rule("encoder", *AVAILABILITY_CODES)
+def video_encoder(ctx: JobContext | TemplateContext) -> list[ValidationIssue]:
+    video = ctx.doc.video
+    if video.passthrough:
+        return []
+    return video_availability_issues(video, ctx.caps, ctx.definitions, subject=ctx.subject)
+
+
+@shared_rule("encoder", *SETTING_CODES)
+def video_encoder_settings(ctx: JobContext | TemplateContext) -> Iterator[ValidationIssue]:
+    video = ctx.doc.video
     if video.passthrough:
         return
-    yield from video_bit_depth_issues(video, ctx.caps, ctx.definitions, target=ctx.target)
-    yield from video_choice_issues(video, ctx.caps, ctx.definitions, target=ctx.target)
-    yield from video_option_issues(video, ctx.caps, ctx.definitions, target=ctx.target)
-    yield from video_rate_control_issues(video, ctx.definitions, target=ctx.target)
-    yield from video_fast_decode_issues(video, ctx.definitions, target=ctx.target)
-    yield from video_x26x_rule_issues(video, ctx.definitions, target=ctx.target)
+    yield from video_bit_depth_issues(video, ctx.caps, ctx.definitions)
+    yield from video_choice_issues(video, ctx.caps, ctx.definitions)
+    yield from video_option_issues(video, ctx.caps, ctx.definitions)
+    yield from video_rate_control_issues(video, ctx.definitions)
+    yield from video_fast_decode_issues(video, ctx.definitions)
+    yield from video_x26x_rule_issues(video, ctx.definitions)
 
 
 @job_rule("encoder", *AVAILABILITY_CODES)
@@ -122,31 +118,7 @@ def audio_encoders(ctx: JobContext) -> Iterator[ValidationIssue]:
             ctx,
             track=track,
             stream=track_stream(ctx, track),
-            target=ctx.target,
         )
-
-
-@template_rule("encoder", *AVAILABILITY_CODES)
-def template_video_encoder(ctx: TemplateContext) -> list[ValidationIssue]:
-    video = ctx.template.video
-    if video.passthrough:
-        return []
-    return video_availability_issues(
-        video, ctx.caps, ctx.definitions, target=ctx.target, subject=ctx.subject
-    )
-
-
-@template_rule("encoder", *SETTING_CODES)
-def template_video_settings(ctx: TemplateContext) -> Iterator[ValidationIssue]:
-    video = ctx.template.video
-    if video.passthrough:
-        return
-    yield from video_bit_depth_issues(video, ctx.caps, ctx.definitions, target=ctx.target)
-    yield from video_choice_issues(video, ctx.caps, ctx.definitions, target=ctx.target)
-    yield from video_option_issues(video, ctx.caps, ctx.definitions, target=ctx.target)
-    yield from video_rate_control_issues(video, ctx.definitions, target=ctx.target)
-    yield from video_fast_decode_issues(video, ctx.definitions, target=ctx.target)
-    yield from video_x26x_rule_issues(video, ctx.definitions, target=ctx.target)
 
 
 def template_audio_encoder_ids(ctx: TemplateContext) -> Iterator[tuple[str, str]]:
@@ -171,4 +143,4 @@ def template_audio_encoder_ids(ctx: TemplateContext) -> Iterator[tuple[str, str]
 @template_rule("encoder", *AVAILABILITY_CODES)
 def template_audio_encoders(ctx: TemplateContext) -> Iterator[ValidationIssue]:
     for path, encoder_id in template_audio_encoder_ids(ctx):
-        yield from audio_encoder_issues(encoder_id, path, ctx.caps, ctx, target=ctx.target)
+        yield from audio_encoder_issues(encoder_id, path, ctx.caps, ctx)

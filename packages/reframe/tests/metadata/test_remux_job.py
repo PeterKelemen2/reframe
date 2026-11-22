@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from reframe.metadata import remux_job, source_video_metadata
+from reframe.batch import track_metadata, video_metadata
+from reframe.batch.descriptors import describe_stream
+from reframe.metadata import remux_job
 from reframe.models import (
     AudioOutputTrack,
     ChapterSettings,
@@ -63,7 +65,7 @@ def test_in_place_remux_of_an_mkv() -> None:
     assert [(s.source, s.action) for s in job.subtitles] == [(4, "copy"), (5, "copy"), (6, "copy")]
     assert job.subtitles[1].metadata.hearing_impaired
     assert job.subtitles[2].metadata.forced
-    assert job.video.metadata == source_video_metadata(source.video[0])
+    assert job.video.metadata == track_metadata(source.video[0])
 
 
 def test_remux_to_a_new_file_keeps_container_path_and_draft_video_metadata() -> None:
@@ -84,13 +86,23 @@ def test_a_source_that_is_not_mkv_keeps_its_new_path() -> None:
     assert job.output.path == Path("/out/x.mp4")
 
 
-def test_source_video_metadata_is_exact() -> None:
+def test_video_track_metadata_is_exact() -> None:
     source = recorded("multitrack.mkv", Path("/media/a.mkv"))
     video = source.video[0]
     video.disposition.default = False
     video.language = "ger"
     video.title = "Main"
-    meta = source_video_metadata(video)
+    meta = track_metadata(video)
     assert (meta.language, meta.name, meta.default) == ("de", "Main", False)
     video.language = None
-    assert source_video_metadata(video).language is None
+    assert track_metadata(video).language is None
+
+
+def test_a_broken_video_language_ietf_gives_way_to_a_valid_language() -> None:
+    source = recorded("multitrack.mkv", Path("/media/a.mkv"))
+    video = source.video[0]
+    video.language_ietf = "zz"  # the right shape, not a language
+    video.language = "ger"
+    assert track_metadata(video).language == "de"
+    assert video_metadata(video).language == "de"
+    assert describe_stream(video, 0).language == "de"

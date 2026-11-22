@@ -1,4 +1,5 @@
-"""Container rules: a codec the container cannot hold, and track flags it cannot write.
+"""Container rules: a codec the container cannot hold, track flags it cannot write, and a copied
+track that Align A/V start cannot pad.
 
 A passthru audio track that the container cannot hold is encoded with the fallback encoder, so
 only that encoder's codec is checked here (``audio.passthru_fallback``, info).
@@ -11,16 +12,16 @@ from collections.abc import Iterator
 from reframe.definitions import ContainerDef, Definitions
 from reframe.definitions.models import TRACK_FLAGS
 from reframe.models.capabilities import CapabilitySnapshot
-from reframe.models.issues import Fix, FixTarget, ValidationIssue
-from reframe.models.job import AudioOutputTrack, Container, TrackMetadata
+from reframe.models.issues import Fix, ValidationIssue
+from reframe.models.job import AudioOutputTrack, Container
 from reframe.models.media import AudioStream
-from reframe.models.tools import ToolStatus
 from reframe.validation.common import (
     SwitchContainer,
     containers_for,
+    drop_track,
     error,
     fix,
-    remove,
+    info,
     replace,
     switch_container_fixes,
     usable_encoder,
@@ -28,8 +29,10 @@ from reframe.validation.common import (
 )
 from reframe.validation.context import JobContext, TemplateContext
 from reframe.validation.encoder import template_audio_encoder_ids
+from reframe.validation.metadata import metadata_blocks
 from reframe.validation.registry import job_rule, template_rule
 from reframe.validation.tracks import (
+    passthru_copies,
     subtitle_input,
     switch_audio_encoder,
     switch_container,
@@ -64,17 +67,16 @@ def _audio_codec_issue(
     container_id: Container,
     ctx: JobContext | TemplateContext,
     *,
-    drop: str | None,
+    drop: int | None,
     track: AudioOutputTrack | None = None,
     stream: AudioStream | None = None,
-    target: FixTarget,
     switch: SwitchContainer | None = None,
 ) -> list[ValidationIssue]:
     """``container.codec_unsupported`` for the audio encoder at ``path``."""
     definitions = ctx.definitions
-    container = definitions.containers.get(container_id)
+    container = definitions.containers[container_id]
     encoder = definitions.audio_encoders.get(encoder_id)
-    if container is None or encoder is None or encoder.codec in container.audio.encode:
+    if encoder is None or encoder.codec in container.audio.encode:
         return []
     fixes: list[Fix] = []
     convert = _audio_convert_encoder(container, ctx.caps, definitions)
@@ -82,15 +84,15 @@ def _audio_codec_issue(
         ops = switch_audio_encoder(
             path, definitions.audio_encoders[convert], definitions, track=track, stream=stream
         )
-        fixes.append(fix(f"Use {convert}", *ops, target=target))
+        fixes.append(fix(f"Use {convert}", *ops))
     allowed = containers_for(definitions, "audio", encoder.codec)
     fixes.extend(
         switch(allowed)
         if switch is not None
-        else switch_container_fixes(allowed, container_id, definitions, target=target)
+        else switch_container_fixes(allowed, container_id, definitions)
     )
     if drop is not None:
-        fixes.append(fix("Remove this audio track", remove(drop), target=target))
+        fixes.append(drop_track("audio", drop))
     return [
         error(
             UNSUPPORTED,
@@ -101,34 +103,18 @@ def _audio_codec_issue(
     ]
 
 
-@job_rule("container", "container.unknown")
-def known_container(ctx: JobContext) -> list[ValidationIssue]:
-    """A container the definitions do not have (a hand-edited or newer job file)."""
-    if ctx.container is not None:
-        return []
-    current = ctx.job.output.container
-    return [
-        error(
-            "container.unknown",
-            "output.container",
-            f"Unknown container {current!r}.",
-            *switch_container(ctx, list(ctx.definitions.containers)),
-        )
-    ]
-
-
 @job_rule("container", UNSUPPORTED)
 def video_codec(ctx: JobContext) -> list[ValidationIssue]:
     stream = ctx.video_stream
+    if ctx.job.video.passthrough and stream is None:
+        return []
     return video_container_issues(
         ctx.job.video,
         ctx.job.output.container,
         ctx.caps,
         ctx.definitions,
         source_codec=stream.codec if stream is not None else None,
-        target=ctx.target,
         switch=lambda allowed: switch_container(ctx, allowed),
-        passthrough_known=stream is not None,
     )
 
 
@@ -143,10 +129,9 @@ def audio_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
             encoder_id,
             ctx.job.output.container,
             ctx,
-            drop=f"audio[{index}]",
+            drop=index,
             track=track,
             stream=track_stream(ctx, track),
-            target=ctx.target,
             switch=lambda allowed: switch_container(ctx, allowed),
         )
 
@@ -156,10 +141,8 @@ def subtitle_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
     """Text subtitles: a converted format the container cannot hold, or a copied text format
     it can neither hold nor convert automatically. (Bitmap: ``subtitle.bitmap_unsupported``.)"""
     container = ctx.container
-    if container is None:
-        return
     for index, track in enumerate(ctx.job.subtitles):
-        drop = fix("Remove this subtitle track", remove(f"subtitles[{index}]"), target=ctx.target)
+        drop = drop_track("subtitles", index)
         if track.action == "convert" and track.convert_to is not None:
             if track.convert_to in container.subtitles.encode:
                 continue
@@ -169,7 +152,6 @@ def subtitle_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
                     fix(
                         f"Convert to {container.text_subtitle_target}",
                         replace(f"subtitles[{index}].convert_to", container.text_subtitle_target),
-                        target=ctx.target,
                     )
                 )
             fixes.extend(
@@ -205,44 +187,21 @@ def subtitle_codecs(ctx: JobContext) -> Iterator[ValidationIssue]:
             )
 
 
-def _metadata_blocks(ctx: JobContext) -> Iterator[tuple[str, TrackMetadata]]:
-    yield "video.metadata", ctx.job.video.metadata
-    for index, audio in enumerate(ctx.job.audio):
-        yield f"audio[{index}].metadata", audio.metadata
-    for index, subtitle in enumerate(ctx.job.subtitles):
-        if subtitle.action != "burn":
-            yield f"subtitles[{index}].metadata", subtitle.metadata
-
-
-@job_rule("container", "container.flag_unsupported", "tool.mkvpropedit_missing")
+@job_rule("container", "container.flag_unsupported")
 def track_flags(ctx: JobContext) -> Iterator[ValidationIssue]:
-    """A flag the muxer cannot write is lost, so it is a warning. A flag that an ``mkvpropedit``
-    step sets after muxing is a warning only when mkvpropedit is missing."""
+    """A flag the muxer cannot write is lost, so it is a warning."""
     container = ctx.container
-    if container is None:
-        return
-    mkvpropedit = ctx.tools.mkvpropedit.status is ToolStatus.FOUND
-    for prefix, metadata in _metadata_blocks(ctx):
+    for prefix, metadata in metadata_blocks(ctx, written_only=True):
         for flag in TRACK_FLAGS:
             if not getattr(metadata, flag) or flag in container.flags:
                 continue
             path = f"{prefix}.{flag}"
-            clear = fix(f"Clear the {flag} flag", replace(path, False), target=ctx.target)
+            clear = fix(f"Clear the {flag} flag", replace(path, False))
             label = flag.replace("_", " ")
-            if flag in container.mkvpropedit_flags:
-                if not mkvpropedit:
-                    yield warning(
-                        "tool.mkvpropedit_missing",
-                        path,
-                        f"The {label} flag needs mkvpropedit after muxing, and mkvpropedit was "
-                        "not found: the flag will be lost.",
-                        clear,
-                    )
-                continue
             others = [
                 c
                 for c, definition in ctx.definitions.containers.items()
-                if flag in definition.flags or flag in definition.mkvpropedit_flags
+                if flag in definition.flags
             ]
             yield warning(
                 "container.flag_unsupported",
@@ -253,14 +212,52 @@ def track_flags(ctx: JobContext) -> Iterator[ValidationIssue]:
             )
 
 
+#: Seconds a copied stream may start after the others before Align A/V start says it stays so.
+ALIGN_TOLERANCE = 0.05
+
+
+@job_rule("container", "container.align_copied_track")
+def align_copied_tracks(ctx: JobContext) -> Iterator[ValidationIssue]:
+    """Align A/V start pads the start of what is encoded; a copied track keeps its own. Without
+    a range only: after ``-ss`` the source's start times no longer apply."""
+    job = ctx.job
+    video = ctx.video_stream
+    if not job.output.align_av_start or job.range.kind != "full" or video is None:
+        return
+    starts: list[float] = [] if video.start_time is None else [video.start_time]
+    copied: list[tuple[str, str, float]] = []
+    if job.video.passthrough and video.start_time is not None:
+        copied.append(("video.passthrough", "The copied video", video.start_time))
+    for index, track in enumerate(job.audio):
+        stream = track_stream(ctx, track)
+        if stream is None or stream.start_time is None:
+            continue
+        starts.append(stream.start_time)
+        if passthru_copies(ctx, track):
+            copied.append((f"audio[{index}].action", f"Audio track {index + 1}", stream.start_time))
+    if not starts:
+        return
+    first = min(starts)
+    for path, what, start in copied:
+        late = start - first
+        if late > ALIGN_TOLERANCE:
+            yield info(
+                "container.align_copied_track",
+                path,
+                f"{what} starts {late:.2f} s after the others and is copied: Align A/V start "
+                "cannot pad a copied track, so it keeps that start.",
+            )
+
+
 @template_rule("container", UNSUPPORTED)
 def template_video_codec(ctx: TemplateContext) -> list[ValidationIssue]:
+    if ctx.template.video.passthrough:
+        return []  # no source to check the copied codec against
     return video_container_issues(
         ctx.template.video,
         ctx.template.output.container,
         ctx.caps,
         ctx.definitions,
-        target=ctx.target,
     )
 
 
@@ -268,5 +265,5 @@ def template_video_codec(ctx: TemplateContext) -> list[ValidationIssue]:
 def template_audio_codecs(ctx: TemplateContext) -> Iterator[ValidationIssue]:
     for path, encoder_id in template_audio_encoder_ids(ctx):
         yield from _audio_codec_issue(
-            path, encoder_id, ctx.template.output.container, ctx, drop=None, target=ctx.target
+            path, encoder_id, ctx.template.output.container, ctx, drop=None
         )

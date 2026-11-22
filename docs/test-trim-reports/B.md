@@ -144,7 +144,9 @@ to trim.
 - `test_lint.py::test_builtin_presets_are_clean` (26 cases):
   `tests/integration/test_builtin_presets_validate.py` runs the same presets through
   `validate_template` (which includes `lint_defaults`), but it fails only on errors. This test
-  also fails on lint warnings and info notes.
+  also fails on lint warnings and info notes. (Q-7.9 merged both into
+  `presets/test_builtin.py::test_builtin_preset_is_valid`, whose `defaults lint` subtest fails
+  on every `defaults.` issue at any severity.)
 - The six evidence cases of `test_foreign_audio_search_finds_the_forced_track` and the seven
   cases of `test_burn_in`: each one tests a different evidence rank or burn-in branch.
 - `test_m6_demo_item_5` and `test_m6_demo_item_5_through_the_facade`: both are demo

@@ -1,82 +1,40 @@
 """Track metadata rules: a language that is not a known language or BCP 47 tag would be
-written as ``und``, and several output tracks of one kind marked default."""
+written as ``und``, a track name template with a variable it does not have, and several output
+tracks of one kind marked default."""
 
 from __future__ import annotations
 
+import difflib
 from collections.abc import Iterator
 
 from reframe import languages
-from reframe.command.metadata import dispositions, needs_ietf
+from reframe.command.metadata import dispositions
 from reframe.definitions import ContainerDef
-from reframe.models.issues import ValidationIssue
+from reframe.models.issues import Fix, ValidationIssue
 from reframe.models.job import TrackMetadata
-from reframe.models.tools import ToolStatus
+from reframe.naming.template import parse_template, template_variables
+from reframe.naming.track_names import TRACK_NAME_VARIABLES
 from reframe.validation.common import error, fix, replace, warning
 from reframe.validation.context import JobContext
 from reframe.validation.registry import job_rule
 
 
-def _blocks(ctx: JobContext) -> Iterator[tuple[str, TrackMetadata]]:
+def metadata_blocks(
+    ctx: JobContext, *, written_only: bool = False
+) -> Iterator[tuple[str, TrackMetadata]]:
+    """The metadata of each output track and its path; ``written_only`` skips burned-in
+    subtitles, which have no track to write it to."""
     yield "video.metadata", ctx.job.video.metadata
     for index, audio in enumerate(ctx.job.audio):
         yield f"audio[{index}].metadata", audio.metadata
     for index, subtitle in enumerate(ctx.job.subtitles):
-        yield f"subtitles[{index}].metadata", subtitle.metadata
-
-
-def _written_languages(ctx: JobContext) -> Iterator[tuple[str, str | None]]:
-    stream = ctx.video_stream
-    source = (stream.language_ietf or stream.language) if stream is not None else None
-    yield "video.metadata", ctx.job.video.metadata.language or source
-    for index, audio in enumerate(ctx.job.audio):
-        found = (
-            ctx.audio_streams.get(audio.source_stream) if audio.source_stream is not None else None
-        )
-        source = (found.language_ietf or found.language) if found is not None else None
-        yield f"audio[{index}].metadata", audio.metadata.language or source
-    for index, subtitle in enumerate(ctx.job.subtitles):
-        if subtitle.action == "burn":
-            # A burned-in subtitle has no track to write a language into.
-            continue
-        if isinstance(subtitle.source, int):
-            sub = ctx.subtitle_streams.get(subtitle.source)
-            source = (sub.language_ietf or sub.language) if sub is not None else None
-        else:
-            source = subtitle.source.language
-        yield f"subtitles[{index}].metadata", subtitle.metadata.language or source
-
-
-@job_rule("metadata", "metadata.language_tag_lost")
-def language_tags(ctx: JobContext) -> Iterator[ValidationIssue]:
-    """A BCP 47 tag that ISO 639-2 cannot say (``pt-BR``, ``yue``) needs mkvpropedit to write
-    Matroska's ``LanguageIETF``. Without it only the ISO 639-2 code is written: a warning,
-    with a fix that writes the code on purpose."""
-    container = ctx.container
-    if (
-        container is None
-        or container.id != "mkv"
-        or container.language_format != "iso639_2b"
-        or ctx.tools.mkvpropedit.status is ToolStatus.FOUND
-    ):
-        return
-    for prefix, language in _written_languages(ctx):
-        if language is None or languages.validate(language) is not None:
-            continue
-        if not needs_ietf(language):
-            continue
-        legacy = languages.to_matroska_legacy(language)
-        yield warning(
-            "metadata.language_tag_lost",
-            f"{prefix}.language",
-            f"The language {language} needs mkvpropedit after muxing (Matroska LanguageIETF), "
-            f"and mkvpropedit was not found: only {legacy!r} is written.",
-            fix(f"Write it as {legacy}", replace(f"{prefix}.language", legacy), target=ctx.target),
-        )
+        if not (written_only and subtitle.action == "burn"):
+            yield f"subtitles[{index}].metadata", subtitle.metadata
 
 
 @job_rule("metadata", "metadata.language_invalid")
 def track_languages(ctx: JobContext) -> Iterator[ValidationIssue]:
-    for prefix, metadata in _blocks(ctx):
+    for prefix, metadata in metadata_blocks(ctx):
         if metadata.language is None:
             continue
         problem = languages.validate(metadata.language)
@@ -89,7 +47,6 @@ def track_languages(ctx: JobContext) -> Iterator[ValidationIssue]:
             fix(
                 "Keep the source language",
                 replace(f"{prefix}.language", None),
-                target=ctx.target,
             ),
         )
 
@@ -97,7 +54,7 @@ def track_languages(ctx: JobContext) -> Iterator[ValidationIssue]:
 @job_rule("metadata", "metadata.nul_character")
 def track_names(ctx: JobContext) -> Iterator[ValidationIssue]:
     """A track name is a process argument, which cannot hold a NUL character."""
-    names = [(f"{prefix}.name", metadata.name) for prefix, metadata in _blocks(ctx)]
+    names = [(f"{prefix}.name", metadata.name) for prefix, metadata in metadata_blocks(ctx)]
     names += [
         (f"subtitles[{index}].source.name", track.source.name)
         for index, track in enumerate(ctx.job.subtitles)
@@ -113,23 +70,66 @@ def track_names(ctx: JobContext) -> Iterator[ValidationIssue]:
                 fix(
                     "Remove the NUL characters",
                     replace(at, name.replace("\0", "")),
-                    target=ctx.target,
                 ),
             )
 
 
+def _track_variable(name: str) -> str | None:
+    """The track name variable that ``name`` is most likely a typo of."""
+    lower = name.lower()
+    if lower in TRACK_NAME_VARIABLES:
+        return lower
+    close = difflib.get_close_matches(lower, sorted(TRACK_NAME_VARIABLES), n=1, cutoff=0.75)
+    return close[0] if close else None
+
+
+@job_rule("metadata", "metadata.name_variable_unknown")
+def track_name_variables(ctx: JobContext) -> Iterator[ValidationIssue]:
+    """A track name with a variable that track names do not have is written as typed. A name
+    with no track variable and nothing close to one is a title (``Signs {Karaoke}``)."""
+    for prefix, metadata in metadata_blocks(ctx, written_only=True):
+        name = metadata.name
+        if name is None or ("{" not in name and "}" not in name):
+            continue
+        template = parse_template(name)
+        if template.errors:
+            continue
+        found = list(template_variables(template.nodes))
+        unknown = [var for var in found if var.name not in TRACK_NAME_VARIABLES]
+        guesses = {var.name: _track_variable(var.name) for var in unknown}
+        if not unknown or (len(unknown) == len(found) and not any(guesses.values())):
+            continue
+        listed = list(dict.fromkeys(f"{{{var.name}}}" for var in unknown))
+        verb = (
+            "is not a track name variable" if len(listed) == 1 else "are not track name variables"
+        )
+        message = (
+            f"{' and '.join(listed)} {verb}, so the track name is written as typed, braces and all."
+        )
+        fixed, used = name, list[str]()
+        for var in reversed(unknown):
+            guess = guesses[var.name]
+            if guess is not None:
+                spec = f":{var.spec}" if var.spec is not None else ""
+                fixed = f"{fixed[: var.start]}{{{guess}{spec}}}{fixed[var.end :]}"
+                used.insert(0, f"{{{guess}}}")
+        fixes: list[Fix] = []
+        if len(used) == len(unknown):
+            label = " and ".join(dict.fromkeys(used))
+            message += f" Did you mean {label}?"
+            fixes.append(fix(f"Use {label}", replace(f"{prefix}.name", fixed)))
+        else:
+            variables = ", ".join(f"{{{v}}}" for v in sorted(TRACK_NAME_VARIABLES))
+            message += f" The variables of a track name are {variables}."
+        yield warning("metadata.name_variable_unknown", f"{prefix}.name", message, *fixes)
+
+
 def _written_default(ctx: JobContext, container: ContainerDef, metadata: TrackMetadata) -> bool:
-    """The default flag as the plan writes it: an FFmpeg disposition, else the mkvpropedit
-    step after muxing."""
+    """The default flag as the plan writes it: an FFmpeg disposition."""
     if not metadata.default:
         return False
     disposition = ctx.definitions.track_flags["default"].disposition
-    if disposition in dispositions(metadata, container, ctx.definitions).split("+"):
-        return True
-    return (
-        "default" in container.mkvpropedit_flags
-        and ctx.tools.mkvpropedit.status is ToolStatus.FOUND
-    )
+    return disposition in dispositions(metadata, container, ctx.definitions).split("+")
 
 
 @job_rule("metadata", "metadata.several_defaults")
@@ -137,8 +137,6 @@ def default_tracks(ctx: JobContext) -> Iterator[ValidationIssue]:
     """More than one output track of a kind marked default is allowed, so a warning, with a fix
     that keeps only the first one default. A burned-in subtitle is not an output track."""
     container = ctx.container
-    if container is None:
-        return
     audio = [
         index
         for index, track in enumerate(ctx.job.audio)
@@ -163,6 +161,5 @@ def default_tracks(ctx: JobContext) -> Iterator[ValidationIssue]:
             fix(
                 f"Keep only {kind} track {first + 1} default",
                 *(replace(f"{field}[{index}].metadata.default", False) for index in others),
-                target=ctx.target,
             ),
         )

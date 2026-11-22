@@ -36,7 +36,7 @@ _TEMPLATE_ERRORS = tuple(
 def tags(ctx: JobContext) -> Iterator[ValidationIssue]:
     """A template error is written as typed or as an empty value, so it blocks the job, as a
     NUL character (no process argument can hold one) and an over-long value do."""
-    yield from tag_template_issues(ctx.job.tags, target=ctx.target)
+    yield from tag_template_issues(ctx.job.tags)
     for name in TAG_KEYS:
         template = getattr(ctx.job.tags, name)
         if template is None:
@@ -53,7 +53,6 @@ def tags(ctx: JobContext) -> Iterator[ValidationIssue]:
                     fix(
                         "Remove the NUL characters",
                         replace(at, template.replace("\0", "")),
-                        target=ctx.target,
                     )
                 )
             yield error(
@@ -75,4 +74,4 @@ def tags(ctx: JobContext) -> Iterator[ValidationIssue]:
 @template_rule("metadata", *_TEMPLATE_ERRORS)
 def template_tags(ctx: TemplateContext) -> list[ValidationIssue]:
     """A preset's tag templates, which every job made from it gets."""
-    return tag_template_issues(ctx.template.tags, target=ctx.target)
+    return tag_template_issues(ctx.template.tags)

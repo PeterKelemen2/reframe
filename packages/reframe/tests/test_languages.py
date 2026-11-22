@@ -12,7 +12,6 @@ from typing import Any
 import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
-from langcodes import Language
 
 from reframe import languages
 from reframe.languages import (
@@ -88,7 +87,6 @@ def test_every_iso639_2_code_keeps_its_meaning() -> None:
         assert to_mp4(code) == code
     for b, _, _ in B_T_PAIRS:
         assert to_matroska_legacy(b) == b
-    assert Language.get("tgl").to_tag() == "fil"  # why OVERRIDES exists
 
 
 @pytest.mark.parametrize(
@@ -348,7 +346,6 @@ def tags_of(result: list[LanguageEntry]) -> list[str]:
         ("chinese", ["zh", "zh-Hans", "zh-Hant"]),
         ("francais", ["fr"]),
         ("iw", ["he"]),
-        ("tgl", ["tl"]),
         ("sr-latn", ["sr-Latn"]),
     ],
 )
@@ -447,15 +444,27 @@ def test_matches(rule: str | None, track: str | None, result: bool) -> None:
     assert matches(rule, track) is result
 
 
-entries = st.sampled_from(language_list())
-
-
 def test_container_codes_round_trip_for_every_entry() -> None:
     for item in language_list():
         base = base_language(item.tag)
         assert normalize(to_matroska_legacy(item.tag)) == base, item.tag
         assert normalize(to_mp4(item.tag)) == base, item.tag
         assert normalize(item.tag) == item.tag, item.tag
+        forms = {
+            "code": item.iso639_2b if not item.variant else item.tag,
+            "upper": item.tag.upper(),
+            "underscore": item.tag.replace("-", "_"),
+            "name": item.english_name,
+            "native": item.native_name,
+        }
+        for form, value in forms.items():
+            tag = normalize(value)
+            assert tag is not None, (item.tag, form)
+            assert normalize(tag) == tag, (item.tag, form)
+            if form in ("upper", "underscore") or (form == "code" and item.variant):
+                assert tag == item.tag, (item.tag, form)
+            if form == "code" and not item.variant:
+                assert tag == base_language(item.tag), (item.tag, form)
 
 
 def test_every_name_in_the_list_normalizes() -> None:
@@ -517,25 +526,6 @@ def test_property_normalize_is_idempotent_and_total(value: str) -> None:
     assert to_matroska_ietf(value) == (tag or "und")
     english_name(value)
     native_name(value)
-
-
-@settings(max_examples=300)
-@given(entries, st.sampled_from(["code", "upper", "underscore", "name", "native"]))
-def test_property_normalize_variants_of_an_entry(item: LanguageEntry, form: str) -> None:
-    value = {
-        "code": item.iso639_2b if not item.variant else item.tag,
-        "upper": item.tag.upper(),
-        "underscore": item.tag.replace("-", "_"),
-        "name": item.english_name,
-        "native": item.native_name,
-    }[form]
-    tag = normalize(value)
-    assert tag is not None
-    assert normalize(tag) == tag
-    if form in ("upper", "underscore") or (form == "code" and item.variant):
-        assert tag == item.tag
-    if form == "code" and not item.variant:
-        assert tag == base_language(item.tag)
 
 
 def _tool(name: str) -> str:

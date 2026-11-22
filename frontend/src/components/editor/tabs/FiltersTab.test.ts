@@ -94,9 +94,14 @@ describe('the Filters tab', () => {
       expect(part('avoid-when')).toBe(filter.help.avoid_when)
       expect(part('speed-cost')).toBe(SPEED[filter.help.speed_cost])
       expect(part('settings')).toBe(filter.help.settings)
-      const tunes = filter.implementations.flatMap((impl) => impl.tunes ?? [])
-      const missing = tunes.filter((tune) => !help.text().includes(`${tune.label} · ${tune.help}`))
-      expect(missing.filter((tune) => tune.help !== '')).toEqual([])
+      const choices = filter.implementations.flatMap((impl) => [
+        ...impl.presets,
+        ...(impl.tunes ?? []),
+      ])
+      for (const choice of choices) {
+        expect(choice.help, `${filter.id}: ${choice.id}`).not.toBe('')
+        expect(help.text()).toContain(`${choice.label} · ${choice.help}`)
+      }
     }
   })
 
@@ -311,8 +316,8 @@ describe('the source colour box', () => {
     expect(value('mastering')).toBe(
       'R 0.68, 0.32 · G 0.265, 0.69 · B 0.15, 0.06 · WP 0.3127, 0.329',
     )
-    expect(value('luminance')).toBe('0.0001–1000 cd/m²')
-    expect(value('contentLight')).toBe('1000 / 400 cd/m²')
+    expect(value('luminance')).toBe('0.0001–1,000 cd/m²')
+    expect(value('contentLight')).toBe('1,000 / 400 cd/m²')
     expect(text(wrapper, '[data-colour-sentence]')).toBe(
       "Off: the output keeps the source's colours (BT.2020 PQ (HDR10)).",
     )

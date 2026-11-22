@@ -5,17 +5,30 @@ import { TOKEN } from './servers'
 
 const AUTH = { Authorization: `Bearer ${TOKEN}` }
 
+/**
+ * How long *Add group to queue* may take: it detects the crop of each file first, one FFmpeg
+ * run per sample frame, and the servers of the three browsers share the machine.
+ */
+export const CROP_DETECTION = 120_000
+
 /** Opens the app with the run's token in the address fragment and waits for the workspace. */
 export async function openApp(page: Page): Promise<void> {
   await page.goto(`/#token=${TOKEN}`)
   await expect(page.locator('.sources-panel')).toBeVisible()
 }
 
-/** Opens a file of the media root through `Ctrl+O` and the file browser, and waits for its job. */
-export async function openFile(page: Page, name: string): Promise<void> {
+/**
+ * Opens a file through `Ctrl+O` and the file browser, and waits for its job. The file is in the
+ * media root, or in the root named `root` (`output` for an `--output-fixtures` file).
+ */
+export async function openFile(page: Page, name: string, root?: string): Promise<void> {
   await page.keyboard.press('ControlOrMeta+O')
   const dialog = page.locator('.file-browser-dialog')
   await expect(dialog).toBeVisible()
+  if (root !== undefined) {
+    const named = page.locator('.file-browser__root-name').getByText(root, { exact: true })
+    await dialog.locator('[data-role="root"]', { has: named }).first().click()
+  }
   await dialog.locator(`.file-browser__entry[data-name="${name}"]`).click()
   await dialog.locator('[data-action="confirm"]').click()
   await expect(dialog).toBeHidden()
@@ -63,6 +76,23 @@ export async function readQueue(request: APIRequestContext): Promise<QueueSnapsh
   const answer = await request.get('/api/queue', { headers: AUTH })
   expect(answer.ok()).toBe(true)
   return (await answer.json()) as QueueSnapshot
+}
+
+/** The server's first media root: the folder the fixtures were copied into. */
+export async function mediaRoot(request: APIRequestContext): Promise<string> {
+  const answer = await request.get('/api/fs/roots', { headers: AUTH })
+  expect(answer.ok()).toBe(true)
+  const { roots } = (await answer.json()) as { roots: { path: string; kind: string }[] }
+  const media = roots.find((root) => root.kind === 'media')
+  expect(media, 'a media root').toBeDefined()
+  return media!.path
+}
+
+/** The server's background tasks of one kind, read with the run's token. */
+export async function readTasks(request: APIRequestContext, kind: string): Promise<TaskInfo[]> {
+  const answer = await request.get('/api/tasks', { headers: AUTH, params: { kind } })
+  expect(answer.ok()).toBe(true)
+  return (await answer.json()) as TaskInfo[]
 }
 
 /** The server's settings, read with the run's token. */

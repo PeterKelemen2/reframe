@@ -21,9 +21,9 @@ from typing import BinaryIO
 
 from reframe.analysis.common import (
     ProgressReporter,
-    check_run,
     fields,
     number,
+    run_scan,
     stream_duration,
 )
 from reframe.mediatask import MediaTaskContext, TaskFailed, require_source, require_tool
@@ -33,7 +33,7 @@ from reframe.models.tools import ToolInfo
 from reframe.probe import roles
 from reframe.queue.progress import ProgressParser
 from reframe.tasks import TaskContext
-from reframe.tools import CancelToken, run_streaming
+from reframe.tools import CancelToken
 
 __all__ = [
     "EMPTY_TEXT_SAMPLE",
@@ -255,12 +255,7 @@ async def _count_packets(
             counts[int(index)] += 1
         progress.update(number(values.get("pts_time")), message)
 
-    assert ffprobe.path is not None
-    result = await run_streaming(
-        count_argv(str(ffprobe.path), path), on_stdout_line=on_packet, on_stderr_line=None,
-        cancel=task.cancel, extra_env=ffprobe.env or None,
-    )  # fmt: skip
-    check_run(result, "ffprobe", path)
+    await run_scan(ffprobe, lambda program: count_argv(program, path), path, task, on_packet)
     return counts
 
 
@@ -299,12 +294,9 @@ async def _read_pgs(
             if block is not None:
                 progress.update(block.out_time, message)
 
-        assert ffmpeg.path is not None
-        result = await run_streaming(
-            extract_argv(str(ffmpeg.path), path, outputs), on_stdout_line=on_progress,
-            on_stderr_line=None, cancel=task.cancel, extra_env=ffmpeg.env or None,
-        )  # fmt: skip
-        check_run(result, "ffmpeg", path)
+        await run_scan(
+            ffmpeg, lambda program: extract_argv(program, path, outputs), path, task, on_progress
+        )
         for index, out in outputs.items():
             try:
                 found[index] = await _read_in_thread(out, task.cancel)
@@ -330,12 +322,9 @@ async def _count_forced(
         forced += 1
         progress.update(number(values.get("pts_time")), message)
 
-    assert ffprobe.path is not None
-    result = await run_streaming(
-        forced_argv(str(ffprobe.path), path, index), on_stdout_line=on_subtitle,
-        on_stderr_line=None, cancel=task.cancel, extra_env=ffprobe.env or None,
-    )  # fmt: skip
-    check_run(result, "ffprobe", path)
+    await run_scan(
+        ffprobe, lambda program: forced_argv(program, path, index), path, task, on_subtitle
+    )
     return forced
 
 

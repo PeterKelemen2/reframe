@@ -5,6 +5,7 @@
     "paused": "Paused",
     "done": "Done",
     "failed": "Failed",
+    "failedEncoder": "Failed — encoder unavailable",
     "cancelled": "Cancelled",
     "interrupted": "Interrupted"
   },
@@ -13,9 +14,10 @@
     "pass1": "Pass 1 of 2",
     "pass2": "Pass 2 of 2",
     "encode": "Encoding",
-    "mkvpropedit": "Writing tags",
+    "headerEdit": "Writing the MKV header",
     "finalize": "Finishing",
-    "of": "step {n} of {count}"
+    "of": "step {n} of {count}",
+    "withKind": "{kind} · {step}"
   },
   "units": {
     "fps": "{value} fps",
@@ -27,7 +29,7 @@
     "videoCopy": "Video copied",
     "metadataEdit": "Metadata edit",
     "inPlace": "Source, edited in place",
-    "inPlaceTip": "mkvpropedit changes {path} itself: no new file is written."
+    "inPlaceTip": "Reframe writes the changes into {path} itself: no new file is written."
   },
   "columns": {
     "drag": "Drag to reorder",
@@ -43,6 +45,7 @@
     "actions": "Actions"
   },
   "actions": {
+    "start": "Start {job}",
     "pause": "Pause {job}",
     "resume": "Resume {job}",
     "cancel": "Cancel {job}",
@@ -55,7 +58,9 @@
     "moveUp": "Move {job} up",
     "moveDown": "Move {job} down"
   },
+  "encoderFixes": "Fixes for {job}",
   "actionTips": {
+    "start": "Start this job only",
     "pause": "Pause",
     "resume": "Resume",
     "cancel": "Cancel",
@@ -99,6 +104,7 @@
     "label": "When done",
     "helpWeb": "Sleep and Shut down act on the server's computer, after a countdown that can be cancelled.",
     "helpDesktop": "Quit, Sleep and Shut down start after a countdown that can be cancelled.",
+    "helpContainer": "The server runs in a container: it cannot put its computer to sleep or shut it down.",
     "nothing": "Do nothing",
     "notify": "Notify",
     "quit": "Quit Reframe",
@@ -176,6 +182,7 @@
       "broken": "{name} does not work"
     },
     "encoders": "Encoder status changed ({n})",
+    "encoderLine": "{encoder}: {state}",
     "encoder": {
       "available": "available",
       "unavailable": "unavailable",
@@ -191,7 +198,6 @@
     },
     "taskKind": {
       "probe_sources": "Reading sources",
-      "probe_folder": "Reading a folder",
       "encoders_rescan": "Encoder detection",
       "tools_fetch": "FFmpeg download",
       "bitrate_scan": "Bitrate measurement",

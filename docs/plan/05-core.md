@@ -6,8 +6,8 @@ work headless, from a script or from the bundled CLI.
 ## Rules for the core
 
 - No imports from FastAPI, Tauri, Vue or any UI toolkit. Dependencies: `pydantic`, `psutil`,
-  `platformdirs`, `langcodes`, `guessit`. Optional extras: `pymediainfo`
-  (`[mediainfo]`), `typer` (`[cli]`).
+  `platformdirs`, `guessit`. Optional extra: `typer` (`[cli]`). No `[mediainfo]` extra since
+  C-19 ([decision 0081](../decisions/0081-probe-without-mediainfo.md)).
 - The public API is the `Reframe` facade (`C-15`) and `reframe.models`. Everything else is
   internal and can change.
 - Async throughout. All subprocess calls go through `reframe.tools.run*` (`C-1`).
@@ -39,7 +39,7 @@ packages/reframe/src/reframe/
 ├── queue/                 # store (SQLite), runner, progress parser, when-done
 ├── batch/                 # descriptors, fingerprint, rules, resolve
 ├── naming/                # name source, release-name parsing, templates, safe file names
-├── metadata/              # remux + mkvpropedit
+├── metadata/              # remux, Matroska header writer (C-18)
 ├── platform/              # sleep inhibit, power actions, child-process safety
 ├── service.py             # facade wiring
 └── cli.py
@@ -64,30 +64,39 @@ Linux and Windows.
 ```python
 async def run(argv: Sequence[str], *, timeout: float, cancel: CancelToken | None = None,
               max_output: int = 16 * 2**20, cwd: Path | None = None) -> RunResult
-async def run_streaming(argv, *, on_stdout_line, on_stderr_line, cancel, timeout=None) -> RunResult
+async def run_streaming(argv, *, on_stdout_line, on_stderr_line, cancel) -> RunResult  # no timeout: cancel stops it
 ```
 
 - [ ] `run` returns `RunResult(returncode, stdout, stderr, duration, timed_out, cancelled)`. It
       never raises for a non-zero exit code. It raises only for programming errors.
 - [ ] Timeout and cancel kill the **whole process tree** (psutil).
-- [ ] Child safety: on Linux, set `PR_SET_PDEATHSIG` (ctypes `prctl` in `preexec_fn`). On
+- [ ] Child safety: on Linux, set `PR_SET_PDEATHSIG` (ctypes `prctl` in `preexec_fn`; under a
+      tracer such as coverage, `prctl` alone bound with `functools.partial`, so no Reframe Python
+      code runs in the forked child:
+      [decision 0092](../decisions/0092-no-reframe-python-code-in-a-forked-child.md)). On
       Windows, children run inside a Job Object with `KILL_ON_JOB_CLOSE`: Reframe puts its own
       process into the job before it starts the first tool, so every child is born in the job
       (no assignment race). If that fails, each child is assigned after start
       ([decision 0005](../decisions/0005-tool-discovery-details.md)). FFmpeg then dies if
       Reframe dies.
 - [ ] Windows: `CREATE_NO_WINDOW`, so no console window flashes.
-- [ ] Discovery for each tool (`ffmpeg`, `ffprobe`, `mkvpropedit`, `mediainfo`) in the order
+- [ ] Discovery for each tool (`ffmpeg`, `ffprobe`; `mediainfo` until C-19) in the order
       from [02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg): environment variable →
       Settings path → bundled directory → `PATH` (only without a bundled build). Record which
       source won (`ToolInfo.origin = env | settings | bundled | path`) so the UI can show it.
+      mkvpropedit, and with it the `installed` origin (MKVToolNix's install folder on
+      Windows), leaves discovery with C-18
+      ([decision 0080](../decisions/0080-own-matroska-header-writer.md)).
 - [ ] `ffprobe` next to an overridden `ffmpeg` is preferred over the bundled `ffprobe`.
 - [ ] A broken override gives a `broken`/`missing` status with a reason and a "Use bundled"
       fix. It never falls back to the bundled build without telling the user.
 - [ ] Linux, bundled build only: if `LIBVA_DRIVERS_PATH` is not set, set it for the child
-      process to the first existing distro driver folder (`/usr/lib/x86_64-linux-gnu/dri`,
-      `/usr/lib64/dri`, `/usr/lib/dri`). Keep this only if `D-7` shows that it is needed.
-- [ ] Parse versions (`ffmpeg -version`, `mkvpropedit --version`). Set a minimum FFmpeg version
+      process to every existing distro driver folder, joined by `:` (`/usr/lib/x86_64-linux-gnu/dri`,
+      `/usr/lib64/dri-nonfree`, `/usr/lib64/dri-freeworld`, `/usr/lib64/dri`, `/usr/lib/dri`;
+      the bundled libva's built-in path is the same list, [0002](../decisions/0002-bundled-ffmpeg.md)
+      "Follow-up: Fedora with RPM Fusion's VA drivers"). Keep this only if `D-7` shows that it
+      is needed.
+- [ ] Parse versions (`ffmpeg -version`). Set a minimum FFmpeg version
       (7.0). Record build flags (`--enable-libx265`, …) for diagnostics.
 - [ ] `ToolStatus` per tool: `found | missing | too_old | broken`, plus a reason.
 
@@ -99,13 +108,14 @@ Pydantic v2 models in `reframe.models`. All of them are JSON-serialisable and ha
 
 - [ ] **Media** (`MediaSource`, `VideoStream`, `AudioStream`, `SubtitleStream`, `Chapter`,
       `Attachment`, `ColorInfo`, `HdrInfo`, `Disposition`, `TrackRole`, `BitrateInfo` with a
-      `source` field: `stream | stats_tag | mediainfo | measured | unknown`).
+      `source` field: `stream | stats_tag | estimated | measured | unknown`; `estimated` replaces
+      `mediainfo` with C-19).
 - [ ] **Job** (sketch):
 
 ```python
 class JobSettings(BaseModel):
     schema_version: int = 1
-    source: SourceRef                       # path + fingerprint (size, mtime, probe hash)
+    source: SourceRef                       # path + fingerprint (size, mtime)
     range: Range = FullRange()              # | ChapterRange | TimeRange | FrameRange
     output: OutputSettings                  # container, path, web_optimized, align_av_start, passthru_metadata
     dimensions: DimensionSettings           # rotate, flip, crop, size, pixel_aspect, modulus, scaler
@@ -145,8 +155,7 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
       with a 60 s timeout (network shares can be slow).
 - [ ] Parse it into `MediaSource`. Handle: attached pictures (cover art is not a video track),
       attachments (fonts), data streams, VFR (`r_frame_rate` ≠ `avg_frame_rate`; in Matroska
-      also `NUMBER_OF_FRAMES` / `DURATION` vs `avg_frame_rate`, then MediaInfo, then a packet
-      timestamp sample), interlacing (`field_order`), stream start offsets (`delay`, relative
+      also `NUMBER_OF_FRAMES` / `DURATION` vs `avg_frame_rate`, then a packet timestamp sample), interlacing (`field_order`), stream start offsets (`delay`, relative
       to the main video stream, shown as audio delay), and missing durations (decision 0007).
 - [ ] **HDR**: read stream side data (mastering display, content light level, DOVI
       configuration). If it is missing, read the first frame's side data
@@ -158,13 +167,14 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
       `truehd/… + Dolby Atmos → TrueHD Atmos`, `eac3/… + Dolby Atmos → E-AC-3 Atmos`,
       `aac/LC → AAC-LC`, `hdmv_pgs_subtitle → PGS`. A table-driven test covers the map.
 - [ ] **Bitrate chain**: `bit_rate` → Matroska statistics tags (`BPS`, `BPS-eng`,
-      `NUMBER_OF_BYTES` / `DURATION`) → MediaInfo (the pymediainfo library, if it loads) →
-      `unknown`. The value records its source. Statistics tags are used only when they are
-      plausible for the file (size, bit rate, duration); FFmpeg copies stale ones on re-encode.
+      `NUMBER_OF_BYTES` / `DURATION`) → for Matroska, the sampled estimate of C-19 → `unknown`.
+      The value records its source. Statistics tags are used only when they are plausible for
+      the file (size, bit rate, duration; a compressed track's `NUMBER_OF_BYTES` is left out of
+      the size check, C-19); FFmpeg copies stale ones on re-encode.
       `language_ietf` is the file's BCP 47 tag (Matroska `LanguageIETF`, which ffprobe does
       not show): for Matroska, Reframe's own track reader gives it (`None` when the track has
-      none); for other containers, and when the reader cannot read or match the tracks,
-      MediaInfo gives it (decision 0007 and its follow-ups, decision 0034).
+      none); for other containers it is derived from the ISO 639 code (decision 0007 and its follow-ups,
+      decision 0034, [decision 0081](../decisions/0081-probe-without-mediainfo.md)).
 - [ ] **Subtitle event counts** from `NUMBER_OF_FRAMES` tags, when present and plausible.
 - [ ] **Role heuristics** (`probe/roles.py`): dispositions first, then title keywords
       (commentary, kommentar, commentaire, comentario, commento, kommentár, コメンタリー; SDH, CC,
@@ -174,7 +184,10 @@ Done when: a JSON Schema snapshot test exists for all public models. Round trip
       Keywords match whole words, case-insensitive; the acronyms `AD` and `CC` only in upper
       case. A track with no other role gets `main` (decision 0006).
 - [ ] Probe cache: key = absolute path + size + mtime. Stored as JSON in the cache dir.
-- [ ] Folder probe: a task with a concurrency limit (default 4) that reports progress.
+- [ ] Many files: `SourceService.probe_many` probes a list of files with a concurrency limit
+  (default 4), in the order of the list, with progress; after a cancel no new ffprobe starts
+  ([0089](../decisions/0089-folder-probe-and-language-list-removed.md); the server lists a
+  folder's files itself).
 
 Done when: snapshot tests of `MediaSource` exist for every fixture file, plus recorded JSON
 from real-world ffprobe output (TrueHD Atmos, DTS-HD MA, DTS:X, PGS, ASS with fonts, VFR,
@@ -207,12 +220,19 @@ and returns statuses, never exceptions.
       found"; `Driver does not support the required nvenc API version` → "NVIDIA driver too
       old"; `No VA display found for device X` → "No VAAPI device (X)";
       `Failed to initialise VAAPI connection` → "VAAPI driver failed to start";
-      `Error creating a MFX session` or a failed `-init_hw_device qsv=hw` → "No Intel QSV
-      device"; `DLL libamfrt64.so.1 failed to open` → "AMD AMF runtime not found". A known
-      text gives `unavailable`. Any other failure gives `error` with the most informative
-      line: the first line that the encoder logs (`[hevc_nvenc @ …]`), else the first line of
-      a hardware device (`[VAAPI @ …]`), else the first line that is not fftools bookkeeping.
-      Never the last line: it is a generic `Conversion failed!`.
+      `Error creating a MFX session` → "No Intel QSV device or runtime"; `DLL libamfrt64.so.1 failed
+      to open` → "AMD AMF runtime not found". A known text gives `unavailable`. Any other
+      failure gives `error` with the most informative line: the first line that the encoder
+      logs (`[hevc_nvenc @ …]`), else the first line of a hardware device (`[VAAPI @ …]`),
+      else the first line that is not fftools bookkeeping. Never the last line: it is a
+      generic `Conversion failed!`.
+- [ ] **Busy GPU** ([decision 0101](../decisions/0101-nvenc-session-limit-and-older-build-hint.md)):
+      an NVENC session error comes before `No capable devices found` (FFmpeg skips the GPU,
+      so that line always follows). Status 21 (`incompatible client key`, the GeForce limit
+      of concurrent sessions) means the GPU is busy: the test runs again twice (after 2 s,
+      then 4 s, outside the parallel limit), and a test that stays busy gives `error` with
+      "Every NVENC session of the GPU is in use by other programs …", never `unavailable`.
+      A job that fails on it gets the same cause in plain words.
 - [ ] **Cache**: key = ffmpeg path + size + mtime + version, plus a GPU fingerprint (Linux:
       `/sys/class/drm/*/device/{vendor,device}`, `/proc/driver/nvidia/version`. Windows:
       display adapter name + driver version, read once in the background). On start, the cached
@@ -272,8 +292,8 @@ that none exists). Table tests cover the classic cases (DVD NTSC 720×480 anamor
 Declarative data in `definitions/data/*.toml`, validated by Pydantic at import.
 
 - [ ] **Video encoders**: id, codec, family, software/hardware, vendor, hardware init args and
-      filter tail (for example VAAPI: `-vaapi_device …` and `format=nv12,hwupload`; QSV:
-      `-init_hw_device qsv=hw -filter_hw_device hw` and `hwupload=extra_hw_frames=64,format=qsv`),
+      filter tail (for example VAAPI: `-vaapi_device …` and `format=nv12,hwupload`; NVENC, AMF
+      and QSV take software frames, [0095](../decisions/0095-qsv-takes-software-frames.md)),
       rate-control modes with value ranges, presets, tunes, profiles, levels, pixel formats per
       bit depth, fallback chain, quality conversion table.
 - [ ] **Encoder option schema** (StaxRip-style):
@@ -305,7 +325,9 @@ class EncoderOption(BaseModel):
       (what / use when / avoid when / speed cost).
 - [ ] `languages.py`: search (by name, native name, ISO 639-1/2/3, BCP 47), normalisation,
       `to_matroska_legacy()` (ISO 639-2/B, for example `ger`, `fre`, `chi`), `to_mp4()`
-      (ISO 639-2/T), display names. Built on `langcodes`.
+      (ISO 639-2/T), display names. Built on a generated language table (C-20,
+      [decision 0082](../decisions/0082-own-language-data-table.md)); `langcodes` and
+      `language_data` are dev tools that build it.
 
 Done when: a definitions linter test runs. It checks that every option has help text and a
 mapping, that ranges are consistent, and that every fallback chain ends in a software encoder.
@@ -317,7 +339,7 @@ A pure function: `build_plan(job, source, caps, tools) -> EncodePlan`.
 ```python
 class EncodePlan(BaseModel):
     job_type: Literal["encode", "remux", "metadata_edit"]
-    steps: list[PlanStep]        # analyse (loudnorm measure) | pass1 | pass2 | encode | mkvpropedit | finalize
+    steps: list[PlanStep]        # analyse (loudnorm measure) | pass1 | pass2 | encode | header_edit | finalize
     output_tmp: Path             # <name>.part.<ext>
     output_final: Path
     expected_duration: float     # range-adjusted, for progress
@@ -367,14 +389,18 @@ class EncodePlan(BaseModel):
       tracks are copied, so the fonts are kept.
 - [ ] **Metadata**: `-metadata:s:<type>:N language=… title=…`, `-disposition:<type>:N
       default+forced+comment+hearing_impaired+visual_impaired+original` (every flag, `0` for
-      none). Flags the muxer cannot write, and Matroska `LanguageIETF`, go to an
-      `mkvpropedit` step.
+      none). Matroska `LanguageIETF`, which FFmpeg never writes, goes to a `header_edit` step
+      (C-18; FFmpeg writes all six flags, [0034](../decisions/0034-metadata-edit-in-place.md)).
 - [ ] **Chapters**: `-map_chapters 0|-1`, or a generated FFMETADATA file for renamed or
       generated chapters, and for the source's chapters when the range starts or ends on a
       chapter edge (FFmpeg's copy keeps an empty chapter there; 0013 "Follow-up (M2 wave
       2b)"). The end of a chapter range is clamped to the last chapter
       ([decision 0026](../decisions/0026-builder-and-validation-agree.md)).
 - [ ] Tags with `-metadata`. Passthru common metadata = `-map_metadata 0` before the overrides.
+- [x] NVENC constant quality: with no level and no `maxrate`/`bufsize` in the custom
+      parameters, a `-maxrate`/`-bufsize` high enough that the level NVENC picks does not cap
+      the quality (values measured, [0103](../decisions/0103-owner-decisions-before-v1.md) item 1).
+- [x] Align A/V start: the output's streams start together (0103 item 4).
 
 Done when: syrupy snapshots of `EncodePlan` exist for ≥ 40 fixture jobs (every encoder family,
 every container, burn-in, 2-pass, loudnorm, external subs, range, HDR → SDR). An
@@ -386,7 +412,8 @@ the stream layout, languages, titles and flags.
 `validate(job, source, caps, tools, fs) -> list[ValidationIssue]`. The rules are small
 functions in a registry, grouped by area.
 
-- [ ] Tools: ffmpeg missing or too old. mkvpropedit is needed but missing.
+- [ ] Tools: ffmpeg missing or too old. (mkvpropedit is not needed since C-18,
+      [0080](../decisions/0080-own-matroska-header-writer.md).)
 - [ ] Encoder: unknown, checking, unavailable (with a fix to the closest one), 10-bit not
       supported, option not supported by this build.
 - [ ] Container: codec not allowed (with fixes: convert, switch container, drop the track),
@@ -413,9 +440,14 @@ functions in a registry, grouped by area.
       the 2-pass statistics files, through links: decision 0027 item 5), name collision, not
       enough free disk space (estimate in bitrate mode and for video passthrough), a manual
       name that breaks C-16's file-name rules.
-- [ ] Silent losses: a BCP 47 language without mkvpropedit, gain / DRC / loudness on a copied
+- [ ] Silent losses: gain / DRC / loudness on a copied
       passthru track, an x265 level too small for the output
       ([0014](../decisions/0014-validation-rules-and-severities.md) "Follow-up (M2 review)").
+- [ ] NVENC levels ([0102](../decisions/0102-nvenc-on-linux.md)): an H.264 or H.265 NVENC
+      level too small for the output (`encoder.level_too_low`), and in bitrate mode a bitrate
+      above what NVENC takes at the level (`encoder.level_bitrate_too_high`, measured table).
+- [x] AMF pre-analysis on a picture below 320×200, which the encoder refuses at run time
+      ([0103](../decisions/0103-owner-decisions-before-v1.md) item 9).
 - [ ] Range is outside the duration.
 - [ ] Everything the command builder refuses (`PlanError`) is a validation error (a test
       builds a job for each refusal, decision 0013).
@@ -480,11 +512,17 @@ cancelling a scan stops its FFmpeg process within 1 s.
       do count them, so Reframe computes its own; 0016).
 - [ ] Logs: the full command line + stderr, to `<data>/logs/<job>.log`. Rate-limited
       `job.log` events.
-- [ ] Pause and resume: psutil `suspend()` / `resume()` on the process tree.
+- [ ] Pause and resume: psutil `suspend()` / `resume()` on the process tree. The in-process
+      `header_edit` step cannot be suspended: a pause shows at once, the write (milliseconds)
+      ends, and nothing after it starts until resume ([decision 0080](../decisions/0080-own-matroska-header-writer.md) "Built: I").
 - [ ] Cancel: kill the tree and remove the `.part` file.
 - [ ] Time limits: none for an encode; a sleep-aware stall watchdog for FFmpeg steps (no
-      progress, no output and no CPU use for 10 minutes) and a 5-minute limit for short steps
-      (`mkvpropedit`) (0016).
+      progress, no output and no CPU use for 10 minutes) and a 5-minute limit for other short tool steps
+      (0016). An FFmpeg step still running 1 minute after its last progress block
+      (`progress=end`) is stopped, busy or not
+      ([0096](../decisions/0096-qsv-options-on-intel-hardware-and-ffmpeg-that-does-not-exit.md)).
+      The in-process `header_edit` step (C-18) has no time limit and is let finish
+      once it starts; a cancel or close before it starts writes nothing.
 - [ ] Success: re-probe the `.part` output and check its layout (number and type of streams,
       languages) **before** the rename, so a bad output never takes the final name; then rename
       `.part` → final name (collision policy; with `ask` the job fails with the issue and the
@@ -496,8 +534,8 @@ cancelling a scan stops its FFmpeg process within 1 s.
       that is not kept ([decision 0042](../decisions/0042-one-scheduler-process-and-cli-clients.md)).
       No file that a job writes or removes may
       be the source ([decision 0027](../decisions/0027-one-process-owns-the-queue-store.md)),
-      except the source of a `metadata_edit` job, which only mkvpropedit edits and nothing
-      removes ([decision 0034](../decisions/0034-metadata-edit-in-place.md)).
+      except the source of a `metadata_edit` job, which only the `header_edit` step (C-18)
+      edits and nothing removes ([decision 0034](../decisions/0034-metadata-edit-in-place.md)).
 - [ ] When-done actions through `platform/`. Sleep inhibit while any job runs.
 
 Done when: an integration test queues 3 fixture jobs (parallel = 2) and covers pause, resume,
@@ -522,8 +560,10 @@ overrides for `C-16`), and per-group resolution with a match report.
     when the source fits; snap to the allowed encoder values; unknown bitrate counts as above
     the max. Built in M2, before the selection stage: an M2 draft job takes every audio track
     through the codec rules ([decision 0018](../decisions/0018-m2-draft-tracks-and-multi-file-encode.md)).
-  - `explain(defaults, source) -> list[TrackDecision]`, with a reason string for every
-    selected or dropped track and every chosen rule. It feeds the live preview.
+  - One `TrackDecision` per source track, with a reason string for every selected or dropped
+    track and every chosen rule: `audio_stage(defaults, source).decisions` and
+    `subtitle_stage(...).decisions`. `JobService.explain` feeds the live preview
+    ([decision 0090](../decisions/0090-batch-api-and-draft-path.md)).
   - Lint: shadowed rules, unreachable rules, max bitrate out of range.
 
 The rule engine (explicit track rules with relaxation; the defaults compiled into rules over
@@ -538,9 +578,11 @@ and a table test reproduces the example in
 ## C-13 Metadata edit and remux
 
 - [ ] Job type detection (`encode`, `remux`, `metadata_edit`) with a reason string.
-- [ ] `mkvpropedit` builder:
-      `--edit track:a1 --set language=ger --set language-ietf=de --set name="…" --set flag-default=1 --set flag-commentary=1`.
-- [ ] Post-mux fix-up step for flags and IETF tags that FFmpeg did not write.
+- [ ] The edits of a `metadata_edit` job: per track, the language pair (`ger` + `de`), the
+      name and the flags that differ from the probed source, and the segment title. C-18's
+      writer applies them; it replaces the `mkvpropedit` builder
+      ([decision 0080](../decisions/0080-own-matroska-header-writer.md)).
+- [ ] Post-mux fix-up step for the `LanguageIETF` that FFmpeg does not write (C-18's writer).
 - [ ] After every metadata change, re-probe the file to check the result.
 
 Done when: changing only languages and flags on an MKV fixture runs as `metadata_edit`, takes
@@ -549,7 +591,8 @@ Done when: changing only languages and flags on an MKV fixture runs as `metadata
 What can change in place (track languages, names, flags, the container title), the exact
 exception to decision 0027, the fix-up (only `LanguageIETF`: FFmpeg writes all six flags), and
 how the BCP 47 value is read back without MediaInfo (Reframe's own Matroska track reader):
-[decision 0034](../decisions/0034-metadata-edit-in-place.md).
+[decision 0034](../decisions/0034-metadata-edit-in-place.md). Since C-18 the writer is Reframe's
+own too ([decision 0080](../decisions/0080-own-matroska-header-writer.md)).
 
 ## C-14 Platform services
 
@@ -576,9 +619,9 @@ class Reframe:
     @classmethod
     async def create(cls, config_dir: Path | None = None, data_dir: Path | None = None) -> Reframe: ...
     events: EventBus
-    tools: ToolsService            # status, versions, re-scan; fetch (reframe tools fetch)
+    tools: ToolsService            # status, re-scan; fetch (reframe tools fetch)
     capabilities: CapabilityService
-    sources: SourceService         # probe, probe_folder, get, store, update; C-10 tasks: bitrate_scan,
+    sources: SourceService         # probe, probe_many, get, store, update; C-10 tasks: bitrate_scan,
                                    # subtitle_scan, loudness_scan, frames, frame, cropdetect
     presets: PresetService
     jobs: JobService               # draft, validate, plan (dry_run=), name, media_files; explain
@@ -715,3 +758,179 @@ waiting job of the command (checked with a whole-queue read, so a stop that came
 the command's own start does not count), `encode` and `batch` print one line, "The queue was
 stopped by another front end: …", and go on waiting. Ctrl+C cancels the jobs; a later Start
 runs them.
+
+## C-18 Matroska header writer
+
+Reframe's own code writes the Matroska header changes that mkvpropedit wrote before
+([decision 0080](../decisions/0080-own-matroska-header-writer.md)). MKVToolNix is a development
+tool only: tests use it as an oracle, and no product code runs it. Milestone M10.
+
+- [x] A writer in `metadata/` that shares the EBML parsing and the `MAX_*` limits of
+      `probe/matroska.py` and runs in-process (a worker thread). It edits, in each
+      `TrackEntry`, `Language`, `LanguageIETF`, `Name` and the six flags (`FlagDefault`,
+      `FlagForced`, `FlagCommentary`, `FlagHearingImpaired`, `FlagVisualImpaired`,
+      `FlagOriginal`), and in `Info`, `Title`. Tracks are picked as the n-th track of a type
+      in `TrackEntry` order. Both language elements are always written (ISO 639-2/B and
+      BCP 47).
+- [x] An element that still fits in its place and the `Void` after it is written there. One
+      that does not fit moves to the end of the segment: the old place becomes a `Void`, and
+      the `SeekHead` entry and the segment size are updated. A `CRC-32` child of a changed
+      element is calculated again.
+- [x] A file the writer cannot edit safely is refused with a reason (a failed step, not an
+      exception), and the file is unchanged. Record each such case, found on real files, in
+      `testdata/README.md`.
+- [x] Crash safety: every state that a crash or a kill can leave is a file that ffprobe and
+      `mkvmerge -J` open with all the old values or all the new ones. Once the writer starts
+      to write, a cancel or `close()` lets it finish.
+- [x] The plan step kind `header_edit` (was `mkvpropedit`) for the `metadata_edit` job (C-13)
+      and the `LanguageIETF` fix-up (C-7). Its line in the command preview lists the edits
+      (track, field, value).
+- [x] mkvpropedit leaves the product: discovery, `ToolName`, `ToolsStatus`, `reframe tools
+      status`, Settings → Tools, the first-run check, `REFRAME_MKVPROPEDIT`, the Windows
+      install-folder search, `tool.mkvpropedit_missing`, the BCP 47 silent loss, and the
+      settings field `tools.mkvpropedit` (`schema_version` bump, migration, down-level note).
+      Packaging and notices follow in D-8, S-6 and Q-5.
+
+Done when:
+
+1. Property tests: an EBML element that the writer encodes reads back the same through
+   `probe/matroska.py`.
+2. Oracle tests (`needs_mkvtoolnix`): on the fixture corpus (FFmpeg-written files,
+   mkvmerge-written files, files with `CRC-32` elements (mkvmerge 103 writes none: the corpus
+   adds them to an mkvmerge file), reordered tracks with attachments, 6000-character
+   names that move `Tracks`), the same edit done by mkvpropedit and by the writer reads back the
+   same in `mkvmerge -J`, and ffprobe still reads every stream.
+3. Fault-injection tests stop the writer after each write; every file left opens in ffprobe
+   and `mkvmerge -J` with all the old or all the new values.
+4. Every refused case leaves the file byte for byte unchanged.
+5. C-13's "Done when" passes with the writer, and no product code path starts an MKVToolNix
+   program.
+
+## C-19 Probe without MediaInfo
+
+The probe fills the gaps that MediaInfo filled with Reframe's own code, and MediaInfo leaves the
+product ([decision 0081](../decisions/0081-probe-without-mediainfo.md)). Milestone M10.
+
+- [x] Stale statistics tags: a track whose `TrackEntry` has `ContentEncodings` with compression
+      (mkvmerge zlib-compresses PGS) is left out of the `NUMBER_OF_BYTES` sum;
+      Reframe's Matroska reader reads `ContentEncodings`.
+- [x] Sampled estimate for Matroska and WebM, when a video or audio stream has no rate after
+      ffprobe and the tags: the clusters that start in 32 windows at evenly spaced offsets
+      (2 % to 98 %; a segment no larger than the windows is read whole), each with the next
+      cluster's timestamp, in the file's `TimestampScale`. Audio: bytes per sampled
+      second. A single video stream without a rate: the file's rate, without the bytes of
+      attachments, cues and tags, minus every other stream's. More than one such video stream:
+      bytes per sampled second each. Bounded reads (256 KB windows, a cluster of at most 64 MB,
+      256 MB in all, the reader's `MAX_*` limits), in the probe's worker thread, with a time
+      limit and cancel; a file that cannot be sampled keeps `unknown`, and a sample that timed
+      out is not cached ([decision 0081](../decisions/0081-probe-without-mediainfo.md) "Built: E").
+- [x] `BitrateSource.estimated` replaces `mediainfo` (`schema_version` bump, migration
+      `mediainfo` → `estimated`, down-level note); the probe cache key changes. The track
+      table shows `≈` and "estimated from 32 samples" next to **Measure**.
+- [x] VFR from ffprobe's output and the 120-packet fallback only. BCP 47 for containers other
+      than Matroska from the ISO 639 code.
+- [x] MediaInfo leaves the product: `probe/mediainfo.py`, the `[mediainfo]` extra and
+      `pymediainfo` in the sidecar, discovery, `ToolName`, `ToolsStatus`, Settings → Tools,
+      `REFRAME_MEDIAINFO`, the settings field `tools.mediainfo` (`schema_version` bump,
+      migration, down-level note), the Windows MediaInfo CLI in `tools/bundled-tools.toml` and
+      `scripts/bundle-tools.py`, `Recommends: mediainfo`, the Docker image's `mediainfo`
+      package and extra, and the notices.
+
+Done when:
+
+1. On the fixtures and a recorded real-file corpus (mkvmerge with compressed PGS tracks,
+   HandBrake 0.10 and 1.x, FFmpeg output), every video and audio stream of an MKV has a rate;
+   each `estimated` video rate is within 3 % and each audio rate within 12 % of the exact
+   block-scan value, recorded in `testdata/README.md`.
+2. The two mkvmerge files of 0081 whose tags were called stale keep their statistics tags
+   (`stats_tag`), checked with a recorded probe of each.
+3. A file the sampler cannot read (damaged clusters, unknown-size clusters only) keeps
+   `unknown` with no exception.
+4. Q-3's probe budgets still pass, and `import reframe` and a probe work with no
+   `pymediainfo` installed; no package contains MediaInfo.
+
+## C-20 Language data table
+
+A generated data file replaces `langcodes`, `language_data` and `marisa-trie` at run time
+([decision 0082](../decisions/0082-own-language-data-table.md)). The two libraries move to the
+dev dependency group. Milestone M10.
+
+- [x] `scripts/gen-language-data.py` builds the file from the libraries into
+      `reframe/definitions/data/`: the IANA registry subtags (type, `Deprecated`,
+      `Preferred-Value`, `Suppress-Script`, `Macrolanguage`), langcodes' alias tables and the
+      canonical tag of each language subtag, ISO 639-1/2B/2T/3 codes, English and native
+      names of languages, English names of scripts, regions and variants, region and script
+      names per locale, and language names per locale with langcodes' name normalisation.
+      `--check` fails when the committed file differs from a new build.
+- [x] A core part (codes, canonical forms, English and native names) read at the first use,
+      and lazy parts (names per locale) read only by a native name of an unlisted variant or
+      a name search.
+- [x] `reframe.languages` keeps its public API and its results, read from the file (standard
+      library only). English names compose as `Language (detail, detail)` from the script and
+      region (a variant is not named: `de-1901` is "German"); a script that is the language's
+      `Suppress-Script` is left out; `und` with a detail composes as "Unknown language (…)"
+      (`mul-US` is "Multiple languages (United States)";
+      [decision 0082](../decisions/0082-own-language-data-table.md) "Built: L").
+- [x] `langcodes`, `language_data` and `marisa-trie` leave the runtime dependencies, the
+      PyInstaller spec and the notices; the notices get the CLDR and IANA terms (Q-5).
+
+Done when:
+
+1. An equivalence test (dev and CI, libraries installed) gives the same `normalize`,
+   `english_name`, `native_name`, `to_matroska_legacy`, `to_mp4`, `search` and `matches`
+   results as the libraries over a fixed corpus: every registry language subtag, every
+   listed base language with every region and script, deprecated, extlang and grandfathered
+   tags, and the names of every listed language in every locale. Each tie (an ambiguous
+   name) is fixed to today's result.
+2. `scripts/gen-language-data.py --check` passes in CI.
+3. `import reframe` and a probe, a draft and a search work in a virtual environment without
+   the three libraries, and the frozen sidecar contains none of them.
+
+## C-21 FFmpeg builds to choose and the build-mismatch cause
+
+The desktop packages contain no FFmpeg; the core offers the pinned builds, installs one, and
+says when a system does not fit a build
+([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)). Milestone M10.
+
+- [x] Manifest: `tools/ffmpeg.toml` marks offered builds (`offered = true`) with `label` and
+      `summary`; `default` and `compat` (release/8.1, the pin `override-test` uses) are
+      offered. `reframe.tools` lists them with their version, licence and source links, and
+      `ToolsService` exposes the list (`tools.builds()`).
+- [x] The installed downloaded build: which offered build it is, and `outdated` when its
+      version is not that build's pinned version in this release's manifest.
+- [x] Install from a file: an archive given by path is checked like a download (size and
+      SHA-256 against the manifest entry of the build and platform it claims, then
+      `ffmpeg -version`) and installed the same way (`tools.install_file()`, `reframe tools
+      fetch --file ARCHIVE [--build NAME]`).
+- [x] A download that cannot reach the server (no network or name resolution, a refused or
+      timed-out connection) fails with `tools.fetch_offline`, whose message names the
+      alternatives (install from a file, choose an FFmpeg path). Other failures keep their
+      reasons.
+- [x] On Linux, when the app ships a packaged libva (its resource folder), a download or a file
+      install copies the libva libraries into the installed build's `lib/`.
+- [x] `EncoderStatus.build_mismatch` (default `false`): set by the reason mapping for the NVENC
+      API / driver version and for a system library too old or missing for the build; never
+      for a 10-bit-only limit and never for a filter. The capability cache format changes.
+      `EncoderStatus.build_mismatch_cause` says which (`driver`, `system_library`;
+      [decision 0098](../decisions/0098-ffmpeg-download-review-r1-fixes.md)).
+- [x] CLI: `reframe encoders` and `reframe tools status` print one `hint:` line per mismatch
+      cause (driver: update the driver, or another build: `reframe tools fetch --build …`,
+      `REFRAME_FFMPEG`, `tools.ffmpeg`; system library: install or update it, or your own
+      FFmpeg, no `--build`; 0098); `reframe tools status` names the installed build
+      and says when it is outdated; `reframe tools fetch` lists the offered builds in `--help`.
+      The driver hint names only an offered build of an older FFmpeg release than the
+      downloaded build in use (a newer FFmpeg never needs an older driver); without one it
+      says to update the driver or use an own FFmpeg
+      ([decision 0101](../decisions/0101-nvenc-session-limit-and-older-build-hint.md)).
+
+Done when:
+
+1. A recorded NVENC driver failure (`Required: 13.1 Found: 13.0`, `minimum required Nvidia
+   driver for nvenc is 610.00`) and an `implib-gen` failure give `build_mismatch` true; AMD's
+   10-bit driver message, a missing NVIDIA driver and a missing device give false.
+2. A fetch with the network unreachable (a fake transport) gives `tools.fetch_offline` and
+   installs nothing; an archive file with a wrong SHA-256 is refused before extraction; the
+   right file installs and discovery finds it.
+3. With a manifest whose `default` pin changed, the installed build is reported `outdated`.
+4. On Linux, a fetch with a packaged libva leaves `libva.so.2` and `libva-drm.so.2` in the
+   build's `lib/`, and VAAPI detection works with that build on Ubuntu 22.04 (container).

@@ -1,6 +1,6 @@
-import type { JobProgress, JobState, QueueJob } from '@/api/types'
+import type { JobProgress, JobState, QueueJob, ValidationIssue } from '@/api/types'
 import type { StatusTone } from '@/components/base/types'
-import { fileName, formatDuration } from '@/components/shell/format'
+import { fileName, type FormatNumber, formatDuration } from '@/components/shell/format'
 import { formatBytes, type Translate } from '@/components/summary/format'
 
 export const STATE_TONE: Record<JobState, StatusTone> = {
@@ -11,6 +11,22 @@ export const STATE_TONE: Record<JobState, StatusTone> = {
   failed: 'error',
   cancelled: 'off',
   interrupted: 'warn',
+}
+
+/** The error of a failed job whose encoder was not available, with its fixes. */
+export function encoderUnavailable(job: QueueJob): ValidationIssue | null {
+  if (job.state !== 'failed') return null
+  return (
+    (job.issues ?? []).find(
+      (issue) => issue.code === 'encoder.unavailable' && issue.severity === 'error',
+    ) ?? null
+  )
+}
+
+/** The state as the queue shows it: a failed job says when its encoder was unavailable. */
+export function jobStateLabel(job: QueueJob, t: Translate): string {
+  if (encoderUnavailable(job) !== null) return t('queue.state.failedEncoder')
+  return stateLabel(job.state, t)
 }
 
 export function stateLabel(state: JobState, t: Translate): string {
@@ -44,8 +60,8 @@ export function stepText(progress: JobProgress, t: Translate): string | null {
         return t('queue.step.pass2')
       case 'encode':
         return t('queue.step.encode')
-      case 'mkvpropedit':
-        return t('queue.step.mkvpropedit')
+      case 'header_edit':
+        return t('queue.step.headerEdit')
       case 'finalize':
         return t('queue.step.finalize')
       case null:
@@ -57,12 +73,13 @@ export function stepText(progress: JobProgress, t: Translate): string | null {
     return progress.step_kind === 'encode' ? null : kind
   }
   const step = t('queue.step.of', { n: progress.step + 1, count: progress.step_count })
-  return kind === null ? step : `${kind} · ${step}`
+  return kind === null ? step : t('queue.step.withKind', { kind, step })
 }
 
 /** The live columns of a running or paused job; `null` where the job has no value. */
 export interface LiveColumns {
   percent: number | null
+  percentText: string | null
   step: string | null
   fps: string | null
   speed: string | null
@@ -72,6 +89,7 @@ export interface LiveColumns {
 
 const NONE: LiveColumns = {
   percent: null,
+  percentText: null,
   step: null,
   fps: null,
   speed: null,
@@ -83,19 +101,26 @@ function known(value: number | null | undefined): value is number {
   return value !== null && value !== undefined && Number.isFinite(value)
 }
 
-export function liveColumns(job: QueueJob, t: Translate): LiveColumns {
-  if (job.state === 'done') return { ...NONE, percent: 100 }
+function digits(count: number): Intl.NumberFormatOptions {
+  return { minimumFractionDigits: count, maximumFractionDigits: count }
+}
+
+export function liveColumns(job: QueueJob, t: Translate, n: FormatNumber): LiveColumns {
+  const percentText = (value: number) => t('queue.units.percent', { value: n(value, digits(1)) })
+  if (job.state === 'done') return { ...NONE, percent: 100, percentText: percentText(100) }
   const progress = job.progress
   if ((job.state !== 'running' && job.state !== 'paused') || !progress) return NONE
+  const percent = Math.max(0, Math.min(100, progress.percent))
   return {
-    percent: Math.max(0, Math.min(100, progress.percent)),
+    percent,
+    percentText: percentText(percent),
     step: stepText(progress, t),
-    fps: known(progress.fps) ? t('queue.units.fps', { value: progress.fps.toFixed(1) }) : null,
+    fps: known(progress.fps) ? t('queue.units.fps', { value: n(progress.fps, digits(1)) }) : null,
     speed: known(progress.speed)
-      ? t('queue.units.speed', { value: progress.speed.toFixed(2) })
+      ? t('queue.units.speed', { value: n(progress.speed, digits(2)) })
       : null,
     eta: job.state === 'running' ? formatDuration(progress.eta) : null,
-    size: known(progress.output_size) ? formatBytes(progress.output_size, t) : null,
+    size: known(progress.output_size) ? formatBytes(progress.output_size, t, n) : null,
   }
 }
 
@@ -109,6 +134,7 @@ export function outputPath(job: QueueJob): string | null {
 }
 
 export type JobAction =
+  | 'start'
   | 'pause'
   | 'resume'
   | 'cancel'
@@ -119,8 +145,11 @@ export type JobAction =
   | 'log'
   | 'reveal'
 
-/** The actions that fit the job's state, in the row's order. */
-export function jobActions(job: QueueJob, canReveal: boolean): JobAction[] {
+/**
+ * The actions that fit the job's state, in the row's order. `held`: the job is waiting and the
+ * runner does not take it now, so a Start of this job alone would run it.
+ */
+export function jobActions(job: QueueJob, canReveal: boolean, held = false): JobAction[] {
   const actions: JobAction[] = []
   switch (job.state) {
     case 'running':
@@ -130,6 +159,7 @@ export function jobActions(job: QueueJob, canReveal: boolean): JobAction[] {
       actions.push('resume', 'cancel')
       break
     case 'waiting':
+      if (held) actions.push('start')
       actions.push('cancel')
       break
     case 'failed':
@@ -156,6 +186,16 @@ export interface RunState {
   onlyCount: number
   /** Waiting jobs the runner does not take now: a Start would run them. */
   held: number
+}
+
+/** Whether the runner leaves this waiting job alone: stopped, or taking only other jobs. */
+export function isHeld(
+  job: QueueJob,
+  processing: boolean,
+  only: readonly string[] | null,
+): boolean {
+  if (job.state !== 'waiting') return false
+  return !processing || (only !== null && !only.includes(job.id))
 }
 
 export function runState(

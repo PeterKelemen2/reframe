@@ -1,4 +1,4 @@
-"""Rules for in-place metadata edits: mkvpropedit changes the track metadata of an MKV source.
+"""Rules for in-place metadata edits: Reframe changes the track metadata of an MKV source.
 
 Edit in place (``output.edit_in_place``) needs a job that changes only metadata, with an MKV
 source and output. The output rules skip the path checks of a metadata edit, since its output
@@ -18,13 +18,7 @@ from reframe.validation.fs import FileSystemView
 from reframe.validation.output import free_of_source, is_metadata_edit, source_clash
 from reframe.validation.registry import job_rule
 
-__all__ = ["is_metadata_edit", "new_output_path", "source_writable", "write_new_file_fix"]
-
-
-def source_writable(fs: FileSystemView, path: PurePath) -> bool:
-    """The existing file ``path`` can be written (the view's
-    :meth:`~reframe.validation.fs.FileSystemView.writable_file`)."""
-    return fs.writable_file(path)
+__all__ = ["is_metadata_edit", "new_output_path", "write_new_file_fix"]
 
 
 def _same(a: PurePath, b: PurePath, fs: FileSystemView) -> bool:
@@ -38,8 +32,7 @@ def new_output_path(ctx: JobContext) -> PurePath:
     source = Path(ctx.job.source.path)
     candidate: PurePath | None = ctx.name.path
     if candidate is None:
-        extension = ctx.container.extensions[0] if ctx.container is not None else ".mkv"
-        candidate = source.with_suffix(extension)
+        candidate = source.with_suffix(ctx.container.extensions[0])
     if source_clash(candidate, source, ctx.fs) is not None:
         candidate = free_of_source(candidate, source, ctx.fs)
     return candidate
@@ -57,7 +50,7 @@ def write_new_file_fix(ctx: JobContext) -> Fix:
         label = f"Write a new file ({target.name})"
     else:
         label = f"Write a new file ({path.name})"
-    return fix(label, *ops, target=ctx.target)
+    return fix(label, *ops)
 
 
 @job_rule("output", "inplace.not_possible")
@@ -82,7 +75,7 @@ def in_place_source(ctx: JobContext) -> Iterator[ValidationIssue]:
     if not is_metadata_edit(ctx):
         return
     source = Path(ctx.job.source.path)
-    if not source_writable(ctx.fs, source):
+    if not ctx.fs.writable_file(source):
         yield error(
             "inplace.source_not_writable",
             "output.edit_in_place",
@@ -96,10 +89,9 @@ def in_place_source(ctx: JobContext) -> Iterator[ValidationIssue]:
             "inplace.output_ignored",
             "output.path",
             f"The source {source.name} is edited in place: the output path {path} is not used.",
-            fix(f"Edit {source.name}", replace("output.path", str(source)), target=ctx.target),
+            fix(f"Edit {source.name}", replace("output.path", str(source))),
             fix(
                 f"Write a new file ({path.name})",
                 replace("output.edit_in_place", False),
-                target=ctx.target,
             ),
         )

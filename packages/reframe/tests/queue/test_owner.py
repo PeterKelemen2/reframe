@@ -12,32 +12,34 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import psutil
 import pytest
 
 from reframe.models import AppWarningEvent, JobState
 from reframe.queue.lock import (
     LOCK_FILE,
     WINDOWS_LOCK_OFFSET,
+    FlockBackend,
     MsvcrtBackend,
     StoreLock,
     default_backend,
 )
 from reframe.service import Reframe
 from reframe_testing import fake_tools as ft
+from reframe_testing.processes import interpreter
+from reframe_testing.waiting import wait_until
 
-from .conftest import Harness, draft, encode_rule, poll, queue_at, recorded
+from .conftest import Harness, draft, encode_rule, queue_at, recorded
 from .test_facade import PROBE, env  # noqa: F401  (the fixture)
 
 pytestmark = pytest.mark.anyio
+
+WINDOWS = sys.platform == "win32"
 
 #: A second Reframe process. ``create``: ``create()`` and ``close()`` only; ``encode``: a whole
 #: encode of the job given as JSON. Both print one JSON line: the end state and the
 #: ``app.warning`` events. ``hold``: it starts the job, prints ``running`` and waits to be killed.
 CHILD = """
 import asyncio, json, sys
-from reframe.probe import mediainfo
-mediainfo.mediainfo_available = lambda: False
 from reframe.models import JobSettings
 from reframe.service import Reframe
 
@@ -109,7 +111,7 @@ async def test_a_second_process_leaves_a_running_encode_alone(
         async for _ in progress:
             break
         part = env / "out" / "First.part.mkv"
-        await poll(part.exists)
+        await wait_until(part.exists)
         quiet = await asyncio.to_thread(child, "create")
         assert quiet == {"state": None, "warnings": []}
         assert part.exists()
@@ -165,11 +167,12 @@ async def test_after_the_owner_is_killed_a_new_process_restores(
         async with asyncio.timeout(60):
             line = await owner.stdout.readline()
         assert line.strip() == b"running"
+        held = interpreter(owner.pid)
         lock = env / "data" / LOCK_FILE
-        assert lock.read_text().strip() == str(owner.pid)
+        assert lock.read_text().strip() == str(held.pid)
         busy = StoreLock(lock).acquire()
-        assert (busy.owned, busy.owner) == (False, owner.pid)
-        psutil.Process(owner.pid).kill()  # SIGKILL: no clean-up runs
+        assert (busy.owned, busy.owner) == (False, held.pid)
+        held.kill()  # SIGKILL: no clean-up runs
         await owner.wait()
     finally:
         if owner.returncode is None:
@@ -182,7 +185,7 @@ async def test_after_the_owner_is_killed_a_new_process_restores(
         assert restored.state is JobState.INTERRUPTED
         assert restored.error == "Reframe stopped while the job was running."
         assert lock.read_text().strip() == str(os.getpid())
-        await poll(lambda: not (env / "out" / "Killed.part.mkv").exists())
+        await wait_until(lambda: not (env / "out" / "Killed.part.mkv").exists())
     finally:
         await app.close()
 
@@ -247,7 +250,7 @@ def test_two_owners_in_one_process_conflict(tmp_path: Path) -> None:
     assert second.acquire().owned
     assert path.read_text() == f"{os.getpid()}\n"
     second.release()
-    assert isinstance(default_backend("linux"), type(default_backend()))
+    assert isinstance(default_backend(), MsvcrtBackend if WINDOWS else FlockBackend)
 
 
 class FakeMsvcrt:

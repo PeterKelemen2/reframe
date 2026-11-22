@@ -413,7 +413,6 @@ const DEFINITIONS = {
       chapters: true,
       attachments: true,
       flags: ['default', 'forced', 'commentary', 'hearing_impaired', 'visual_impaired', 'original'],
-      default_always_set: false,
       language_format: 'iso639_2b',
       format_flags: {},
       help: '',
@@ -454,7 +453,6 @@ const DEFINITIONS = {
       chapters: true,
       attachments: false,
       flags: ['default', 'forced', 'commentary', 'hearing_impaired', 'visual_impaired'],
-      default_always_set: true,
       language_format: 'iso639_2t',
       format_flags: {
         web_optimized: ['-movflags', '+faststart'],
@@ -482,7 +480,6 @@ const DEFINITIONS = {
       chapters: true,
       attachments: false,
       flags: ['default', 'forced'],
-      default_always_set: false,
       language_format: 'iso639_2b',
       format_flags: {},
       help: '',

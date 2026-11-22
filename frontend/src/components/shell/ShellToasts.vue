@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { useEventListener } from '@vueuse/core'
 import Toast, { type ToastMessageOptions } from 'primevue/toast'
 import { useToast } from 'primevue/usetoast'
-import { onMounted, toRaw, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, toRaw, watch } from 'vue'
 
 import { useToastStore } from '@/stores/toasts'
 
@@ -34,10 +35,40 @@ function show(items: typeof toasts.items): void {
 // reached" toast at a time by looking for it in the store.
 onMounted(() => watch(() => toasts.items, show, { immediate: true, deep: true }))
 
-// Bottom right, clear of the header's controls and of the status bar's actions.
-const position = {
-  root: { style: { bottom: `calc(var(${STATUS_BAR_HEIGHT}, 0px) + var(--rf-space-3))` } },
+/**
+ * Bottom right, clear of the header's controls and of the status bar's actions. The focus must
+ * never be hidden under them (WCAG 2.4.11): on something they cover they go to the top right,
+ * and where they cover it there too, out of sight until the focus moves on.
+ */
+const atTop = ref(false)
+const aside = ref(false)
+const position = computed(() => ({
+  root: {
+    class: { 'shell-toasts--aside': aside.value },
+    style: atTop.value
+      ? { top: 'var(--rf-space-3)', bottom: 'auto' }
+      : { top: 'auto', bottom: `calc(var(${STATUS_BAR_HEIGHT}, 0px) + var(--rf-space-3))` },
+  },
+}))
+
+function covered(focused: Element): boolean {
+  const box = focused.getBoundingClientRect()
+  return [...document.querySelectorAll('.shell-toasts .p-toast-message')].some((message) => {
+    const over = message.getBoundingClientRect()
+    const across = over.left < box.right && box.left < over.right
+    return across && over.top < box.bottom && box.top < over.bottom
+  })
 }
+
+useEventListener(document, 'focusin', async (event: FocusEvent) => {
+  const focused = event.target
+  if (!(focused instanceof Element) || focused.closest('.shell-toasts') !== null) return
+  aside.value = false
+  if (!covered(focused)) return
+  atTop.value = !atTop.value
+  await nextTick()
+  if (document.activeElement === focused && covered(focused)) aside.value = true
+})
 
 function closed(event: { message: ToastMessageOptions }): void {
   const id = ids.get(toRaw(event.message))
@@ -50,7 +81,7 @@ function closed(event: { message: ToastMessageOptions }): void {
 <template>
   <Toast
     class="shell-toasts"
-    position="bottom-right"
+    :position="atTop ? 'top-right' : 'bottom-right'"
     :pt="position"
     @close="closed"
     @life-end="closed"
@@ -62,6 +93,10 @@ function closed(event: { message: ToastMessageOptions }): void {
 .shell-toasts .p-toast-detail {
   white-space: pre-line;
   overflow-wrap: anywhere;
+}
+
+.shell-toasts--aside {
+  visibility: hidden;
 }
 
 /* The theme's toast colours are see-through: here they are laid over the surface, unblurred. */

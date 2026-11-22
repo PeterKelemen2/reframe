@@ -17,7 +17,7 @@ min = 1
 max = 1000
 step = 1
 unit = "frames"
-help = "Maximum distance between keyframes (seek points). 240 is about 10 s at 24 fps; not set, libvpx places keyframes far apart."
+help = "Maximum distance between keyframes (seek points). 240 is about 10 s at 24 fps; not set, libvpx places one every 128 frames."
 mapping = { kind = "ffmpeg_arg", arg = "-g" }
 default = { kind = "encoder", note = "the libvpx default" }
 
@@ -30,7 +30,8 @@ min = 0
 max = 1000
 step = 1
 unit = "frames"
-help = "Minimum distance between keyframes."
+# FFmpeg's libvpxenc sets kf_min_dist only when keyint_min equals -g (checked by an encode).
+help = "Minimum distance between keyframes. FFmpeg uses it only when it equals the keyframe interval (for example both 240): keyframes then come at exactly that distance, none at scene cuts."
 mapping = { kind = "ffmpeg_arg", arg = "-keyint_min" }
 default = { kind = "encoder", note = "the libvpx default" }
 
@@ -150,7 +151,7 @@ min = 0
 max = 100
 step = 1
 unit = "%"
-help = "How far below the target bitrate a section may go (average bitrate only)."
+help = "How far below the target bitrate a section may go before libvpx corrects harder (0–100 %, libvpx's default 25; average bitrate only)."
 mapping = { kind = "private_opt", name = "undershoot-pct" }
 requires = [{ field = "rate_control", value = "bitrate" }]
 default = { kind = "encoder", note = "the libvpx default" }
@@ -165,7 +166,7 @@ min = 0
 max = 100
 step = 1
 unit = "%"
-help = "How far above the target bitrate a section may go (average bitrate only)."
+help = "How far above the target bitrate a section may go before libvpx corrects harder (0–100 %, libvpx's default 25; average bitrate only)."
 mapping = { kind = "private_opt", name = "overshoot-pct" }
 requires = [{ field = "rate_control", value = "bitrate" }]
 default = { kind = "encoder", note = "the libvpx default" }

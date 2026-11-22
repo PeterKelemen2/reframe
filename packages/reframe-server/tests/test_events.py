@@ -4,7 +4,6 @@ batches, the heartbeat, slow and stuck clients, and shutdown."""
 from __future__ import annotations
 
 import asyncio
-import functools
 import itertools
 import json
 import logging
@@ -39,13 +38,14 @@ from reframe.models import (
     TaskProgressEvent,
     TaskState,
 )
+from reframe.tasks import TaskContext
 from reframe_server import __main__ as entry
 from reframe_server import security
 from reframe_server.app import create_app
 from reframe_server.config import ServerConfig
 from reframe_server.events import EventHub
-from reframe_server.folders import hide_server_folders
 from reframe_testing.server import Api, LiveServer, receive_json
+from reframe_testing.waiting import wait_until
 
 pytestmark = pytest.mark.anyio
 
@@ -91,14 +91,9 @@ async def serving(api: Api, **options: Any) -> AsyncIterator[LiveServer]:
         try:
             yield server
         finally:
-            await asyncio.wait_for(hub(api).close(), 10)
+            await asyncio.wait_for(api.hub.close(), 10)
     logger.removeHandler(errors)
     assert errors.messages == []
-
-
-def hub(api: Api) -> EventHub:
-    served: EventHub = api.app.state.hub
-    return served
 
 
 class Client:
@@ -174,12 +169,6 @@ async def closed(
     return connection.close_code, messages
 
 
-async def wait_until(condition: Callable[[], bool], limit: float = 10.0) -> None:
-    async with asyncio.timeout(limit):
-        while not condition():  # noqa: ASYNC110 - the hub has no event for these states
-            await asyncio.sleep(0.01)
-
-
 async def stall(bus: EventBus, client: Client, subscription: Subscription) -> int:
     """Stop reading on ``client``, then publish large warnings until the hub cannot send to it
     and its subscription keeps a backlog. Returns the number of warnings published."""
@@ -232,6 +221,7 @@ async def test_a_slow_consumer_costs_bounded_memory_and_gets_the_latest_values(
         signed_in(server, api) as client,
     ):
         stalled = await stall(api.reframe.events, client, subscriptions[0])
+        await api.reframe.capabilities.wait()  # its ffmpeg pipes are not this test's memory
         tracemalloc.start()
         try:
             for i in range(count):
@@ -305,6 +295,7 @@ async def test_the_throttle_forgets_the_ids_that_went_quiet(api: Api) -> None:
     freed once that task goes quiet."""
     publish = api.reframe.events.publish
     async with serving(api, progress_rate=100) as server, signed_in(server, api) as client:
+        await api.reframe.capabilities.wait()  # its ffmpeg pipes are not this test's memory
         tracemalloc.start()
         try:
             for i in range(3000):
@@ -439,7 +430,8 @@ async def test_an_idle_connection_gets_heartbeats(api: Api) -> None:
 async def test_a_task_event_names_the_cache_folder_by_its_label(api: Api) -> None:
     """A task's message, error and result can name files in the server's cache folder: the
     client gets ``<cache>`` in their place in ``task.progress`` and ``task.done``, never where
-    the server keeps its files."""
+    the server keeps its files. The app's own hub does it, for events published by hand and for
+    a task the real task manager runs."""
     cache = str(api.reframe.cache_dir)
     frame = str(api.reframe.cache_dir / "frames" / "f.png")
     shown = frame.replace(cache, "<cache>")
@@ -451,16 +443,24 @@ async def test_a_task_event_names_the_cache_folder_by_its_label(api: Api) -> Non
         error=f"kept {frame}",
         result={"frames": [frame]},
     )
-    hide = functools.partial(hide_server_folders, api.reframe)
     running = TaskInfo(id="task-1", kind="frames", state=TaskState.RUNNING, message=frame)
-    async with serving(api, hide=hide) as server, signed_in(server, api) as client:
+
+    async def work(_ctx: TaskContext) -> dict[str, str]:
+        return {"path": frame}
+
+    async with api.live() as server, signed_in(server, api) as client:
         api.reframe.events.publish(TaskProgressEvent(task=running))
         api.reframe.events.publish(TaskDoneEvent(task=task))
-        events = await client.events_until(lambda event: event["type"] == "task.done")
-    assert [e["task"]["message"] for e in events if e["type"] == "task.progress"] == [shown]
-    sent = events[-1]["task"]
+        started = api.reframe.tasks.start("test", work, result_json=lambda value: value)
+        events = await client.events_until(
+            lambda event: event["type"] == "task.done" and event["task"]["id"] == started.id
+        )
+    by_hand = [e for e in events if e.get("task", {}).get("id") == "task-1"]
+    assert [e["task"]["message"] for e in by_hand if e["type"] == "task.progress"] == [shown]
+    sent = by_hand[-1]["task"]
     assert (sent["message"], sent["error"]) == (f"wrote {shown}", f"kept {shown}")
     assert sent["result"] == {"frames": [shown]}
+    assert events[-1]["task"]["result"] == {"path": shown}
 
 
 async def test_a_reconnect_starts_a_new_sequence(api: Api) -> None:
@@ -503,7 +503,7 @@ async def test_the_first_message_lets_the_client_in_or_closes_4401(
         await connection.send(json.dumps(first_message))
         if admitted:
             assert (await receive_json(connection))["type"] == "hello"
-            assert hub(api).connections == 1
+            assert api.hub.connections == 1
         else:
             assert await closed(connection) == (4401, [])
     assert calls == asked
@@ -513,7 +513,7 @@ async def test_no_first_message_in_time_closes_4401_and_sends_nothing(api: Api) 
     async with serving(api, auth_timeout=0.3) as server, server.connect() as connection:
         api.reframe.events.publish(NotificationEvent(title="not for strangers"))
         assert await closed(connection) == (4401, [])
-        assert hub(api).connections == 0
+        assert api.hub.connections == 0
 
 
 async def test_a_disconnect_frees_the_subscription(api: Api) -> None:
@@ -521,29 +521,21 @@ async def test_a_disconnect_frees_the_subscription(api: Api) -> None:
     before = bus.subscriber_count
     async with serving(api) as server:
         async with server.connect() as connection:
-            assert hub(api).connections == 0
+            assert api.hub.connections == 0
             await connection.send(json.dumps({"type": "auth", "token": api.token}))
             await receive_json(connection)
-            assert (hub(api).connections, bus.subscriber_count) == (1, before + 1)
-        await wait_until(lambda: (hub(api).connections, bus.subscriber_count) == (0, before))
-
-
-async def test_a_client_that_drops_while_the_hub_waits_to_send(
-    api: Api, subscriptions: list[Subscription]
-) -> None:
-    bus = api.reframe.events
-    before = bus.subscriber_count
-    async with serving(api) as server, signed_in(server, api) as client:
-        await stall(bus, client, subscriptions[0])
-        client.connection.transport.abort()
-        await wait_until(lambda: (hub(api).connections, bus.subscriber_count) == (0, before))
+            assert (api.hub.connections, bus.subscriber_count) == (1, before + 1)
+        await wait_until(lambda: (api.hub.connections, bus.subscriber_count) == (0, before))
 
 
 async def test_a_client_that_drops_while_the_hub_waits_to_send_has_its_jobs_cancelled(
     api: Api, subscriptions: list[Subscription]
 ) -> None:
     """A CLI that stopped reading is killed: the send that waits for it fails, and its
-    attached job is cancelled all the same (uvicorn queues the disconnect first)."""
+    attached job is cancelled all the same (uvicorn queues the disconnect first), and the hub
+    frees the connection and its subscription."""
+    bus = api.reframe.events
+    before = bus.subscriber_count
     source = api.media_file()
     draft = await api.reframe.jobs.draft(source, output=api.output / "Show.mkv")
     assert isinstance(draft, JobDraft)
@@ -553,9 +545,10 @@ async def test_a_client_that_drops_while_the_hub_waits_to_send_has_its_jobs_canc
             "/api/queue", json={"jobs": [job], "attach": client.hello["client_id"]}
         )
         [added] = response.json()
-        await stall(api.reframe.events, client, subscriptions[0])
+        await stall(bus, client, subscriptions[0])
         client.connection.transport.abort()
         [ended] = await asyncio.wait_for(api.reframe.queue.wait([added["id"]]), 10)
+        await wait_until(lambda: (api.hub.connections, bus.subscriber_count) == (0, before))
     assert ended.state is JobState.CANCELLED
 
 
@@ -584,14 +577,14 @@ async def test_close_while_events_flow_ends_every_connection_also_a_stuck_one(
         try:
             await asyncio.sleep(0.2)
             started = time.monotonic()
-            await asyncio.wait_for(hub(api).close(), 10)
+            await asyncio.wait_for(api.hub.close(), 10)
             elapsed = time.monotonic() - started
         finally:
             publisher.cancel()
             stuck.connection.transport.abort()
         assert (await reader)[0] == 1001
         assert elapsed < 3
-        assert (hub(api).connections, bus.subscriber_count) == (0, before)
+        assert (api.hub.connections, bus.subscriber_count) == (0, before)
         async with server.connect() as late:
             assert await closed(late) == (1001, [])
 
@@ -600,7 +593,7 @@ async def test_the_facade_closing_ends_the_connection_with_1001(api: Api) -> Non
     async with serving(api) as server, signed_in(server, api) as client:
         await api.reframe.close()
         assert (await closed(client.connection))[0] == 1001
-        await wait_until(lambda: hub(api).connections == 0)
+        await wait_until(lambda: api.hub.connections == 0)
 
 
 @pytest.mark.usefixtures("make_api")  # the harness's folders, settings and fake tools

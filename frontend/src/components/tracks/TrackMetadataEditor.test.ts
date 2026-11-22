@@ -67,6 +67,17 @@ describe('the metadata block of an output track', () => {
     expect(editor.job?.audio?.[2]?.metadata?.name).toBe("Director's Commentary")
   })
 
+  it('says in the name help that a name can be a template, and how a brace is written', async () => {
+    const { wrapper } = await mountEditor(AudioTab)
+    const field = wrapper
+      .findAllComponents({ name: 'Field' })
+      .find((found) => found.props('path') === 'audio[0].metadata.name')
+    const help = String(field?.props('help'))
+    expect(help).toContain('{lang_name} {channels} {codec} gives Japanese 5.1 Opus')
+    expect(help).toContain('{source_codec}')
+    expect(help).toContain('Write {{ and }} for a brace.')
+  })
+
   it("fills the name from the track's values, and keeps or drops the source title", async () => {
     const { wrapper, editor } = await mountEditor(AudioTab)
     await wrapper.find('[data-path="audio[0]"] [data-action="name-menu"]').trigger('click')
@@ -161,7 +172,7 @@ describe('the metadata block of an output track', () => {
       'Japanese · “Japanese 5.1” · Default',
     )
     useValidationStore().issues = [
-      issue('tool.mkvpropedit_missing', 'audio[0].metadata.original', 'warning'),
+      issue('container.flag_unsupported', 'audio[0].metadata.original', 'warning'),
     ]
     await nextTick()
     expect(body().isVisible()).toBe(true)

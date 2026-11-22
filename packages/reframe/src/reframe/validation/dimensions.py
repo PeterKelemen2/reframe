@@ -18,10 +18,10 @@ from reframe.models.geometry import (
     Geometry,
     SourceGeometry,
 )
-from reframe.models.issues import Fix, FixTarget, ValidationIssue
+from reframe.models.issues import Fix, ValidationIssue
 from reframe.validation.common import error, fix, info, replace, warning
 from reframe.validation.context import JobContext, TemplateContext
-from reframe.validation.registry import job_rule, template_rule
+from reframe.validation.registry import job_rule, shared_rule
 
 
 def _notes(geometry: Geometry, *starts: str) -> list[str]:
@@ -57,6 +57,7 @@ def _invalid_axes(rect: CropRect, geometry: Geometry, src: SourceGeometry) -> li
     "dimensions.crop_invalid",
     "dimensions.crop_snapped",
     "dimensions.crop_not_detected",
+    "dimensions.crop_detection_failed",
     "dimensions.crop_missing",
 )
 def crop(ctx: JobContext) -> Iterator[ValidationIssue]:
@@ -64,7 +65,7 @@ def crop(ctx: JobContext) -> Iterator[ValidationIssue]:
     if geometry is None or src is None:
         return
     settings = ctx.job.dimensions.crop
-    no_crop = fix("Do not crop", replace("dimensions.crop.mode", "none"), target=ctx.target)
+    no_crop = fix("Do not crop", replace("dimensions.crop.mode", "none"))
     if settings.mode == "none":
         return
     rect = settings.rect
@@ -74,6 +75,15 @@ def crop(ctx: JobContext) -> Iterator[ValidationIssue]:
                 "dimensions.crop_missing",
                 "dimensions.crop.rect",
                 "Manual crop has no values: no crop is applied.",
+                no_crop,
+            )
+        elif settings.detection_error is not None:
+            name = "automatic" if settings.mode == "auto" else "conservative"
+            yield warning(
+                "dimensions.crop_detection_failed",
+                "dimensions.crop",
+                f"Crop detection failed in this file, so {name} crop has no values: the "
+                f"picture is not cropped. {settings.detection_error}".rstrip(),
                 no_crop,
             )
         else:
@@ -103,7 +113,6 @@ def crop(ctx: JobContext) -> Iterator[ValidationIssue]:
             fix(
                 f"Remove the {' and '.join(invalid)} crop",
                 *(replace(f"dimensions.crop.rect.{edge}", value) for edge, value in reset.items()),
-                target=ctx.target,
             ),
         )
         return
@@ -116,7 +125,6 @@ def crop(ctx: JobContext) -> Iterator[ValidationIssue]:
             fix(
                 "Use the adjusted crop",
                 replace("dimensions.crop.rect", geometry.crop.model_dump(mode="json")),
-                target=ctx.target,
             ),
         )
 
@@ -141,7 +149,6 @@ def size(ctx: JobContext) -> Iterator[ValidationIssue]:
                 fix(
                     "Turn off upscaling",
                     replace("dimensions.allow_upscaling", False),
-                    target=ctx.target,
                 )
             )
         notes = _notes(geometry, "Upscaled", "One modulus step")
@@ -164,9 +171,7 @@ def size(ctx: JobContext) -> Iterator[ValidationIssue]:
             if dims.modulus != 2:
                 smaller = compute_geometry(src, _with(dims, modulus=2))
                 if smaller.scaled_width <= box[0] and smaller.scaled_height <= box[1]:
-                    fixes.append(
-                        fix("Use modulus 2", replace("dimensions.modulus", 2), target=ctx.target)
-                    )
+                    fixes.append(fix("Use modulus 2", replace("dimensions.modulus", 2)))
             yield warning(
                 "dimensions.outside_box",
                 "dimensions.size",
@@ -177,7 +182,7 @@ def size(ctx: JobContext) -> Iterator[ValidationIssue]:
             )
 
 
-def _custom_par_issue(dims: DimensionSettings, target: FixTarget) -> list[ValidationIssue]:
+def _custom_par_issue(dims: DimensionSettings) -> list[ValidationIssue]:
     par = dims.custom_par
     if dims.pixel_aspect != "custom" or (par is not None and par.num > 0):
         return []
@@ -190,21 +195,13 @@ def _custom_par_issue(dims: DimensionSettings, target: FixTarget) -> list[Valida
             fix(
                 "Use square pixels",
                 replace("dimensions.pixel_aspect", "square"),
-                target=target,
             ),
         )
     ]
 
 
-@job_rule("dimensions", "dimensions.custom_par_missing")
-def custom_par(ctx: JobContext) -> list[ValidationIssue]:
-    if ctx.job.video.passthrough:
+@shared_rule("dimensions", "dimensions.custom_par_missing")
+def custom_par(ctx: JobContext | TemplateContext) -> list[ValidationIssue]:
+    if ctx.doc.video.passthrough:
         return []
-    return _custom_par_issue(ctx.job.dimensions, ctx.target)
-
-
-@template_rule("dimensions", "dimensions.custom_par_missing")
-def template_custom_par(ctx: TemplateContext) -> list[ValidationIssue]:
-    if ctx.template.video.passthrough:
-        return []
-    return _custom_par_issue(ctx.template.dimensions, ctx.target)
+    return _custom_par_issue(ctx.doc.dimensions)

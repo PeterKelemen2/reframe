@@ -5,7 +5,7 @@ import type { EncoderAvailability } from './encoders'
 /** An encoder's status as one line: "Available", "Unavailable: NVIDIA driver not found", … */
 export function useAvailabilityText(): (availability: EncoderAvailability) => string {
   const { t } = useI18n()
-  return ({ kind, reason }) => {
+  return ({ kind, reason, buildMismatch }) => {
     switch (kind) {
       case 'available':
         return t('video.status.available')
@@ -19,8 +19,9 @@ export function useAvailabilityText(): (availability: EncoderAvailability) => st
         // The server's reason already starts with "Not tested".
         return reason ?? t('video.status.untested')
       case 'unavailable':
-        return reason === null
-          ? t('video.status.unavailable')
+        if (reason === null) return t('video.status.unavailable')
+        return buildMismatch
+          ? t('video.status.unavailableMismatch', { reason })
           : t('video.status.unavailableBecause', { reason })
       case 'failed':
         return reason === null

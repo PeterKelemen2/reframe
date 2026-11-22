@@ -7,12 +7,10 @@ issue and validates again: the issue (same code and path) must be gone.
 
 from __future__ import annotations
 
-import importlib.util
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -45,35 +43,14 @@ from reframe.models import (
 )
 from reframe.validation import JOB_RULES, TEMPLATE_RULES
 
+from . import cases_inplace, cases_metadata, cases_options
+from . import scenario as sc
+from .scenario import Case, Mod, both
 
-def _load(name: str) -> ModuleType:
-    # pytest runs with --import-mode=importlib: a helper next to the tests is loaded by path.
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_validation_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-sc = _load("scenario")
 DEFS: Definitions = sc.DEFS
 ERR, WARN, INFO = Severity.ERROR, Severity.WARNING, Severity.INFO
-
-type Mod = Callable[[Any], None]
-
-
-@dataclass(frozen=True)
-class Case:
-    id: str
-    code: str
-    path: str
-    severity: Severity
-    positive: Mod
-    negative: Mod
+#: A name Windows does not allow: an error for a Windows path, a warning elsewhere.
+NOT_PORTABLE = ERR if sys.platform == "win32" else WARN
 
 
 def build(mod: Mod) -> Any:
@@ -93,14 +70,6 @@ def video(**changes: Any) -> Mod:
 def caps(states: dict[str, Any], **kw: Any) -> Mod:
     def mod(s: Any) -> None:
         s.caps = sc.make_caps(states, **kw)
-
-    return mod
-
-
-def both(*mods: Mod) -> Mod:
-    def mod(s: Any) -> None:
-        for m in mods:
-            m(s)
 
     return mod
 
@@ -147,9 +116,13 @@ def sub(index: int, **changes: Any) -> Mod:
     return mod
 
 
-def crop(mode: str, rect: CropRect | None = None) -> Mod:
+def crop(mode: str, rect: CropRect | None = None, detection_error: str | None = None) -> Mod:
     def mod(s: Any) -> None:
-        s.job.dimensions.crop = CropSettings(mode=mode, rect=rect)  # type: ignore[arg-type]
+        s.job.dimensions.crop = CropSettings(
+            mode=mode,  # type: ignore[arg-type]
+            rect=rect,
+            detection_error=detection_error,
+        )
 
     return mod
 
@@ -218,13 +191,11 @@ def defs(change: Callable[[Definitions], None]) -> Mod:
     return mod
 
 
-def ffmpeg_status(status: ToolStatus | None) -> Mod:
+def ffmpeg_status(status: ToolStatus) -> Mod:
     """ffmpeg from a Settings path with ``status``; "Use bundled" removes the path, and the
     rediscovery then finds the bundled ffmpeg."""
 
     def mod(s: Any) -> None:
-        if status is None:
-            return
         use_bundled = Fix(
             label="Use bundled FFmpeg",
             patch=[RemoveOp(path="/tools/ffmpeg")],
@@ -242,13 +213,6 @@ def ffmpeg_status(status: ToolStatus | None) -> Mod:
         )
         bad = s.tools
         s.rediscover = lambda settings: sc.make_tools() if settings.tools.ffmpeg is None else bad
-
-    return mod
-
-
-def mkvpropedit(status: ToolStatus) -> Mod:
-    def mod(s: Any) -> None:
-        s.tools = sc.make_tools(mkvpropedit=sc.tool("mkvpropedit", status))
 
     return mod
 
@@ -290,6 +254,21 @@ def tall_source(s: Any) -> None:
     s.source.video[0].height = 1160
 
 
+def aligned_with_late_copy(late: float) -> Mod:
+    def mod(s: Any) -> None:
+        s.job.output.align_av_start = True
+        s.source.video[0].start_time = 0.0
+        s.source.audio[0].start_time = 0.0
+        s.source.audio[1].start_time = late  # the passthru AAC track
+
+    return mod
+
+
+def narrow_source(s: Any) -> None:
+    s.source.video[0].width = 318
+    s.source.video[0].height = 720
+
+
 def x265_level(level: str, **video_changes: Any) -> Mod:
     def mod(s: Any) -> None:
         s.job.video.level = level
@@ -306,12 +285,6 @@ def nothing(s: Any) -> None:
 def no_frame_rate(s: Any) -> None:
     s.source.video[0].frame_rate = None
     s.source.video[0].avg_frame_rate = None
-
-
-def mkv_original_via_mkvpropedit(d: Definitions) -> None:
-    mkv = d.containers["mkv"]
-    mkv.flags = [f for f in mkv.flags if f != "original"]
-    mkv.mkvpropedit_flags = ["original"]
 
 
 def x265_without_quality(d: Definitions) -> None:
@@ -381,7 +354,7 @@ CASES: list[Case] = [
         "",
         ERR,
         ffmpeg_status(ToolStatus.MISSING),
-        ffmpeg_status(None),
+        nothing,
     ),
     Case(
         "ffmpeg too old",
@@ -389,7 +362,7 @@ CASES: list[Case] = [
         "",
         ERR,
         ffmpeg_status(ToolStatus.TOO_OLD),
-        ffmpeg_status(None),
+        nothing,
     ),
     Case(
         "ffmpeg broken",
@@ -397,32 +370,7 @@ CASES: list[Case] = [
         "",
         ERR,
         ffmpeg_status(ToolStatus.BROKEN),
-        ffmpeg_status(None),
-    ),
-    Case(
-        "mkvpropedit for edit in place",
-        "tool.mkvpropedit_missing",
-        "output.edit_in_place",
-        ERR,
-        both(
-            lambda s: setattr(s.job.output, "edit_in_place", True), mkvpropedit(ToolStatus.MISSING)
-        ),
-        lambda s: setattr(s.job.output, "edit_in_place", True),
-    ),
-    Case(
-        "mkvpropedit for a flag",
-        "tool.mkvpropedit_missing",
-        "audio[0].metadata.original",
-        WARN,
-        both(
-            defs(mkv_original_via_mkvpropedit),
-            mkvpropedit(ToolStatus.MISSING),
-            lambda s: setattr(s.job.audio[0].metadata, "original", True),
-        ),
-        both(
-            defs(mkv_original_via_mkvpropedit),
-            lambda s: setattr(s.job.audio[0].metadata, "original", True),
-        ),
+        nothing,
     ),
     Case(
         "unknown video encoder",
@@ -712,6 +660,58 @@ CASES: list[Case] = [
         video(rate_control=AverageBitrate(two_pass=True)),
     ),
     Case(
+        "NVENC H.265 level 4.1 above its bitrate",
+        "encoder.level_bitrate_too_high",
+        "video.rate_control.kbps",
+        ERR,
+        video(encoder="hevc_nvenc", level="4.1", rate_control=AverageBitrate(kbps=11001)),
+        video(encoder="hevc_nvenc", level="4.1", rate_control=AverageBitrate(kbps=11000)),
+    ),
+    Case(
+        "NVENC H.265 High tier level 4.1 above its bitrate",
+        "encoder.level_bitrate_too_high",
+        "video.rate_control.kbps",
+        ERR,
+        video(
+            encoder="hevc_nvenc",
+            level="4.1",
+            advanced={"tier": "high"},
+            rate_control=AverageBitrate(kbps=27501),
+        ),
+        video(
+            encoder="hevc_nvenc",
+            level="4.1",
+            advanced={"tier": "high"},
+            rate_control=AverageBitrate(kbps=27500),
+        ),
+    ),
+    Case(
+        "NVENC H.264 level 4.1 above its bitrate (High, the default profile)",
+        "encoder.level_bitrate_too_high",
+        "video.rate_control.kbps",
+        ERR,
+        video(encoder="h264_nvenc", level="4.1", rate_control=AverageBitrate(kbps=46876)),
+        video(encoder="h264_nvenc", level="4.1", rate_control=AverageBitrate(kbps=46875)),
+    ),
+    Case(
+        "NVENC H.264 Main level 4.1 above its bitrate",
+        "encoder.level_bitrate_too_high",
+        "video.rate_control.kbps",
+        ERR,
+        video(
+            encoder="h264_nvenc",
+            level="4.1",
+            profile="main",
+            rate_control=AverageBitrate(kbps=37501),
+        ),
+        video(
+            encoder="h264_nvenc",
+            level="4.1",
+            profile="main",
+            rate_control=AverageBitrate(kbps=37500),
+        ),
+    ),
+    Case(
         "x265 level too low for 1080p",
         "encoder.level_too_low",
         "video.level",
@@ -726,6 +726,84 @@ CASES: list[Case] = [
         ERR,
         x265_level("4.0", framerate=Rational(num=60, den=1), framerate_mode="constant"),
         x265_level("4.1", framerate=Rational(num=60, den=1), framerate_mode="constant"),
+    ),
+    Case(
+        "Align A/V start with a copied track that starts late",
+        "container.align_copied_track",
+        "audio[1].action",
+        INFO,
+        aligned_with_late_copy(0.5),
+        aligned_with_late_copy(0.03),
+    ),
+    Case(
+        "AMF pre-analysis on a picture below 200 lines",
+        "encoder.preanalysis_picture_too_small",
+        "video.advanced.preanalysis",
+        ERR,
+        both(
+            video(encoder="hevc_amf", advanced={"preanalysis": True}),
+            dims(size=FitWithin(width=320, height=180)),
+        ),
+        both(
+            video(encoder="hevc_amf", advanced={"preanalysis": True}),
+            dims(size=FitWithin(width=356, height=200)),
+        ),
+    ),
+    Case(
+        "AMF pre-analysis on a picture below 320 columns",
+        "encoder.preanalysis_picture_too_small",
+        "video.advanced.preanalysis",
+        ERR,
+        both(video(encoder="av1_amf", advanced={"preanalysis": True}), narrow_source),
+        both(video(encoder="av1_amf", advanced={"preanalysis": False}), narrow_source),
+    ),
+    Case(
+        "AMF pre-analysis started by a custom rate control on a small picture",
+        "encoder.preanalysis_picture_too_small",
+        "video.custom_params",
+        ERR,
+        both(
+            video(encoder="h264_amf", custom_params="rc=qvbr"),
+            dims(size=FitWithin(width=320, height=180)),
+        ),
+        both(
+            video(encoder="h264_amf", custom_params="rc=vbr_peak:preanalysis=0"),
+            dims(size=FitWithin(width=320, height=180)),
+        ),
+    ),
+    Case(
+        "NVENC H.264 level too low for 1080p",
+        "encoder.level_too_low",
+        "video.level",
+        ERR,
+        x265_level("3.2", encoder="h264_nvenc"),
+        x265_level("4.0", encoder="h264_nvenc"),
+    ),
+    Case(
+        "NVENC H.264 level too low for the frame rate",
+        "encoder.level_too_low",
+        "video.level",
+        ERR,
+        x265_level(
+            "4.1",
+            encoder="h264_nvenc",
+            framerate=Rational(num=60, den=1),
+            framerate_mode="constant",
+        ),
+        x265_level(
+            "4.2",
+            encoder="h264_nvenc",
+            framerate=Rational(num=60, den=1),
+            framerate_mode="constant",
+        ),
+    ),
+    Case(
+        "NVENC H.265 level too low for 1080p",
+        "encoder.level_too_low",
+        "video.level",
+        ERR,
+        x265_level("3.1", encoder="hevc_nvenc"),
+        x265_level("4.0", encoder="hevc_nvenc"),
     ),
     Case(
         "x265 level too low after the ultrafast padding",
@@ -758,14 +836,6 @@ CASES: list[Case] = [
         ERR,
         lambda s: setattr(s.source, "video", []),
         nothing,
-    ),
-    Case(
-        "unknown container",
-        "container.unknown",
-        "output.container",
-        ERR,
-        container("avi"),
-        container("mp4"),
     ),
     Case(
         "video codec not in container",
@@ -880,6 +950,14 @@ CASES: list[Case] = [
         crop("conservative", CropRect(top=140, bottom=140)),
     ),
     Case(
+        "crop detection failed",
+        "dimensions.crop_detection_failed",
+        "dimensions.crop",
+        WARN,
+        crop("auto", detection_error="Crop detection failed on every frame."),
+        crop("auto", CropRect(top=140), detection_error="Crop detection failed on every frame."),
+    ),
+    Case(
         "manual crop without values",
         "dimensions.crop_missing",
         "dimensions.crop.rect",
@@ -933,13 +1011,13 @@ CASES: list[Case] = [
         "filters.tonemap.implementation",
         ERR,
         both(
-            hdr_source,
+            hdr10_source,
             filters(tonemap=FilterConfig(implementation="libplacebo")),
             lambda s: setattr(
                 s.caps, "filter_failures", {"libplacebo": "No working Vulkan driver"}
             ),
         ),
-        both(hdr_source, filters(tonemap=FilterConfig(implementation="libplacebo"))),
+        both(hdr10_source, filters(tonemap=FilterConfig(implementation="libplacebo"))),
     ),
     Case(
         "implementation not tested",
@@ -1007,24 +1085,28 @@ CASES: list[Case] = [
         "filter.hdr_without_tonemap",
         "filters.colorspace",
         WARN,
-        both(hdr_source, filters(colorspace=FilterConfig(preset="bt709"))),
-        both(hdr_source, filters(colorspace=FilterConfig(preset="bt709"), tonemap=FilterConfig())),
+        both(hdr10_source, filters(colorspace=FilterConfig(preset="bt709"))),
+        both(
+            hdr10_source, filters(colorspace=FilterConfig(preset="bt709"), tonemap=FilterConfig())
+        ),
     ),
     Case(
         "HDR to BT.2020 SDR without tone mapping",
         "filter.hdr_without_tonemap",
         "filters.colorspace",
         WARN,
-        both(hdr_source, filters(colorspace=FilterConfig(preset="bt2020"))),
-        both(hdr_source, filters(colorspace=FilterConfig(preset="bt2020"), tonemap=FilterConfig())),
+        both(hdr10_source, filters(colorspace=FilterConfig(preset="bt2020"))),
+        both(
+            hdr10_source, filters(colorspace=FilterConfig(preset="bt2020"), tonemap=FilterConfig())
+        ),
     ),
     Case(
         "HDR source encoded to 8-bit",
         "filter.hdr_8bit",
         "video.bit_depth",
         WARN,
-        both(hdr_source, video(bit_depth=8)),
-        both(hdr_source, video(bit_depth=10)),
+        both(hdr10_source, video(bit_depth=8)),
+        both(hdr10_source, video(bit_depth=10)),
     ),
     Case(
         "HDR10 source encoded to 8-bit, tone mapped",
@@ -1250,34 +1332,6 @@ CASES: list[Case] = [
         sub(PGS, action="burn", forced_only=True),
     ),
     Case(
-        "BCP 47 tag without mkvpropedit",
-        "metadata.language_tag_lost",
-        "audio[0].metadata.language",
-        WARN,
-        both(
-            lambda s: setattr(s.job.audio[0].metadata, "language", "pt-BR"),
-            mkvpropedit(ToolStatus.MISSING),
-        ),
-        lambda s: setattr(s.job.audio[0].metadata, "language", "pt-BR"),
-    ),
-    Case(
-        "BCP 47 tag of the source without mkvpropedit",
-        "metadata.language_tag_lost",
-        "subtitles[0].metadata.language",
-        WARN,
-        both(
-            lambda s: setattr(s.source.subtitles[0], "language_ietf", "zh-Hant"),
-            mkvpropedit(ToolStatus.MISSING),
-        ),
-        both(
-            lambda s: setattr(s.source.subtitles[0], "language_ietf", "zh-Hant"),
-            mkvpropedit(ToolStatus.MISSING),
-            container("mp4"),
-            output_path(Path("/out/Movie (2019).mp4")),
-            subs(SubtitleOutputTrack(source=3, action="convert", convert_to="mov_text")),
-        ),
-    ),
-    Case(
         "unknown language",
         "metadata.language_invalid",
         "audio[0].metadata.language",
@@ -1423,7 +1477,7 @@ CASES: list[Case] = [
         "reserved Windows name",
         "output.name_not_portable",
         "output.path",
-        WARN,
+        NOT_PORTABLE,
         output_path(Path("/out/CON.mkv")),
         output_path(Path("/out/CONTACT.mkv")),
     ),
@@ -1431,7 +1485,7 @@ CASES: list[Case] = [
         "character Windows does not allow",
         "output.name_not_portable",
         "output.path",
-        WARN,
+        NOT_PORTABLE,
         output_path(Path("/out/Movie: The Sequel.mkv")),
         output_path(Path("/out/Movie - The Sequel.mkv")),
     ),
@@ -1465,7 +1519,7 @@ CASES: list[Case] = [
         "output.not_writable",
         "output.path",
         ERR,
-        lambda s: s.fs.readonly.add("/out"),
+        lambda s: s.fs.readonly.add(str(Path("/out"))),
         nothing,
     ),
     Case(
@@ -1583,16 +1637,16 @@ CASES: list[Case] = [
 
 #: Cases in other files next to this one: each has ``cases(h) -> list[Case]``, where ``h``
 #: gives this module's helpers (``h.Case``, ``h.ERR``, ``h.video``, …).
-EXTRA_CASE_FILES = ("cases_inplace", "cases_options", "cases_metadata")
 _HELPERS = SimpleNamespace(**globals())
-for _name in EXTRA_CASE_FILES:
-    CASES.extend(_load(_name).cases(_HELPERS))
+for _cases in (cases_inplace, cases_options, cases_metadata):
+    CASES.extend(_cases.cases(_HELPERS))
 
 
 @pytest.fixture(autouse=True)
 def _fresh_definitions() -> None:
     """Custom-definition cases copy the definitions; the shared ones must stay unchanged."""
-    assert DEFS.containers["mkv"].mkvpropedit_flags == []
+    assert DEFS.containers["mkv"].text_subtitle_target is not None
+    assert DEFS.video_encoders["libx265"].rate_control.quality is not None
 
 
 def test_clean_job_has_no_issues() -> None:
@@ -1607,10 +1661,58 @@ def test_positive(case: Case) -> None:
     assert {i.severity for i in matching} == {case.severity}
 
 
-@pytest.mark.parametrize("case", CASES, ids=[c.id for c in CASES])
+#: A negative of `nothing` is the clean job itself, so `test_clean_job_has_no_issues` is the
+#: negative test of those codes and running `check` on it again would add nothing.
+NEGATIVE_CASES = [c for c in CASES if c.negative is not nothing]
+
+
+@pytest.mark.parametrize("case", NEGATIVE_CASES, ids=[c.id for c in NEGATIVE_CASES])
 def test_negative(case: Case) -> None:
     issues = sc.check(build(case.negative))
     assert not sc.found(issues, case.code, case.path), issues
+
+
+@pytest.mark.parametrize(
+    ("params", "on"),
+    [
+        *((f"preanalysis={off}", False) for off in ("disabled", "DISABLE", "N", "00", "-1")),
+        ("preanalysis=auto", False),
+        *((f"preanalysis={on}", True) for on in ("enabled", "Yes", "01", "+1")),
+        ("preanalysis", True),
+        ("rc=04", True),
+        ("rc=hqcbr", True),
+        ("rc=3", False),
+        ("rc=QVBR", False),  # FFmpeg refuses it: no pre-analysis
+    ],
+)
+def test_amf_preanalysis_custom_params_are_read_as_ffmpeg_reads_them(params: str, on: bool) -> None:
+    small = dims(size=FitWithin(width=320, height=180))
+    issues = build(both(video(encoder="h264_amf", custom_params=params), small)).validate()
+    assert sc.found(issues, "encoder.preanalysis_picture_too_small", "video.custom_params") is on
+
+
+def test_a_track_name_variable_typo_has_a_fix() -> None:
+    def issue_of(name: str) -> Any:
+        found = build(cases_metadata.track_name(name)).validate()
+        return next(i for i in found if i.code == "metadata.name_variable_unknown")
+
+    typo = issue_of("{lang_nmae:upper} {chanels}")
+    assert typo.message == (
+        "{lang_nmae} and {chanels} are not track name variables, so the track name is written "
+        "as typed, braces and all. Did you mean {lang_name} and {channels}?"
+    )
+    (repair,) = typo.fixes
+    assert repair.label == "Use {lang_name} and {channels}"
+    assert [op.model_dump() for op in repair.patch] == [
+        {"op": "replace", "path": "/audio/0/metadata/name", "value": "{lang_name:upper} {channels}"}
+    ]
+    other = issue_of("{lang_name} {episode}")
+    assert other.fixes == []
+    assert other.message.startswith("{episode} is not a track name variable")
+    assert other.message.endswith(
+        "The variables of a track name are {bitrate}, {channels}, {codec}, {lang}, {lang_name}, "
+        "{lang_native}, {source_codec}, {title}."
+    )
 
 
 def test_every_code_has_a_case() -> None:
@@ -1640,11 +1742,14 @@ def test_switch_container_changes_the_extension() -> None:
 
 
 def test_switch_container_keeps_every_track_valid() -> None:
-    """WebM holds neither x265 nor the subtitles, so the fixes offer only MKV."""
+    """WebVTT fits MKV and WebM, but WebM cannot hold x265, so the fixes offer only MKV."""
     s = sc.base()
-    s.job.output.container = "avi"
-    [issue] = [i for i in sc.check(s) if i.code == "container.unknown"]
-    assert [f.label for f in issue.fixes] == [f"Switch to {sc.DEFS.containers['mkv'].label}"]
+    s.job.output.container = "mp4"
+    s.job.output.path = Path("/out/Movie (2019).mp4")
+    s.job.subtitles = [SubtitleOutputTrack(source=3, action="convert", convert_to="webvtt")]
+    [issue] = [i for i in sc.check(s) if i.path == "subtitles[0].convert_to"]
+    switches = [f.label for f in issue.fixes if f.label.startswith("Switch to")]
+    assert switches == [f"Switch to {sc.DEFS.containers['mkv'].label}"]
 
 
 def test_encode_the_video_picks_an_encoder_the_container_holds() -> None:
@@ -1706,8 +1811,7 @@ def test_burn_it_in_is_not_offered_next_to_another_burn_in() -> None:
 def test_reading_as_utf8_is_offered_only_for_a_utf8_file(
     found: str, charset: str, fixes: list[str]
 ) -> None:
-    meta = _load("cases_metadata")
     s = sc.base()
-    meta.external(getattr(meta, found), charset)(s)
-    [issue] = [i for i in sc.check(s) if i.path == meta.AT]
+    cases_metadata.external(getattr(cases_metadata, found), charset)(s)
+    [issue] = [i for i in sc.check(s) if i.path == cases_metadata.AT]
     assert [f.label for f in issue.fixes] == fixes

@@ -126,8 +126,9 @@ file_options = [
 unchecked_options = ["load_plugin", "load_plugins", "qsv_params"]
 
 [private_options]
-# `ffmpeg -h encoder=<id>` of n9.0.2 (BtbN and Arch) and n8.1.3 (BtbN), together. Used when
-# encoder detection has not read this build's list yet.
+# `ffmpeg -h encoder=<id>` of n9.0.2 (BtbN for Linux and Windows, Arch) and n8.1.3 (BtbN),
+# together: the Windows QSV encoders add `dual_gfx` and `vcm`. Used when encoder detection has
+# not read this build's list yet.
 "libvpx-vp9" = [
     "aq-mode", "arnr-maxframes", "arnr-strength", "arnr-type", "arnr_max_frames", "arnr_strength",
     "arnr_type", "auto-alt-ref", "corpus-complexity", "cpu-used", "crf", "deadline",
@@ -167,23 +168,23 @@ av1_nvenc = [
 ]
 h264_qsv = [
     "a53cc", "adaptive_b", "adaptive_i", "async_depth", "aud", "avbr_accuracy", "avbr_convergence",
-    "b_strategy", "bitrate_limit", "cavlc", "dblk_idc", "extbrc", "forced_idr", "idr_interval",
-    "int_ref_cycle_dist", "int_ref_cycle_size", "int_ref_qp_delta", "int_ref_type", "look_ahead",
-    "look_ahead_depth", "look_ahead_downsampling", "low_delay_brc", "low_power",
+    "b_strategy", "bitrate_limit", "cavlc", "dblk_idc", "dual_gfx", "extbrc", "forced_idr",
+    "idr_interval", "int_ref_cycle_dist", "int_ref_cycle_size", "int_ref_qp_delta", "int_ref_type",
+    "look_ahead", "look_ahead_depth", "look_ahead_downsampling", "low_delay_brc", "low_power",
     "max_dec_frame_buffering", "max_frame_size", "max_frame_size_i", "max_frame_size_p",
     "max_qp_b", "max_qp_i", "max_qp_p", "max_slice_size", "mbbrc", "min_qp_b", "min_qp_i",
     "min_qp_p", "p_strategy", "pic_timing_sei", "preset", "profile", "qsv_params", "rdo",
-    "recovery_point_sei", "repeat_pps", "scenario", "single_sei_nal_unit", "skip_frame",
+    "recovery_point_sei", "repeat_pps", "scenario", "single_sei_nal_unit", "skip_frame", "vcm",
 ]
 hevc_qsv = [
     "adaptive_b", "adaptive_i", "async_depth", "aud", "avbr_accuracy", "avbr_convergence",
-    "b_strategy", "dblk_idc", "extbrc", "forced_idr", "gpb", "idr_interval", "int_ref_cycle_dist",
-    "int_ref_cycle_size", "int_ref_qp_delta", "int_ref_type", "load_plugin", "load_plugins",
-    "look_ahead_depth", "low_delay_brc", "low_power", "max_frame_size", "max_frame_size_i",
-    "max_frame_size_p", "max_qp_b", "max_qp_i", "max_qp_p", "max_slice_size", "mbbrc", "min_qp_b",
-    "min_qp_i", "min_qp_p", "p_strategy", "pic_timing_sei", "preset", "profile", "qsv_params",
-    "rdo", "recovery_point_sei", "scenario", "skip_frame", "tier", "tile_cols", "tile_rows",
-    "transform_skip",
+    "b_strategy", "dblk_idc", "dual_gfx", "extbrc", "forced_idr", "gpb", "idr_interval",
+    "int_ref_cycle_dist", "int_ref_cycle_size", "int_ref_qp_delta", "int_ref_type", "load_plugin",
+    "load_plugins", "look_ahead_depth", "low_delay_brc", "low_power", "max_frame_size",
+    "max_frame_size_i", "max_frame_size_p", "max_qp_b", "max_qp_i", "max_qp_p", "max_slice_size",
+    "mbbrc", "min_qp_b", "min_qp_i", "min_qp_p", "p_strategy", "pic_timing_sei", "preset",
+    "profile", "qsv_params", "rdo", "recovery_point_sei", "scenario", "skip_frame", "tier",
+    "tile_cols", "tile_rows", "transform_skip",
 ]
 av1_qsv = [
     "adaptive_b", "adaptive_i", "async_depth", "b_strategy", "extbrc", "forced_idr",

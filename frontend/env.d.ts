@@ -8,3 +8,7 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+/** The version the build was stamped with: Vite's `define` replaces the name. */
+// oxlint-disable-next-line no-underscore-dangle -- the define naming convention
+declare const __REFRAME_VERSION__: string

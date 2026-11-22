@@ -128,10 +128,10 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | Area | Method & path | Purpose |
 |------|---------------|---------|
 | System | `GET /api/health` | Version, `api_version`, `instance` (random id of this run), uptime |
-| | `GET /api/system` | Tool statuses, versions, platform, mode |
+| | `GET /api/system` | Tool statuses, versions, platform, mode, and whether the server runs in a container (the Docker image: no sleep or shut down, [0103](../decisions/0103-owner-decisions-before-v1.md) item 7) |
 | | `GET /api/system/encoders` · `POST /api/system/encoders/rescan` → 202 | Capability statuses, re-detection (a task: hardware test encodes take seconds; [0049](../decisions/0049-s2-system-fs-settings-sources-preview.md)) |
 | | `POST /api/system/shutdown` | Graceful shutdown (desktop mode only, else 403) |
-| | `POST /api/system/tools/rescan` · `POST /api/system/tools/fetch` `{build?}` → 202 | Tool discovery again; download the pinned FFmpeg (`tools.fetch`). `GET /api/system` also returns the start-up problems of the settings and preset stores |
+| | `POST /api/system/tools/rescan` · `POST /api/system/tools/fetch` `{build?}` → 202 | Tool discovery again; download an offered FFmpeg build (`tools.fetch`; S-8 adds the build list, the install from a file and `tools.fetch_offline`). `GET /api/system` also returns the start-up problems of the settings and preset stores |
 | Tasks | `GET /api/tasks?kind=` · `GET /api/tasks/{id}` · `POST /api/tasks/{id}/cancel` | Running and finished tasks (optionally of one kind), one task's state and result, cancel (`{cancelled}`). An unknown id is 404 `tasks.unknown`. The server's config, data and cache folders show as `<config>`, `<data>`, `<cache>` ([0048](../decisions/0048-queue-power-and-task-routes.md)) |
 | Files (web) | `GET /api/fs/roots` · `GET /api/fs/list?path=&extensions=` | Server-side file browser (media files and folders only; with `extensions` (repeatable: `.srt`), the files with those extensions instead of the media files, [0065](../decisions/0065-m6-tracks-and-metadata.md#task-s6--s-2-additions)). Web mode: below the media and the output roots (the output folder picker); desktop: the whole file system |
 | Subtitles | `POST /api/subtitles/inspect` `{path}` | An external subtitle file before it is added: FFmpeg's format, text or bitmap, the character encoding (byte order mark or valid UTF-8, else `null`), the event count, issues; a file a job cannot take is `422 subtitles.unsupported` ([0065](../decisions/0065-m6-tracks-and-metadata.md#task-s6--s-2-additions)) |
@@ -156,6 +156,7 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | Jobs | `POST /api/jobs/draft` `{source_id, preset_id}` | `JobSettings` built from a preset. Web mode: an output outside the output roots adds `output.folder_required` |
 | | `POST /api/jobs/validate` `{job}` | `ValidationIssue[]`. Web mode: an output outside the output roots is the error `output.folder_required` (fixes: a fixed output folder in the settings; with one output root, the job's output moved into it), not a 403 ([0050](../decisions/0050-s2-jobs-batch-presets-routes.md#follow-up-2026-10-22-web-mode-output-folder-and-override-jail)). An in-place edit of a source the server may not write is the error `inplace.not_allowed` (fix: write a new file in the first output root), not a 403 ([0050](../decisions/0050-s2-jobs-batch-presets-routes.md#follow-up-review-2026-10-22)) |
 | | `POST /api/jobs/plan` `{job}` | `EncodePlan` (command preview, job type); a job with errors is `422 jobs.invalid` with the issues ([0050](../decisions/0050-s2-jobs-batch-presets-routes.md)) |
+| | `POST /api/jobs/track-names` `{job}` | The track names as the job writes them, with the name templates expanded (the Summary; [0103](../decisions/0103-owner-decisions-before-v1.md) item 6) |
 | | `POST /api/jobs/geometry` `{job}` | Pipeline header values: `{source, geometry}` (`geometry` `null` for a copied video) |
 | | `POST /api/jobs/explain` `{source_id, template?, container?}` | Why each track was selected (`TrackDecision` with reasons) |
 | | `POST /api/jobs/draft-remux` `{source_id, preset_id?, edit_in_place}` | Metadata-only job (`metadata_edit` or remux); `output.folder_required` as `draft`; an in-place edit in web mode gets `inplace.not_allowed` instead (as `validate`) |
@@ -168,7 +169,8 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | Batch | `POST /api/batch/group` `{source_ids, level}` | Groups |
 | | `POST /api/batch/derive` `{job, source_id, sections, base?}` | `JobTemplate` from a single-file job, merged into `base` (the group's template) |
 | | `POST /api/batch/resolve` `{template, source_ids, overrides}` | Resolution matrix + per-file jobs + issues. `overrides` by `source_id`; the job each override makes passes the path jail inside the batch service, before it is named or validated. A row whose output is outside the output roots gets `output.folder_required` |
-| | `POST /api/batch/resolve-run` `{template, source_ids, level, overrides}` | A whole run (`resolve_batch`): `{grouping, resolutions}`, the name checks over every group, earlier outputs left out; overrides and rows as `resolve` |
+| | `POST /api/batch/resolve-run` `{template, source_ids, level, overrides}` | A whole run (`resolve_batch`): `{grouping, resolutions}`, the name checks over every group, earlier outputs left out; overrides and rows as `resolve` Never detects the crop |
+| | `POST /api/batch/detect-crops` `{template, source_ids, level, overrides}` → 202 | *Add group to queue*: the run of `resolve-run` with the crop detected in each file whose job crops automatically or conservatively without a rectangle, as a `batch_cropdetect` task whose result is the `{grouping, resolutions}`; progress per file ("file n of N"), cancel stops it. A path out of the roots is refused (403) before the task starts, and the task jails again ([0103](../decisions/0103-owner-decisions-before-v1.md)) |
 | | `POST /api/batch/save-preset` `{template, name, category?, description?}` | Save a group template as a preset |
 | Presets | `GET/POST /api/presets` · `GET/PUT/DELETE /api/presets/{id}` | CRUD. `GET` → `{presets, default_id}`; `POST` → `201`; `PUT` takes the whole preset (create or replace, a rename too); a refused change is a problem with the issue (web mode: the store's failures name no server folder) |
 | | `POST /api/presets/{id}/default` · `POST /api/presets/import?on_conflict=` · `GET /api/presets/export?ids=` | Import: the export file as the body (at most 4 MiB), a report with the issues. Export: `{document, issues}` |
@@ -179,7 +181,7 @@ a `\udcXX` escape, which `model_dump_json()` cannot write and `model_validate_js
 | | `POST /api/queue/{id}/{pause\|resume\|cancel\|retry\|duplicate}` · `DELETE /api/queue/{id}` | Per-job actions |
 | | `POST /api/queue/{start\|stop\|pause\|resume\|cancel}` · `PUT /api/queue/order` | Global actions (pause, resume and cancel act on every job). `start` takes an optional `job_ids`: only those jobs start |
 | | `GET /api/queue/{id}/log?from=` | Log (incremental, by byte offset: `{text, next, more}`) |
-| | `PUT /api/queue/when-done` | When-done action. A running countdown for another action is cancelled |
+| | `PUT /api/queue/when-done` | When-done action. A running countdown for another action is cancelled. Sleep and shut down in a container, quit in web mode: `403 queue.when_done_unavailable` ([0103](../decisions/0103-owner-decisions-before-v1.md) item 7) |
 | Power | `GET /api/power` · `POST /api/power/cancel` | The pending when-done countdown (`{pending}`); cancel it (`{cancelled}`). Only the queue starts one |
 | Settings | `GET/PUT /api/settings` | App settings |
 
@@ -211,27 +213,19 @@ row whose member a route reaches or that no longer exists
 | Member | Why no route reaches it |
 |--------|-------------------------|
 | `Reframe.create`, `Reframe.close`, `queue.close`, `power.close`, `tasks.close`, `tools.close`, `capabilities.close`, `sources.close`, `events.close` | The app's lifespan creates and closes the facade; a desktop client stops the server with `POST /api/system/shutdown` |
-| `tools.start`, `capabilities.start`, `tools.current`, `tools.discovering`, `capabilities.detecting`, `power.closed`, `events.closed` | Lifecycle state. `GET /api/system` waits for a running discovery; `GET /api/system/encoders` and the `tools.changed` / `capabilities.changed` events show the rest |
-| `settings.path` | A server folder: a client cannot use it, and an answer must not show it (the queue and task routes read `Reframe.config_dir`, `data_dir` and `cache_dir` only to write them as `<config>`, `<data>`, `<cache>`) |
+| `tools.start`, `capabilities.start`, `tools.current`, `capabilities.detecting`, `events.closed` | Lifecycle state. `GET /api/system` waits for a running discovery; `GET /api/system/encoders` and the `tools.changed` / `capabilities.changed` events show the rest |
 | `Reframe.settings_snapshot` | The same settings as `settings.get` (`GET /api/settings`) |
-| `batch.definitions`, `capabilities.definitions` | The same definitions as `jobs.definitions` (`GET /api/definitions`) |
-| `jobs.detection_wait` | A setting of the service: how long validation waits for encoder detection |
-| `tools.versions` | `GET /api/system` gives each tool's version in its `ToolSet` |
+| `capabilities.definitions` | The same definitions as `jobs.definitions` (`GET /api/definitions`) |
 | `capabilities.wait` | `GET /api/system/encoders` never waits; `capabilities.changed` events follow a detection |
 | `capabilities.closest_available` | Validation uses it inside the core |
 | `presets.find` | The routes take ids; `jobs/draft`, `explain` and the batch routes accept a name or an id through the facade's own lookup |
-| `sources.probe_folder` | `POST /api/sources` expands folders itself (`jobs.media_files`): one task per request, without partial outputs ([0049](../decisions/0049-s2-system-fs-settings-sources-preview.md) item 5) |
 | `sources.store`, `sources.update` | The scans store what they measured themselves |
-| `sources.cache`, `sources.media`, `presets.store`, `tasks.events` | The objects the services are wired with (probe cache, the media task context, the preset file store, the event bus); clients reach them through the service methods and `WS /api/events` |
+| `sources.media`, `tasks.events` | The objects the services are wired with (the media task context, the event bus); clients reach them through the service methods and `WS /api/events` |
 | `events.publish`, `events.subscriber_count` | Only the core publishes events; a client receives them on `WS /api/events` |
 | `queue.owns_store`, `queue.busy`, `queue.store_busy` | The server's own state: it writes `server.json` only while it owns the store, `--owner-only` exits with 75 only while another process holds the lock, and idle exit waits while the queue is busy (S-7). A client reads `GET /api/queue` and the `job.state` events |
 | `queue.wait` | A client follows the `job.state` events or reads `GET /api/queue`; a request held open until jobs end would hold a connection for hours |
 | `power.schedule` | Only the queue starts a countdown: no client may shut down or suspend the server's machine on demand |
-| `power.countdown`, `power.executor` | The countdown's length and end are in `pending.seconds_left` and `pending.deadline`; the executor is the operating system's mechanism |
-| `tasks.limit`, `tasks.set_limit` | The concurrency per task kind is internal; no setting changes it |
-| `batch.merge` | `POST /api/batch/derive` with `base` covers *Apply to group*; a client copies sections itself |
-| `presets.rename` | `PUT /api/presets/{id}` with the new name |
-| `presets.duplicate` | `GET /api/presets/{id}`, then `POST /api/presets` |
+| `power.executor` | The executor is the operating system's mechanism |
 
 ## S-3 Event WebSocket
 
@@ -294,14 +288,23 @@ start-up (exit 2)
 
 - [x] **Docker image** (multi-stage):
   1. `node` stage builds `frontend/dist`.
-  2. `tools` stage downloads the pinned FFmpeg from `tools/ffmpeg.toml` and checks its
-     SHA-256 ([02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg)).
-  3. Runtime stage: Debian slim + uv-installed `reframe-server`, the bundled FFmpeg in
-     `/opt/reframe/tools/ffmpeg/`, `mkvtoolnix`, `mediainfo`, and the GPU user-space drivers
-     that FFmpeg loads at runtime (Intel media driver, Mesa VA drivers, oneVPL GPU runtime; the
-     Dockerfile pins the exact packages). Runs as a non-root user (`PUID`/`PGID` env).
+  2. ~~`tools` stage~~: since [decision 0094](../decisions/0094-docker-image-without-ffmpeg.md) the image contains no FFmpeg. The first start
+     downloads an offered build into `/data/tools/ffmpeg/` (the first-run screen, or
+     `REFRAME_FFMPEG_BUILD`), installs it from a file, or uses a mounted override.
+  3. Runtime stage: Debian slim + uv-installed `reframe-server` (no `mkvtoolnix` since C-18,
+     [decision 0080](../decisions/0080-own-matroska-header-writer.md); no `mediainfo` since C-19,
+     [decision 0081](../decisions/0081-probe-without-mediainfo.md)), and the GPU user-space drivers
+     that FFmpeg loads at runtime (Intel media driver, Mesa VA drivers, the oneVPL GPU runtime
+     and, for Intel GPUs before Tiger Lake, the Media SDK runtime from Debian 12,
+     [decision 0099](../decisions/0099-intel-qsv-on-linux.md); the Dockerfile pins the exact
+     packages). Runs as a non-root user (`PUID`/`PGID` env).
   4. Volumes: `/config`, `/data` (queue DB, logs, cache), `/media` (read), `/output` (write).
   5. `HEALTHCHECK` on `/api/health`.
+- [x] **No FFmpeg in the image** ([decision 0094](../decisions/0094-docker-image-without-ffmpeg.md)): the `tools` stage and
+      `/opt/reframe/tools/ffmpeg/` go; the image's notices drop FFmpeg; the compose example
+      says that the download lives in `/data` and shows `REFRAME_FFMPEG_BUILD`; the deploy
+      tests check that the image has no `ffmpeg`/`ffprobe` and that a download in a running
+      container (or a file install) is found by discovery and VAAPI works with it.
 - [x] **Override in Docker**: mount your own build and set `REFRAME_FFMPEG` /
       `REFRAME_FFPROBE`, for example `-v /opt/my-ffmpeg:/opt/custom-ffmpeg:ro -e
       REFRAME_FFMPEG=/opt/custom-ffmpeg/bin/ffmpeg`.
@@ -325,12 +328,12 @@ Intel driver is Debian's non-free build (the free one has no H.264/HEVC encode b
 Lake). Until the packages are on PyPI, `uv tool install` takes the paths of a checkout.
 Behind a reverse proxy in Docker the server trusts `X-Forwarded-*` from the proxy's one
 address only (`FORWARDED_ALLOW_IPS`, the 0059 follow-up). The "Done when" was met on the
-owner's AMD desktop on 2026-10-28 (0059, "The lead's GPU check"); Intel QSV and NVIDIA NVENC
-in Docker are not verified.
+owner's AMD desktop on 2026-10-28 (0059, "The lead's GPU check"); Intel QSV and VAAPI on an
+Intel UHD 620 on 2026-11-19 (0099); NVIDIA NVENC in Docker is not verified.
 
 Done when: `docker compose up` on a Linux host with a GPU (the owner's: AMD) shows its VAAPI
-encoders as available and encodes a fixture file. Intel QSV and NVIDIA NVENC in Docker are
-listed as not verified until such a host is available
+encoders as available and encodes a fixture file. NVIDIA NVENC in Docker is listed as not
+verified until such a host is available (Intel QSV: verified, 0099)
 ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 7).
 
 ## S-7 Local owner mode
@@ -368,6 +371,42 @@ other waiting jobs alone.
 ---
 
 # Part B — Frontend (`frontend/`, shared by web and desktop)
+
+## S-8 FFmpeg builds
+
+Needs C-21 ([decision 0093](../decisions/0093-ffmpeg-download-and-build-choice.md)). Milestone
+M10.
+
+- [x] `GET /api/system/tools/builds`: the offered builds (name, label, summary, version,
+      licence, source links, size for this platform) and the installed downloaded build with
+      `outdated`.
+- [x] `POST /api/system/tools/install-file` `{path, build?}` → 202: install an archive file from a
+      path on the server (desktop mode; in web mode the path must be inside a media root). A
+      task like `tools/fetch`. Here and in `tools/fetch`, a build that is not offered is 422
+      `tools.build_not_offered` ([decision 0097](../decisions/0097-ffmpeg-build-env-and-offered-builds-only.md)).
+- [x] `REFRAME_FFMPEG_BUILD` ([decision 0097](../decisions/0097-ffmpeg-build-env-and-offered-builds-only.md), superseding 0094 item 3): when set to an offered build and discovery
+      finds no usable FFmpeg at server start (none, or one on `PATH` that is too old or does
+      not run: a downloaded build ranks above `PATH`), the server starts that build's download
+      (a `tools_fetch` task). It never replaces an environment or Settings path, usable or
+      not, and a server that does not own the data folder downloads nothing. A wrong name, a
+      skipped or a failed download is one log line with the reason and a `tools.*` problem
+      that the first-run screen shows.
+- [x] **The server log says it clearly** (the owner's request, 2026-11-18): lines that reach the
+      console (`docker logs`, the systemd journal) with the default log settings, not only the
+      log file. At start without a usable FFmpeg: a warning that Reframe cannot encode yet and
+      the three ways out (the web UI's first-run screen, `REFRAME_FFMPEG_BUILD`, a mounted build
+      with `REFRAME_FFMPEG`). Each download or file install, whoever starts it: a start line
+      (build name, version, size, URL or file, target folder, licence and source link), progress
+      at most every 10 %, and a final line (installed and checked, with the folder) or an error
+      line with the reason and, for `tools.fetch_offline`, the alternatives. An outdated
+      downloaded build is a warning at start.
+- [x] `tools.fetch_offline` and the file-install problems reach the client as the task's error
+      code and message. `EncoderStatus.build_mismatch` is in the encoder status; the OpenAPI
+      types are generated again (S-5).
+
+Done when: the routes are in the OpenAPI document and the generated types; a test installs a
+build from a file through the API and then sees it in `GET /api/system`; a fetch that cannot
+reach the server fails with `tools.fetch_offline`.
 
 ## Stack
 
@@ -491,7 +530,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       (`JobTemplate` + overrides). The tabs use one API for both. (M4 builds the job target;
       the group target is typed and comes with F-13. It also holds the file the tabs show and
       that file's job, and a scope: an edit goes into the template or into that file's
-      override; [0066](../decisions/0066-m7-batch-season.md) item 1.)
+      override; [0066](../decisions/0066-m7-batch-season.md) item 1. The range always goes into
+      that file's override, and the shown job carries it in both scopes;
+      [0075](../decisions/0075-the-range-in-a-group-and-the-shown-job.md).)
 - [x] Undo/redo as JSON patch history (Ctrl+Z / Ctrl+Shift+Z).
 - [x] `useValidation`: debounced (250 ms) `jobs/validate`. Issues are indexed by path for `Field`.
 - [x] "Modified vs preset" uses `presets/diff` (the design: [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task D").
@@ -593,10 +634,32 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] Preview (M8): number of sample frames, cache size limit, the cache size and *Clear cache*
       ([decision 0067](../decisions/0067-m8-picture.md), "Task E").
 
+### F-19 Range selector
+- [x] The Range button and popover in the source header from [03 §Range](03-features.md#range):
+      the four modes, the modes the source cannot use disabled with the reason, chapter
+      selects with names and start times, time fields that parse `H:MM:SS.mmm` / `MM:SS` /
+      seconds, frames as the model has them (0-based, exclusive end), and the span kept on a
+      mode change ([decision 0074](../decisions/0074-range-selector-in-m10.md)).
+- [x] Each change is one JSON patch on `/range` (one undo step). The `range.*` issues show on
+      its fields and on the button, with their fixes.
+- [x] Group target: always the shown file's override, with the override dot and *Reset to
+      group*. No *Apply to whole group*.
+- [x] The Summary's Source and Estimate cards show the range. Playwright flow 5 (F-17).
+
+(Added in M10 by [decision 0074](../decisions/0074-range-selector-in-m10.md): numbered after
+F-18, built before F-16. Built on 2026-11-13: 0074 "Built"; in a group the shown job of scope
+`group` carries the shown file's range, so the name, the command and the issues follow it:
+[0075](../decisions/0075-the-range-in-a-group-and-the-shown-job.md).)
+
 ### F-16 i18n and accessibility
-- [ ] Audit that every string goes through vue-i18n (English first; the rule and its check
+- [x] Audit that every string goes through vue-i18n (English first; the rule and its check
       start in F-1). Full keyboard paths. Visible focus. WCAG AA contrast in both themes.
       Respect `prefers-reduced-motion`.
+
+  (Done on 2026-11-14. What the audit checks, and the gate in the end-to-end tests
+  (`e2e/a11y/`) that keeps it true, are in
+  [decision 0076](../decisions/0076-f16-i18n-and-accessibility-audit.md). F-17 runs the gate in
+  WebKit with the flows.)
 
 ### F-17 End-to-end tests
 - [x] Playwright against `reframe-server` with fixture media and fake FFmpeg:
@@ -606,6 +669,10 @@ Done when: a component sandbox page (dev only) shows every base component in bot
   3. A preset with an unavailable encoder → banner → use the fallback → queue.
   4. Manual crop → magnifier shows the crop lines → the command contains the matching
      `crop=` filter.
+  5. Open `chapters.mkv` → Range *Chapters* 2–3 → the header shows the range and its length,
+     the output name has `{chapters}` = `2-3`, and the command drawer has the matching `-ss`
+     and `-t` → queue → the queued job has the range (F-19, M10;
+     [decision 0074](../decisions/0074-range-selector-in-m10.md)).
 
   (M4 built the set-up and flow 3, in headless Chromium and Firefox, each with its own server;
   [decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task M". M6 built flow 1, which
@@ -613,9 +680,11 @@ Done when: a component sandbox page (dev only) shows every base component in bot
   0065](../decisions/0065-m6-tracks-and-metadata.md), "Task G". M7 built flow 2, which reads
   the queued group through the server; [decision 0066](../decisions/0066-m7-batch-season.md),
   "Task E". M8 built flow 4, which reads the magnifier's canvases back against the frame;
-  [decision 0067](../decisions/0067-m8-picture.md), "Task F".)
-- [ ] Each flow comes with its screens: the Playwright set-up and flow 3 in M4, flow 1 in M6,
-      flow 2 in M7, flow 4 in M8. M10 runs all four in Chromium and WebKit
+  [decision 0067](../decisions/0067-m8-picture.md), "Task F". M10 built flow 5 with F-19, which
+  reads the queued job back through the server; [decision
+  0074](../decisions/0074-range-selector-in-m10.md), "Built".)
+- [x] Each flow comes with its screens: the Playwright set-up and flow 3 in M4, flow 1 in M6,
+      flow 2 in M7, flow 4 in M8, flow 5 with F-19 in M10. M10 runs all five in Chromium and WebKit
       ([decision 0043](../decisions/0043-plan-review-before-m3.md) item 8).
 
 ### F-18 Naming editor
@@ -626,3 +695,23 @@ Done when: a component sandbox page (dev only) shows every base component in bot
       the Summary Output card, and the batch matrix naming column.
       (The matrix's naming column shows the names of `batch/resolve-run`, which names each file
       with the same naming code, again after each change: [0066](../decisions/0066-m7-batch-season.md), "Task C".)
+
+### F-20 FFmpeg build picker and the build-mismatch warning
+- [x] First-run screen (desktop app with no FFmpeg, or any repair case): the offered builds with
+      label, summary, size and licence (source links behind a disclosure), `default`
+      preselected; **Download**, **Install from file** (desktop: the native file dialog; web:
+      the server file browser), **Choose path** (desktop). A `tools.fetch_offline` error says
+      that the download server cannot be reached and points to the other two.
+- [x] Settings → Tools: the installed build (offered build name, version, outdated notice with
+      **Download**), the same picker to switch builds, the path override as today.
+- [x] Build mismatch: the encoder picker's reason and Settings → Encoders show the hint; the
+      missing-encoder banner and the Summary's `encoder.unavailable` issue add **Use another
+      FFmpeg…** when the encoder's status has `build_mismatch` (opens Settings → Tools);
+      Settings → Tools shows a notice that names each such encoder with its reason. No toast.
+- [x] i18n keys for every new text; the F-16 gate covers the new screens.
+
+Done when: with a fake status (`hevc_nvenc` unavailable, `build_mismatch` true) the banner shows
+**Use another FFmpeg…** and it opens Settings → Tools with the notice; with an empty data folder
+the first-run screen lists `default` and `compat`; a fetch that fails offline shows the
+offline message with **Install from file** and **Choose path**; a file install from the
+server browser (web) finishes and the screen goes away.

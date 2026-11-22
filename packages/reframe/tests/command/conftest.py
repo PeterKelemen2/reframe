@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from reframe.definitions import load_definitions
+from reframe.metadata import header
 from reframe.models import (
     AudioAction,
     AudioOutputTrack,
@@ -90,19 +91,15 @@ def caps(
     )
 
 
-def tools(*, mkvpropedit: bool = True, paths: dict[ToolName, Path] | None = None) -> ToolSet:
-    def info(name: ToolName, found: bool = True) -> ToolInfo:
-        return ToolInfo(
-            name=name,
-            status=ToolStatus.FOUND if found else ToolStatus.MISSING,
-            path=(paths or {}).get(name),
-        )
+def tools(*, paths: dict[ToolName, Path] | None = None) -> ToolSet:
+    """FFmpeg and ffprobe, both found."""
+
+    def info(name: ToolName) -> ToolInfo:
+        return ToolInfo(name=name, status=ToolStatus.FOUND, path=(paths or {}).get(name))
 
     return ToolSet(
         ffmpeg=info("ffmpeg"),
         ffprobe=info("ffprobe"),
-        mkvpropedit=info("mkvpropedit", mkvpropedit),
-        mediainfo=info("mediainfo", False),
     )
 
 
@@ -183,9 +180,14 @@ def run_plan(plan: EncodePlan, tool_paths: dict[str, str], *, cleanup: bool = Tr
         f.path.write_text(f.content, encoding="utf-8", newline="\n")
     try:
         for step in plan.steps:
-            if step.tool is None:
+            if step.kind == "finalize":
                 plan.output_tmp.replace(plan.output_final)
                 continue
+            if step.header_edit is not None:
+                written = header.apply_header_edit(step.header_edit)
+                assert written.ok, f"header_edit {written.status}: {written.code} {written.reason}"
+                continue
+            assert step.tool is not None
             argv = [tool_paths[step.tool], *resolve_argv(step.argv, result.measured)]
             proc = subprocess.run(argv, capture_output=True, text=True, timeout=300, check=False)
             result.stderr.append(proc.stderr)

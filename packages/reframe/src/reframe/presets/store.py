@@ -20,15 +20,15 @@ from pydantic import ValidationError
 from reframe.events import EventBus
 from reframe.models.events import AppWarningEvent
 from reframe.models.issues import Fix, ReplaceOp, Severity, ValidationIssue
-from reframe.models.migrations import MigrationError, MigrationRegistry, UnsupportedSchemaVersion
+from reframe.models.migrations import UnsupportedSchemaVersion
 from reframe.models.preset import Preset, PresetFile
 from reframe.models.template import JobTemplate
 from reframe.presets.builtin import DEFAULT_BUILTIN_ID, builtin_presets
 from reframe.settings import (
     TOO_DEEP,
     JsonDocumentFile,
-    is_newer,
-    migrate_document,
+    StoreProblems,
+    parse_document,
     too_deep,
     validation_detail,
 )
@@ -44,7 +44,7 @@ __all__ = [
 ]
 
 PRESETS_FILE = "presets.json"
-#: The category of new user presets and of copies of built-ins.
+#: The category of new user presets.
 CUSTOM_CATEGORY = "Custom"
 ConflictPolicy = Literal["rename", "replace", "skip"]
 
@@ -53,6 +53,7 @@ _Entry = Preset | dict[str, Any]
 # Aliases for annotations inside PresetStore, whose ``list`` method hides the builtin there.
 _Entries = list[_Entry]
 _Presets = list[Preset]
+_Outcome = Preset | UnsupportedSchemaVersion | str
 
 
 def normalise_name(name: str) -> str:
@@ -111,6 +112,16 @@ class PresetExport:
         return data
 
 
+@dataclass
+class _ParsedFile:
+    data: dict[str, Any]
+    """The migrated file."""
+    header: PresetFile
+    """The file without its presets."""
+    outcomes: list[tuple[int, object, _Outcome]]
+    """Each preset's number in the file (from 1), its JSON and its parse result, in order."""
+
+
 def _issue(
     code: str,
     message: str,
@@ -145,28 +156,19 @@ class PresetStore:
     use, not at start.
     """
 
-    def __init__(
-        self,
-        config_dir: Path,
-        events: EventBus | None = None,
-        *,
-        registry: MigrationRegistry | None = None,
-        builtins: Sequence[Preset] | None = None,
-    ) -> None:
+    def __init__(self, config_dir: Path, events: EventBus | None = None) -> None:
         self.path = Path(config_dir) / PRESETS_FILE
         # The depth is checked per preset (one deep preset must not damage the whole file).
         self._file = JsonDocumentFile(self.path, max_depth=None)
-        self._events = events
-        self._registry = registry
-        source = builtin_presets() if builtins is None else builtins
-        self._builtins = [p.model_copy(update={"built_in": True}, deep=True) for p in source]
+        self._builtins = [
+            p.model_copy(update={"built_in": True}, deep=True) for p in builtin_presets()
+        ]
         self._builtin_ids = {p.id for p in self._builtins}
         self._entries: list[_Entry] | None = None
         self._default_id: str | None = None
         self._schema_version = int(PresetFile.model_fields["schema_version"].default)
         self._extra: dict[str, Any] = {}
-        self._problems: list[AppWarningEvent] = []
-        self._protected: str | None = None
+        self._warnings = StoreProblems(events)
         self._lock = threading.RLock()
 
     @property
@@ -174,21 +176,14 @@ class PresetStore:
         """The warnings of the last load and of later failed writes."""
         with self._lock:
             self._ensure()
-            return list(self._problems)
+            return list(self._warnings.problems)
 
     @property
     def read_only(self) -> bool:
         """``True`` when ``presets.json`` must not be overwritten (newer or unreadable)."""
         with self._lock:
             self._ensure()
-            return self._protected is not None
-
-    @property
-    def default_id(self) -> str | None:
-        """The user's default preset id (``None``: the built-in default is used)."""
-        with self._lock:
-            self._ensure()
-            return self._default_id
+            return self._warnings.protected is not None
 
     def load(self) -> list[Preset]:
         """(Re)read ``presets.json``; returns the user presets."""
@@ -236,14 +231,17 @@ class PresetStore:
                 chosen = (self._builtins or self._user())[0]
             return chosen.model_copy(deep=True)
 
-    def unique_name(self, name: str, *, exclude_id: str | None = None) -> str:
-        """``name`` if no other preset has it, else the next free ``name (2)``, ``name (3)`` …"""
+    def unique_name(
+        self, name: str, *, exclude_id: str | None = None, entries: Sequence[_Entry] | None = None
+    ) -> str:
+        """``name`` if no other preset has it, else the next free ``name (2)``, ``name (3)`` …
+        ``entries``: the user presets to check instead of the stored ones."""
         with self._lock:
             base = _clean_name(name)
-            if self._name_owner(base, exclude_id) is None:
+            if self._name_owner(base, exclude_id, entries) is None:
                 return base
             number = 2
-            while self._name_owner(f"{base} ({number})", exclude_id) is not None:
+            while self._name_owner(f"{base} ({number})", exclude_id, entries) is not None:
                 number += 1
             return f"{base} ({number})"
 
@@ -318,13 +316,6 @@ class PresetStore:
                 entries[index] = stored
             return self._commit(entries, self._default_id) or stored.model_copy(deep=True)
 
-    def rename(self, preset_id: str, name: str) -> Preset | ValidationIssue:
-        with self._lock:
-            current = self._user_preset(preset_id)
-            if isinstance(current, ValidationIssue):
-                return current
-            return self.save(current.model_copy(update={"name": name}))
-
     def delete(self, preset_id: str) -> Preset | ValidationIssue:
         """Delete a user preset; returns it. If it was the default, the built-in default is
         used again."""
@@ -335,25 +326,6 @@ class PresetStore:
             entries = [e for e in self._entries or [] if not _is(e, preset_id)]
             default = None if self._default_id == preset_id else self._default_id
             return self._commit(entries, default) or current
-
-    def duplicate(self, preset_id: str, name: str | None = None) -> Preset | ValidationIssue:
-        """Copy any preset (built-in or user) as a new user preset. Without ``name``: the next
-        free name after the original's."""
-        with self._lock:
-            self._ensure()
-            original = self._by_id(preset_id)
-            if original is None:
-                return self._not_found(preset_id)
-            copy = original.model_copy(
-                update={
-                    "id": str(uuid.uuid4()),
-                    "name": name if name is not None else self.unique_name(original.name),
-                    "built_in": False,
-                    "category": CUSTOM_CATEGORY if original.built_in else original.category,
-                },
-                deep=True,
-            )
-            return self.save(copy)
 
     def set_default(self, preset_id: str | None) -> Preset | ValidationIssue:
         """Make ``preset_id`` the default (``None``: back to the built-in default). Returns the
@@ -421,7 +393,7 @@ class PresetStore:
         incoming, default_id = self._incoming(file, result)
         with self._lock:
             self._ensure()
-            if self._protected is not None:
+            if self._warnings.protected is not None:
                 result.issues.append(self._read_only_issue())
                 result.skipped.extend(p.name for p in incoming)
                 return result
@@ -521,7 +493,9 @@ class PresetStore:
         return _issue("preset.not_found", f"There is no preset with the id “{preset_id}”.")
 
     def _read_only_issue(self) -> ValidationIssue:
-        return _issue("presets.read_only", f"The presets were not saved: {self._protected}")
+        return _issue(
+            "presets.read_only", f"The presets were not saved: {self._warnings.protected}"
+        )
 
     def _incoming(
         self, file: PresetFile | PresetExport | Mapping[str, Any], result: ImportResult
@@ -542,53 +516,19 @@ class PresetStore:
                 raw_file = dict(file)
         except (ValueError, TypeError, RecursionError):  # nested far too deeply
             return invalid(TOO_DEEP)
-        prepared = _without_deep_presets(raw_file)
-        if isinstance(prepared, str):
-            return invalid(prepared)
-        raw_file, numbers, deep = prepared
-        try:
-            data = migrate_document("preset_file", raw_file, self._registry)
-            header = PresetFile.model_validate({**data, "presets": []})
-        except UnsupportedSchemaVersion as exc:
-            if is_newer(exc):
-                result.issues.append(
-                    _issue(
-                        "presets.import_newer", f"The file was written by a newer Reframe ({exc})."
-                    )
-                )
-            else:
-                result.issues.append(
-                    _issue(
-                        "presets.import_invalid", f"The file is not a Reframe preset file: {exc}"
-                    )
-                )
-            return [], None
-        except (ValidationError, MigrationError, LookupError, TypeError, ValueError) as exc:
-            detail = validation_detail(exc) if isinstance(exc, ValidationError) else str(exc)
-            result.issues.append(
-                _issue("presets.import_invalid", f"The file is not a Reframe preset file: {detail}")
-            )
-            return [], None
-        raw = data.get("presets")
-        if not isinstance(raw, list):
+        parsed_file = self._parse_file(raw_file, list_required=True)
+        if isinstance(parsed_file, UnsupportedSchemaVersion):
             result.issues.append(
                 _issue(
-                    "presets.import_invalid",
-                    "The file is not a Reframe preset file: no preset list.",
+                    "presets.import_newer",
+                    f"The file was written by a newer Reframe ({parsed_file}).",
                 )
             )
             return [], None
-        if len(numbers) != len(raw):  # a migration changed the list: count afresh
-            numbers = list(range(1, len(raw) + 1))
-        outcomes: list[tuple[int, object, Preset | UnsupportedSchemaVersion | str]] = [
-            (number, entry, TOO_DEEP) for number, entry in deep
-        ]
-        outcomes += [
-            (number, entry, self._parse_entry(entry))
-            for number, entry in zip(numbers, raw, strict=True)
-        ]
+        if isinstance(parsed_file, str):
+            return invalid(parsed_file)
         presets: list[Preset] = []
-        for number, entry, parsed in sorted(outcomes, key=lambda outcome: outcome[0]):
+        for number, entry, parsed in parsed_file.outcomes:
             label = _entry_label(entry, number)
             if isinstance(parsed, Preset):
                 presets.append(parsed)
@@ -604,7 +544,7 @@ class PresetStore:
                         severity=Severity.WARNING,
                     )
                 )
-        return presets, header.default_preset_id
+        return presets, parsed_file.header.default_preset_id
 
     def _place(
         self,
@@ -646,7 +586,7 @@ class PresetStore:
         elif id_taken:
             preset = preset.model_copy(update={"id": str(uuid.uuid4())})
         if self._name_owner(preset.name, preset.id, entries) is not None:
-            new_name = self._free_name(preset.name, preset.id, entries)
+            new_name = self.unique_name(preset.name, exclude_id=preset.id, entries=entries)
             result.renamed.append((preset.name, new_name))
             preset = preset.model_copy(update={"name": new_name})
         if target is not None:
@@ -656,107 +596,102 @@ class PresetStore:
         result.imported.append(preset.model_copy(deep=True))
         return preset
 
-    def _free_name(self, name: str, preset_id: str, entries: Sequence[_Entry]) -> str:
-        number = 2
-        while self._name_owner(f"{name} ({number})", preset_id, entries) is not None:
-            number += 1
-        return f"{name} ({number})"
-
     def _newer_ids(self, entries: Sequence[_Entry] | None = None) -> set[object]:
         """The ids of the presets of a newer Reframe (kept as raw JSON)."""
         source = self._entries or [] if entries is None else entries
         return {e.get("id") for e in source if isinstance(e, dict)}
 
-    def _parse_entry(self, entry: object) -> Preset | UnsupportedSchemaVersion | str:
+    def _parse_entry(self, entry: object) -> _Outcome:
         """A preset, the error of a preset of a newer Reframe, or why the entry is damaged."""
         if not isinstance(entry, dict):
             return "not a JSON object"
         if too_deep(entry):
             return TOO_DEEP
-        try:
-            return Preset.model_validate(migrate_document("preset", entry, self._registry))
-        except UnsupportedSchemaVersion as exc:
-            return exc if is_newer(exc) else str(exc)
-        except ValidationError as exc:
-            return validation_detail(exc)
-        except RecursionError:
-            return TOO_DEEP
-        except (MigrationError, LookupError, TypeError, ValueError) as exc:
-            return f"migration failed: {exc}"
+        return parse_document("preset", entry, Preset.model_validate)
+
+    def _parse_file(
+        self, raw: dict[str, Any], *, list_required: bool
+    ) -> _ParsedFile | UnsupportedSchemaVersion | str:
+        """The header and each preset of a preset file; the error of a file of a newer
+        Reframe; or why the file is damaged. ``list_required``: a file without ``presets`` is
+        damaged (else it has none)."""
+        prepared = _without_deep_presets(raw)
+        if isinstance(prepared, str):
+            return prepared
+        without_deep, numbers, deep = prepared
+        parsed = parse_document("preset_file", without_deep, _with_header)
+        if not isinstance(parsed, tuple):
+            return parsed
+        data, header = parsed
+        presets = data.get("presets", None if list_required else [])
+        if not isinstance(presets, list):
+            return "no preset list." if list_required else "'presets' is not a list"
+        if len(numbers) != len(presets):  # a migration changed the list: count afresh
+            numbers = list(range(1, len(presets) + 1))
+        outcomes: list[tuple[int, object, _Outcome]] = [
+            (number, entry, TOO_DEEP) for number, entry in deep
+        ]
+        outcomes += [
+            (number, entry, self._parse_entry(entry))
+            for number, entry in zip(numbers, presets, strict=True)
+        ]
+        outcomes.sort(key=lambda outcome: outcome[0])
+        return _ParsedFile(data, header, outcomes)
 
     def _load(self) -> None:
         self._entries = []
         self._default_id = None
         self._extra = {}
-        self._problems = []
-        self._protected = None
+        self._warnings.reset()
         self._schema_version = int(PresetFile.model_fields["schema_version"].default)
         read = self._file.read()
         if read.status == "missing":
             return
         if read.status == "unreadable":
-            self._protect(
+            self._warnings.protect(
                 "presets.unreadable",
                 f"The presets file {self.path} cannot be read. Only the built-in presets are "
                 "shown, and the file is not changed.",
                 read.detail,
             )
             return
-        if read.status == "corrupt" or read.data is None:
+        if read.data is None:
             self._replace_corrupt(read.detail, keep=[])
             return
-        prepared = _without_deep_presets(read.data)
-        if isinstance(prepared, str):
-            self._replace_corrupt(prepared, keep=[])
-            return
-        without_deep, numbers, deep = prepared
-        try:
-            data = migrate_document("preset_file", without_deep, self._registry)
-            header = PresetFile.model_validate({**data, "presets": []})
-            raw = data.get("presets", [])
-            if not isinstance(raw, list):
-                raise ValueError("'presets' is not a list")
-        except UnsupportedSchemaVersion as exc:
-            if not is_newer(exc):
-                self._replace_corrupt(str(exc), keep=[])
-                return
-            self._protect(
+        parsed_file = self._parse_file(read.data, list_required=False)
+        if isinstance(parsed_file, UnsupportedSchemaVersion):
+            self._warnings.protect(
                 "presets.newer_version",
                 f"The presets file {self.path} was written by a newer Reframe. Only the "
                 "built-in presets are shown, and the file is not changed.",
-                str(exc),
+                str(parsed_file),
             )
             return
-        except (ValidationError, MigrationError, LookupError, TypeError, ValueError) as exc:
-            detail = validation_detail(exc) if isinstance(exc, ValidationError) else str(exc)
-            self._replace_corrupt(detail, keep=[])
+        if isinstance(parsed_file, str):
+            self._replace_corrupt(parsed_file, keep=[])
             return
+        header = parsed_file.header
         self._schema_version = header.schema_version
         self._default_id = header.default_preset_id
-        self._extra = {k: v for k, v in data.items() if k not in PresetFile.model_fields}
+        self._extra = {
+            k: v for k, v in parsed_file.data.items() if k not in PresetFile.model_fields
+        }
         entries: list[_Entry] = []
-        damaged: list[tuple[int, str]] = [
-            (number, f"{_entry_label(entry, number)}: {TOO_DEEP}") for number, entry in deep
-        ]
+        damaged: list[tuple[int, str]] = []
         seen_ids: set[str] = set(self._builtin_ids)
-        if len(numbers) != len(raw):  # a migration changed the list: count afresh
-            numbers = list(range(1, len(raw) + 1))
-        for number, entry in zip(numbers, raw, strict=True):
-            parsed = self._parse_entry(entry)
+        for number, entry, parsed in parsed_file.outcomes:
             if isinstance(parsed, UnsupportedSchemaVersion):
                 assert isinstance(entry, dict)
                 entries.append(entry)
-                continue
-            if not isinstance(parsed, Preset):
+            elif isinstance(parsed, str):
                 damaged.append((number, f"{_entry_label(entry, number)}: {parsed}"))
-                continue
-            if parsed.id in seen_ids:
+            elif parsed.id in seen_ids:
                 damaged.append(
                     (number, f"{_entry_label(entry, number)}: the id {parsed.id} is used twice")
                 )
-                continue
-            seen_ids.add(parsed.id)
-            entries.append(parsed.model_copy(update={"built_in": False}))
+            else:
+                seen_ids.add(parsed.id)
+                entries.append(parsed.model_copy(update={"built_in": False}))
         if damaged:
             self._replace_corrupt("; ".join(text for _, text in sorted(damaged)), keep=entries)
         else:
@@ -767,7 +702,7 @@ class PresetStore:
             backup = self._file.backup()
         except OSError as exc:
             self._entries = [e for e in keep if isinstance(e, Preset)] if keep else []
-            self._protect(
+            self._warnings.protect(
                 "presets.corrupt",
                 f"The presets file {self.path} is damaged and could not be backed up. It is "
                 "not changed.",
@@ -785,7 +720,7 @@ class PresetStore:
         message = f"The presets file was damaged. It was saved as {backup}. {what}."
         if error is not None:
             message += f" Writing the new file failed: {error}"
-        self._warn("presets.corrupt", message, detail)
+        self._warnings.warn("presets.corrupt", message, detail)
 
     def _document(self, entries: Sequence[_Entry], default_id: str | None) -> dict[str, Any]:
         return {
@@ -797,11 +732,11 @@ class PresetStore:
 
     def _commit(self, entries: _Entries, default_id: str | None) -> ValidationIssue | None:
         """Write the new state; it takes effect only when the write worked."""
-        if self._protected is not None:
+        if self._warnings.protected is not None:
             return self._read_only_issue()
         error = self._file.write(self._document(entries, default_id))
         if error is not None:
-            self._warn(
+            self._warnings.warn(
                 "presets.write_failed", f"The presets could not be saved to {self.path}.", error
             )
             return _issue(
@@ -810,16 +745,6 @@ class PresetStore:
         self._entries = entries
         self._default_id = default_id
         return None
-
-    def _protect(self, code: str, message: str, detail: str | None) -> None:
-        self._protected = message
-        self._warn(code, message, detail)
-
-    def _warn(self, code: str, message: str, detail: str | None = None) -> None:
-        event = AppWarningEvent(code=code, message=message, detail=detail)
-        self._problems.append(event)
-        if self._events is not None:
-            self._events.publish(event)
 
 
 def _is(entry: _Entry, preset_id: str) -> bool:
@@ -833,6 +758,10 @@ def _id_of(entry: _Entry) -> object:
 def _name_of(entry: _Entry) -> str | None:
     name = entry.name if isinstance(entry, Preset) else entry.get("name")
     return name if isinstance(name, str) else None
+
+
+def _with_header(data: dict[str, Any]) -> tuple[dict[str, Any], PresetFile]:
+    return data, PresetFile.model_validate({**data, "presets": []})
 
 
 def _without_deep_presets(

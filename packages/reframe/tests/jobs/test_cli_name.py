@@ -11,8 +11,7 @@ import pytest
 from reframe.cli import EXIT_NOT_FOUND, EXIT_OK, EXIT_USAGE, output_name, parsed_fields
 from reframe.models import NameResult
 from reframe_testing import fake_tools as ft
-
-from .conftest import invoke
+from reframe_testing.cli import invoke
 
 HACKSAW_DIR = (
     "Hacksaw.Ridge.2016.HYBRID.2160p.UHD.BluRay.REMUX.TrueHD.7.1.Atmos.DoVi.HDR.HEVC.HUN-HenDerson"
@@ -86,7 +85,17 @@ def test_a_folder_names_its_media_files(library: Path) -> None:
 
 def test_template_and_preset(library: Path) -> None:
     file = str(library / HACKSAW_DIR / HACKSAW_FILE)
-    result = invoke("name", file, "--template", "{name}< ({year})>", "--preset", "Fast 1080p30")
+    # Wide enough that the long file path never wraps: `rows` joins wrapped lines without the
+    # space the wrap took, and the temporary folder's length differs between runners.
+    result = invoke(
+        "name",
+        file,
+        "--template",
+        "{name}< ({year})>",
+        "--preset",
+        "Fast 1080p30",
+        env={"COLUMNS": "1000"},
+    )
     assert result.exit_code == EXIT_OK, result.output
     found = rows(result.stdout)
     assert found["Name"] == "Hacksaw.Ridge (2016)"

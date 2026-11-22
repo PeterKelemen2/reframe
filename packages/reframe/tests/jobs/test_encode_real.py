@@ -5,6 +5,7 @@ from the environment (``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE``, else discovery),
 from __future__ import annotations
 
 import asyncio
+import functools
 import os
 import shutil
 import signal
@@ -16,30 +17,16 @@ from pathlib import Path
 
 import pytest
 
-from reframe.cli import EXIT_INTERRUPTED, EXIT_OK, IN_PROCESS_ENV
+from reframe.cli import EXIT_INTERRUPTED, EXIT_OK
 from reframe.models import JobDraft, JobState, MediaSource
-from reframe.probe import mediainfo
 from reframe.service import Reframe
 from reframe_testing import media
-
-from .conftest import invoke
+from reframe_testing.cli import invoke
 
 pytestmark = [pytest.mark.needs_ffmpeg, pytest.mark.slow]
 
 Media = Callable[[str], Path]
 SEASON = "Show.S01.1080p.BluRay.x264-GRP"
-
-
-@pytest.fixture
-def dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Path]:
-    """Private config, data and cache folders for the CLI (in-process and subprocesses), whose
-    jobs run in its own process."""
-    monkeypatch.setenv(IN_PROCESS_ENV, "1")
-    found = {name: tmp_path / name for name in ("config", "data", "cache")}
-    for name, path in found.items():
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(path))
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
-    return found
 
 
 def probe(path: Path) -> MediaSource:
@@ -158,9 +145,10 @@ def long_source(path: Path, seconds: int = 60) -> Path:
     return path
 
 
-def _default_sigint() -> None:
-    """In the child, before ``exec``: SIGINT back to its default disposition."""
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
+# In the child, before ``exec``: SIGINT back to its default disposition. A C callable, so a
+# coverage run has none of this module's code to trace in the forked child
+# (see ``childproc.linux_preexec``).
+_default_sigint = functools.partial(signal.signal, signal.SIGINT, signal.SIG_DFL)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGINT; Windows: the mocked tests")

@@ -1,13 +1,14 @@
 import { flushPromises } from '@vue/test-utils'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { reactive } from 'vue'
 
 import { configureClient } from '@/api/client'
 import { deferred, FakeServer } from '@/api/testing/fakes'
 import type { FieldChange, JobSettings, JobTemplate, JsonPatchOp, Preset } from '@/api/types'
+import { installKeyboardFixes } from '@/components/base/keyboard'
 import { sampleJob } from '@/editor/testing/samples'
 import { stubDom } from '@/components/naming/testing/samples'
-import { mountShell } from '@/components/shell/testing'
+import { mountShell, setAppLocale } from '@/components/shell/testing'
 import { templateOfPreset } from '@/stores/presets'
 import { useSystemStore } from '@/stores/system'
 
@@ -126,6 +127,31 @@ describe('the preset picker', () => {
     expect(editor.applyPreset).toHaveBeenCalledExactlyOnceWith('fast-1080p30')
   })
 
+  it('has the filter and the list as its Tab stops, whichever has the focus or had it', async () => {
+    openJob(H265)
+    const { wrapper } = await mountPicker()
+    await wrapper.find('.preset-picker__trigger').trigger('click')
+    await flushPromises()
+    const listbox = body().querySelector<HTMLElement>('.preset-picker__list')!
+    // A scroll container is a stop of its own in browsers unless its tabindex says otherwise.
+    const stops = () =>
+      [...listbox.querySelectorAll<HTMLElement>('input, ul, span, .p-listbox-list-container')]
+        .filter((element) =>
+          element.classList.contains('p-listbox-list-container')
+            ? element.getAttribute('tabindex') !== '-1'
+            : element.tabIndex >= 0,
+        )
+        .map((element) => element.getAttribute('role') ?? element.tagName)
+    expect(stops()).toEqual(['searchbox', 'listbox'])
+    body().querySelector<HTMLElement>('.preset-picker__list [role="listbox"]')!.focus()
+    await flushPromises()
+    // Shift+Tab goes back to the filter from the list.
+    expect(stops()).toEqual(['searchbox', 'listbox'])
+    ;(wrapper.find('.preset-picker__trigger').element as HTMLElement).focus()
+    await flushPromises()
+    expect(stops()).toEqual(['searchbox', 'listbox'])
+  })
+
   it('closes the list without drafting again when the job’s own preset is clicked', async () => {
     openJob(H265)
     const { wrapper } = await mountPicker()
@@ -166,6 +192,37 @@ describe('the preset picker', () => {
       ['Filters › Denoise', undefined, undefined],
     ])
     expect(rows[2]?.values).toBe('Added: Preset: light')
+  })
+
+  it('writes the numbers and lists of the changes as the locale does', async () => {
+    openJob(H265)
+    const { wrapper } = await mountPicker()
+    setAppLocale(wrapper, 'de')
+    editor.presetChanges = [
+      {
+        path: 'audio_defaults.codec_rules[0].max_bitrate',
+        kind: 'changed',
+        preset_value: 1536,
+        value: 2048,
+      },
+      {
+        path: 'audio_defaults.passthru.allowed',
+        kind: 'changed',
+        preset_value: [],
+        value: ['ac3', 'dts', 'truehd'],
+      },
+    ]
+    await flushPromises()
+    await wrapper.find('.preset-picker__modified').trigger('click')
+    await flushPromises()
+    const rows = [...body().querySelectorAll('.preset-changes__item')].map((row) => [
+      row.querySelector('.preset-changes__before')?.textContent,
+      row.querySelector('.preset-changes__after')?.textContent,
+    ])
+    expect(rows).toEqual([
+      ['1.536', '2.048'],
+      ['none', 'ac3, dts und truehd'],
+    ])
   })
 
   it('shows the settings objects of a change in words, a quality on each encoder’s scale', async () => {
@@ -364,6 +421,36 @@ describe('the preset picker', () => {
       (button) => button.textContent?.trim() === 'Cancel',
     )
     cancel?.click()
+    await vi.waitFor(() =>
+      expect(document.activeElement).toBe(wrapper.find('.preset-picker__modified').element),
+    )
+  })
+
+  it('closes Save as new with Escape also from the category, once its list is closed', async () => {
+    // The app's own keyboard fixes, as main.ts installs them.
+    const removeFixes = installKeyboardFixes()
+    onTestFinished(removeFixes)
+    openJob(H265, [ENCODER_CHANGE])
+    const { wrapper } = await mountPicker()
+    await wrapper.find('.preset-picker__modified').trigger('click')
+    await flushPromises()
+    await click('.preset-picker__save-as')
+    const category = body().querySelector<HTMLInputElement>('.preset-name-dialog__category input')!
+    category.focus()
+    const escape = () =>
+      category.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+      )
+    category.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', bubbles: true }),
+    )
+    await flushPromises()
+    expect(category.getAttribute('aria-expanded')).toBe('true')
+    escape()
+    await vi.waitFor(() => expect(category.getAttribute('aria-expanded')).toBe('false'))
+    expect(body().querySelector('.preset-name-dialog')).not.toBeNull()
+    escape()
+    await vi.waitFor(() => expect(body().querySelector('.preset-name-dialog')).toBeNull())
     await vi.waitFor(() =>
       expect(document.activeElement).toBe(wrapper.find('.preset-picker__modified').element),
     )

@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
 
 from reframe.models import CapabilitySnapshot, TaskInfo, TaskState
 from reframe.tasks import TaskContext
+from reframe_server import login
+from reframe_server.config import AuthMode
+from reframe_testing import fake_tools as ft
 from reframe_testing.server import Api, ApiFactory
 
 pytestmark = pytest.mark.anyio
+
+
+def _home(monkeypatch: pytest.MonkeyPatch, home: Path) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # Path.home() on Windows
 
 
 async def _finished(api: Api, response_json: dict[str, str]) -> TaskInfo:
@@ -28,6 +37,7 @@ async def test_system_shows_tools_mode_and_the_stores_start_up_problems(
     assert response.status_code == 200
     body = response.json()
     assert (body["mode"], body["auth"]) == ("web", "token")
+    assert set(body["tools"]) == {"ffmpeg", "ffprobe"}
     assert body["tools"]["ffprobe"]["status"] == "found"
     assert body["tools"]["ffmpeg"]["version"]
     codes = {problem["code"] for problem in body["problems"]}
@@ -36,22 +46,73 @@ async def test_system_shows_tools_mode_and_the_stores_start_up_problems(
     assert body["settings_read_only"] is True
 
 
-async def test_a_missing_optional_tool_tells_a_web_client_what_it_can_do(
+async def test_diagnostics_names_the_logs_folder(
     make_api: ApiFactory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A web client cannot set a tool path in Settings: the reason must name the variable."""
-    empty = tmp_path / "empty-path"
-    empty.mkdir()
-    monkeypatch.setenv("PATH", str(empty))
+    _home(monkeypatch, tmp_path / "elsewhere")  # Windows' temp folder is under the home folder
     async with make_api() as api:
-        tools = (await api.client.get("/api/system")).json()["tools"]
-    for name, variable in (
-        ("mediainfo", "REFRAME_MEDIAINFO"),
-        ("mkvpropedit", "REFRAME_MKVPROPEDIT"),
-    ):
-        assert tools[name]["status"] == "missing"
-        assert variable in tools[name]["reason"]
-        assert "Settings" not in tools[name]["reason"]
+        body = (await api.client.get("/api/diagnostics")).json()
+        assert body["logs_dir"] == str(api.reframe.data_dir / "logs")
+
+
+async def test_diagnostics_report_has_the_server_tools_encoders_settings_and_logs(
+    api: Api,
+) -> None:
+    text = (await api.client.get("/api/diagnostics")).json()["text"]
+    parts = text.split("\n\n")
+    assert parts[0] == "Reframe diagnostics"
+    assert "\nMode: web\nLogin: token\nOS: " in parts[1]
+    assert [part.splitlines()[0] for part in parts[2:]] == [
+        "Tools",
+        "Encoders",
+        "Settings",
+        "Logs",
+    ]
+    assert "  ffmpeg: found" in parts[2]
+    assert "    build flags: --" in parts[2]
+    assert "  encoders.hardware_tests = false" in parts[4]
+    assert "  reframe.log: " in parts[5]
+
+
+@pytest.mark.parametrize("auth", ["token", "password"])
+async def test_diagnostics_never_holds_the_token_or_the_password(
+    make_api: ApiFactory, tmp_path: Path, auth: AuthMode
+) -> None:
+    password = "correct horse battery"
+    assert login.save_password(login.auth_path(tmp_path / "config"), password) is None
+    async with make_api(auth=auth, token="known-token-value-1234") as api:
+        session = await api.anonymous.post("/api/auth/login", json={"password": password})
+        text = (await api.client.get("/api/diagnostics")).text
+    assert f"Login: {auth}" in text
+    assert "known-token-value-1234" not in text
+    assert password not in text
+    if auth == "password":
+        assert session.cookies.values()
+    for cookie in session.cookies.values():
+        assert cookie not in text
+
+
+async def test_diagnostics_paths_under_the_home_folder_start_with_a_tilde(
+    make_api: ApiFactory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _home(monkeypatch, tmp_path)
+    async with make_api() as api:
+        body = (await api.client.get("/api/diagnostics")).json()
+    assert body["logs_dir"] == str(Path("~/data/logs"))
+    assert f"  folder: {Path('~/data/logs')}" in body["text"]
+    assert str(tmp_path) not in body["text"]
+
+
+async def test_diagnostics_says_a_detection_runs_and_does_not_wait_for_it(
+    make_api: ApiFactory, fake_tools: ft.FakeTools
+) -> None:
+    fake_tools.set_scenario(
+        ft.Scenario([ft.Rule(tool="ffmpeg", argv_has=["-encoders"], actions=[ft.hang()])])
+    )
+    async with make_api() as api:
+        response = await asyncio.wait_for(api.client.get("/api/diagnostics"), 20)
+        assert api.reframe.capabilities.detecting
+    assert "detection running" in response.json()["text"]
 
 
 async def test_encoders_is_the_capability_snapshot(api: Api) -> None:
@@ -80,7 +141,7 @@ async def test_tools_rescan_runs_discovery_again(api: Api) -> None:
     assert any("-version" in call for call in api.fake.calls("ffmpeg"))
 
 
-@pytest.mark.parametrize(("body", "build"), [(None, "default"), ({"build": "nightly"}, "nightly")])
+@pytest.mark.parametrize(("body", "build"), [(None, "default"), ({"build": "compat"}, "compat")])
 async def test_tools_fetch_starts_the_fetch_of_the_build(
     api: Api, monkeypatch: pytest.MonkeyPatch, body: dict[str, str] | None, build: str
 ) -> None:

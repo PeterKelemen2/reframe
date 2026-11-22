@@ -20,12 +20,13 @@ pub const EXIT_STORE_BUSY: i32 = 75;
 /// Above this size the log is moved to `sidecar.log.1` when a sidecar starts.
 pub const LOG_LIMIT: u64 = 1 << 20;
 
-/// The server's `REFRAME_<name>` options that would change how the sidecar runs; the app sets
-/// them on the command line, so a value in the user's environment must not reach it.
-const SERVER_OPTIONS: [&str; 13] = [
+/// The server's `REFRAME_<name>` options that would change how the sidecar runs: a value in the
+/// user's environment must not reach it.
+const SERVER_OPTIONS: [&str; 14] = [
     "ALLOWED_HOSTS",
     "AUTH",
     "CORS_ORIGINS",
+    "FFMPEG_BUILD",
     "HOST",
     "IDLE_EXIT",
     "MEDIA_ROOTS",

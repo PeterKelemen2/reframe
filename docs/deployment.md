@@ -10,23 +10,31 @@ repository. The choices are recorded in
 
 ### What the image holds
 
-`docker/Dockerfile` builds one image in four stages:
+`docker/Dockerfile` builds one image for `linux/amd64` or `linux/arm64` in four stages:
 
 | Stage | What it does |
 |-------|--------------|
+| `notices` | Checks that `docker/notices/THIRD_PARTY_NOTICES` is there and is the one for the image's platform (`docker-linux-x64` or `docker-linux-arm64`) |
 | `frontend` | `npm ci` and `npm run build:web` (Node 24) |
 | `python` | uv and a uv-managed CPython 3.14.8 (`.python-version` names 3.14, the version CI tests) |
-| `tools` | `scripts/fetch-tools.py` downloads the pinned FFmpeg of `tools/ffmpeg.toml`, checks its size and SHA-256 before it extracts anything, and runs `ffmpeg -version` and `ffprobe -version` |
-| `app` | `uv sync --frozen` installs `reframe[cli,mediainfo]` and `reframe-server` from `uv.lock` into `/opt/reframe/venv` |
+| `app` | `uv sync --frozen` installs `reframe[cli]` and `reframe-server` from `uv.lock` into `/opt/reframe/venv` |
 
-The runtime image is Debian 13 (trixie) slim with:
+The runtime image is Debian 13 (trixie) slim. It contains **no FFmpeg**: the first start
+downloads it into `/data/tools/ffmpeg/` (see [Getting FFmpeg](user/ffmpeg.md#docker)). It has:
 
-- the bundled FFmpeg in `/opt/reframe/tools/ffmpeg/`, where tool discovery finds it;
-- `mkvtoolnix` (mkvpropedit) and `mediainfo` from Debian;
-- the GPU user-space drivers that FFmpeg loads at run time: `mesa-va-drivers` (AMD and other
-  Mesa VAAPI drivers), `intel-media-va-driver-non-free` (Intel VAAPI) and `libmfx-gen1.2`
-  (the oneVPL GPU runtime for Intel QSV). The NVIDIA driver comes from the host, through the
-  NVIDIA Container Toolkit;
+- on `linux/amd64` only, the GPU user-space drivers that a downloaded FFmpeg loads at run time,
+  with Debian's libva:
+  `mesa-va-drivers` (AMD and other Mesa VAAPI drivers), `intel-media-va-driver-non-free`
+  (Intel VAAPI), `libmfx-gen1.2` (the oneVPL GPU runtime for Intel QSV on Tiger Lake and
+  newer) and `libmfx1` (the Media SDK runtime for QSV on older Intel GPUs; Debian 13 has none,
+  so it comes from Debian 12). The NVIDIA driver
+  comes from the host, through the NVIDIA Container Toolkit. The `linux/arm64` image has no GPU
+  drivers: it has the software encoders only (see [GPU](#gpu));
+- in `/opt/reframe/notices/`: `THIRD_PARTY_NOTICES` (the licence texts, and at its end the
+  copyright file of each Debian package in the image, added during the build) and
+  `DEBIAN_PACKAGES`, written during the build: each Debian package in
+  the image with its version, its source package and version, and that source on
+  [snapshot.debian.org](https://snapshot.debian.org/), which keeps every Debian source version;
 - the web frontend in `/opt/reframe/frontend/` (`REFRAME_STATIC_DIR`);
 - `tini` as process 1, and `reframe-entrypoint`, which starts the server as `PUID:PGID`.
 
@@ -37,15 +45,25 @@ the Debian archive on the day of the build.
 
 ### Build
 
-From the repository root:
+From the repository root, first write the notices for the platform of the image
+(`docker-linux-x64`, or `docker-linux-arm64` on an arm64 host), then build. The notices take
+the frontend's licences from `frontend/node_modules` and the CPython licence from the
+interpreter that runs the script, which must be the image's (`--python`):
 
 ```sh
+(cd frontend && npm ci)
+uv run --python 3.14.8 --with pip-licenses==5.5.5 python scripts/third-party-notices.py \
+    --platform docker-linux-x64 --out docker/notices/THIRD_PARTY_NOTICES
 docker build -f docker/Dockerfile -t reframe:local .
 ```
 
-or `docker compose -f docker/compose.example.yml build`. The Dockerfile uses no BuildKit-only
-syntax: it also builds with the classic builder (`DOCKER_BUILDKIT=0`, or a Docker without
-buildx, where `docker compose build` uses the classic builder by itself).
+or `docker compose -f docker/compose.example.yml build` for the second line. Without the
+notices, or with the notices of the other platform, the build stops at the `notices` stage
+and says so. The Dockerfile uses no BuildKit-only syntax: it also builds with the classic
+builder (`DOCKER_BUILDKIT=0`, or a Docker without buildx, where `docker compose build` uses the
+classic builder by itself). It then builds for the architecture of the host. With buildx,
+`--platform linux/arm64` builds the arm64 image (buildx's `TARGETARCH`); build one platform at a
+time, each with its own notices.
 
 ### Run with Docker Compose
 
@@ -55,7 +73,7 @@ buildx, where `docker compose build` uses the classic builder by itself).
    | In the container | What | Access |
    |------------------|------|--------|
    | `/config` | `settings.json`, `presets.json`, `auth.json` (the password hash) | read and write |
-   | `/data` | the queue database, logs, `server.json`, the cache (`/data/cache`) | read and write |
+   | `/data` | the queue database, logs, `server.json`, the cache (`/data/cache`), the downloaded FFmpeg (`/data/tools/ffmpeg`) | read and write |
    | `/media` | your videos | read only (`:ro`) |
    | `/output` | the encoded files | write |
 
@@ -104,8 +122,21 @@ buildx, where `docker compose build` uses the classic builder by itself).
    `docker exec`, so the server can read the file they write. A running server reads the
    new password at once; sessions that are open stay open until it restarts.
 
+   On an NVIDIA host the service is `reframe-nvidia` ([GPU](#gpu)). Name it in each command
+   of this page: `up -d reframe-nvidia`, `exec -it reframe-nvidia reframe-server
+   --set-password`, `stop reframe-nvidia`, `logs reframe-nvidia`. It is in the profile
+   `nvidia`, and a command without a service name skips that profile: `docker compose stop`
+   does not stop it, `exec reframe …` says `service "reframe" is not running`, and `down`
+   leaves it running unless you add `--profile nvidia`.
+
 4. Open `http://<host>:8765/`. `GET /api/health` needs no login; the image's `HEALTHCHECK`
    calls it every 30 s.
+
+5. Get FFmpeg: the first-run screen offers the download (or **Install from file** with an
+   archive in `/media`). Or set `REFRAME_FFMPEG_BUILD: default` in the compose file, and the
+   server downloads it at start when no usable FFmpeg is found (an override you set is never
+   replaced). With an NVIDIA driver 570 to 609, use `compat` ([GPU](#gpu)). The download
+   stays in `/data`, so keep that folder: [Getting FFmpeg](user/ffmpeg.md#docker).
 
 `docker compose stop` stops a running encode and removes its partial file; the job is
 `interrupted` at the next start. The CLI works in the container too, for example
@@ -121,6 +152,7 @@ buildx, where `docker compose build` uses the classic builder by itself).
 | `REFRAME_OUTPUT_ROOTS` | `["/output"]` | The only folder the client may write; another output path is refused (`path.outside_roots`) |
 | `REFRAME_CONFIG_DIR`, `REFRAME_DATA_DIR`, `REFRAME_CACHE_DIR` | `/config`, `/data`, `/data/cache` | |
 | `REFRAME_STATIC_DIR` | `/opt/reframe/frontend` | The web UI |
+| `REFRAME_CONTAINER` | `1` | The server runs in a container: see below |
 | `PUID`, `PGID` | `1000` | The user the server runs as |
 
 The `HEALTHCHECK` calls the port of `REFRAME_PORT`. To change the port in the container, set
@@ -131,6 +163,15 @@ List values are JSON, because pydantic-settings reads lists from the environment
 `REFRAME_MEDIA_ROOTS='["/media", "/mnt/archive"]'`. A second media folder must also be
 mounted. `auth: token` also works (`REFRAME_AUTH=token`, `REFRAME_TOKEN=<secret>`); without
 `REFRAME_TOKEN` the token is new at each start.
+
+**When done.** A container cannot put its computer to sleep or shut it down. With
+`REFRAME_CONTAINER=1`, `GET /api/system` reports `container: true`, the web UI offers no
+*Sleep* and no *Shut down* when the queue is done, and the API refuses them
+(`PUT /api/queue/when-done` and `PUT /api/settings` answer 403 `queue.when_done_unavailable`).
+A settings file that still has one of them (from a server outside a container) does nothing
+when the queue is done and shows a warning. *Quit Reframe* is for the desktop app only and is
+refused the same way by every web server. A server you start in a container of your own
+should set `REFRAME_CONTAINER=1` too.
 
 **Host names.** Without `REFRAME_ALLOWED_HOSTS` the server accepts any IP address in the
 browser's address bar (`http://192.168.1.10:8765/`) but no host name, against DNS rebinding.
@@ -147,20 +188,45 @@ the IP addresses you use too. Loopback names always work.
 (`--group-add $(getent group render | cut -d: -f3)`).
 
 **NVIDIA (NVENC).** Install the NVIDIA Container Toolkit on the host, then start the other
-service: `docker compose -f docker/compose.yml up -d reframe-nvidia`. It reserves the GPUs
-with `deploy.resources.reservations.devices`; the image sets
-`NVIDIA_DRIVER_CAPABILITIES=compute,video,utility`, so the toolkit mounts the encoder library.
+service: `docker compose -f docker/compose.yml up -d reframe-nvidia`, and name it in the other
+commands too ([Run with Docker Compose](#run-with-docker-compose), step 3). It reserves the
+GPUs with `deploy.resources.reservations.devices`. With `docker run`, `--gpus all` and the CDI
+name `--device nvidia.com/gpu=all` do the same. The toolkit mounts the driver's libraries
+(`libnvidia-encode`, `libcuda`) and `nvidia-smi` into the container. The image sets
+`NVIDIA_DRIVER_CAPABILITIES=compute,video,utility` for a toolkit that selects the libraries by
+these capabilities; a toolkit that uses its CDI specification (toolkit 1.20 with
+`nvidia-cdi-refresh`) mounts all of them anyway.
+
+The FFmpeg build must fit the host's NVIDIA driver, as on bare metal
+([Which build to choose](user/ffmpeg.md#which-build-to-choose)):
+
+| Host driver | Build | NVENC |
+|-------------|-------|-------|
+| 610 or newer | `default` | Works |
+| 570 to 609, for example 580, the last series for the GeForce 10 series (Pascal) | `compat` | Works. With `default` each NVENC encoder is unavailable: "NVIDIA driver too old: NVENC needs driver 610.00 or newer" |
+| Older than 570 | none | Update the driver, or mount your own FFmpeg |
+
+Set `REFRAME_FFMPEG_BUILD: compat` before the first start, or change the build later in
+Settings → Tools (it installs the other build into `/data/tools/ffmpeg` and checks the encoders
+again). `docker compose exec reframe-nvidia reframe tools fetch --build compat` also installs it,
+but the running server goes on with what it found before: click **Check again** in Settings →
+Tools, or restart the container. The server's console says nothing about the driver; Settings →
+Encoders shows it, and `docker compose exec reframe-nvidia reframe encoders` prints it with a
+`hint:` line.
 
 **No GPU.** Delete the `devices` lines. The software encoders (x264, x265, SVT-AV1) work.
+
+**arm64.** The `linux/arm64` image has the software encoders only: it has no VAAPI drivers, and
+no QSV or NVENC is claimed for it. Delete the `devices` lines and use the `reframe` service.
 
 The hardware encoders show as available in Settings → Encoders after a test encode. Test
 encodes run at the first start unless `encoders.hardware_tests` is off.
 
 | Host | Status |
 |------|--------|
-| AMD, VAAPI | To be verified on the owner's desktop ([decision 0059](decisions/0059-s6-docker-image-and-bare-metal.md)) |
-| Intel, VAAPI and QSV | Not verified: no such host yet ([decision 0043](decisions/0043-plan-review-before-m3.md) item 7) |
-| NVIDIA, NVENC | Not verified: no such host yet (0043 item 7) |
+| AMD, VAAPI | Verified on an RX 7600 ([decision 0059](decisions/0059-s6-docker-image-and-bare-metal.md)) |
+| Intel, VAAPI and QSV | Verified on a UHD 620, Kaby Lake ([decision 0099](decisions/0099-intel-qsv-on-linux.md)); Tiger Lake and newer not verified |
+| NVIDIA, NVENC | Verified on a GeForce GTX 1050 Ti (Pascal) with driver 580 and the `compat` build (decision 0102): `h264_nvenc` (8-bit) and `hevc_nvenc` (8- and 10-bit, HDR10 kept); this GPU has no AV1 encoder. The `default` build with a driver 610 or newer is not verified |
 
 ### Your own FFmpeg in Docker
 
@@ -174,7 +240,7 @@ docker run … -v /opt/my-ffmpeg:/opt/custom-ffmpeg:ro \
 
 The compose example has the same lines, commented out. `reframe tools status` then shows
 the origin `env`. A missing or broken override is shown as a problem; it is never replaced
-by the bundled build without telling you.
+by the downloaded build without telling you.
 
 ### Rootless Docker and Podman
 
@@ -201,21 +267,26 @@ One tool environment holds both packages, so `reframe` and `reframe-server` alwa
 same version ([decision 0042](decisions/0042-one-scheduler-process-and-cli-clients.md)
 item 11). Once the packages are published, the command is
 `uv tool install 'reframe[cli]' --with reframe-server --with-executables-from reframe-server`.
-`uv tool install` resolves the newest allowed versions, not `uv.lock`. Add
-`'./packages/reframe[cli,mediainfo]'` for MediaInfo bit rates (pymediainfo brings its own
-library).
+`uv tool install` resolves the newest allowed versions, not `uv.lock`.
 
 The wheels do not contain FFmpeg. Fetch the pinned build:
 
 ```sh
-reframe tools fetch
+reframe tools fetch                       # the default build; --build compat for older NVIDIA drivers
+reframe tools fetch --file ARCHIVE        # an archive downloaded on another computer
 ```
 
-It downloads the build of `tools/ffmpeg.toml`, checks its size and SHA-256, and installs it
-in `<data dir>/tools/ffmpeg` (`~/.local/share/reframe/tools/ffmpeg`), where it counts as the
-bundled build. `reframe tools status` shows what is used. Install `mkvtoolnix` and
-`mediainfo` from your distribution. For VAAPI and QSV, install your distribution's VAAPI
-driver and add your user to the `render` group.
+It downloads the build of `tools/ffmpeg.toml` (or takes the file), checks its size and
+SHA-256, and installs it in `<data dir>/tools/ffmpeg` (`~/.local/share/reframe/tools/ffmpeg`),
+where it counts as the bundled build. `reframe tools status` shows what is used. Reframe needs
+no other tool: it writes Matroska headers and estimates bit rates itself. For VAAPI and QSV,
+install your distribution's VAAPI driver and add your user to the `render` group; the build
+then uses your distribution's libva, and `reframe encoders` says when it is too old for the
+build. QSV also needs Intel's QSV runtime, a separate package on most distributions: the Media
+SDK runtime for GPUs before Tiger Lake (`intel-media-sdk` on Arch, `libmfx1` on Debian 12),
+the oneVPL GPU runtime for Tiger Lake and newer (`vpl-gpu-rt` on Arch, `libmfx-gen1.2` on
+Debian). Without it the QSV encoders show "No Intel QSV device or runtime" while VAAPI
+works. [Getting FFmpeg](user/ffmpeg.md) has the choices and the warnings for users.
 
 The web UI is not in the wheel. Build it and put it where the server can find it:
 
@@ -290,8 +361,9 @@ Run `reframe-server` from a terminal. A Windows service wrapper comes later.
   `Connection`. The server sends a heartbeat every 15 s, so the proxy's idle timeout must be
   longer than that (nginx's default of 60 s is enough).
 - **Timeouts.** Long work is a background task (`202` and a task id), so no request waits
-  for an encode. Preview frames of a 4K source can take some seconds on a slow
-  machine: allow a few minutes (`proxy_read_timeout 300s`).
+  for an encode or for the crop detection of a group that is queued. Preview frames of a 4K
+  source can take some seconds on a slow machine: allow a few minutes
+  (`proxy_read_timeout 300s`).
 - **Body size.** A job is about 3–4 KB of JSON, so adding a whole batch to the queue can
   pass nginx's default limit of 1 MB. Allow more, for example `client_max_body_size 16m`.
 - **Client address and HTTPS.** The login limit (5 wrong passwords per minute) counts each

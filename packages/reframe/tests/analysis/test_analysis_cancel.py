@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import subprocess
+import sys
 import time
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
@@ -25,6 +26,9 @@ LIMIT = 1.0
 LOOPS = 1800
 #: Milliseconds between two subtitle events.
 EVENT_STEP = 25
+#: On Windows FFmpeg's Matroska muxer takes quadratic time in the number of subtitle packets
+#: (minutes for this file) unless it writes a live file, which has no cues and no duration.
+LIVE = sys.platform == "win32"
 
 
 @pytest.fixture(scope="module")
@@ -47,7 +51,7 @@ def long_file(tmp_path_factory: pytest.TempPathFactory) -> Path:
     )  # fmt: skip
     subprocess.run(
         [*common, "-stream_loop", str(LOOPS - 1), "-i", "small.mkv", "-map", "0", "-c", "copy",
-         "long.mkv"],
+         *(["-live", "1"] if LIVE else []), "long.mkv"],
         cwd=folder, check=True, capture_output=True, timeout=120,
     )  # fmt: skip
     return folder / "long.mkv"
@@ -61,7 +65,8 @@ async def app(tmp_path: Path, long_file: Path) -> AsyncIterator[Reframe]:
     try:
         probed = await reframe.sources.probe(long_file)  # the scan starts at once
         assert isinstance(probed, MediaSource)
-        assert probed.container.duration == pytest.approx(4 * LOOPS, rel=0.01)
+        if not LIVE:
+            assert probed.container.duration == pytest.approx(4 * LOOPS, rel=0.01)
         assert [s.codec for s in probed.subtitles] == ["subrip", "hdmv_pgs_subtitle"]
         yield reframe
     finally:

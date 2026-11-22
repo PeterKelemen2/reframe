@@ -446,15 +446,6 @@ class PowerService:
         """The executor the actions run through (``None`` given: :func:`default_executor`)."""
         return self._executor if self._executor is not None else default_executor()
 
-    @property
-    def countdown(self) -> float:
-        """Seconds of every countdown."""
-        return self._countdown
-
-    @property
-    def closed(self) -> bool:
-        return self._closed
-
     def schedule(self, action: PowerAction, *, reason: str = "") -> str:
         """Start the countdown for ``action`` and return its id at once. Events
         (:class:`~reframe.models.PowerCountdownEvent`): ``started``, a ``tick`` every second,

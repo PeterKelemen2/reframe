@@ -13,7 +13,7 @@ import type {
   SourceEntry,
   TrackMatch,
 } from '@/api/types'
-import { fileName } from '@/components/shell/format'
+import { fileName, formatList } from '@/components/shell/format'
 import { useEditorStore } from '@/stores/editor'
 import { useSourcesStore } from '@/stores/sources'
 
@@ -43,7 +43,7 @@ const props = defineProps<{
   focus: string | null
 }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const editor = useEditorStore()
 const sources = useSourcesStore()
 
@@ -139,7 +139,10 @@ function cellLabel(item: MatrixRow, column: MatrixColumn, match: TrackMatch): st
   return t('matrix.cell.open', {
     column: column.label,
     label: item.label,
-    state: state.filter(Boolean).join(', '),
+    state: formatList(
+      state.filter((part): part is string => Boolean(part)),
+      locale.value,
+    ),
   })
 }
 
@@ -371,9 +374,14 @@ onMounted(async () => {
                 MATCH_MARK[(data.cells[index] as TrackMatch).status]
               }}</span>
               <span>{{ streamsText(data.cells[index].streams) || t('matrix.cell.none') }}</span>
-              <Hand v-if="picked(data, column)" :size="14" aria-hidden="true" data-role="picked" />
-            </span>
-            <span class="matrix__message" :title="data.cells[index].message">
+              <Hand
+                v-if="picked(data, column)"
+                :size="14"
+                aria-hidden="true"
+                data-role="picked"
+              /> </span
+            >{{ ' '
+            }}<span class="matrix__message" :title="data.cells[index].message">
               {{ data.cells[index].message }}
             </span>
           </button>
@@ -438,7 +446,6 @@ onMounted(async () => {
   flex: 1 1 auto;
   min-height: 0;
 }
-
 .matrix__table :deep(tbody tr) {
   height: 60px;
 }

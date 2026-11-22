@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import Message from 'primevue/message'
-import { computed, nextTick, onMounted, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppearanceSection from '@/components/settings/AppearanceSection.vue'
 import DesktopSection from '@/components/settings/DesktopSection.vue'
+import DiagnosticsSection from '@/components/settings/DiagnosticsSection.vue'
 import EncodersSection from '@/components/settings/EncodersSection.vue'
 import LanguagesSection from '@/components/settings/LanguagesSection.vue'
+import MenuEntrySection from '@/components/settings/MenuEntrySection.vue'
 import OutputSection from '@/components/settings/OutputSection.vue'
 import PreviewSection from '@/components/settings/PreviewSection.vue'
 import QueueSection from '@/components/settings/QueueSection.vue'
 import ToolsSection from '@/components/settings/ToolsSection.vue'
 import { platform } from '@/platform'
+import type { DesktopMenuEntry } from '@/platform/types'
 import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 
@@ -30,12 +33,21 @@ const ALL_SECTIONS = [
   'preview',
   'queue',
   'appearance',
+  'diagnostics',
   'desktop',
+  'menu',
 ] as const
 type SectionId = (typeof ALL_SECTIONS)[number]
-/** The desktop app's own settings exist only there. */
-const SECTIONS: readonly SectionId[] =
-  platform.desktop === null ? ALL_SECTIONS.filter((id) => id !== 'desktop') : ALL_SECTIONS
+/** The AppImage's menu entry; `null` outside an AppImage. */
+const menuEntry = ref<DesktopMenuEntry | null>(null)
+/** The desktop app's own settings exist only there, the menu entry only in its AppImage. */
+const SECTIONS = computed<readonly SectionId[]>(() =>
+  ALL_SECTIONS.filter(
+    (id) =>
+      (id !== 'desktop' || platform.desktop !== null) &&
+      (id !== 'menu' || menuEntry.value !== null),
+  ),
+)
 
 function sectionTitle(id: SectionId): string {
   switch (id) {
@@ -55,6 +67,10 @@ function sectionTitle(id: SectionId): string {
       return t('settings.appearance.title')
     case 'desktop':
       return t('window.settings.title')
+    case 'menu':
+      return t('menuEntry.settings.title')
+    case 'diagnostics':
+      return t('settings.diagnostics.title')
   }
 }
 
@@ -65,7 +81,7 @@ const ready = computed(() => system.info !== null && settings.settings !== null)
 /** Moves the focus to the section that the hash names. */
 async function focusHash(): Promise<void> {
   const id = route.hash.slice(1)
-  if (!(SECTIONS as readonly string[]).includes(id)) return
+  if (!(SECTIONS.value as readonly string[]).includes(id)) return
   await nextTick()
   const target = document.getElementById(`settings-${id}`)
   target?.focus()
@@ -77,8 +93,18 @@ async function go(id: SectionId): Promise<void> {
   else await router.replace({ hash: `#${id}` })
 }
 
+async function readMenuEntry(): Promise<void> {
+  try {
+    const entry = await platform.desktop?.menuEntry()
+    if (entry?.appimage != null) menuEntry.value = entry
+  } catch (error) {
+    console.error('platform.desktop.menuEntry failed', error)
+  }
+}
+
 onMounted(focusHash)
-watch([() => route.hash, ready], focusHash)
+onMounted(readMenuEntry)
+watch([() => route.hash, ready, menuEntry], focusHash)
 </script>
 
 <template>
@@ -123,7 +149,16 @@ watch([() => route.hash, ready], focusHash)
           <PreviewSection v-else-if="id === 'preview'" />
           <QueueSection v-else-if="id === 'queue'" />
           <AppearanceSection v-else-if="id === 'appearance'" />
-          <DesktopSection v-else-if="platform.desktop !== null" :shell="platform.desktop" />
+          <DesktopSection
+            v-else-if="id === 'desktop' && platform.desktop !== null"
+            :shell="platform.desktop"
+          />
+          <MenuEntrySection
+            v-else-if="id === 'menu' && platform.desktop !== null && menuEntry !== null"
+            :shell="platform.desktop"
+            :entry="menuEntry"
+          />
+          <DiagnosticsSection v-else-if="id === 'diagnostics'" />
         </div>
       </div>
     </div>

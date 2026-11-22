@@ -30,7 +30,7 @@ const issues = computed<ValidationIssue[]>(() =>
 function failure(error: unknown): string {
   if (!(error instanceof ApiError)) throw error
   const { title, detail } = error.problem
-  return detail ? `${title}: ${detail}` : title
+  return detail ? t('shell.login.refused', { title, detail }) : title
 }
 
 async function submit(): Promise<void> {

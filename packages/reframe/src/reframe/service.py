@@ -12,19 +12,21 @@ import asyncio
 import contextlib
 import logging
 import os
+import sys
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from pathlib import Path
-from stat import S_ISREG
 from types import TracebackType
 
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import TypeAdapter, ValidationError
 
-from reframe import analysis, paths, preview
+from reframe import analysis, applog, paths, preview
 from reframe.analysis.subtitlefile import inspect_subtitle_file
 from reframe.batch.service import BatchService
 from reframe.capabilities import CapabilityService
 from reframe.definitions import load_definitions
+from reframe.diagnostics import build_report
+from reframe.errors import ReframeClosedError
 from reframe.events import EventBus
 from reframe.jobs import JobService
 from reframe.jsonpatch import JsonPatchError, apply_patch
@@ -35,10 +37,10 @@ from reframe.models.job import JobSettings
 from reframe.models.media import MediaSource, SubtitleFileInfo
 from reframe.models.naming import NamingOptions
 from reframe.models.preset import FieldChange, Preset, PresetFile
-from reframe.models.settings import AppSettings
+from reframe.models.settings import AppSettings, LogLevel, WhenDone
 from reframe.models.tasks import TaskInfo
 from reframe.models.template import JobTemplate
-from reframe.models.tools import ToolInfo, ToolName, ToolSet, ToolStatus
+from reframe.models.tools import ToolBuilds, ToolInfo, ToolSet
 from reframe.platform.power import PowerService, create_power_service
 from reframe.presets import (
     ConflictPolicy,
@@ -56,22 +58,24 @@ from reframe.probe import (
     ProbeTool,
 )
 from reframe.probe.cache import CacheKey
-from reframe.probe.folder import (
-    DEFAULT_CONCURRENCY,
-    TASK_KIND,
-    FolderProbeResult,
-    probe_folder,
-)
+from reframe.probe.prober import stat_regular
 from reframe.queue import QueueService
 from reframe.settings import MAX_DEPTH, SettingsStore, SettingsUpdate, too_deep, validation_detail
-from reframe.tasks import TaskContext, TaskManager
-from reframe.tools import CancelToken, check_tool, locate_tools
-from reframe.tools.discovery import TOOL_NAMES, VERSION_TIMEOUT
-from reframe.tools.fetch import start_fetch
+from reframe.tasks import TaskManager
+from reframe.tools import CancelToken, discover_tools
+from reframe.tools.fetch import (
+    host_platform,
+    install_dir_for,
+    offered_builds,
+    packaged_libva,
+    restore_previous_build,
+    start_fetch,
+    start_install_file,
+)
 from reframe.validation.fs import has_nul
 
 __all__ = [
-    "FolderProbeResult",
+    "PROBE_CONCURRENCY",
     "ImportResult",
     "JobService",
     "PresetService",
@@ -84,7 +88,6 @@ __all__ = [
     "SettingsUpdate",
     "SourceService",
     "ToolsService",
-    "tool_usable",
 ]
 
 log = logging.getLogger(__name__)
@@ -96,26 +99,18 @@ SettingsGetter = Callable[[], AppSettings]
 KNOWN_SOURCES = 1024
 #: Seconds that :meth:`Reframe.close` waits for running probes to end after cancelling them.
 CLOSE_TIMEOUT = 10.0
-
-
-class ReframeClosedError(RuntimeError):
-    """The facade was used after :meth:`Reframe.close`."""
-
-    def __init__(self) -> None:
-        super().__init__("this Reframe instance is closed")
-
-
-def tool_usable(info: ToolInfo) -> bool:
-    """A tool can be run: its status is ``found`` and it has a path."""
-    return info.status is ToolStatus.FOUND and info.path is not None
+#: ffprobe runs at once in :meth:`SourceService.probe_many`.
+PROBE_CONCURRENCY = 4
 
 
 class ToolsService:
     """Which external tools Reframe uses, and re-scans.
 
     Discovery runs in the background: :meth:`start` returns at once, :meth:`status` waits for
-    it, :attr:`current` does not. Every finished discovery publishes ``tools.changed``.
-    :meth:`fetch` downloads the pinned FFmpeg build into ``<data dir>/tools/ffmpeg``.
+    it, :attr:`current` does not. Every finished discovery publishes ``tools.changed``. The
+    first one puts back a downloaded build that an install killed during its swap left aside.
+    :meth:`fetch` downloads a pinned FFmpeg build into ``<data dir>/tools/ffmpeg``,
+    :meth:`install_file` installs one from its archive file.
     """
 
     def __init__(
@@ -124,28 +119,23 @@ class ToolsService:
         settings: SettingsGetter,
         *,
         bundled_roots: Sequence[Path],
-        timeout: float = VERSION_TIMEOUT,
-        tasks: TaskManager | None = None,
-        data_dir: Path | None = None,
+        tasks: TaskManager,
+        data_dir: Path,
     ) -> None:
         self._events = events
         self._settings = settings
         self._bundled_roots = list(bundled_roots)
-        self._timeout = timeout
         self._tasks = tasks
         self._data_dir = data_dir
         self._task: asyncio.Task[ToolSet] | None = None
         self._current: ToolSet | None = None
         self._closed = False
+        self._restore: asyncio.Future[None] | None = None
 
     @property
     def current(self) -> ToolSet | None:
         """The result of the last finished discovery; ``None`` until the first one ends."""
         return self._current
-
-    @property
-    def discovering(self) -> bool:
-        return self._task is not None and not self._task.done()
 
     def start(self) -> None:
         """Start a discovery in the background unless one is running. Returns at once."""
@@ -170,11 +160,6 @@ class ToolsService:
             if self._task is task:
                 self._task = None
 
-    async def versions(self) -> dict[ToolName, str | None]:
-        """The version of each tool; ``None`` for a tool that was not found."""
-        tools = await self.status()
-        return {name: tools.get(name).version for name in TOOL_NAMES}
-
     async def rescan(self) -> ToolSet:
         """Run discovery again. A discovery that is still running is cancelled first: its
         result would be stale."""
@@ -196,11 +181,10 @@ class ToolsService:
         """Download the FFmpeg build ``build`` of the manifest for ``platform`` (``None``: this
         one), check it, install it as the bundled build in ``<data dir>/tools/ffmpeg`` and run
         discovery again. Returns at once; the task result is
-        :class:`~reframe.models.ToolFetchResult`. ``manifest``: another manifest file."""
+        :class:`~reframe.models.ToolFetchResult`. ``manifest``: another manifest file. A
+        server that cannot be reached ends the task with ``error_code`` ``tools.fetch_offline``."""
         if self._closed:
             raise ReframeClosedError
-        if self._tasks is None or self._data_dir is None:
-            raise RuntimeError("ToolsService.fetch needs the task manager and the data folder")
         return start_fetch(
             self._tasks,
             data_dir=self._data_dir,
@@ -208,7 +192,43 @@ class ToolsService:
             build=build,
             platform=platform,
             manifest=manifest,
+            libva=self._libva(),
         )
+
+    async def builds(self, *, manifest: Path | None = None) -> ToolBuilds:
+        """The offered FFmpeg builds of the manifest and the build installed in the data
+        folder (``outdated`` when this release pins another version under its name)."""
+        return await asyncio.to_thread(offered_builds, self._data_dir, manifest=manifest)
+
+    def install_file(
+        self, archive: Path, *, build: str | None = None, manifest: Path | None = None
+    ) -> TaskInfo:
+        """Install the FFmpeg archive file ``archive`` as the downloaded build: checked like a
+        download (size and SHA-256 against the manifest entry of ``build`` for this platform;
+        ``None``: the offered build whose archive has that file name), then discovery runs
+        again. Returns at once; the task result is :class:`~reframe.models.ToolFetchResult`."""
+        if self._closed:
+            raise ReframeClosedError
+        return start_install_file(
+            self._tasks,
+            data_dir=self._data_dir,
+            rescan=self.rescan,
+            archive=archive,
+            build=build,
+            manifest=manifest,
+            libva=self._libva(),
+        )
+
+    def _restore_build(self) -> None:
+        """Put back the downloaded build that a killed install left aside (worker thread)."""
+        host = host_platform()
+        if host is not None:
+            restore_previous_build(install_dir_for(self._data_dir, host, host), host)
+
+    def _libva(self) -> Path | None:
+        """The libva that the Linux app packages for a downloaded build."""
+        linux = sys.platform.startswith("linux")
+        return packaged_libva(self._bundled_roots, self._data_dir) if linux else None
 
     async def close(self) -> None:
         """Cancel a running discovery (its version-check processes are killed)."""
@@ -226,25 +246,17 @@ class ToolsService:
         return task
 
     async def _discover(self) -> ToolSet:
-        # Same steps as discover_tools(), but locate_tools() runs in a thread: a network share
-        # can be slow to stat. The TaskGroup waits for every version check, so close() returns
-        # only after every child process is gone.
-        located = await asyncio.to_thread(
-            locate_tools, self._settings().tools, bundled_roots=self._bundled_roots
-        )
-        async with asyncio.TaskGroup() as group:
-            checks = [
-                group.create_task(check_tool(located[name], timeout=self._timeout))
-                for name in TOOL_NAMES
-            ]
-        tools = ToolSet(**{check.result().name: check.result() for check in checks})
+        if self._restore is None:
+            self._restore = asyncio.ensure_future(asyncio.to_thread(self._restore_build))
+        await asyncio.wait({self._restore})  # a cancel of this wait leaves the restore running
+        tools = await discover_tools(self._settings().tools, bundled_roots=self._bundled_roots)
         self._current = tools
         self._events.publish(ToolsChangedEvent(tools=tools))
         return tools
 
 
 class SourceService:
-    """Probing source files: one file, a folder (as a task) and the known sources. Also the
+    """Probing source files: one file, many files and the known sources. Also the
     analysis and preview tasks of a source: bitrate and subtitle scans, loudness, frames and
     crop detection.
 
@@ -276,14 +288,11 @@ class SourceService:
         self._known: OrderedDict[Path, MediaSource] = OrderedDict()
         self._locks: dict[Path, tuple[asyncio.Lock, list[int]]] = {}
         """Per file: the lock of :meth:`store` / :meth:`update` and how many wait for it."""
-        self._tokens: set[CancelToken] = set()
+        self._tokens: list[CancelToken] = []
+        """One entry per running call: :meth:`probe_many` hands one token to many calls."""
         self._active = 0
         self._idle = asyncio.Event()
         self._idle.set()
-
-    @property
-    def cache(self) -> ProbeCache:
-        return self._cache
 
     async def probe(
         self,
@@ -348,60 +357,42 @@ class SourceService:
         finally:
             self._leave(token)
 
-    def probe_folder(
+    async def probe_many(
         self,
-        path: str | os.PathLike[str],
+        files: Sequence[str | os.PathLike[str]],
         *,
-        recursive: bool = False,
-        concurrency: int = DEFAULT_CONCURRENCY,
-    ) -> TaskInfo:
-        """Probe every media file of a folder as a background task.
-
-        Returns at once. Progress and the end come as ``task.progress`` / ``task.done``
-        events. ``TaskInfo.result`` is the JSON form of the :class:`FolderProbeResult`;
-        ``Reframe.tasks.value(task_id)`` returns the object itself, and every source is also
-        returned by :meth:`get`. An unusable ffprobe gives a result with one error for the
-        folder.
-        """
-        self._check_open()
+        concurrency: int = PROBE_CONCURRENCY,
+        cancel: CancelToken | None = None,
+        on_progress: Callable[[int, int], object] | None = None,
+    ) -> list[MediaSource | ProbeError]:
+        """:meth:`probe` each file, ``concurrency`` at a time; the results in the order of
+        ``files``. After ``cancel`` no new ffprobe starts: the rest are ``CANCELLED`` errors.
+        ``on_progress(done, total)`` is called after each file."""
         if concurrency < 1:
             raise ValueError(f"concurrency must be at least 1, got {concurrency}")
-        root = _absolute(path)
+        gate = asyncio.Semaphore(concurrency)
+        results: list[MediaSource | ProbeError | None] = [None] * len(files)
+        done = 0
 
-        async def work(ctx: TaskContext) -> FolderProbeResult:
-            if has_nul(root):  # listing it would raise ValueError
-                return FolderProbeResult(
-                    root, errors=[ProbeError(root, ProbeErrorKind.NOT_FOUND, _NUL_PATH)]
-                )
-            ctx.progress(None, "Waiting for tool discovery")
-            prober = await self._get_prober()
-            if isinstance(prober, ToolInfo):
-                return FolderProbeResult(root, errors=[_tool_error(root, prober)])
+        async def one(i: int, file: str | os.PathLike[str]) -> None:
+            nonlocal done
+            async with gate:
+                if cancel is not None and cancel.cancelled:
+                    results[i] = ProbeError(
+                        _absolute(file), ProbeErrorKind.CANCELLED, "The probe was cancelled."
+                    )
+                else:
+                    results[i] = await self.probe(file, cancel=cancel)
+            done += 1
+            if on_progress is not None:
+                on_progress(done, len(files))
 
-            def report(done: int, total: int, _path: Path) -> None:
-                ctx.progress(done=done, total=total, message=f"{done}/{total} files")
-
-            ctx.progress(0.0, "Listing files")
-            # A cancel arrives both as the task's CancelledError and through ctx.cancel;
-            # probe_folder() returns only after every ffprobe it started is gone.
-            result = await probe_folder(
-                prober,
-                root,
-                concurrency=concurrency,
-                recursive=recursive,
-                cancel=ctx.cancel,
-                on_progress=report,
-            )
-            for source in result.sources:
-                self._remember(source)
-            return result
-
-        def to_json(value: object) -> JsonValue:
-            return value.to_json() if isinstance(value, FolderProbeResult) else None
-
-        return self._tasks.start(
-            TASK_KIND, work, message=f"Probing {root.name}", result_json=to_json
-        )
+        # A TaskGroup, not gather(): a cancelled gather() returns at its first child's end, and
+        # the other ffprobe kills can then be dropped when the loop stops.
+        async with asyncio.TaskGroup() as group:
+            for i, file in enumerate(files):
+                group.create_task(one(i, file))
+        return [result for result in results if result is not None]
 
     async def get(self, path: str | os.PathLike[str]) -> MediaSource | None:
         """The probed source of ``path`` if it is known and the file has not changed since.
@@ -579,8 +570,8 @@ class SourceService:
 
     async def close(self, timeout: float = CLOSE_TIMEOUT) -> None:  # noqa: ASYNC109
         """Cancel running probes (their processes are killed) and wait for them to end."""
-        for token in list(self._tokens):
-            token.cancel("shutting down")
+        for token in set(self._tokens):
+            token.cancel()
         with contextlib.suppress(TimeoutError):
             await asyncio.wait_for(self._idle.wait(), timeout)
 
@@ -601,12 +592,12 @@ class SourceService:
             self._known.popitem(last=False)
 
     def _enter(self, token: CancelToken) -> None:
-        self._tokens.add(token)
+        self._tokens.append(token)
         self._active += 1
         self._idle.clear()
 
     def _leave(self, token: CancelToken) -> None:
-        self._tokens.discard(token)
+        self._tokens.remove(token)
         self._active -= 1
         if self._active == 0:
             self._idle.set()
@@ -624,7 +615,7 @@ class SourceService:
         return prober if isinstance(prober, Prober) else None
 
     def _prober_for(self, info: ToolInfo) -> Prober | ToolInfo:
-        if not tool_usable(info):
+        if not info.usable:
             return info
         tool = ProbeTool.of(info)
         if self._prober is None or self._prober.tool != tool:
@@ -647,20 +638,15 @@ _NUL_PATH = "The path has a NUL character, which no file system allows: no file 
 
 
 def _check_file(path: str | os.PathLike[str]) -> ProbeError | None:
-    """The file checks of :meth:`Prober.probe` (missing, not a file), plus a real open. A path
-    with a NUL character is ``NOT_FOUND``: ``os.stat`` raises ``ValueError`` for it, not
-    ``OSError``."""
+    """The file checks of :func:`stat_regular` (missing, unreadable, not a file), plus a real
+    open. A path with a NUL character is ``NOT_FOUND``: ``os.stat`` raises ``ValueError`` for
+    it, not ``OSError``."""
     file = _absolute(path)
     if has_nul(file):
         return ProbeError(file, ProbeErrorKind.NOT_FOUND, _NUL_PATH)
-    try:
-        stat = os.stat(file)
-    except FileNotFoundError:
-        return ProbeError(file, ProbeErrorKind.NOT_FOUND, "The file does not exist.")
-    except OSError as exc:
-        return ProbeError(file, ProbeErrorKind.UNREADABLE, "The file cannot be read.", str(exc))
-    if not S_ISREG(stat.st_mode):
-        return ProbeError(file, ProbeErrorKind.NOT_A_FILE, "The path is not a file.")
+    stat = stat_regular(file)
+    if isinstance(stat, ProbeError):
+        return stat
     try:  # stat() works without read permission; open() tells
         with open(file, "rb"):
             pass
@@ -702,18 +688,12 @@ class SettingsService:
         self,
         store: SettingsStore,
         *,
-        initial: AppSettings | None = None,
         on_change: SettingsListener | None = None,
     ) -> None:
         self._store = store
-        self._settings = initial.model_copy(deep=True) if initial is not None else store.load()
+        self._settings = store.load()
         self._on_change = on_change
         self._lock = asyncio.Lock()
-
-    @property
-    def path(self) -> Path:
-        """``<config>/settings.json``."""
-        return self._store.path
 
     @property
     def problems(self) -> list[AppWarningEvent]:
@@ -825,10 +805,6 @@ class PresetService:
         self._store = store
 
     @property
-    def store(self) -> PresetStore:
-        return self._store
-
-    @property
     def problems(self) -> list[AppWarningEvent]:
         """Warnings of loading ``presets.json`` and of failed writes (also published)."""
         return self._store.problems
@@ -872,14 +848,8 @@ class PresetService:
     async def save(self, preset: Preset) -> Preset | ValidationIssue:
         return await asyncio.to_thread(self._store.save, preset)
 
-    async def rename(self, preset_id: str, name: str) -> Preset | ValidationIssue:
-        return await asyncio.to_thread(self._store.rename, preset_id, name)
-
     async def delete(self, preset_id: str) -> Preset | ValidationIssue:
         return await asyncio.to_thread(self._store.delete, preset_id)
-
-    async def duplicate(self, preset_id: str, name: str | None = None) -> Preset | ValidationIssue:
-        return await asyncio.to_thread(self._store.duplicate, preset_id, name)
 
     async def set_default(self, preset_id: str | None) -> Preset | ValidationIssue:
         return await asyncio.to_thread(self._store.set_default, preset_id)
@@ -929,22 +899,19 @@ class Reframe:
         config_dir: Path,
         data_dir: Path,
         cache_dir: Path,
-        settings: AppSettings | None = None,
+        on_log_level: Callable[[LogLevel], None] | None = None,
+        unavailable_when_done: Mapping[WhenDone, str] | None = None,
     ) -> None:
-        """Wire the services without starting anything. Use :meth:`create` instead.
-
-        ``settings``: the settings to start with instead of reading ``settings.json`` (they
-        are saved there at the first change).
-        """
+        """Wire the services without starting anything. Use :meth:`create` instead."""
         self.config_dir = config_dir
         self.data_dir = data_dir
         self.cache_dir = cache_dir
         self._closed = False
         self._reactions: set[asyncio.Task[None]] = set()
+        self._on_log_level = on_log_level
         self.events = EventBus()
         self.settings = SettingsService(
             SettingsStore(config_dir, self.events),
-            initial=settings,
             on_change=self._settings_changed,
         )
         self.presets = PresetService(PresetStore(config_dir, self.events))
@@ -972,7 +939,6 @@ class Reframe:
             sources=self.sources,
             capabilities=self.capabilities,
             settings=self.settings_snapshot,
-            events=self.events,
             cache_dir=cache_dir,
             definitions=load_definitions,
         )
@@ -1009,6 +975,7 @@ class Reframe:
             sources=self.sources,
             naming=preset_naming,
             power=self.power,
+            unavailable_when_done=unavailable_when_done,
         )
 
     @classmethod
@@ -1018,6 +985,8 @@ class Reframe:
         data_dir: Path | None = None,
         *,
         cache_dir: Path | None = None,
+        on_log_level: Callable[[LogLevel], None] | None = None,
+        unavailable_when_done: Mapping[WhenDone, str] | None = None,
     ) -> Reframe:
         """Create the facade and start tool discovery and encoder detection in the background.
         Returns at once. The saved queue is not opened here: the queue opens it at its first use.
@@ -1025,36 +994,59 @@ class Reframe:
         The folders default to those of :mod:`reframe.paths`. ``data_dir`` also decides where
         the fetched tools are looked for (``<data dir>/tools``). Nothing is created on disk
         until a service writes there.
+
+        ``on_log_level`` is called with the new level whenever a settings change sets another
+        ``diagnostics.log_level``, before ``settings.update`` returns. ``unavailable_when_done``:
+        when-done actions this process cannot carry out, with the reason; when the queue empties
+        with one of them set, nothing runs and an ``app.warning`` says why.
         """
         config = Path(config_dir) if config_dir is not None else paths.config_dir()
         data = Path(data_dir) if data_dir is not None else paths.data_dir()
         cache = Path(cache_dir) if cache_dir is not None else paths.cache_dir()
-        settings = cls._load_settings(config)
-        app = cls(config_dir=config, data_dir=data, cache_dir=cache, settings=settings)
+        app = cls(
+            config_dir=config,
+            data_dir=data,
+            cache_dir=cache,
+            on_log_level=on_log_level,
+            unavailable_when_done=unavailable_when_done,
+        )
         app.tools.start()
         app.capabilities.start()
         return app
-
-    @staticmethod
-    def _load_settings(config_dir: Path) -> AppSettings | None:
-        """Settings to start with instead of ``<config>/settings.json`` (a test hook).
-        ``None``, the default: the settings store reads the file."""
-        del config_dir
-        return None
 
     def settings_snapshot(self) -> AppSettings:
         """The current settings (a copy). The one place where the services read them."""
         return self.settings.get()
 
+    async def diagnostics(self, *, server: Mapping[str, str] | None = None) -> str:
+        """The diagnostics report (:func:`reframe.diagnostics.build_report`); ``server``: the
+        lines the server adds after the version. Waits for a running tool discovery, never for
+        an encoder detection: the report says that one is running."""
+        tools = await self.tools.status()
+        return await asyncio.to_thread(
+            build_report,
+            tools=tools,
+            encoders=self.capabilities.snapshot,
+            settings=self.settings.get(),
+            logs=applog.logs_dir(self.data_dir),
+            server=server,
+        )
+
     def _settings_changed(self, old: AppSettings, new: AppSettings) -> None:
         """React to a settings change: tool discovery for tool paths, encoder detection for
-        the hardware-test settings. Runs in the background; :meth:`close` cancels it."""
+        the hardware-test settings (in the background; :meth:`close` cancels it), and a new
+        log level at once."""
+        if self._closed:
+            return
+        level = new.diagnostics.log_level
+        if self._on_log_level is not None and level != old.diagnostics.log_level:
+            self._on_log_level(level)
         tools = old.tools.model_dump(mode="json") != new.tools.model_dump(mode="json")
         encoders = (old.encoders.hardware_tests, old.encoders.vaapi_device) != (
             new.encoders.hardware_tests,
             new.encoders.vaapi_device,
         )
-        if self._closed or not (tools or encoders):
+        if not (tools or encoders):
             return
         task = asyncio.get_running_loop().create_task(
             self._react(tools=tools, encoders=encoders), name="reframe-settings-changed"

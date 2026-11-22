@@ -24,8 +24,9 @@ import httpx
 from pydantic import ValidationError
 
 from reframe import paths
+from reframe.applog import SERVER_LOG, logs_dir
 from reframe.models.queue import ServerEndpoint
-from reframe.platform.childproc import CREATE_NO_WINDOW, launch_detached
+from reframe.platform.childproc import CREATE_NO_WINDOW, launch_detached, user_environ
 from reframe.queue.lock import LOCK_FILE, StoreLock
 
 __all__ = [
@@ -73,6 +74,7 @@ SERVER_OPTIONS = frozenset(
         "ALLOWED_HOSTS",
         "AUTH",
         "CORS_ORIGINS",
+        "FFMPEG_BUILD",
         "HOST",
         "IDLE_EXIT",
         "MEDIA_ROOTS",
@@ -125,7 +127,7 @@ def endpoint_path(data_dir: Path, environ: Mapping[str, str] | None = None) -> P
 
 def server_log(data_dir: Path) -> Path:
     """Where a started owner writes its messages (its stderr)."""
-    return data_dir / "logs" / "server.log"
+    return logs_dir(data_dir) / SERVER_LOG
 
 
 def usable_token(token: str) -> bool:
@@ -235,7 +237,8 @@ def _start(
     :func:`owner_environment` and its stderr in :func:`server_log`. The handle is only read for
     the exit code, which ``launch_detached``'s reaper thread sets."""
     started: list[subprocess.Popen[bytes]] = []
-    env = owner_environment(data_dir, environ)
+    # A frozen owner's bootloader would keep this client's own library path as the user's.
+    env = owner_environment(data_dir, user_environ(environ, platform=platform))
     stderr = _open_log(server_log(data_dir))
 
     def popen(args: list[str], **kwargs: Any) -> subprocess.Popen[bytes]:
@@ -244,7 +247,8 @@ def _start(
             kwargs["creationflags"] = kwargs.get("creationflags", 0) | CREATE_NO_WINDOW
         if stderr is not None:
             kwargs["stderr"] = stderr
-        process = subprocess.Popen(args, env=env, **kwargs)
+        kwargs["env"] = env
+        process = subprocess.Popen(args, **kwargs)
         started.append(process)
         return process
 

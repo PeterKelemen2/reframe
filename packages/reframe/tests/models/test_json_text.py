@@ -99,12 +99,13 @@ def test_json_text_keeps_other_characters_when_not_ascii() -> None:
     job = JobSettings(source=SourceRef(path=Path("/media/コ") / BAD))
     text = json_text(job, ensure_ascii=False, indent=2)
     text.encode("utf-8")
-    assert "/media/コ/bad\\udcffname.mkv" in text
+    assert "コ" in text
+    assert "bad\\udcffname.mkv" in text
     assert JobSettings.model_validate(json.loads(text)) == job
 
 
 def test_json_text_of_json_data() -> None:
-    data = {"path": str(SOURCE), "n": [1, 2.5, None]}
+    data = {"path": f"/media/{BAD}", "n": [1, 2.5, None]}
     assert json_text(data, separators=(",", ":")) == (
         '{"path":"/media/bad\\udcffname.mkv","n":[1,2.5,null]}'
     )
@@ -125,16 +126,19 @@ def test_an_issue_that_quotes_such_a_path_dumps_as_json() -> None:
         severity=Severity.ERROR, code="source.unreadable", message=f"{SOURCE} cannot be read."
     )
     dumped = json.loads(issue.model_dump_json())
-    assert dumped["message"] == f"/media/{SHOWN} cannot be read."
+    assert dumped["message"] == f"{SOURCE.parent / SHOWN} cannot be read."
 
 
 def test_display_text_set_after_validation_is_dumped_with_the_replacement() -> None:
     task = TaskInfo(id="t1", kind="probe_folder")
     task.error = f"cannot read {SOURCE}"
     source = MediaSource(ref=SourceRef(path=OK))
-    source.warnings.append(f"MediaInfo could not read {SOURCE}")
-    assert f"cannot read /media/{SHOWN}" in task.model_dump_json()
-    assert f"MediaInfo could not read /media/{SHOWN}" in source.model_dump_json()
+    source.warnings.append(f"The Matroska reader could not read {SOURCE}")
+    shown = SOURCE.parent / SHOWN
+    assert json.loads(task.model_dump_json())["error"] == f"cannot read {shown}"
+    assert json.loads(source.model_dump_json())["warnings"] == [
+        f"The Matroska reader could not read {shown}"
+    ]
 
 
 DISPLAY: list[BaseModel] = [

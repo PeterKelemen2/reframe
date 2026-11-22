@@ -33,7 +33,7 @@ from reframe.preview.graph import (
 
 from .helpers import DEFS, caps, real_tools, recorded
 
-TOOLS = real_tools(mkvpropedit=False)
+TOOLS = real_tools()
 
 
 def job(source: MediaSource, **fields: Any) -> JobSettings:
@@ -292,9 +292,9 @@ def test_one_kind_needs_no_split() -> None:
     argv = frame_argv("ffmpeg", Path("/m/a.mkv"), 0, 12.5, [(recipe, Path("/c/a.png"))])
     assert argv == [
         "ffmpeg", "-hide_banner", "-nostdin", "-nostats", "-loglevel", "error", "-y",
-        "-ss", "12.5", "-i", "/m/a.mkv",
+        "-ss", "12.5", "-i", str(Path("/m/a.mkv")),
         "-filter_complex", "[0:0]format=rgb24[o0]",
-        "-map", "[o0]", "-frames:v", "1", *PNG_ARGS, "/c/a.png",
+        "-map", "[o0]", "-frames:v", "1", *PNG_ARGS, str(Path("/c/a.png")),
     ]  # fmt: skip
 
 
@@ -312,7 +312,7 @@ def test_two_kinds_share_one_decode() -> None:
     )
     assert argv[argv.index("-ss") + 1] == "0"
     assert argv.index("-ss") < argv.index("-i")
-    assert argv[-1] == "/o.png"
+    assert argv[-1] == str(Path("/o.png"))
     assert argv.count("-frames:v") == 2
 
 

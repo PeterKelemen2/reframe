@@ -1,7 +1,8 @@
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { configureClient } from '@/api/client'
+import { installKeyboardFixes } from '@/components/base/keyboard'
 import { FakeServer, json } from '@/api/testing/fakes'
 import type { Preset } from '@/api/types'
 import { languages } from '@/components/language/testing'
@@ -23,7 +24,11 @@ const MINE = 'mine'
 const mounted: VueWrapper[] = []
 let server: FakeServer
 
+// The app installs them in main.ts.
+let removeKeyboardFixes = () => {}
+
 beforeEach(() => {
+  removeKeyboardFixes = installKeyboardFixes()
   server = new FakeServer()
     .on(
       'GET /api/presets',
@@ -42,6 +47,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  removeKeyboardFixes()
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.replaceChildren()
 })
@@ -85,7 +91,12 @@ const puts = () => server.requests.filter((request) => request.method === 'PUT')
 
 function escape(target: Element): void {
   target.dispatchEvent(
-    new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+    new KeyboardEvent('keydown', {
+      key: 'Escape',
+      code: 'Escape',
+      bubbles: true,
+      cancelable: true,
+    }),
   )
 }
 
@@ -101,6 +112,23 @@ describe('the defaults dialog', () => {
     document.body.replaceChildren()
     await openDialog('job', MINE)
     escape(document.body)
+    await flushPromises()
+    expect(useDefaultsStore().visible).toBe(false)
+  })
+
+  it('closes on Escape on a closed drop-down; on an open one, Escape closes only its list', async () => {
+    await openDialog('job', MINE)
+    const select = document.querySelector<HTMLElement>(
+      '.defaults-dialog [data-field="tie_break"] [role="combobox"]',
+    )!
+    document.querySelector<HTMLElement>('.defaults-dialog [data-field="tie_break"]')!.click()
+    await flushPromises()
+    expect(select.getAttribute('aria-expanded')).toBe('true')
+    escape(select)
+    await vi.waitFor(() => expect(document.querySelector('.p-select-option')).toBeNull())
+    expect(useDefaultsStore().visible).toBe(true)
+    select.focus()
+    escape(select)
     await flushPromises()
     expect(useDefaultsStore().visible).toBe(false)
   })
@@ -270,6 +298,42 @@ describe('the defaults dialog', () => {
       'Only for the first track of this language: No',
       'Extra outputs: None',
     ])
+  })
+
+  // Only English ships; a German locale shows the values that `String` would write the English
+  // way.
+  it("writes a built-in preset's numbers in the app's locale", async () => {
+    const builtIn = preset(BUILT_IN, 'H.265 MKV 1080p')
+    const rules = builtIn.audio_defaults!.codec_rules!
+    builtIn.audio_defaults = {
+      ...builtIn.audio_defaults,
+      codec_rules: [
+        {
+          ...rules[0]!,
+          max_bitrate: 1536,
+          extras: {
+            samplerate: 44100,
+            gain: -1.5,
+            drc: 2.5,
+            extra_outputs: [{ codec: 'ac3', mixdown: '5.1', bitrate: 1536 }],
+          },
+        },
+        ...rules.slice(1),
+      ],
+    } as Preset['audio_defaults']
+    server.on('GET /api/presets', presetList([builtIn, userPreset(MINE, 'Mine')]))
+    await openDialog('preset', BUILT_IN)
+    ;(mounted[0]!.vm as unknown as { $i18n: { locale: string } }).$i18n.locale = 'de'
+    document
+      .querySelector<HTMLButtonElement>('tbody[data-index="0"] [data-action="expand"]')!
+      .click()
+    await flushPromises()
+    expect(shown('tbody[data-index="0"] [data-field="max_bitrate"]')).toBe('1.536 kb/s')
+    const pairs = [
+      ...document.querySelectorAll('tbody[data-index="0"] [data-rule-extras] .rule-extras__pair'),
+    ].map((pair) => pair.querySelector('[data-role="shown-value"]')?.textContent?.trim())
+    expect(pairs).toEqual(expect.arrayContaining(['44,1 kHz', '-1,5 dB', '2,5']))
+    expect(pairs.at(-1)).toBe('AC-3, 5.1, 1.536 kb/s')
   })
 
   it("shows a built-in preset's subtitle values as text", async () => {

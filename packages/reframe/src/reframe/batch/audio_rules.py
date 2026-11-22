@@ -14,7 +14,12 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from reframe import languages
-from reframe.batch.metadata import effective_language, render_track_name, track_metadata
+from reframe.batch.metadata import (
+    effective_language,
+    language_values,
+    render_track_name,
+    track_metadata,
+)
 from reframe.command import PlanError, planned_audio
 from reframe.command.audio import layout_channels
 from reframe.definitions import (
@@ -44,7 +49,9 @@ __all__ = [
     "apply_codec_rules",
     "bitrate_table",
     "channels_match",
+    "describe_output",
     "language_matches",
+    "layout_label",
     "passthru_codec",
     "requested_mixdown",
     "snap_note",
@@ -155,7 +162,7 @@ def _mixdown_label(mixdown: Mixdown, definitions: Definitions) -> str:
     return definitions.mixdowns[mixdown].label
 
 
-def _layout_label(mixdown: Mixdown, definitions: Definitions) -> str:
+def layout_label(mixdown: Mixdown, definitions: Definitions) -> str:
     mix = definitions.mixdowns[mixdown]
     return f"{mix.channels - mix.lfe}.{mix.lfe}"
 
@@ -376,7 +383,7 @@ def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: lis
     out_channels = defs.mixdowns[mixdown].channels if mixdown is not None else stream.channels
     if mixdown is not None and 0 < out_channels < stream.channels:
         sentences.append(f"Downmix {_source_layout(stream)} → {_mixdown_label(mixdown, defs)}")
-    channels_label = _layout_label(mixdown, defs) if mixdown is not None else _source_layout(stream)
+    channels_label = layout_label(mixdown, defs) if mixdown is not None else _source_layout(stream)
     if written is not None and written.layout is not None:
         channels_label = audio_channels_label(written.channels, written.layout)
         if written.channels < stream.channels:
@@ -403,7 +410,7 @@ def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: lis
             cap = encoder.bitrate.snap(maximum, key, "down")
             assert cap is not None
             if cap != maximum:
-                notes.append(_snap_note(maximum, cap, encoder, key, defs))
+                notes.append(snap_note(maximum, cap, encoder, key, defs))
             effective = _bitrate_state(stream, maximum)
             value = stream.bitrate.value
             if effective == "within" and value is not None:
@@ -420,7 +427,7 @@ def _encode(ctx: _Context, request: _Request, state: BitrateState, blockers: lis
                         f" ≥ {_kbps(value)}"
                     )
                     if bitrate != wanted:
-                        notes.append(_snap_note(wanted, bitrate, encoder, key, defs))
+                        notes.append(snap_note(wanted, bitrate, encoder, key, defs))
             else:
                 bitrate = cap
                 if effective == "lossless":
@@ -483,15 +490,9 @@ def bitrate_table(
 
 
 def snap_note(
-    wanted: int, got: int, encoder: AudioEncoderDef, key: Mixdown, definitions: Definitions
-) -> str:
-    """The note that says why a bit rate snapped, and to what."""
-    return _snap_note(wanted, got, encoder, key, definitions)
-
-
-def _snap_note(
     wanted: int, got: int, encoder: AudioEncoderDef, key: Mixdown, defs: Definitions
 ) -> str:
+    """The note that says why a bit rate snapped, and to what."""
     assert encoder.bitrate is not None
     limits = encoder.bitrate.by_mixdown[key]
     where = f"{encoder.label} {_mixdown_label(key, defs)}"
@@ -537,7 +538,8 @@ def _resolve(ctx: _Context, request: _Request) -> _Outcome:
     return _encode(ctx, request, state, blockers)
 
 
-def _describe(track: AudioOutputTrack, defs: Definitions) -> str:
+def describe_output(track: AudioOutputTrack, defs: Definitions) -> str:
+    """An output track in a few words: ``AC-3 5.1 · 448 kb/s``, ``Passthru``."""
     if track.action == "passthru":
         return "Passthru"
     encoder = defs.audio_encoders.get(track.encoder or "")
@@ -559,9 +561,7 @@ def _finish(
     if extras.name_template:
         language = effective_language(stream)
         values: dict[str, Value] = {
-            "lang": language,
-            "lang_name": languages.english_name(language),
-            "lang_native": languages.native_name(language, capitalize=True),
+            **language_values(language),
             "title": stream.title,
             "source_codec": ctx.source_label,
             **outcome.name_values,
@@ -629,7 +629,7 @@ def apply_codec_rules(
             track = _finish(ctx, outcome, rule.extras, extra=True)
             outputs.append(track)
             notes.append(
-                f"Extra output {n}: {_describe(track, defs)} ({'. '.join(outcome.sentences)})"
+                f"Extra output {n}: {describe_output(track, defs)} ({'. '.join(outcome.sentences)})"
             )
             notes.extend(outcome.notes)
         if skipped:

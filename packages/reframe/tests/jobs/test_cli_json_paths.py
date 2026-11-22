@@ -15,8 +15,9 @@ import pytest
 from reframe.cli import EXIT_OK
 from reframe.models import EncodePlan, JobDraft, MediaSource, NameResult
 from reframe_testing import fake_tools as ft
+from reframe_testing.cli import invoke
 
-from .conftest import invoke, media_file, replay
+from .conftest import media_file, replay
 
 pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="a file name that is not UTF-8")
 
@@ -61,10 +62,8 @@ def test_name_json(bad: Path) -> None:
 
 @pytest.mark.needs_ffmpeg
 def test_probe_json_with_the_real_ffprobe(
-    fixture_media: Callable[[str], Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    fixture_media: Callable[[str], Path], tmp_path: Path, dirs: dict[str, Path]
 ) -> None:
-    for name in ("config", "data", "cache"):
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
     copy = tmp_path / "media" / os.fsdecode(NAME)
     copy.parent.mkdir()
     shutil.copy2(fixture_media("multitrack"), copy)

@@ -1,7 +1,9 @@
 # 0040 — The batch engine: one rule engine, selectors and relaxation, grouping, overrides, `reframe batch`
 
 - Status: accepted. The points marked **(open)** are product questions answered with a default
-  that is easy to change (each is one constant or small function, named below).
+  that is easy to change (each is one constant or small function, named below). Amended in
+  part by [0090](0090-batch-api-and-draft-path.md) (§8: `resolve_group`, `merge_template`; R1-4:
+  the `container_codecs` mechanism).
 - Date: 2026-10-15
 - Steps: C-12 (M7 part; core-complete wave 2a), C-15 (`Reframe.batch`, `reframe batch`)
 
@@ -489,7 +491,7 @@ A final review of the fix rounds (reviewer R-A, on `core-complete` 5dbf152) foun
   `OutputClaims`' `batch.output_is_source` error was added to the draft's issues with C-8's
   `output.overwrite` warning still there; the batch path already left it out. The CLI now
   leaves `output.overwrite` out of that job's issues (`cli._with_claims`). Tests:
-  `test_encode_does_not_say_will_be_replaced_next_to_never_overwritten` (the reviewer's),
+  `test_encode_never_writes_another_file_of_the_command` (the reviewer's),
   `test_encode_keeps_the_overwrite_warning_of_a_file_outside_the_command`.
 - **RA-5: a member labelled by its file name shows the name once.** For two releases of one
   episode `episode_labels` gives the file name, and `render_group` printed the label column

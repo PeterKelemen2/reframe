@@ -115,7 +115,6 @@ class NameContext:
     job: JobSettings | None = None
     source: MediaSource | None = None
     output_size: tuple[int, int] | None = None
-    title_index: int = 1
 
 
 def _local(value: datetime) -> datetime:
@@ -158,7 +157,7 @@ def build_values(ctx: NameContext) -> dict[str, Value]:
 
     values: dict[str, Value] = {
         "source": clean_name_text(ctx.source_text, ctx.source_separator, options) or None,
-        "title": ctx.title_index,
+        "title": 1,
         "date": ctx.now,
         "time": ctx.now,
         "main_title": text(fields.main_title),

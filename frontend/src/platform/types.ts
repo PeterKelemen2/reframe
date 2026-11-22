@@ -13,10 +13,18 @@ export interface Platform {
   /** Web: `null` (the action is hidden). */
   revealInFolder(path: string): Promise<void> | null
   openExternal(target: string): Promise<void>
+  /**
+   * `false`: a `<video>` would crash this window instead of reporting an error (a webview
+   * without its media framework). Web: `true`.
+   */
+  canPlayVideo(): Promise<boolean>
   /** Web: the Notification API. */
   notify(title: string, body: string): Promise<void>
-  /** `value` is 0…1, or `null` to clear. Web: shown in `document.title`. */
-  setTaskbarProgress(value: number | null): void
+  /**
+   * `value` is 0…1, or `null` to clear; `label` is it as the user reads it (`42%`). Web: the
+   * label is shown in `document.title`.
+   */
+  setTaskbarProgress(value: number | null, label: string | null): void
   /** What only the desktop shell has. Web: `null`. */
   desktop: DesktopShell | null
 }
@@ -57,6 +65,18 @@ export interface DesktopSettings {
   tray: boolean
 }
 
+/** The AppImage's entry in the user's application menu (`Reframe.desktop`). */
+export interface DesktopMenuEntry {
+  /** The AppImage the app runs from; `null` outside one (no entry is offered). */
+  appimage: string | null
+  /** The app's own entry is there. */
+  added: boolean
+  /** Another entry of the name (an installed package's): the app adds none. */
+  other: string | null
+  /** The AppImage's path has a `%`, which GNOME, Xfce and Cinnamon cannot start: no entry. */
+  percentInPath: boolean
+}
+
 export interface DesktopShell {
   /** Waits while the backend starts; rejects with a `DesktopBackendError`. */
   backendInfo(): Promise<DesktopBackend>
@@ -78,4 +98,7 @@ export interface DesktopShell {
   setSettings(settings: DesktopSettings): Promise<DesktopSettings>
   /** Opens (or focuses) the detached preview window of a source. */
   openPreviewWindow(sourceId: string): Promise<void>
+  menuEntry(): Promise<DesktopMenuEntry>
+  /** Adds or removes the app's own entry; rejects with the shell's reason (a string). */
+  setMenuEntry(add: boolean): Promise<DesktopMenuEntry>
 }

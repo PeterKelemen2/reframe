@@ -38,30 +38,28 @@ def test_default_directory_is_in_the_cache_dir(
 def test_hit_and_miss(tmp_path: Path) -> None:
     cache = ProbeCache(tmp_path)
     assert cache.get(key(), tool=TOOL) is None
-    assert cache.put(key(), source(), tool=TOOL, options={"mediainfo": True})
-    assert cache.get(key(), tool=TOOL, options={"mediainfo": True}) == source()
+    assert cache.put(key(), source(), tool=TOOL, options={"matroska": 3})
+    assert cache.get(key(), tool=TOOL, options={"matroska": 3}) == source()
     # A fresh cache (another process) reads the file.
     fresh = ProbeCache(tmp_path)
-    assert fresh.get(key(), tool=TOOL, options={"mediainfo": True}) == source()
+    assert fresh.get(key(), tool=TOOL, options={"matroska": 3}) == source()
 
 
 @pytest.mark.parametrize(
     ("other_key", "tool", "options"),
     [
-        (key(size=11), TOOL, {"mediainfo": True}),  # the file grew
-        (key(mtime_ns=124), TOOL, {"mediainfo": True}),  # the file was touched
-        (key(path="/m/b.mkv"), TOOL, {"mediainfo": True}),
-        (key(), "ffprobe n8.1.3", {"mediainfo": True}),  # another ffprobe
-        (key(), TOOL, {"mediainfo": False}),  # other options
+        (key(size=11), TOOL, {"matroska": 3}),  # the file grew
+        (key(mtime_ns=124), TOOL, {"matroska": 3}),  # the file was touched
+        (key(path="/m/b.mkv"), TOOL, {"matroska": 3}),
+        (key(), "ffprobe n8.1.3", {"matroska": 3}),  # another ffprobe
+        (key(), TOOL, {"matroska": 2}),  # other options
     ],
 )
 def test_invalidation(
     tmp_path: Path, other_key: CacheKey, tool: str, options: dict[str, bool]
 ) -> None:
     cache = ProbeCache(tmp_path)
-    cache.put(key(), source(), tool=TOOL, options={"mediainfo": True})
-    assert cache.get(other_key, tool=tool, options=options) is None
-    cache.forget_memory()
+    cache.put(key(), source(), tool=TOOL, options={"matroska": 3})
     assert cache.get(other_key, tool=tool, options=options) is None
 
 
@@ -111,36 +109,14 @@ def test_invalid_source_in_entry_is_a_miss(tmp_path: Path) -> None:
 
 def test_entry_layout(tmp_path: Path) -> None:
     cache = ProbeCache(tmp_path)
-    cache.put(key(), source(), tool=TOOL, options={"mediainfo": False})
+    cache.put(key(), source(), tool=TOOL, options={"matroska": 2})
     files = list(tmp_path.iterdir())
     assert files == [cache.entry_path(key())]  # no temporary file left behind
     doc = json.loads(files[0].read_text(encoding="utf-8"))
     assert doc["key"] == {"path": "/m/a.mkv", "size": 10, "mtime_ns": 123}
     assert doc["tool"] == TOOL
-    assert doc["options"] == {"mediainfo": False}
+    assert doc["options"] == {"matroska": 2}
     assert doc["format"] == cache_mod.CACHE_FORMAT
-
-
-def test_returned_sources_are_copies(tmp_path: Path) -> None:
-    cache = ProbeCache(tmp_path)
-    original = source()
-    cache.put(key(), original, tool=TOOL)
-    original.container.title = "changed by the caller"
-    got = cache.get(key(), tool=TOOL)
-    assert got is not None
-    assert got.container.title == "A"
-    got.container.title = "changed again"
-    again = cache.get(key(), tool=TOOL)
-    assert again is not None
-    assert again.container.title == "A"
-
-
-def test_memory_layer_is_bounded(tmp_path: Path) -> None:
-    cache = ProbeCache(tmp_path, memory_entries=2)
-    for i in range(3):
-        cache.put(key(size=i), source(), tool=TOOL)
-    assert len(cache._memory) == 2
-    assert cache.get(key(size=0), tool=TOOL) is not None  # read back from its file
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX permissions")
@@ -151,7 +127,7 @@ def test_unwritable_directory_is_not_an_error(tmp_path: Path) -> None:
     try:
         cache = ProbeCache(tmp_path / "probe")
         assert cache.put(key(), source(), tool=TOOL) is False
-        assert cache.get(key(), tool=TOOL) == source()  # the memory layer still has it
+        assert cache.get(key(), tool=TOOL) is None
     finally:
         tmp_path.chmod(0o700)
 
@@ -233,15 +209,14 @@ def test_parser_fingerprint_follows_the_source() -> None:
     fingerprint = cache_mod.parser_fingerprint()
     assert fingerprint.startswith(f"{PARSER_VERSION}:")
     assert len(fingerprint.split(":")[1]) == 16
-    doc_path_names = cache_mod._PARSER_MODULES
-    here = Path(cache_mod.__file__).parent
-    assert all((here / name).is_file() for name in doc_path_names)
+    package = Path(cache_mod.__file__).parent.parent
+    assert all((package / name).is_file() for name in cache_mod._PARSER_FILES)
 
 
 def test_parser_fingerprint_without_source(monkeypatch: pytest.MonkeyPatch) -> None:
     import reframe
 
-    monkeypatch.setattr(cache_mod, "_PARSER_MODULES", ("missing-module.py",))
+    monkeypatch.setattr(cache_mod, "_PARSER_FILES", ("probe/missing-module.py",))
     cache_mod.parser_fingerprint.cache_clear()
     try:
         assert cache_mod.parser_fingerprint() == f"{PARSER_VERSION}:reframe-{reframe.__version__}"

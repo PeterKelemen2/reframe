@@ -17,17 +17,15 @@ import pytest
 from reframe.metadata import remux_job
 from reframe.models import JobSettings, JobState, SourceRef
 from reframe.queue import files, runner, service
-from reframe.queue.service import _conflicts, _output_key, _source_key
+from reframe.queue.service import _conflicts, _job_keys
 from reframe_testing import fake_tools as ft
+from reframe_testing.links import needs_symlinks
 
-from .conftest import Harness, encode_rule, queue_at, restore_together, store_rows, tool_set
+from .conftest import Harness, encode_rule, queue_at, restore_together, store_rows
 from .test_in_place_scheduling import active_for, ended_before_started, in_place_job, queued
+from .test_output_claims import hold_share
 
 pytestmark = pytest.mark.anyio
-
-needs_symlinks = pytest.mark.skipif(
-    sys.platform == "win32", reason="creating a symbolic link needs a privilege on Windows"
-)
 
 
 def _in_place_job_at(h: Harness, path: Path, name: str) -> JobSettings:
@@ -95,11 +93,11 @@ async def test_the_same_output_through_a_linked_folder(harness: Harness, tmp_pat
 
 async def test_keys_differ_only_in_case_are_the_same_output(harness: Harness) -> None:
     """Windows and macOS file systems ignore case; on Linux this errs on the safe side (the
-    rule of ``files.same_file``)."""
+    rule of ``files.same_file``). On Windows the keys themselves are the same (``normcase``)."""
     h = harness
     first = queued(h.job("Movie"), "a")
     second = queued(h.job("MOVIE"), "b")
-    assert _output_key(first) != _output_key(second)
+    assert (_job_keys(first).output == _job_keys(second).output) is (sys.platform == "win32")
     assert _conflicts(second, [active_for(first)])
 
 
@@ -143,7 +141,7 @@ async def test_a_key_of_a_missing_file_is_its_resolved_path(
     h = harness
     job = queued(h.job("Missing"), "m")
     job.settings.source = SourceRef(path=tmp_path / "media" / ".." / "media" / "gone.mkv")
-    assert _source_key(job) == service._path_key(tmp_path / "media" / "gone.mkv")
+    assert _job_keys(job).source == service._path_key(tmp_path / "media" / "gone.mkv")
     assert not _conflicts(job, [active_for(queued(in_place_job(h), "edit"))])
 
 
@@ -153,7 +151,6 @@ async def test_two_in_place_edits_through_a_link_run_one_after_the_other(
 ) -> None:
     h = harness
     h.settings.queue.parallel_jobs = 2
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     link = tmp_path / "media" / "link-to-source.mkv"
     link.symlink_to(h.source_path)
     first, second = await restore_together(
@@ -174,7 +171,6 @@ async def test_an_encode_of_a_hard_link_waits_for_the_in_place_edit(
     except OSError as exc:  # pragma: no cover - a file system without hard links
         pytest.skip(f"no hard links here: {exc}")
     h.settings.queue.parallel_jobs = 2
-    h.tools.tools = tool_set(h.fake.ffmpeg, mkvpropedit=h.fake.ffmpeg)
     h.scenario(encode_rule(ft.progress(blocks=1, end=True)))
     edit = await h.queue.add(in_place_job(h))
     job = h.job("Encode")
@@ -307,21 +303,7 @@ async def test_busy_while_a_restored_job_waits_for_its_keys(
     job.output.path = share / "Restored.mkv"
     waiting = await h.queue.add(job)
     await h.queue.close()
-    answer = threading.Event()
-    loop_thread = threading.get_ident()
-
-    def held(real: Callable[..., os.stat_result]) -> Callable[..., os.stat_result]:
-        def call(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
-            text = os.fspath(path) if isinstance(path, (str, os.PathLike)) else None
-            on_share = isinstance(text, str) and text.startswith(str(share))
-            if on_share and threading.get_ident() != loop_thread:
-                answer.wait(10)
-            return real(path, *args, **kwargs)
-
-        return call
-
-    monkeypatch.setattr(os, "stat", held(os.stat))
-    monkeypatch.setattr(os, "lstat", held(os.lstat))
+    held = hold_share(monkeypatch, share)
     again = queue_at(h)
     try:
         again.list()
@@ -329,10 +311,10 @@ async def test_busy_while_a_restored_job_waits_for_its_keys(
         await asyncio.sleep(0.1)
         assert again.busy
         assert again.get(waiting.id).state is JobState.WAITING  # type: ignore[union-attr]
-        answer.set()
+        held.answer.set()
         [ended] = await again.wait([waiting.id])
     finally:
-        answer.set()
+        held.answer.set()
         await again.close()
     monkeypatch.undo()
     assert ended.state is JobState.DONE
@@ -348,7 +330,7 @@ async def test_the_keys_are_what_the_rule_compares(harness: Harness, tmp_path: P
     other.settings.source = SourceRef(path=tmp_path / "media" / "Another.mkv")
     job_keys = service._job_keys
     keys = job_keys(edit)
-    assert keys.output == keys.source == _source_key(edit) == _output_key(edit)
+    assert keys.output == keys.source
     for job, expected in ((encode, True), (other, False)):
         assert _conflicts(job, [active_for(edit)], job_keys(job)) is expected
         assert _conflicts(job, [active_for(edit)]) is expected

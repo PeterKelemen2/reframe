@@ -1,0 +1,17 @@
+Input #0, lavfi, from 'color=size=640x360':
+  Duration: N/A, start: 0.000000, bitrate: N/A
+  Stream #0:0: Video: wrapped_avframe, yuv420p, 640x360 [SAR 1:1 DAR 16:9], 25 fps, 25 tbr, 25 tbn
+Stream mapping:
+  Stream #0:0 -> #0:0 (wrapped_avframe (native) -> hevc (hevc_nvenc))
+[hevc_nvenc @ 0x55e5f81c4d40] OpenEncodeSessionEx failed: incompatible client key (21): (no details)
+[hevc_nvenc @ 0x55e5f81c4d40] No capable devices found
+[vost#0:0/hevc_nvenc @ 0x55e5f81c47c0] [enc:hevc_nvenc @ 0x55e5f81c4cc0] Error while opening encoder - maybe incorrect parameters such as bit_rate, rate, width or height.
+[vf#0:0 @ 0x55e5f81e0080] Error sending frames to consumers: Generic error in an external library
+[vf#0:0 @ 0x55e5f81e0080] Task finished with error code: -542398533 (Generic error in an external library)
+[vf#0:0 @ 0x55e5f81e0080] Terminating thread with return code -542398533 (Generic error in an external library)
+[vost#0:0/hevc_nvenc @ 0x55e5f81c47c0] [enc:hevc_nvenc @ 0x55e5f81c4cc0] Could not open encoder before EOF
+[vost#0:0/hevc_nvenc @ 0x55e5f81c47c0] Task finished with error code: -22 (Invalid argument)
+[vost#0:0/hevc_nvenc @ 0x55e5f81c47c0] Terminating thread with return code -22 (Invalid argument)
+[out#0/null @ 0x55e5f81c4440] Nothing was written into output file, because at least one of its streams received no packets.
+frame=    0 fps=0.0 q=0.0 Lsize=       0KiB time=N/A bitrate=N/A speed=N/A elapsed=0:00:00.41    
+Conversion failed!

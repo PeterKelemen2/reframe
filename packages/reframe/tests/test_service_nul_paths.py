@@ -13,44 +13,16 @@ from reframe.models import (
     MediaSource,
     Severity,
     SourceRef,
-    TaskState,
     ValidationIssue,
 )
-from reframe.probe import mediainfo
 from reframe.service import ProbeError, ProbeErrorKind, Reframe
-from reframe.tools import ENV_VARS
 from reframe_testing import fake_tools as ft
 
 pytestmark = pytest.mark.anyio
 
-PROBES = Path(__file__).resolve().parents[3] / "testdata" / "probes"
-MULTITRACK = PROBES / "fixtures" / "multitrack.mkv.json"
 NUL_MESSAGE = (
     "The path has a NUL character, which no file system allows: no file can have this name."
 )
-
-
-@pytest.fixture
-def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    """No tool overrides, user folders in ``tmp_path``, MediaInfo off (deterministic)."""
-    for var in ENV_VARS.values():
-        monkeypatch.delenv(var, raising=False)
-    for name in ("config", "data", "cache"):
-        monkeypatch.setenv(f"REFRAME_{name.upper()}_DIR", str(tmp_path / name))
-    monkeypatch.setattr(mediainfo, "mediainfo_available", lambda: False)
-    return tmp_path
-
-
-@pytest.fixture
-def fake(env: Path, fake_tools: ft.FakeTools, monkeypatch: pytest.MonkeyPatch) -> ft.FakeTools:
-    """``REFRAME_FFMPEG`` / ``REFRAME_FFPROBE`` point at the fake tools (multitrack probe)."""
-    monkeypatch.setenv("REFRAME_FFMPEG", str(fake_tools.ffmpeg))
-    monkeypatch.setenv("REFRAME_FFPROBE", str(fake_tools.ffprobe))
-    rule = ft.Rule(
-        tool="ffprobe", argv_has=["-show_streams"], actions=[{"stdout_file": str(MULTITRACK)}]
-    )
-    fake_tools.set_scenario(ft.Scenario([rule]))
-    return fake_tools
 
 
 @pytest.fixture
@@ -102,27 +74,6 @@ async def test_get_store_and_update_of_a_nul_path(
         await app.sources.update(bad, lambda latest: latest)
         assert await app.sources.get(nul) is None
         assert await app.sources.get(media) == probed
-
-
-async def test_folder_probe_of_a_nul_path_is_one_error(fake: ft.FakeTools, env: Path) -> None:
-    nul = env / "Sea\0son"
-    async with await Reframe.create() as app:
-        info = app.sources.probe_folder(nul)
-        final = await app.tasks.wait(info.id)
-        assert final.state is TaskState.DONE
-        assert final.result == {
-            "folder": str(nul),
-            "total": 1,
-            "probed": [],
-            "errors": [
-                {
-                    "path": str(nul),
-                    "kind": "not_found",
-                    "message": NUL_MESSAGE,
-                    "detail": None,
-                }
-            ],
-        }
 
 
 def _errors(issues: object) -> list[ValidationIssue]:

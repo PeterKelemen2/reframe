@@ -12,67 +12,11 @@ import math
 from collections.abc import Mapping
 from typing import Annotated, Literal, get_args
 
-from pydantic import Field, model_validator
+from pydantic import Field, computed_field
 
 from reframe.models.base import ReframeModel
 from reframe.models.defaults import PassthruCodec
 from reframe.models.job import Container, FilterConfig, Mixdown, OptionValue, SubtitleFormat
-
-__all__ = [
-    "BITRATE_PLACEHOLDER",
-    "FILTER_IDS",
-    "FILTER_STAGES",
-    "OPTION_CATEGORIES",
-    "TRACK_FLAGS",
-    "AudioBitrateDef",
-    "AudioCodec",
-    "AudioEncoderDef",
-    "AudioQualityDef",
-    "BitDepth",
-    "BitrateLimits",
-    "BitrateMode",
-    "Choice",
-    "ChoiceSetting",
-    "CodecSupport",
-    "Condition",
-    "ContainerDef",
-    "Definitions",
-    "DerivedValue",
-    "EncoderDefault",
-    "EncoderFamily",
-    "EncoderOption",
-    "FastDecodeDef",
-    "FfmpegArg",
-    "FilterDef",
-    "FilterHelp",
-    "FilterId",
-    "FilterImplementation",
-    "FilterPreset",
-    "FilterTune",
-    "FixedDefault",
-    "HardwareSetup",
-    "MixdownDef",
-    "OperatingSystem",
-    "OptionDefault",
-    "OptionMapping",
-    "OptionType",
-    "PassthruCodecDef",
-    "PresetDefault",
-    "PrivateOpt",
-    "QualityBand",
-    "QualityMode",
-    "RateControlDef",
-    "SpeedCost",
-    "TrackFlag",
-    "TrackFlagDef",
-    "TwoPassDef",
-    "Vendor",
-    "VideoCodec",
-    "VideoEncoderDef",
-    "X26xParam",
-    "channels_mixdown",
-    "round_half_up",
-]
 
 EncoderFamily = Literal["software", "nvenc", "qsv", "amf", "vaapi"]
 """The picker group of an encoder. Only ``software`` is not hardware."""
@@ -122,8 +66,6 @@ FILTER_IDS: tuple[FilterId, ...] = get_args(FilterId)
 FILTER_STAGES = ("crop", "scale", "format")
 """Stages of the fixed filter order that are not filters: crop, scale and the final pixel format
 (``HardwareSetup.filter_tail`` adds the hardware upload)."""
-
-BITRATE_PLACEHOLDER = "{kbps}"
 
 
 class Choice(ReframeModel):
@@ -189,8 +131,16 @@ class ChoiceSetting(ReframeModel):
     """The value used when none is given. ``None``: the encoder decides."""
     default_by_depth: dict[BitDepth, str] = Field(default_factory=dict)
     """Overrides ``default`` per bit depth, keyed by ``"8"`` or ``"10"``."""
+    write_default: bool = False
+    """The command writes the default when none is chosen: FFmpeg releases differ in their
+    own default for this setting."""
     mapping: OptionMapping
     help: str = ""
+
+    def default_for(self, bit_depth: int) -> str | None:
+        """The default at ``bit_depth`` (``default_by_depth`` first)."""
+        key: BitDepth = "10" if bit_depth == 10 else "8"
+        return self.default_by_depth.get(key, self.default)
 
     def values(self, bit_depth: int | None = None) -> list[str]:
         """The stored ids, optionally only those valid for ``bit_depth``."""
@@ -202,10 +152,6 @@ class ChoiceSetting(ReframeModel):
 
     def get(self, value: str) -> Choice | None:
         return next((c for c in self.choices if c.value == value), None)
-
-    def default_for(self, bit_depth: int) -> str | None:
-        key: BitDepth = "10" if bit_depth == 10 else "8"
-        return self.default_by_depth.get(key, self.default)
 
 
 class FixedDefault(ReframeModel):
@@ -236,16 +182,13 @@ OptionDefault = Annotated[
     FixedDefault | PresetDefault | EncoderDefault, Field(discriminator="kind")
 ]
 
-ConditionField = str
-"""The field a condition reads: a name from ``CONDITION_FIELDS``, or ``option:<key>`` for another
-option of the same encoder."""
-CONDITION_FIELDS = ("rate_control", "two_pass", "bit_depth", "preset", "tune")
-
 
 class Condition(ReframeModel):
     """When an option applies, e.g. ``rate_control == "bitrate"``."""
 
-    field: ConditionField
+    field: str
+    """A rule field such as ``rate_control``, or ``option:<key>`` for another option of the same
+    encoder."""
     op: Literal["eq", "ne", "in", "not_in"] = "eq"
     value: OptionValue | list[OptionValue]
 
@@ -388,6 +331,18 @@ class FastDecodeDef(ReframeModel):
     params: dict[str, str] = Field(default_factory=dict)
 
 
+#: ``{vaapi_device}`` when no render node is known.
+DEFAULT_VAAPI_DEVICE = "/dev/dri/renderD128"
+
+
+def fill_placeholders(text: str, values: Mapping[str, str]) -> str:
+    """Replace each ``{name}`` of ``values`` in ``text``. The definitions linter refuses a
+    placeholder that no caller fills."""
+    for name, value in values.items():
+        text = text.replace("{" + name + "}", value)
+    return text
+
+
 class HardwareSetup(ReframeModel):
     """How to drive a hardware encoder from FFmpeg."""
 
@@ -395,6 +350,13 @@ class HardwareSetup(ReframeModel):
     """Global arguments before ``-i``."""
     filter_tail: list[str] = Field(default_factory=list)
     """Filters appended to the end of the video filter chain."""
+
+    def resolve(self, values: Mapping[str, str]) -> tuple[list[str], list[str]]:
+        """``init_args`` and ``filter_tail`` with their placeholders filled."""
+        return (
+            [fill_placeholders(a, values) for a in self.init_args],
+            [fill_placeholders(f, values) for f in self.filter_tail],
+        )
 
 
 class VideoEncoderDef(ReframeModel):
@@ -410,7 +372,6 @@ class VideoEncoderDef(ReframeModel):
     handbrake_key: str
     """The short key for the ``{encoder}`` placeholder, in HandBrake's style."""
     family: EncoderFamily
-    hardware: bool
     vendor: Vendor | None = None
     platforms: list[OperatingSystem] = Field(default_factory=lambda: _ALL_PLATFORMS.copy())
     pix_fmts: dict[Literal["8", "10"], str] = Field(default_factory=dict)
@@ -435,6 +396,11 @@ class VideoEncoderDef(ReframeModel):
     extra_args: list[str] = Field(default_factory=list)
     """Always written after the codec."""
     options: list[EncoderOption] = Field(default_factory=list)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def hardware(self) -> bool:
+        return self.family != "software"
 
     def option(self, key: str) -> EncoderOption | None:
         return next((o for o in self.options if o.key == key), None)
@@ -497,6 +463,18 @@ class AudioQualityDef(ReframeModel):
     help: str = ""
 
 
+def drop_upmix(
+    requested: Mixdown | None, source_channels: int, mixdowns: Mapping[Mixdown, MixdownDef]
+) -> Mixdown | None:
+    """``requested``, or ``None`` when it would upmix a source of ``source_channels`` (0:
+    unknown, never dropped). Dolby Pro Logic II needs more than two source channels."""
+    if requested is not None and source_channels > 0:
+        wanted = mixdowns[requested].channels
+        if source_channels < wanted or (requested == "dpl2" and source_channels <= wanted):
+            return None
+    return requested
+
+
 class AudioEncoderDef(ReframeModel):
     """One FFmpeg audio encoder that Reframe knows."""
 
@@ -536,10 +514,7 @@ class AudioEncoderDef(ReframeModel):
         known source. Dolby Pro Logic II is a matrix encoding, not a channel count, so it is
         never a fallback layout.
         """
-        if requested is not None and source_channels > 0:
-            wanted = mixdowns[requested].channels
-            if source_channels < wanted or (requested == "dpl2" and source_channels <= wanted):
-                requested = None
+        requested = drop_upmix(requested, source_channels, mixdowns)
         if requested is not None:
             if not self.mixdowns or requested in self.mixdowns:
                 return requested
@@ -615,10 +590,9 @@ class CodecSupport(ReframeModel):
 
 
 class TrackFlagDef(ReframeModel):
-    """How a track flag is written: FFmpeg disposition and mkvpropedit property."""
+    """How a track flag is written: its FFmpeg disposition."""
 
     disposition: str
-    mkvpropedit: str
 
 
 class ContainerDef(ReframeModel):
@@ -642,10 +616,6 @@ class ContainerDef(ReframeModel):
     attachments: bool
     flags: list[TrackFlag]
     """Flags the FFmpeg muxer writes (and ffprobe reads back)."""
-    mkvpropedit_flags: list[TrackFlag] = Field(default_factory=list)
-    """Flags the muxer cannot write that a ``mkvpropedit`` step can."""
-    default_always_set: bool = False
-    """MP4: when no track of a type is default, the muxer marks the first one default."""
     language_format: Literal["iso639_2b", "iso639_2t"]
     """The language tag format: ISO 639-2/B for MKV, ISO 639-2/T for MP4."""
     format_flags: dict[str, list[str]] = Field(default_factory=dict)
@@ -727,8 +697,6 @@ class FilterDef(ReframeModel):
 
     id: FilterId
     label: str
-    position: int = 0
-    """Index in ``Definitions.filter_order``; set when the definitions are validated."""
     analysis: bool = False
     """Interlace detection: it marks frames for deinterlacing and changes no pixels."""
     implementations: list[FilterImplementation]
@@ -780,21 +748,12 @@ class Definitions(ReframeModel):
 
     mixdowns: dict[Mixdown, MixdownDef] = Field(default_factory=dict)
     passthru_codecs: dict[PassthruCodec, PassthruCodecDef] = Field(default_factory=dict)
+    # Every Container has one (the definitions lint checks it), so callers index it.
     containers: dict[Container, ContainerDef] = Field(default_factory=dict)
     track_flags: dict[TrackFlag, TrackFlagDef] = Field(default_factory=dict)
     filters: dict[FilterId, FilterDef] = Field(default_factory=dict)
     filter_order: list[str] = Field(default_factory=list)
     """The fixed filter order: the filter ids plus :data:`FILTER_STAGES`."""
-
-    @model_validator(mode="after")
-    def _filter_positions(self) -> Definitions:
-        for filter_id, definition in self.filters.items():
-            if filter_id in self.filter_order:
-                definition.position = self.filter_order.index(filter_id)
-        return self
-
-    def ordered_filters(self) -> list[FilterDef]:
-        return sorted(self.filters.values(), key=lambda f: f.position)
 
 
 def interpolate(points: list[tuple[float, float]], x: float) -> float:

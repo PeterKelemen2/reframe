@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -39,6 +39,7 @@ from reframe.models import (
 )
 from reframe.probe import Prober
 from reframe_testing import media
+from reframe_testing.mkvtoolnix import mkvtoolnix_tool
 
 from .conftest import caps, draft, ffprobe_json, run_plan, tools
 
@@ -54,16 +55,12 @@ def tool_paths() -> dict[str, str]:
     ffmpeg, ffprobe = media.find_ffmpeg(), media.find_ffprobe()
     assert ffmpeg is not None
     assert ffprobe is not None
-    paths = {"ffmpeg": ffmpeg, "ffprobe": ffprobe}
-    mkvpropedit = shutil.which("mkvpropedit")
-    if mkvpropedit is not None:
-        paths["mkvpropedit"] = mkvpropedit
-    return paths
+    return {"ffmpeg": ffmpeg, "ffprobe": ffprobe}
 
 
 @pytest.fixture
 def prober(tool_paths: dict[str, str]) -> Prober:
-    return Prober(tool_paths["ffprobe"], use_mediainfo=False)
+    return Prober(tool_paths["ffprobe"])
 
 
 async def probe(prober: Prober, path: Path) -> MediaSource:
@@ -821,17 +818,16 @@ async def test_remux_with_a_negative_subtitle_offset_starts_at_zero(
     assert [c[0] for c in cues] == ["00:00:01,300 --> 00:00:02,900"]
 
 
-async def test_bcp47_language_goes_through_mkvpropedit(
+@pytest.mark.needs_mkvtoolnix
+async def test_bcp47_language_is_written_by_the_header_writer(
     fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
 ) -> None:
-    mkvmerge = shutil.which("mkvmerge")
-    if "mkvpropedit" not in tool_paths or mkvmerge is None:
-        pytest.skip("needs mkvpropedit and mkvmerge")
+    mkvmerge = mkvtoolnix_tool("mkvmerge")
     src = await source_of(prober, fixture_media("multitrack"))
     job = draft(src, output=tmp_path / "ietf.mkv", video=FAST_X264, subtitles=False)
     job.audio[1].metadata = TrackMetadata(language="pt-BR")
     plan = plan_for(job, src)
-    assert [s.kind for s in plan.steps] == ["encode", "mkvpropedit", "finalize"]
+    assert [s.kind for s in plan.steps] == ["encode", "header_edit", "finalize"]
     run_plan(plan, tool_paths)
     assert mkvmerge_languages(mkvmerge, tmp_path / "ietf.mkv")[2] == ("por", "pt-BR")
     out = await probe(prober, tmp_path / "ietf.mkv")
@@ -860,6 +856,10 @@ async def test_every_filter_on_an_untagged_interlaced_source(
             "grayscale": FilterConfig(),
         }
     )
+    if sys.platform == "win32":
+        # The Windows build crashes now and then with fieldmatch before other filters
+        # (testdata/README.md, "Windows: the desktop part of the testing phase").
+        del job.filters.root["detelecine"]
     plan = plan_for(job, src)
     assert "setparams=" in plan.display
     run_plan(plan, tool_paths)
@@ -884,6 +884,122 @@ async def test_frame_rate_modes(
     assert cfr["streams"][0]["r_frame_rate"] == "38/1"
     capped = ffprobe_json(tool_paths["ffprobe"], tmp_path / "peak.mp4", "-show_streams")
     assert capped["streams"][0]["avg_frame_rate"] == "30/1"
+
+
+def stream_starts(ffprobe: str, path: Path) -> list[float]:
+    streams = ffprobe_json(ffprobe, path, "-show_entries", "stream=start_time")["streams"]
+    return [round(float(s["start_time"]), 3) for s in streams]
+
+
+def flash_and_beeps(ffmpeg: str, path: Path, audio_tracks: int) -> list[float]:
+    """The time of the first white frame, then of the first beep of each audio track, in the
+    file's own timestamps."""
+    proc = subprocess.run(
+        [ffmpeg, "-hide_banner", "-nostdin", "-copyts", "-i", str(path), "-map", "0:v",
+         "-vf", "signalstats,metadata=print:key=lavfi.signalstats.YAVG", "-f", "null", "-"],
+        capture_output=True, text=True, check=True, timeout=60,
+    )  # fmt: skip
+    times: list[float] = []
+    pts = None
+    for line in proc.stderr.splitlines():
+        if "pts_time:" in line:
+            pts = float(line.rsplit("pts_time:", 1)[1].split()[0])
+        elif "YAVG=" in line and float(line.rsplit("=", 1)[1]) > 200 and pts is not None:
+            times.append(pts)
+            break
+    for index in range(audio_tracks):
+        proc = subprocess.run(
+            [ffmpeg, "-hide_banner", "-nostdin", "-copyts", "-i", str(path), "-map",
+             f"0:a:{index}", "-af", "silencedetect=n=-40dB:d=0.05", "-f", "null", "-"],
+            capture_output=True, text=True, check=True, timeout=60,
+        )  # fmt: skip
+        ends = [ln for ln in proc.stderr.splitlines() if "silence_end:" in ln]
+        times.append(float(ends[0].split("silence_end:")[1].split()[0]))
+    return [round(t, 2) for t in times]
+
+
+@pytest.mark.parametrize(("container", "start"), [("mkv", 0.0), ("mp4", 0.0), ("mkv", 0.3)])
+async def test_align_av_start_starts_every_stream_at_zero_in_sync(
+    container: Container,
+    start: float,
+    fixture_media: Media,
+    prober: Prober,
+    tool_paths: dict[str, str],
+    tmp_path: Path,
+) -> None:
+    """Video from 0.6 s, AAC from 0, AC-3 from 1.0 s; a white frame and both beeps at 2.0 s.
+    Aligned, every stream starts at 0 and the marks are where they are without the option,
+    where the video and the late track start later. (After ``-ss 0.3`` FFmpeg puts the video
+    on its frame grid, 20 ms later, with or without the option.)"""
+    src = await source_of(prober, fixture_media("av-offset"))
+    ffmpeg, ffprobe = tool_paths["ffmpeg"], tool_paths["ffprobe"]
+    plain = draft(src, output=tmp_path / f"plain.{container}", container=container,
+                  video=FAST_X264)  # fmt: skip
+    if start:
+        plain.range = TimeRange(start=start, end=4.0)
+    run_plan(plan_for(plain, src), tool_paths)
+    starts = stream_starts(ffprobe, tmp_path / f"plain.{container}")
+    late = media.AV_OFFSET_LATE_AUDIO_START - start
+    assert starts[0] == pytest.approx(media.AV_OFFSET_VIDEO_START - start, abs=0.021)
+    assert starts[2] == pytest.approx(late, abs=0.03 if container == "mp4" else 0.001)
+    marks = flash_and_beeps(ffmpeg, tmp_path / f"plain.{container}", 2)
+    mark = round(media.AV_OFFSET_MARK - start, 2)
+    assert marks == ([mark, mark, mark] if not start else [mark + 0.02, mark, mark])
+
+    aligned = plain.model_copy(deep=True)
+    aligned.output.path = tmp_path / f"aligned.{container}"
+    aligned.output.align_av_start = True
+    run_plan(plan_for(aligned, src), tool_paths)
+    assert stream_starts(ffprobe, tmp_path / f"aligned.{container}") == [0.0, 0.0, 0.0]
+    assert flash_and_beeps(ffmpeg, tmp_path / f"aligned.{container}", 2) == marks
+
+
+async def test_align_av_start_leaves_a_copied_track_as_it_is(
+    fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
+) -> None:
+    """A copied track cannot be filtered: the AC-3 track passed through keeps its start."""
+    src = await source_of(prober, fixture_media("av-offset"))
+    out = tmp_path / "copy.mkv"
+    job = draft(src, output=out, video=FAST_X264)
+    job.audio[1].action = "passthru"
+    job.output.align_av_start = True
+    run_plan(plan_for(job, src), tool_paths)
+    assert stream_starts(tool_paths["ffprobe"], out) == [0.0, 0.0, 1.0]
+    mark = media.AV_OFFSET_MARK
+    assert flash_and_beeps(tool_paths["ffmpeg"], out, 2) == [mark, mark, mark]
+
+
+def add_subtitle(ffmpeg: str, source: Path, subtitle: Path, path: Path) -> Path:
+    """Every stream of ``source`` and the first subtitle track of ``subtitle``."""
+    subprocess.run(
+        [ffmpeg, "-v", "error", "-i", str(source), "-i", str(subtitle), "-map", "0",
+         "-map", "1:s:0", "-c", "copy", str(path)],
+        check=True, capture_output=True,
+    )  # fmt: skip
+    return path
+
+
+async def test_align_av_start_with_a_bitmap_burn_in_and_loudnorm(
+    fixture_media: Media, prober: Prober, tool_paths: dict[str, str], tmp_path: Path
+) -> None:
+    """The video filter goes into the overlay graph; the audio one runs before ``loudnorm`` in
+    both of its passes."""
+    ffmpeg = tool_paths["ffmpeg"]
+    combined = add_subtitle(
+        ffmpeg, fixture_media("av-offset"), fixture_media("pgs"), tmp_path / "combined.mkv"
+    )
+    src = await source_of(prober, combined)
+    out = tmp_path / "burned.mkv"
+    job = draft(src, output=out, video=FAST_X264, subtitles=False)
+    job.subtitles = [SubtitleOutputTrack(source=src.subtitles[0].index, action="burn")]
+    job.audio[0].loudness = "ebu_r128"
+    job.output.align_av_start = True
+    plan = plan_for(job, src)
+    assert [s.kind for s in plan.steps][:2] == ["analyse", "encode"]
+    run_plan(plan, tool_paths)
+    assert stream_starts(tool_paths["ffprobe"], out) == [0.0, 0.0, 0.0]
+    mark = media.AV_OFFSET_MARK
+    assert flash_and_beeps(ffmpeg, out, 2) == [mark, mark, mark]
 
 
 def make_telecined_source(ffmpeg: str, path: Path) -> Path:
@@ -1048,7 +1164,8 @@ def hardware_works(tool: str, encoder: str, bit_depth: int) -> bool:
 @pytest.mark.parametrize(
     ("encoder", "fixture", "bit_depth"),
     [("h264_vaapi", "multitrack", 8), ("hevc_vaapi", "hdr10", 10), ("av1_vaapi", "anamorphic", 8),
-     ("hevc_amf", "hdr10", 10), ("h264_amf", "multitrack", 8)],
+     ("hevc_amf", "hdr10", 10), ("h264_amf", "multitrack", 8),
+     ("hevc_qsv", "hdr10", 10), ("h264_qsv", "multitrack", 8)],
 )  # fmt: skip
 async def test_hardware_encode(
     fixture_media: Media,

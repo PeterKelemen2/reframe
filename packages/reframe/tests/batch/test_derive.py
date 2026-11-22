@@ -1,24 +1,13 @@
-"""Deriving a template from a job and merging templates into a base."""
+"""Deriving a template from a job."""
 
 from __future__ import annotations
 
-import importlib.util
-import sys
 from pathlib import Path
-from types import ModuleType
+from typing import get_args
 
 import pytest
 
-from reframe.batch import (
-    SECTIONS,
-    as_template,
-    derive_selector,
-    derive_template,
-    merge_template,
-    resolve,
-    resolve_tracks,
-)
-from reframe.batch.derive import SECTION_FIELDS
+from reframe.batch import as_template, derive_selector, derive_template, resolve, resolve_tracks
 from reframe.models import (
     AudioOutputSettings,
     AudioStream,
@@ -37,25 +26,14 @@ from reframe.models import (
     SubtitleOutputSettings,
     SubtitleOutputTrack,
     TagSettings,
+    TemplateSection,
     TrackMetadata,
     TrackRole,
     TrackSelector,
 )
+from reframe.naming.track_names import track_names
 
-
-def _load(name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        f"_reframe_batch_{name}", Path(__file__).with_name(f"{name}.py")
-    )
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-A = _load("anime")
+from . import anime as A
 
 
 def test_the_most_specific_selector() -> None:
@@ -145,7 +123,7 @@ def test_every_section() -> None:
     job.output.naming = JobNaming(
         template="{name} {episode_code}", name_source="file", field_overrides={"episode": "3"}
     )
-    template = derive_template(job, e01, set(SECTIONS))
+    template = derive_template(job, e01, set(get_args(TemplateSection)))
     assert template.output.container == job.output.container  # no base: the job's options
     assert template.crop_policy == "detect_per_file"
     assert template.dimensions.crop == CropSettings(mode="auto")  # this file's rect is not kept
@@ -233,21 +211,19 @@ def test_a_name_with_braces_is_a_literal() -> None:
     )
 
 
-def test_merge_takes_only_the_sections() -> None:
+def test_a_track_name_template_stays_a_template() -> None:
+    e01 = A.recorded(1, 1)
+    job = A.example_job(e01)
+    job.audio[0].metadata.name = "{lang_name} {channels}< ({title})>"
+    (rule, _) = derive_template(job, e01, {"audio"}).audio_rules
+    assert rule.metadata.name_template == "{lang_name} {channels}< ({title})>"
+    expected = track_names(job, e01).audio[0]
+    resolved = resolve_tracks(derive_template(job, e01, {"audio"}), e01).draft.audio[0]
+    assert resolved.metadata.name == expected
+
+
+def test_as_template_leaves_out_the_preset_only_fields() -> None:
     preset = A.builtin("h265-mkv-1080p")
-    incoming = A.example_template()
-    merged = merge_template(preset, incoming, {"audio"})
-    assert type(merged) is JobTemplate
-    assert merged.audio_rules == incoming.audio_rules
-    assert merged.subtitle_rules == []
-    assert merged.naming == preset.naming
-    everything = merge_template(preset, incoming, set(SECTIONS))
-    for fields in SECTION_FIELDS.values():
-        for field in fields:
-            assert getattr(everything, field) == getattr(incoming, field)
-    # Neither input changes, and the result does not share their lists.
-    everything.audio_rules.clear()
-    assert incoming.audio_rules
     assert as_template(preset).model_dump(exclude={"id"}) == JobTemplate.model_validate(
         preset.model_dump(exclude={"id", "name", "category", "description", "built_in"})
     ).model_dump(exclude={"id"})

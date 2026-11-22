@@ -20,28 +20,31 @@ from reframe.command import PlanError, build_plan
 from reframe.definitions import Definitions, EncoderOption, VideoEncoderDef, load_definitions
 from reframe.definitions.custom_params import CustomParam, split_custom_params
 from reframe.definitions.search import cli_name
-from reframe.jsonpatch import format_pointer, parse_pointer
+from reframe.jsonpatch import parse_pointer
 from reframe.models.capabilities import CapabilitySnapshot
-from reframe.models.issues import Fix, RemoveOp, Severity, ValidationIssue
+from reframe.models.issues import Fix, Severity, ValidationIssue
 from reframe.models.job import AverageBitrate, JobSettings
 from reframe.models.media import MediaSource
 from reframe.models.plan import resolve_argv
-from reframe.models.tools import ToolSet, ToolStatus
+from reframe.models.tools import ToolSet
 from reframe.tools import CancelToken, run
-from reframe.validation.common import error, fix, replace, warning
+from reframe.validation.common import error, warning
 from reframe.validation.fs import has_nul
-from reframe.validation.video import video_custom_param_issues, video_option_rule_issues
+from reframe.validation.video import (
+    remove_option_fix,
+    remove_param_fix,
+    video_custom_param_issues,
+    video_option_rule_issues,
+)
 
 __all__ = [
     "DRY_RUN_CODES",
     "DRY_RUN_TIMEOUT",
-    "CustomParam",
     "dry_run",
     "dry_run_argv",
     "dry_run_job",
     "failure_detail",
     "parse_dry_run",
-    "split_custom_params",
 ]
 
 #: Seconds before the dry run is stopped (one frame; a hardware encoder needs a moment to
@@ -60,10 +63,6 @@ DRY_RUN_CODES = (
 # ``+level`` tags each line with its level: x264's warnings through FFmpeg have no other mark.
 # The ``+`` keeps FFmpeg's other log flags (``level+info`` would stop folding repeated lines).
 _LOG_LEVEL = ("-loglevel", "+level+info")
-
-
-def _without(params: list[CustomParam], dropped: CustomParam) -> str:
-    return ":".join(p.raw for p in params if p is not dropped)
 
 
 def dry_run_job(job: JobSettings) -> JobSettings:
@@ -139,6 +138,8 @@ _ERROR_LEVELS = frozenset({"error", "fatal", "panic"})
 # x265 and SVT-AV1 write these lines themselves, without FFmpeg's level tag.
 _ENCODER_WARNING = re.compile(r"^(?:x26[45] \[warning\]:|Svt\[warn\]:)\s*(?P<text>.*)$")
 _ENCODER_ERROR = re.compile(r"^(?:x26[45] \[error\]:|Svt\[error\]:)\s*(?P<text>.*)$")
+# The AMF runtime writes its own lines: ``<time> <thread> [<component>] Error: <file>(<n>):<text>``.
+_AMF_ERROR = re.compile(r"\[(?P<component>AMF\w*)\]\s+Error:\s*(?:[^\s(]+\(\d+\):)?(?P<text>.*)$")
 _FAILURE_WORDS = re.compile(
     r"error|fail|invalid|cannot|could not|must|not supported|out of range|unsupported", re.I
 )
@@ -168,21 +169,26 @@ def control_names(control: str) -> list[str]:
 
 
 def failure_detail(stderr: str, encoder_id: str) -> str | None:
-    """The line that says best why a dry run failed: the encoder library's own error, else a
-    failure line the encoder logged (with libvpx's ``Additional information`` appended), else
-    the encoder's first line at the error level, else
-    :func:`~reframe.capabilities.reasons.informative_line`. Without tags and addresses."""
+    """The line that says best why a dry run failed: the encoder library's own error (x265,
+    SVT-AV1, the AMF runtime), else a failure line the encoder logged that is not a warning
+    (with libvpx's ``Additional information`` appended), else the encoder's first line at the
+    error level, else :func:`~reframe.capabilities.reasons.informative_line`. Without tags and
+    addresses."""
     lines = _log_lines(stderr)
     for _level, raw in lines:
         match = _ENCODER_ERROR.match(raw)
         if match is not None:
             return match["text"].strip()
+        amf = _AMF_ERROR.search(raw)
+        if amf is not None:
+            return f"{amf['component']}: {amf['text'].strip()}"
     tag = f"[{encoder_id} @"
     tagged = [(level, _strip_tag(raw)) for level, raw in lines if raw.startswith(tag)]
     info = "Additional information:"
     extra = next((t.removeprefix(info).strip() for _, t in tagged if t.startswith(info)), None)
-    for _level, text in tagged:
-        if _FAILURE_WORDS.search(text) and not text.startswith(info):
+    for level, text in tagged:
+        # AMF warns "VBAQ is not supported by cqp …, automatically disabled" before any failure.
+        if level != "warning" and _FAILURE_WORDS.search(text) and not text.startswith(info):
             return f"{text} ({extra})" if extra else text
     for level, text in tagged:
         if level in _ERROR_LEVELS and not text.startswith(info):
@@ -267,28 +273,17 @@ class _Attribution:
         return found
 
     def _param_target(self, param: CustomParam) -> _Target:
-        rest = _without(self.params, param)
         return _Target(
             "video.custom_params",
             "encoder.custom_param_rejected",
-            (
-                fix(
-                    f"Remove {param.raw.strip()} from the custom parameters",
-                    replace("video.custom_params", rest),
-                ),
-            ),
+            (remove_param_fix(self.params, param),),
         )
 
     def _option_target(self, key: str) -> _Target:
         return _Target(
             f"video.advanced.{key}",
             "encoder.option_rejected",
-            (
-                fix(
-                    f"Reset {key} to its default",
-                    RemoveOp(path=format_pointer(["video", "advanced", key])),
-                ),
-            ),
+            (remove_option_fix(key, f"Reset {key} to its default"),),
         )
 
     def target(self, name: str) -> _Target | None:
@@ -476,7 +471,7 @@ async def dry_run(
             update={"source": job.source.model_copy(update={"path": job.source.path.absolute()})}
         )
     ffmpeg = tools.ffmpeg
-    if ffmpeg.status is not ToolStatus.FOUND or ffmpeg.path is None:
+    if not ffmpeg.usable:
         return [
             warning(
                 "encoder.dry_run_skipped",
