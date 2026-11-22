@@ -12,7 +12,9 @@ import textwrap
 import threading
 import time
 import types
+from asyncio import base_subprocess
 from pathlib import Path
+from typing import Any
 
 import psutil
 import pytest
@@ -258,6 +260,34 @@ async def test_cancelling_the_calling_task_kills_the_tree(fake_tools: ft.FakeToo
     with pytest.raises(asyncio.CancelledError):
         await task
     await wait_until(lambda: not any(alive(pid) for pid in fake_tools.pids()), limit=10)
+
+
+async def test_a_cancel_while_the_pipes_connect_kills_the_tree_and_closes_every_pipe(
+    fake_tools: ft.FakeTools, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transports: list[Any] = []
+    connecting = asyncio.Event()
+    connect = base_subprocess.BaseSubprocessTransport._connect_pipes
+
+    async def spy(self: Any, waiter: asyncio.Future[Any] | None) -> None:
+        transports.append(self)
+        connecting.set()
+        await connect(self, waiter)
+
+    monkeypatch.setattr(base_subprocess.BaseSubprocessTransport, "_connect_pipes", spy)
+    _scenario(fake_tools, ft.Rule(argv_has=["-hang"], actions=[ft.spawn_grandchild(), ft.hang()]))
+    task = asyncio.ensure_future(run([str(fake_tools.ffmpeg), "-hang"], timeout=60))
+    await connecting.wait()  # the child is forked, and its pipes are not connected yet
+    # Block the loop, as a busy machine does, so the tree starts before the pipes connect.
+    wait_until_sync(lambda: len(fake_tools.pids()) == 2, 10)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await wait_until(lambda: not any(alive(pid) for pid in fake_tools.pids()), limit=10)
+    [transport] = transports
+    pipes = transport._pipes.values()
+    assert pipes
+    assert all(p is not None and p.pipe.is_closing() for p in pipes)
 
 
 async def test_cancel_after_exit_is_a_normal_result(fake_tools: ft.FakeTools) -> None:

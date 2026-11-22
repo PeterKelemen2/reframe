@@ -409,8 +409,8 @@ async def _execute(
     if cancel is not None and cancel.cancelled:
         return RunResult(None, b"", b"", 0.0, cancelled=True, argv=tuple(args))
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *args,
+        proc = await _spawn(
+            args,
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -497,6 +497,28 @@ async def _execute(
         truncated=out_sink.truncated or err_sink.truncated,
         argv=tuple(args),
     )
+
+
+async def _spawn(args: list[str], **options: Any) -> asyncio.subprocess.Process:
+    # A cancel inside create_subprocess_exec closes the transport while its pipes are still
+    # being connected: a pipe connected later is never closed, and only the child is killed.
+    spawn = asyncio.ensure_future(asyncio.create_subprocess_exec(*args, **options))
+    try:
+        return await asyncio.shield(spawn)
+    except asyncio.CancelledError:
+        await asyncio.shield(_end_cancelled_spawn(spawn))
+        raise
+
+
+async def _end_cancelled_spawn(spawn: asyncio.Future[asyncio.subprocess.Process]) -> None:
+    await asyncio.wait({spawn})
+    if spawn.cancelled() or spawn.exception() is not None:
+        return
+    proc = spawn.result()
+    try:
+        await _kill_and_reap(proc)
+    finally:
+        _close_transport(proc)
 
 
 async def _kill_and_reap(proc: asyncio.subprocess.Process) -> None:
