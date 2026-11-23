@@ -222,7 +222,7 @@ class LocalServer:
                         if route.delay:
                             time.sleep(route.delay)
                         self.wfile.write(body[start : start + BLOCK])
-                except (BrokenPipeError, ConnectionResetError):  # the client stopped
+                except ConnectionError:  # the client stopped (reset, broken pipe, aborted)
                     pass
 
             def log_message(self, format: str, *args: object) -> None:

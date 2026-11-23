@@ -4,7 +4,9 @@
 
 - [ ] **Q-1.1** GitHub Actions matrix: `ubuntu-latest` and `windows-latest`.
   - Python: `uv sync --frozen`, `ruff check`, `ruff format --check`, `mypy` (strict on
-    `reframe`), `pytest -m "not needs_gpu"`.
+    `reframe`), `pytest -m "not needs_gpu"`. Python 3.14 runs it in three parts per platform,
+    with a worker per vCPU; Python 3.13 (Linux) leaves out the `needs_ffmpeg` tests
+    ([decision 0104](../decisions/0104-faster-ci-test-runs.md)).
   - Frontend: `npm ci`, `oxlint`, `oxfmt --check`, `vue-tsc --noEmit`, `vitest run`.
 - [ ] **Q-1.2** FFmpeg in CI: the same pinned build that ships, from `tools/ffmpeg.toml`
       ([02 §Bundled FFmpeg](02-architecture.md#bundled-ffmpeg)). Cached and checksum-verified,

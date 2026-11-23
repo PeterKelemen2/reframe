@@ -160,7 +160,9 @@ export async function closeWindows(pid: number): Promise<void> {
   }
 }
 
-// The common file dialog's controls: the file name box (1148) and the Open button (1).
+// The common file dialog's controls: the file name box (1148) and the Open button (1). The
+// box is a combo box whose edit has the same id; on some Windows versions only the edit takes
+// a value, so the first control with the id and the pattern is used.
 const CHOOSE_FILE_WINDOWS = `
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
@@ -179,14 +181,20 @@ while (-not $dialog) {
   $dialog = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $both)
   if (-not $dialog) { Start-Sleep -Milliseconds 250 }
 }
-function Control($id) {
+function Pattern($id, $pattern) {
   $condition = New-Object Windows.Automation.PropertyCondition(
     [Windows.Automation.AutomationElement]::AutomationIdProperty, $id)
-  $dialog.FindFirst([Windows.Automation.TreeScope]::Descendants, $condition)
+  while ($true) {
+    foreach ($element in $dialog.FindAll([Windows.Automation.TreeScope]::Descendants, $condition)) {
+      $found = $null
+      if ($element.TryGetCurrentPattern($pattern, [ref]$found)) { return $found }
+    }
+    if ((Get-Date) -gt $deadline) { Write-Error "no control $id of the file dialog takes the input" }
+    Start-Sleep -Milliseconds 250
+  }
 }
-$name = Control '1148'
-$name.GetCurrentPattern([Windows.Automation.ValuePattern]::Pattern).SetValue($path)
-(Control '1').GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()`
+(Pattern '1148' ([Windows.Automation.ValuePattern]::Pattern)).SetValue($path)
+(Pattern '1' ([Windows.Automation.InvokePattern]::Pattern)).Invoke()`
 
 /**
  * Chooses `path` in the file dialog that `pid` opens, as a user who types the path: GTK's

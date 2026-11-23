@@ -43,7 +43,8 @@ uv run ruff format --check                # format check (uv run ruff format to 
 uv run mypy                               # strict type check (files listed in pyproject.toml)
 uv run mypy --platform win32              # the same, as the Windows CI runner sees it
 uv run pytest                             # all tests, in parallel (pytest-xdist `-n auto` is in addopts)
-uv run pytest -m "not needs_gpu"          # what CI runs (~6 min on 12 cores)
+uv run pytest -m "not needs_gpu"          # what CI runs (~6 min on 12 cores; in 3 parts there, 0104)
+uv run pytest -m "not needs_gpu and not benchmark" --store-durations --clean-durations  # refresh .test_durations (CI's parts)
 uv run pytest -n 0 path/to/test.py --pdb  # one process: debugging, --pdb (decision 0084)
 uv run pytest -m benchmark -n 0           # time budgets; they skip under xdist
 uv run pytest --timeout 60                # per-test limit, default 600 s: a hung test's worker ends (0084)
