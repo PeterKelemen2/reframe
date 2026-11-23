@@ -442,7 +442,7 @@ jobs:
 
       - name: Tests that need FFmpeg
         # pytest exits with 5 when no test is selected: that is a failure here.
-        run: uv run pytest -m "needs_ffmpeg and not needs_gpu and not benchmark"
+        run: uv run pytest -m "needs_ffmpeg and not needs_gpu and not benchmark" -n logical
 
   benchmark:
     # Performance budgets run as a NON-blocking job. A failure here does not fail the
