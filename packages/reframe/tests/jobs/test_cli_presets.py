@@ -307,12 +307,6 @@ def test_import_missing_file(cli_env: ft.FakeTools, tmp_path: Path) -> None:
         (b"{broken", "it is not JSON"),
         (b"[1, 2]", "it is not a JSON object"),
         (b"\xff\xfe not utf-8 \xff", "it is not UTF-8 text"),
-        # The id goes into PYTEST_CURRENT_TEST: Windows limits a variable to 32767 characters.
-        # An object, not a list: with a larger stack (GitHub's runners) Python 3.14 parses this
-        # depth, and a list would then be refused as "not a JSON object".
-        pytest.param(
-            b'{"a":' * 100_000 + b"1" + b"}" * 100_000, "nested too deeply", id="deep-nesting"
-        ),
     ],
 )
 def test_import_not_a_preset_file(
@@ -326,6 +320,34 @@ def test_import_not_a_preset_file(
     assert result.stderr.startswith(f"error: {path} is not a Reframe preset file: ")
     assert message in result.stderr
     assert "Traceback" not in result.stderr
+
+
+def test_import_a_preset_file_nested_too_deeply(cli_env: ft.FakeTools, tmp_path: Path) -> None:
+    path = tmp_path / "deep.json"
+    path.write_bytes(b'{"a":' * 1000 + b"1" + b"}" * 1000)
+    result = invoke("presets", "import", str(path))
+    assert result.exit_code == EXIT_FAILED
+    assert f"Nothing was imported from {path}." in result.stdout
+    assert "the JSON is nested more than 64 levels deep" in result.stdout
+    assert "Traceback" not in result.output
+
+
+def test_import_a_preset_file_too_deep_for_the_parser(
+    cli_env: ft.FakeTools, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The depth at which json.loads gives up depends on the thread's stack size.
+    def too_deep(text: str) -> object:
+        raise RecursionError
+
+    path = tmp_path / "deep.json"
+    path.write_bytes(b"{}")
+    monkeypatch.setattr(json, "loads", too_deep)
+    result = invoke("presets", "import", str(path))
+    assert result.exit_code == EXIT_FAILED
+    assert result.stdout == ""
+    assert (
+        result.stderr == f"error: {path} is not a Reframe preset file: it is nested too deeply.\n"
+    )
 
 
 def test_import_a_file_the_store_refuses(cli_env: ft.FakeTools, tmp_path: Path) -> None:
