@@ -13,6 +13,7 @@ import pytest
 from reframe.mediatask import sample_timestamps
 from reframe.models import FrameSet, MediaSource, TaskState
 from reframe.service import Reframe
+from reframe_testing import media
 
 pytestmark = [pytest.mark.anyio, pytest.mark.needs_ffmpeg, pytest.mark.benchmark]
 
@@ -45,8 +46,17 @@ async def one_frame(app: Reframe, path: Path, timestamp: float) -> tuple[float, 
     return elapsed, frames
 
 
-async def test_4k_hdr_frame_budget(tmp_path: Path, fixture_media: Callable[[str], Path]) -> None:
+async def test_4k_hdr_frame_budget(
+    tmp_path: Path, fixture_media: Callable[[str], Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
     src = fixture_media("hdr10-4k")
+    # The app gets its own data folder, so discovery would no longer find a bundled FFmpeg in
+    # REFRAME_DATA_DIR: pin the tools found with the test run's environment.
+    ffmpeg, ffprobe = media.find_ffmpeg(), media.find_ffprobe()
+    assert ffmpeg is not None
+    assert ffprobe is not None
+    monkeypatch.setenv("REFRAME_FFMPEG", ffmpeg)
+    monkeypatch.setenv("REFRAME_FFPROBE", ffprobe)
     app = await Reframe.create(tmp_path / "config", tmp_path / "data", cache_dir=tmp_path / "c")
     try:
         # so the frames are tone mapped as on a user's machine (libplacebo when its run test
