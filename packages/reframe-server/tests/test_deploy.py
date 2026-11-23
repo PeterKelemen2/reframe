@@ -120,6 +120,7 @@ async def test_the_health_check_asks_a_route_that_answers_without_a_login(
     assert response.status_code == 200
 
 
+@linux_only
 def test_the_image_has_no_ffmpeg_and_a_download_lands_in_the_data_mount() -> None:
     """A build downloaded in the container must survive a new container: in the bind mount."""
     code = [line for line in DOCKERFILE.read_text("utf-8").splitlines() if not line.startswith("#")]
