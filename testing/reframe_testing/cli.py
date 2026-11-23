@@ -5,7 +5,9 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
+from unittest import mock
 
+import typer.rich_utils
 from typer.testing import CliRunner, Result
 
 from reframe.cli import build_app
@@ -17,7 +19,10 @@ WIDTH = "200"
 
 
 def invoke(*args: str, env: dict[str, str] | None = None) -> Result:
-    return CliRunner().invoke(build_app(), list(args), env={"COLUMNS": WIDTH, **(env or {})})
+    # Typer forces colour when GITHUB_ACTIONS or FORCE_COLOR is set, read once at import, so
+    # `env` cannot turn it off: the help would split `--json` with escape codes.
+    with mock.patch.object(typer.rich_utils, "FORCE_TERMINAL", False):
+        return CliRunner().invoke(build_app(), list(args), env={"COLUMNS": WIDTH, **(env or {})})
 
 
 def run_cli(
