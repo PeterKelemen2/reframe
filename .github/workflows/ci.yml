@@ -23,16 +23,24 @@ defaults:
 
 jobs:
   python:
-    name: Python ${{ matrix.python }} (${{ matrix.os }})
+    name: Python ${{ matrix.python }} (${{ matrix.os }}${{ matrix.group && format(', {0}/{1}', matrix.group, matrix.splits) || '' }})
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python: ["3.14"] # .python-version
+        # .python-version: the Python of the sidecar, the Docker image and the release.
+        python: ["3.14"]
+        # The whole suite in parts of about equal time (pytest-split, from .test_durations).
+        group: [1, 2, 3]
         include:
-          # requires-python is ">=3.13": test the minimum once.
+          - python: "3.14"
+            splits: 3
+            tests: "not needs_gpu and not benchmark"
+          # requires-python is ">=3.13": the minimum once, without the real-FFmpeg tests,
+          # which a Python version rarely changes.
           - os: ubuntu-latest
             python: "3.13"
+            tests: "not needs_ffmpeg and not needs_gpu and not benchmark"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env:
@@ -106,7 +114,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends mkvtoolnix
 
-      - run: uv run pytest -m "not needs_gpu and not benchmark"
+      # -n logical: a worker per vCPU, not per physical core (-n auto gives 2 on the 4-vCPU
+      # runners); most tests wait on FFmpeg and other child processes.
+      - name: Tests
+        run: >-
+          uv run pytest -m "${{ matrix.tests }}" -n logical
+          ${{ matrix.group && format('--splits {0} --group {1}', matrix.splits, matrix.group) || '' }}
 
   frontend:
     name: Frontend (${{ matrix.os }})
