@@ -319,16 +319,6 @@ hands its jobs to the server or desktop app that owns the queue, or starts one
 
 ## Open items for the next steps
 
-- **An intermittent test error under xdist** (since the FFmpeg-download fix rounds,
-  2026-11-19): about one full `pytest -m "not needs_gpu"` run in two ends with 1 error at the
-  setup of an unrelated test (seen in `test_remote_queue.py`, `server/test_tasks.py`,
-  `server/test_subtitles.py`): `ResourceWarning: unclosed transport <_UnixReadPipeTransport>`
-  from an asyncio subprocess pipe of an earlier test in the same worker, made an error by the
-  test settings. Not reproduced with `-n 0` and a gc after every test (the server tests, and
-  the core tools, service, capabilities, remote and CLI tests). Likely a cancelled discovery or
-  fetch task (the first discovery's put-back of an interrupted install, or the server's
-  start-up download) whose child process pipe is not closed. Fix before the first CI run.
-
 - **Known limits left from the Windows testing phase** ([0070](decisions/0070-windows-testing-phase.md)
   "The desktop part"; recorded, not fixed):
   - **FFmpeg's Windows build crashes now and then with Detelecine**: BtbN n9.0.2 win64 exits with
@@ -451,8 +441,9 @@ for them.
   folder probe is replaced by `probe_many` (SRV-01, D-11); `probe_hash` is no longer written and
   shows as `null` (X-09, D-13); the large decision changes stay in Tier C: the capability cache
   (CMD-09), `scripts/fetch-tools.py` reusing the core (TP-01), the logind backend and the own
-  D-Bus client (TP-11, TP-12). Open: `output.default_container` is stored but nothing reads it
-  (wire it or remove it; D-17).
+  D-Bus client (TP-11, TP-12). `output.default_container`, stored but read by nothing (D-17),
+  was removed with settings schema 3 ([0103](decisions/0103-owner-decisions-before-v1.md)
+  item 3).
 
 - **Small windows (F-16, 2026-11-14)**: a layout for windows below about 1100×700 logical
   pixels (reflow and text resize, WCAG 1.4.10 and 1.4.4) is not part of F-16; default: a later
