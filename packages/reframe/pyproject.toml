@@ -28,7 +28,7 @@ cli = ["httpx>=0.28.1", "typer>=0.27.3", "websockets>=17.3"]
 reframe = "reframe.cli:main"
 
 [build-system]
-requires = ["hatchling>=1.32.4"]
+requires = ["hatchling>=1.33.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
