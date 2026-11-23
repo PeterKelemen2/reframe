@@ -308,7 +308,11 @@ def test_import_missing_file(cli_env: ft.FakeTools, tmp_path: Path) -> None:
         (b"[1, 2]", "it is not a JSON object"),
         (b"\xff\xfe not utf-8 \xff", "it is not UTF-8 text"),
         # The id goes into PYTEST_CURRENT_TEST: Windows limits a variable to 32767 characters.
-        pytest.param(b"[" * 100_000 + b"]" * 100_000, "nested too deeply", id="deep-nesting"),
+        # An object, not a list: with a larger stack (GitHub's runners) Python 3.14 parses this
+        # depth, and a list would then be refused as "not a JSON object".
+        pytest.param(
+            b'{"a":' * 100_000 + b"1" + b"}" * 100_000, "nested too deeply", id="deep-nesting"
+        ),
     ],
 )
 def test_import_not_a_preset_file(
