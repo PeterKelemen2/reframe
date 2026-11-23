@@ -441,8 +441,9 @@ for them.
   folder probe is replaced by `probe_many` (SRV-01, D-11); `probe_hash` is no longer written and
   shows as `null` (X-09, D-13); the large decision changes stay in Tier C: the capability cache
   (CMD-09), `scripts/fetch-tools.py` reusing the core (TP-01), the logind backend and the own
-  D-Bus client (TP-11, TP-12). Open: `output.default_container` is stored but nothing reads it
-  (wire it or remove it; D-17).
+  D-Bus client (TP-11, TP-12). `output.default_container`, stored but read by nothing (D-17),
+  was removed with settings schema 3 ([0103](decisions/0103-owner-decisions-before-v1.md)
+  item 3).
 
 - **Small windows (F-16, 2026-11-14)**: a layout for windows below about 1100×700 logical
   pixels (reflow and text resize, WCAG 1.4.10 and 1.4.4) is not part of F-16; default: a later
