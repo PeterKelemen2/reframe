@@ -7,7 +7,6 @@ use tauri::AppHandle;
 
 /// The entry the deb and rpm packages install (named after the product); its `StartupWMClass`
 /// matches the window's app id, the binary name.
-#[cfg(target_os = "linux")]
 pub const DESKTOP_ENTRY: &str = "Reframe.desktop";
 
 /// `value` is 0…1, or `None` to clear.

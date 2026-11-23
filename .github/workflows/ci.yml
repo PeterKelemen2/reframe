@@ -50,8 +50,9 @@ jobs:
           enable-cache: true
 
       # The default build goes where Reframe's tool discovery looks for the bundled
-      # build, $REFRAME_DATA_DIR/tools/ffmpeg (reframe/paths.py). It is NOT put on PATH, so
-      # the tests and the fixture generator use exactly the binary that discovery picks.
+      # build, $REFRAME_DATA_DIR/tools/ffmpeg (reframe/paths.py). Its bin/ also goes on PATH:
+      # a test that gives the app its own data folder finds it there, as on a developer's
+      # machine. Discovery takes the bundled build before PATH, so both find the same binary.
       - name: Point REFRAME_DATA_DIR to a temporary folder
         run: echo "REFRAME_DATA_DIR=$RUNNER_TEMP/reframe-data" >> "$GITHUB_ENV"
 
@@ -64,9 +65,10 @@ jobs:
       # Downloads (or re-verifies the cached copy of) the default build, checks the SHA-256
       # and the version, and lays it out as a bundled build (bin/, plus lib/ on Linux).
       - name: Install the pinned FFmpeg as the bundled build (tools/ffmpeg.toml)
-        run: >-
-          uv run --no-project python scripts/fetch-tools.py --build default
-          --install-dir "$REFRAME_DATA_DIR/tools/ffmpeg"
+        run: |
+          bin_dir="$(uv run --no-project python scripts/fetch-tools.py --build default \
+            --install-dir "$REFRAME_DATA_DIR/tools/ffmpeg")"
+          echo "$bin_dir" >> "$GITHUB_PATH"
 
       # `uv sync --frozen` does not check the lock file, so a stale uv.lock fails here.
       - name: Check that uv.lock matches pyproject.toml
@@ -461,9 +463,10 @@ jobs:
           key: tools-${{ runner.os }}-default-bundled-${{ hashFiles('tools/ffmpeg.toml') }}
 
       - name: Install the pinned FFmpeg as the bundled build (tools/ffmpeg.toml)
-        run: >-
-          uv run --no-project python scripts/fetch-tools.py --build default
-          --install-dir "$REFRAME_DATA_DIR/tools/ffmpeg"
+        run: |
+          bin_dir="$(uv run --no-project python scripts/fetch-tools.py --build default \
+            --install-dir "$REFRAME_DATA_DIR/tools/ffmpeg")"
+          echo "$bin_dir" >> "$GITHUB_PATH"
 
       - run: uv sync --frozen
 

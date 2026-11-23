@@ -569,8 +569,9 @@ async def test_a_refused_connection_is_tried_twice(
     final, _ = await fetch(manifest, platform=other)
     assert final.state is TaskState.FAILED
     assert final.error is not None
-    assert final.error.startswith(
-        "cannot reach the download server 127.0.0.1 (Connection refused; 2 attempt(s))"
+    # The reason in the brackets is the system's text for a refused connection.
+    assert re.match(
+        r"cannot reach the download server 127\.0\.0\.1 \([^;]+; 2 attempt\(s\)\)", final.error
     )
     assert final.error_code == "tools.fetch_offline"
 

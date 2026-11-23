@@ -50,6 +50,7 @@ MAX_LINE = 2**20
 #: After the process exited (or was killed), wait this long for the pipes to close. A
 #: process that escaped the tree kill and still holds a pipe cannot block ``run`` forever.
 PIPE_DRAIN_GRACE = 2.0
+_EXIT_POLL = 0.25
 _READ_SIZE = 64 * 1024
 
 #: Called with each line (decoded as UTF-8, invalid bytes replaced, line end removed).
@@ -434,7 +435,7 @@ async def _execute(
         asyncio.ensure_future(_pump(proc.stdout, out_sink)),
         asyncio.ensure_future(_pump(proc.stderr, err_sink)),
     ]
-    waiter = asyncio.ensure_future(proc.wait())
+    waiter = asyncio.ensure_future(_exited(proc))
     cancel_waiter = asyncio.ensure_future(cancel.wait()) if cancel is not None else None
 
     timed_out = cancelled = False
@@ -519,6 +520,17 @@ async def _end_cancelled_spawn(spawn: asyncio.Future[asyncio.subprocess.Process]
         await _kill_and_reap(proc)
     finally:
         _close_transport(proc)
+
+
+async def _exited(proc: asyncio.subprocess.Process) -> None:
+    # Some CPython releases return from proc.wait() only once every pipe is closed
+    # (gh-119710): a descendant holding stdout would block it. The exit code is set at exit.
+    wait = asyncio.ensure_future(proc.wait())
+    try:
+        while proc.returncode is None and not wait.done():
+            await asyncio.wait({wait}, timeout=_EXIT_POLL)
+    finally:
+        wait.cancel()
 
 
 async def _kill_and_reap(proc: asyncio.subprocess.Process) -> None:

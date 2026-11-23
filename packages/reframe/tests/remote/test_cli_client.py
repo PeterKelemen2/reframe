@@ -37,6 +37,7 @@ from reframe.models import (
 )
 from reframe.models.template import AudioOutputSettings
 from reframe.platform.power import OsAction, PowerService
+from reframe.queue.client import read_saved_queue
 from reframe.remote import RemoteError, RemoteQueue
 from reframe_testing import fake_tools as ft
 from reframe_testing.server import PROBE_RULE, Api, ApiFactory
@@ -767,9 +768,16 @@ async def test_after_a_lost_connection_the_owners_states_are_reported(
     connect = cli.connect_owner
     after = JobState.CANCELLED if attached else JobState.RUNNING
 
+    def saved() -> JobState | None:
+        return {job.id: job.state for job in read_saved_queue(server.data_dir).jobs}.get(job_id)
+
     async def after_the_owner_acted(*args: Any, **kwargs: Any) -> Any:
         await wait_until(lambda: states(server)[job_id] is after)
-        return await connect(*args, **kwargs) if answers else "no Reframe server answers"
+        if answers:
+            return await connect(*args, **kwargs)
+        # The owner changes a job's state before it saves it.
+        await wait_until(lambda: saved() is after)
+        return "no Reframe server answers"
 
     monkeypatch.setattr(cli, "connect_owner", after_the_owner_acted)
     [connection] = _open_connections(server)

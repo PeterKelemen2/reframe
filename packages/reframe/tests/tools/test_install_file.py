@@ -707,7 +707,10 @@ async def test_a_fetch_puts_the_build_left_aside_back_before_it_removes_old_work
     previous = _kill_during_the_swap(install)
     old = time.time() - 7 * 3600
     for path in [previous.parent, *previous.parent.rglob("*")]:
-        os.utime(path, (old, old), follow_symlinks=False)
+        if os.utime in os.supports_follow_symlinks:
+            os.utime(path, (old, old), follow_symlinks=False)
+        elif not path.is_symlink():  # Windows cannot set a link's own time
+            os.utime(path, (old, old))
 
     final, again = await runner.fetch(manifest, platform=other)
     assert final.state is TaskState.DONE, final.error
