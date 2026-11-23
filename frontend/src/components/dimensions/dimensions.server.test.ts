@@ -95,6 +95,7 @@ describe('the Dimensions tab against a real server', () => {
     expect(editor.get('/dimensions/crop')).toEqual({
       mode: 'auto',
       rect: { top: 22, bottom: 24, left: 0, right: 0 },
+      detection_error: null,
     })
     expect(editor.canUndo).toBe(false)
     // The server's answer for the job as it is now, the detected crop in it.
