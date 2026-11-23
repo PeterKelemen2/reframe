@@ -15,10 +15,11 @@ pin = tomllib.load(open(sys.argv[1], "rb"))["binaries"]["appimage-runtime"]
 print(pin["url"], pin["sha256"])' "$pins")
 EOF
 runtime="$cache/appimage-runtime-$sha256"
-if ! echo "$sha256  $runtime" | sha256sum -c --status - 2>/dev/null; then
+# stdout too: uutils sha256sum (Ubuntu 26.04) prints "FAILED open or read" there despite --status.
+if ! echo "$sha256  $runtime" | sha256sum -c --status - >/dev/null 2>&1; then
     mkdir -p "$cache"
     curl -fsSL --retry 3 -o "$runtime.part" "$url"
-    if ! echo "$sha256  $runtime.part" | sha256sum -c --status -; then
+    if ! echo "$sha256  $runtime.part" | sha256sum -c --status - >/dev/null; then
         rm -f "$runtime.part"
         echo "appimage-runtime.sh: $url does not have the SHA-256 $sha256" >&2
         exit 1
