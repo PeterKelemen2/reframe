@@ -26,6 +26,9 @@ export default defineConfig({
   },
   // Each project has its own server; its tests take turns on it (e2e/support/test.ts).
   webServer: webServers(servers),
+  // One worker per project, so the browsers run at once; the default (half the logical CPUs)
+  // leaves one waiting on a 4-vCPU CI runner.
+  workers: Object.keys(servers).length,
   projects: [
     {
       name: 'chromium',
