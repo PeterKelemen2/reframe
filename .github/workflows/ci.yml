@@ -211,6 +211,12 @@ jobs:
       - run: npm ci && npm run build:desktop
         working-directory: frontend
       - run: rustup component add rustfmt clippy
+      # The dependencies' build output (target/) and ~/.cargo, saved from main only: a branch
+      # reads main's cache and compiles only Reframe's own crate.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: desktop/src-tauri -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --check
         working-directory: desktop/src-tauri
       - run: cargo clippy --all-targets -- -D warnings
@@ -269,6 +275,13 @@ jobs:
         working-directory: frontend
       - run: npm ci
         working-directory: desktop
+
+      # The dependencies' build output (target/) and ~/.cargo, saved from main only: a branch
+      # reads main's cache and compiles only Reframe's own crate.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: desktop/src-tauri -> target
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # The binary next to its resources (sidecar/, tools/), as the installers lay it out.
       - name: Build the release app (no installers)
