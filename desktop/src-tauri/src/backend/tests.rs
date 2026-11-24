@@ -4,7 +4,7 @@
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -110,6 +110,8 @@ struct FakeServer {
     port: u16,
     requests: Arc<Mutex<Vec<String>>>,
     silent: Arc<AtomicBool>,
+    /// Milliseconds before the first answer to `GET /api/health`.
+    first_health_delay: Arc<AtomicU64>,
     task: JoinHandle<()>,
 }
 
@@ -125,6 +127,8 @@ impl FakeServer {
         let recorded = requests.clone();
         let silent = Arc::new(AtomicBool::new(false));
         let quiet = silent.clone();
+        let first_health_delay = Arc::new(AtomicU64::new(0));
+        let delay = first_health_delay.clone();
         let health = serde_json::json!({
             "version": "0.0.test", "api_version": api_version, "instance": instance, "uptime": 1.0,
         })
@@ -159,6 +163,10 @@ impl FakeServer {
                     .lock()
                     .unwrap()
                     .push(format!("{method} {path} {authorization}"));
+                if path == "/api/health" {
+                    let wait = delay.swap(0, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(wait)).await;
+                }
                 let body = match path {
                     "/api/health" => Some(&health),
                     "/api/system" => system.as_ref(),
@@ -186,8 +194,14 @@ impl FakeServer {
             port,
             requests,
             silent,
+            first_health_delay,
             task,
         }
+    }
+
+    fn slow_first_health(&self, delay: Duration) {
+        let millis = u64::try_from(delay.as_millis()).unwrap();
+        self.first_health_delay.store(millis, Ordering::SeqCst);
     }
 
     fn silent(&self, silent: bool) {
@@ -334,6 +348,16 @@ async fn without_an_owner_the_sidecar_starts_and_stops_on_the_shutdown_request()
     );
     run.backend.stop().await; // a second stop returns at once
     assert_eq!(server.shutdowns(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sidecar_whose_first_answer_is_slower_than_a_health_check_is_used() {
+    let temp = Temp::new();
+    let server = FakeServer::start("run-1", 1, Some(temp.path("stop"))).await;
+    server.slow_first_health(timing().health * 2);
+    let run = Run::start(&temp, temp.script(&until_shutdown(server.port)), timing());
+    assert_eq!(run.ready().await.instance, "run-1");
+    run.backend.stop().await;
 }
 
 #[tokio::test(flavor = "multi_thread")]
