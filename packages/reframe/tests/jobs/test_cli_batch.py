@@ -295,7 +295,8 @@ def test_cancelling_the_batch_cancels_its_jobs(s01: Path, queues: Queues) -> Non
         running = asyncio.Event()
         queues.on_running = lambda _job: running.set()
         task = asyncio.create_task(cli.run_batch([s01], preset=None, in_process=True))
-        await asyncio.wait_for(running.wait(), 30)
+        # The batch first detects the crop of all 12 files: slow with the fake tools on Windows.
+        await asyncio.wait_for(running.wait(), 120)
         task.cancel()
         return await task
 
