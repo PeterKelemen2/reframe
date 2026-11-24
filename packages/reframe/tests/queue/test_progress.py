@@ -133,6 +133,35 @@ def test_speed_fps_and_eta_from_the_blocks() -> None:
     assert progress.eta == pytest.approx(40.0, abs=0.2)  # 80 s of media at 2x
 
 
+def test_blocks_without_an_output_time_count_the_frames() -> None:
+    """FFmpeg can print out_time=N/A for a whole encode (until a late subtitle's first packet):
+    the frames give the position, the speed and the ETA."""
+    tracker = ProgressTracker(ENCODE, expected_duration=100.0, expected_frames=2500)
+    tracker.start_step(0)
+    t, frame = 0.0, 0
+    while t <= 10.0 + 1e-9:
+        tracker.update(ProgressBlock(frame=frame, fps=50.0), mono=t, wall=t)
+        t += 0.5
+        frame += 25  # 50 frames a second of a 25 fps video: 2x
+    progress = tracker.snapshot()
+    assert progress.percent == pytest.approx(20.0, abs=0.01)  # frame 500 of 2500
+    assert progress.speed == pytest.approx(2.0, rel=1e-3)
+    assert progress.eta == pytest.approx(40.0, abs=0.2)
+    # A real output time wins over the frames.
+    assert (
+        tracker.update(ProgressBlock(out_time=30.0, frame=525), mono=10.5, wall=10.5).percent == 30
+    )
+    without_rate = ProgressTracker(ENCODE, expected_duration=100.0)
+    without_rate.start_step(0)
+    assert without_rate.update(ProgressBlock(frame=500), mono=0, wall=0).percent == 0.0
+
+
+def test_frames_of_an_analyse_step_are_no_position() -> None:
+    tracker = ProgressTracker([step("analyse", 1.0), *ENCODE], 100.0, expected_frames=2500)
+    tracker.start_step(0)
+    assert tracker.update(ProgressBlock(frame=500), mono=0, wall=0).percent == 0.0
+
+
 def eta_around_a_gap(*, mono_gap: float, wall_gap: float) -> tuple[float, float, float, float]:
     tracker = ProgressTracker(ENCODE, expected_duration=1000.0)
     tracker.start_step(0)

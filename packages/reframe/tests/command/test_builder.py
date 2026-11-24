@@ -20,6 +20,7 @@ from reframe.models import (
     JobSettings,
     MediaSource,
     PlanStep,
+    Rational,
     SubtitleOutputTrack,
     TimeRange,
     TrackHeaderEdit,
@@ -178,6 +179,22 @@ def test_attachments_only_with_a_copied_ass_track_in_matroska() -> None:
     assert "0:t?" not in argv(plan_of(job, src).steps[0])
     mp4 = draft(src, container="mp4", video={"encoder": "libx264"})
     assert "0:t?" not in argv(plan_of(mp4, src).steps[0])
+
+
+def test_expected_frames_are_the_range_at_the_output_frame_rate() -> None:
+    src = recorded("multitrack.mkv")  # 25 fps
+    job = draft(src)
+    plan = plan_of(job, src)
+    assert plan.expected_frames == round(plan.expected_duration * 25) == 101
+    job.range = TimeRange(start=0.0, end=2.5)
+    assert plan_of(job, src).expected_frames == 62
+    job.video.framerate_mode = "constant"
+    job.video.framerate = Rational(num=50, den=1)
+    assert plan_of(job, src).expected_frames == 125
+    unknown = src.model_copy(deep=True)
+    unknown.video[0].avg_frame_rate = None
+    unknown.video[0].frame_rate = None
+    assert plan_of(draft(unknown), unknown).expected_frames is None
 
 
 def test_ranges() -> None:

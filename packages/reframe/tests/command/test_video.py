@@ -13,6 +13,7 @@ from reframe.command.video import (
     format_number,
     frame_rate_args,
     hdr_params,
+    output_frame_rate,
     pass_log_files,
     source_rate,
     spec,
@@ -347,6 +348,23 @@ def test_frame_rate_modes() -> None:
     assert frame_rate_args(VideoSettings(framerate_mode="constant"), unknown) == [
         "-fps_mode:v:0", "cfr",
     ]  # fmt: skip
+
+
+def test_the_output_frame_rate_is_the_rate_that_the_options_give() -> None:
+    vfr = video_stream(frame_rate=Rational(num=120, den=1), avg_frame_rate=Rational(num=38, den=1))
+    ntsc = Rational(num=30000, den=1001)
+    assert output_frame_rate(VideoSettings(), vfr) == 38
+    assert output_frame_rate(VideoSettings(), vfr, factor=2) == 76
+    constant = VideoSettings(framerate_mode="constant", framerate=ntsc)
+    assert output_frame_rate(constant, vfr, factor=2) == Fraction(30000, 1001)
+    # A peak caps a faster source and leaves a slower one.
+    peak = VideoSettings(framerate_mode="peak", framerate=ntsc)
+    assert output_frame_rate(peak, vfr) == Fraction(30000, 1001)
+    assert output_frame_rate(peak, video_stream(avg_frame_rate=Rational(num=24, den=1))) == 24
+    assert output_frame_rate(VideoSettings(passthrough=True, framerate_mode="constant",
+                                           framerate=ntsc), vfr) == 38  # fmt: skip
+    assert output_frame_rate(VideoSettings(), video_stream()) is None
+    assert output_frame_rate(constant, video_stream()) == Fraction(30000, 1001)
 
 
 def test_bob_deinterlace_doubles_the_same_as_source_rate() -> None:

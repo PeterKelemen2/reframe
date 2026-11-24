@@ -143,7 +143,12 @@ class ProgressTracker:
     tests can make the clocks jump.
     """
 
-    def __init__(self, steps: Sequence[PlanStep], expected_duration: float) -> None:
+    def __init__(
+        self,
+        steps: Sequence[PlanStep],
+        expected_duration: float,
+        expected_frames: int | None = None,
+    ) -> None:
         self._kinds = [step.kind for step in steps]
         weights = [max(step.progress_weight, 0.0) for step in steps]
         total = sum(weights)
@@ -154,6 +159,12 @@ class ProgressTracker:
         self._shares = shares
         self._starts = [sum(shares[:i]) for i in range(len(shares))]
         self._duration = expected_duration
+        self._frame_time = (
+            expected_duration / expected_frames
+            if expected_frames and expected_duration > 0
+            else None
+        )
+        """Seconds of output per video frame: the output time when a block has none."""
         self._step = 0
         self._percent = 0.0
         self._anchor: _Anchor | None = None
@@ -206,11 +217,18 @@ class ProgressTracker:
 
     def update(self, block: ProgressBlock, *, mono: float, wall: float) -> JobProgress:
         """Read one block of the current step."""
+        video = self._step < len(self._kinds) and self._kinds[self._step] in _VIDEO_STEPS
+        frame = block.frame if video else None
+        media = block.out_time
+        # Some FFmpeg releases print out_time=N/A until every output stream has a packet, so a
+        # subtitle track whose first line comes late leaves no time; the frames still count.
+        if media is None and frame is not None and self._frame_time is not None:
+            media = frame * self._frame_time
         fraction: float | None = None
         if block.end:
             fraction = 1.0
-        elif block.out_time is not None and self._duration > 0:
-            fraction = min(block.out_time / self._duration, 1.0)
+        elif media is not None and self._duration > 0:
+            fraction = min(media / self._duration, 1.0)
         if fraction is not None and self._step < len(self._starts):
             share = self._shares[self._step]
             self._raise_percent(100.0 * (self._starts[self._step] + share * fraction))
@@ -218,10 +236,8 @@ class ProgressTracker:
             self._size = block.total_size
         self._ffmpeg_speed = block.speed
         self._ffmpeg_fps = block.fps
-        video = self._step < len(self._kinds) and self._kinds[self._step] in _VIDEO_STEPS
-        frame = block.frame if video else None
         anchor = self._anchor
-        self._anchor = _Anchor(mono, wall, block.out_time, frame, self._percent)
+        self._anchor = _Anchor(mono, wall, media, frame, self._percent)
         if anchor is None:
             return self.snapshot()
         interval = mono - anchor.mono
@@ -229,8 +245,8 @@ class ProgressTracker:
         if interval <= 0 or interval > MAX_INTERVAL or slept:
             self._clean = False  # a gap: keep the old estimates, measure from here
             return self.snapshot()
-        if block.out_time is not None and anchor.media is not None:
-            speed = max(block.out_time - anchor.media, 0.0) / interval
+        if media is not None and anchor.media is not None:
+            speed = max(media - anchor.media, 0.0) / interval
             self._speed = _smooth(self._speed, speed, interval)
         if frame is not None and anchor.frame is not None:
             fps = max(frame - anchor.frame, 0) / interval

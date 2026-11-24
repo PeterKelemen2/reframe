@@ -3635,6 +3635,12 @@ export interface components {
              */
             expected_duration: number;
             /**
+             * Expected Frames
+             * @description Video frames that the encode writes (``expected_duration`` times the output frame
+             *     rate), for progress when FFmpeg prints no output time; ``None`` when the rate is unknown.
+             */
+            expected_frames?: number | null;
+            /**
              * Display
              * @description Shell-quoted command preview (POSIX or Windows style); a measured value shows as
              *     ``<a0.input_i>``.

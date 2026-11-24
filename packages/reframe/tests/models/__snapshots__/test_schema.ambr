@@ -2897,6 +2897,23 @@
         'title': 'Expected Duration',
         'type': 'number',
       }),
+      'expected_frames': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': '''
+          Video frames that the encode writes (``expected_duration`` times the output frame
+          rate), for progress when FFmpeg prints no output time; ``None`` when the rate is unknown.
+        ''',
+        'title': 'Expected Frames',
+      }),
       'files': dict({
         'description': 'Files to write before the first step and remove after the job.',
         'items': dict({

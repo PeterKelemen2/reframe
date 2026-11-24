@@ -309,6 +309,12 @@ export const useEditorStore = defineStore('editor', () => {
   const target = shallowRef<EditorTarget | null>(null)
   /** The last `jobs/draft` answer for the open source: track decisions, naming, notes. */
   const draft = shallowRef<JobDraft | null>(null)
+  /** The settings' `namingRevision` when each draft came. */
+  const draftRevisions = new WeakMap<JobDraft, number>()
+  /** The draft's name was made with the naming options of now. */
+  const draftNamingCurrent = computed(
+    () => draft.value !== null && draftRevisions.get(draft.value) === settings.namingRevision,
+  )
   const loading = ref(false)
   /** `presets/diff` of `currentTemplate` against the preset (the *modified* marker). */
   const presetChanges = shallowRef<FieldChange[]>([])
@@ -377,6 +383,9 @@ export const useEditorStore = defineStore('editor', () => {
       presetChanges.value = []
       // An edit of the last job never reaches this one.
       pendingEdits.value = []
+    }
+    if (nextDraft !== null && !draftRevisions.has(nextDraft)) {
+      draftRevisions.set(nextDraft, settings.namingRevision)
     }
     draft.value = nextDraft
     target.value = next
@@ -1622,6 +1631,7 @@ export const useEditorStore = defineStore('editor', () => {
   return {
     target,
     draft,
+    draftNamingCurrent,
     presetId,
     loading,
     presetChanges,
