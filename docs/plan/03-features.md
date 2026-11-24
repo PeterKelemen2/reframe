@@ -33,7 +33,7 @@ Batch / season editing has its own document: [04-batch-mode.md](04-batch-mode.md
 
 - **Sources panel**: open files or folders. Shows probe status, warnings, and batch groups
   ([04](04-batch-mode.md)).
-- **Preview panel**: can be collapsed or detached (desktop: separate window). It follows the
+- **Preview panel**: can be collapsed or detached (desktop: separate window; web: a large modal). It follows the
   active tab. On Dimensions it shows crop overlays. On Filters it shows before/after.
 - **Status bar**: output path, validation summary (click to see the list), queue actions.
 - Light, dark and system themes. Compact and comfortable density.
