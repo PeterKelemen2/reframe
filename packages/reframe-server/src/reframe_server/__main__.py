@@ -68,9 +68,34 @@ class ConsoleFilter(logging.Filter):
         )
 
 
+HEALTH_PATH = "/api/health"
+
+
+class QuietHealthChecks(logging.Filter):
+    """uvicorn's access log without the health checks that pass: the Docker image's check and a
+    reverse proxy's ask every few seconds and would bury the other requests."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        # uvicorn's arguments: client, method, path with query, HTTP version, status.
+        args = record.args
+        if not isinstance(args, tuple) or len(args) != 5:
+            return True
+        _, method, path, _, status = args
+        return not (
+            method in ("GET", "HEAD")
+            and str(path).partition("?")[0] == HEALTH_PATH
+            and isinstance(status, int)
+            and status < 400
+        )
+
+
 def _log_config() -> dict[str, Any]:
     config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
-    config["filters"] = {"console": {"()": ConsoleFilter}}
+    config["filters"] = {
+        "console": {"()": ConsoleFilter},
+        "quiet_health": {"()": QuietHealthChecks},
+    }
+    config["handlers"]["access"]["filters"] = ["quiet_health"]
     config["handlers"]["console"] = {
         "formatter": "default",
         "class": "logging.StreamHandler",

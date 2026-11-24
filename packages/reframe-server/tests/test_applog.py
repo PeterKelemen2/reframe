@@ -277,3 +277,39 @@ def test_at_debug_neither_the_token_nor_the_session_cookie_reaches_reframe_log(
     assert secrets_in_log == {"token": False, "cookie": False}
     assert token not in err
     assert cookie not in err
+
+
+@pytest.mark.slow
+def test_the_console_leaves_out_the_health_checks_that_pass(
+    tmp_path: Path, fake_tools: ft.FakeTools
+) -> None:
+    """A container's health check asks every 30 s; the other requests stay in uvicorn's access
+    log."""
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith("REFRAME_") or name == ALLOW_SCRIPT_TOOLS_ENV
+    }
+    for name in ("config", "data", "cache"):
+        env[f"REFRAME_{name.upper()}_DIR"] = str(tmp_path / name)
+    env |= {"REFRAME_FFMPEG": str(fake_tools.ffmpeg), "REFRAME_FFPROBE": str(fake_tools.ffprobe)}
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "settings.json").write_text(
+        json.dumps({"encoders": {"hardware_tests": False}, "queue": {"sleep_inhibit": False}}),
+        encoding="utf-8",
+    )
+    argv = [sys.executable, "-m", "reframe_server", "--port", "0", "--auth", "none"]
+    server = subprocess.Popen(
+        argv, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, env=env, text=True
+    )
+    try:
+        endpoint = _wait_for_endpoint(tmp_path / "data" / owner.ENDPOINT_FILE, server)
+        base_url = f"http://127.0.0.1:{endpoint.port}"
+        assert httpx.get(f"{base_url}/api/health", timeout=10).status_code == 200
+        assert httpx.get(f"{base_url}/api/health?probe=1", timeout=10).status_code == 200
+        assert httpx.get(f"{base_url}/api/system", timeout=10).status_code == 200
+    finally:
+        server.terminate()
+        _out, err = server.communicate(timeout=30)
+    assert '"GET /api/system HTTP/1.1" 200' in err
+    assert "/api/health" not in err
