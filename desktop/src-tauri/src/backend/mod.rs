@@ -417,7 +417,9 @@ async fn supervise(shared: &Shared) {
             Err(StartError::Failed(message)) => return shared.fail(message, Some(&config.log)),
         };
         lost_lock = 0;
-        let Some(health) = owner::health(sidecar.port, timing.health).await else {
+        // Its first request builds every route's state: on a slow machine it takes longer than
+        // a health check of a running server may.
+        let Some(health) = owner::health(sidecar.port, timing.ready).await else {
             sidecar.stop(timing.stop).await;
             return shared.fail(
                 "The server did not answer after it started".to_owned(),
