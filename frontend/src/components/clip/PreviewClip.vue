@@ -228,6 +228,9 @@ function playFailed(event: Event): void {
   comparing.value = true
 }
 
+/** The desktop app hands the clip to the system's player; a browser opens it in a new tab. */
+const inBrowser = platform.desktop === null
+
 function openExternal(): void {
   if (link.value !== null) void platform.openExternal(link.value)
 }
@@ -342,7 +345,11 @@ watch(running, async (now) => {
         :closable="false"
         data-field="clip-play-error"
       >
-        {{ t('clip.playback.fallback', { reason: playError }) }}
+        {{
+          t(inBrowser ? 'clip.playback.fallbackTab' : 'clip.playback.fallback', {
+            reason: playError,
+          })
+        }}
       </Message>
       <div class="preview-clip__actions">
         <Button
@@ -355,7 +362,7 @@ watch(running, async (now) => {
           @click="comparing = !comparing"
         />
         <Button
-          :label="t('clip.openExternal')"
+          :label="inBrowser ? t('clip.openTab') : t('clip.openExternal')"
           severity="secondary"
           size="small"
           text

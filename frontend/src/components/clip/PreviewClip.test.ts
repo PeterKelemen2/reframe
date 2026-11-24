@@ -373,6 +373,8 @@ describe('the preview clip', () => {
   it('opens the signed clip link in an external player', async () => {
     const open = vi.spyOn(platform, 'openExternal').mockResolvedValue()
     const { wrapper } = await encoded()
+    // The web app's platform opens a link in a new tab, and the button says so.
+    expect(wrapper.get('[data-action="open-external"]').text()).toBe('Open in a new tab')
     await wrapper.find('[data-action="open-external"]').trigger('click')
     expect(open).toHaveBeenCalledWith('http://server/api/preview/clips/clip-1?sig=1')
   })

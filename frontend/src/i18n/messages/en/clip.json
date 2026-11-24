@@ -18,11 +18,13 @@
   "play": "Play the clip",
   "player": "The preview clip",
   "openExternal": "Open in external player",
+  "openTab": "Open in a new tab",
   "playback": {
     "unsupported": "this browser cannot play {codec} video",
     "failed": "the player stopped with an error ({reason})",
     "noPlayer": "this window has no video player",
-    "fallback": "The clip does not play here: {reason}. Its frames are shown next to the source frames instead; Open in external player plays it."
+    "fallback": "The clip does not play here: {reason}. Its frames are shown next to the source frames instead; Open in external player plays it.",
+    "fallbackTab": "The clip does not play here: {reason}. Its frames are shown next to the source frames instead; Open in a new tab gives the browser the clip file, to save and play in a video player."
   },
   "compare": {
     "loading": "Decoding the clip's frames…",
