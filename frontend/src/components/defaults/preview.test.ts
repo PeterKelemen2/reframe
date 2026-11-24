@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import type { AudioOutputTrack, TrackDecision } from '@/api/types'
+import type { AudioOutputTrack, SubtitleOutputTrack, TrackDecision, TrackDraft } from '@/api/types'
 import { probedSource, trackDefinitions } from '@/components/tracks/testing'
 import { createAppI18n } from '@/i18n'
 
-import { outputLines } from './preview'
+import { inOutputOrder, outputLines } from './preview'
 
 const i18n = createAppI18n().global
 const t = i18n.t as (key: string, named?: Record<string, unknown>) => string
@@ -104,5 +104,44 @@ describe('the output column of the preview', () => {
     expect(subtitle({ action: 'burn' })).toEqual(['Burn in'])
     expect(subtitle({ action: 'burn', forced_only: true })).toEqual(['Burn in (forced only)'])
     expect(subtitle({ action: 'convert', convert_to: 'srt' })).toEqual(['Convert to SRT'])
+  })
+})
+
+describe('the order of the preview rows', () => {
+  it('lists the tracks as they are written, then the dropped ones in source order', () => {
+    // Source: 1 hun, 2 eng, 3 commentary (dropped), 4 jpn; the language list is eng, hun, jpn.
+    const draft = {
+      audio: [
+        audio({ source_stream: 2 }),
+        audio({ source_stream: 1 }),
+        audio({ source_stream: 4 }),
+      ],
+      subtitles: [],
+      decisions: [1, 2, 3, 4].map((stream) =>
+        decision({ source_stream: stream, selected: stream !== 3 }),
+      ),
+      subtitle_decisions: [],
+      issues: [],
+    } satisfies TrackDraft
+    expect(inOutputOrder(draft, 'audio').map((each) => each.source_stream)).toEqual([2, 1, 4, 3])
+  })
+
+  it('puts an extra output and an external subtitle where their first track is', () => {
+    const external = { forced_only: false, source: { path: '/media/A.en.srt' } }
+    const draft = {
+      audio: [],
+      subtitles: [
+        { forced_only: false, source: 6 },
+        external,
+        { forced_only: false, source: 4 },
+        { forced_only: true, source: 6 },
+      ] as SubtitleOutputTrack[],
+      decisions: [],
+      subtitle_decisions: [3, 4, 5, 6].map((stream) =>
+        decision({ kind: 'subtitle', source_stream: stream, selected: stream !== 5 }),
+      ),
+      issues: [],
+    } satisfies TrackDraft
+    expect(inOutputOrder(draft, 'subtitle').map((each) => each.source_stream)).toEqual([6, 4, 3, 5])
   })
 })

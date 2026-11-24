@@ -20,11 +20,11 @@ import { useSystemStore } from '@/stores/system'
 
 import IssueLines from './IssueLines.vue'
 import { shownAtField } from './model'
-import { outputLines } from './preview'
+import { inOutputOrder, outputLines } from './preview'
 
 /**
- * One row per source track: what the edited defaults take or drop, and why; in a group, one
- * table per file. Only the newest answer is shown.
+ * One row per source track, in output order: what the edited defaults take or drop, and why;
+ * in a group, one table per file. Only the newest answer is shown.
  */
 const { t, n } = useI18n()
 const defaults = useDefaultsStore()
@@ -80,7 +80,7 @@ const counts = computed(() =>
 )
 
 function decisionsOf(table: FileTable): TrackDecision[] {
-  return (audio.value ? table.draft.decisions : table.draft.subtitle_decisions) ?? []
+  return inOutputOrder(table.draft, audio.value ? 'audio' : 'subtitle')
 }
 
 function streamOf(table: FileTable, decision: TrackDecision) {
