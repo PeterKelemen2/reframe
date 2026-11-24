@@ -10,7 +10,7 @@
  * display.
  */
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -348,12 +348,15 @@ describe('the desktop app', { concurrency: 1 }, () => {
     // It hands the path to the running app and exits 0.
     await promisify(execFile)(app, [fixture], { env, timeout: 30_000 })
     const message = `${fixture} from the command line is not in the sources`
+    // A source is listed by its resolved path: the long form of a Windows 8.3 name such as
+    // RUNNER~1 in the runner's TEMP.
+    const listed = realpathSync.native(fixture)
     await page().wait(
       async () => {
         const items = await page().findElements(By.css('.source-item[data-path]'))
         const paths = await Promise.all(items.map((item) => item.getAttribute('data-path')))
         return paths.some((path) =>
-          WINDOWS ? path?.toLowerCase() === fixture.toLowerCase() : path === fixture,
+          WINDOWS ? path?.toLowerCase() === listed.toLowerCase() : path === listed,
         )
       },
       30_000,
@@ -387,7 +390,11 @@ describe('the desktop app', { concurrency: 1 }, () => {
     await (await enabled('.status-bar__add', 'the job cannot be added', 30_000)).click()
     await visible('[data-field="output-path"]', 'no output path', 10_000)
     outputPath = await textContent('[data-field="output-path"]')
-    assert.equal(dirname(outputPath), dirname(fixture), 'the output is not next to the file')
+    assert.equal(
+      dirname(outputPath),
+      realpathSync.native(dirname(fixture)),
+      'the output is not next to the file',
+    )
     await (await enabled('.status-bar__start', 'the queue cannot be started', 30_000)).click()
     await (await visible('.status-bar__queue', 'no queue link', 10_000)).click()
 
