@@ -733,6 +733,28 @@ def test_the_common_licences_that_a_copyright_file_names_are_carried_once(tmp_pa
 
 
 @pytest.mark.usefixtures("no_sections")
+def test_a_common_licence_named_with_a_dot_zero_is_the_file_without_it(tmp_path: Path) -> None:
+    # Ubuntu 22.04's pango names /usr/share/common-licenses/GPL-2.0; the file is GPL-2.
+    options = _sources(tmp_path)
+    (tmp_path / "doc" / "libgtk-3-0" / "copyright").write_text(
+        'can be found in "/usr/share/common-licenses/GPL-2.0".\n'
+    )
+    (tmp_path / "doc" / "libgtk-3-common" / "copyright").write_text(
+        "see /usr/share/common-licenses/GPL-2 and /usr/share/common-licenses/MPL-2.0.\n"
+    )
+    common = tmp_path / "common-licenses"
+    common.mkdir()
+    (common / "GPL-2").write_text("GNU GENERAL PUBLIC LICENSE Version 2\n")
+    (common / "MPL-2.0").write_text("Mozilla Public License Version 2.0\n")
+    out = tmp_path / "THIRD_PARTY_NOTICES"
+
+    assert tpn.main(["--platform", "linux-x64", "--out", str(out), *options]) == 0
+    section = _section(out.read_text(), TEXTS_SECTION)
+    assert section.count("GNU GENERAL PUBLIC LICENSE Version 2") == 1
+    assert section.count("Mozilla Public License Version 2.0") == 1
+
+
+@pytest.mark.usefixtures("no_sections")
 def test_an_ubuntu_package_without_its_copyright_file_is_an_error(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
