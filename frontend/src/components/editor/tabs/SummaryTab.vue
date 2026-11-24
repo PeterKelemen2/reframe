@@ -23,11 +23,15 @@ const editor = useEditorStore()
       {{ editor.loading ? t('summary.loading') : t('summary.noJob') }}
     </p>
     <div v-else class="summary-tab__grid">
-      <SourceCard />
-      <JobTypeCard />
+      <div class="summary-tab__top">
+        <SourceCard />
+        <JobTypeCard />
+        <div class="summary-tab__side">
+          <PictureCard />
+          <VideoCard />
+        </div>
+      </div>
       <OutputCard />
-      <PictureCard />
-      <VideoCard />
       <TracksCard />
       <IssuesCard />
       <EstimateCard />
@@ -37,6 +41,7 @@ const editor = useEditorStore()
 
 <style scoped>
 .summary-tab {
+  container-type: inline-size;
   padding: var(--rf-space-4);
 }
 
@@ -46,6 +51,29 @@ const editor = useEditorStore()
   grid-auto-flow: row dense;
   gap: var(--rf-space-4);
   align-items: start;
+}
+
+/* A narrow tab: the top row's cards flow with the others. */
+.summary-tab__top,
+.summary-tab__side {
+  display: contents;
+}
+
+/* A wide tab: Source, Job type, and Picture pipeline over Video, in parts of 3, 2 and 1. The
+   third column keeps room for the pipeline's chips. */
+@container (width >= 60rem) {
+  .summary-tab__top {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) minmax(16rem, 1fr);
+    gap: var(--rf-space-4);
+    align-items: start;
+  }
+
+  .summary-tab__side {
+    display: grid;
+    gap: var(--rf-space-4);
+  }
 }
 
 .summary-tab__empty {
