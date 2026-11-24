@@ -46,6 +46,7 @@ __all__ = [
     "frame_rate_args",
     "hdr_params",
     "nvenc_quality_rate_limit",
+    "output_frame_rate",
     "pass_log_files",
     "sets_rate_buffer",
     "spec",
@@ -389,6 +390,25 @@ def frame_rate_args(
     if rate is not None:
         return [spec("-fpsmax", V0), _rate(rate)]
     return []
+
+
+def output_frame_rate(
+    video: VideoSettings, stream: VideoStream, *, factor: Fraction | int = 1
+) -> Fraction | None:
+    """The average frame rate of the output video, as :func:`frame_rate_args` sets it: the
+    chosen constant rate, else the source's average times ``factor``, at most a chosen peak;
+    a copied video keeps the source's. ``None`` when the source's rate is unknown and no
+    constant rate is chosen."""
+    source = source_rate(stream)
+    natural = None if source is None else _fraction(source) * factor
+    if video.passthrough:
+        return natural
+    chosen = None if video.framerate is None else _fraction(video.framerate)
+    if video.framerate_mode == "constant" and chosen is not None:
+        return chosen
+    if chosen is not None and natural is not None:
+        return min(natural, chosen)
+    return natural
 
 
 def encoder_and_pix_fmt(job: JobSettings, defs: Definitions) -> tuple[VideoEncoderDef, str]:

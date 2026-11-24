@@ -247,7 +247,7 @@ def _cached_clip(cache: PreviewCache, clip_id: str) -> tuple[Path, int] | None:
 
 async def _run_plan(tctx: TaskContext, plan: EncodePlan, tools: ToolSet) -> None:
     """Run the plan's steps; :class:`TaskFailed` when one fails."""
-    tracker = ProgressTracker(plan.steps, plan.expected_duration)
+    tracker = ProgressTracker(plan.steps, plan.expected_duration, plan.expected_frames)
     values: dict[str, str] = {}
     leftovers = [plan.output_tmp, *plan.temp_files, *(f.path for f in plan.files)]
     try:

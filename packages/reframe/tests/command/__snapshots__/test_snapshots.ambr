@@ -3,6 +3,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va -i /media/vobsub.mkv -map \'[v]\' -map 0:1 -filter_complex \'[0:0][0:2]overlay=eof_action=pass,scale=720:480:flags=lanczos,setsar=1/1,setpts=\'"\'"\'if(eq(N,0),0,PTS)\'"\'"\',format=nv12,hwupload[v]\' -c:v:0 hevc_vaapi -rc_mode:v:0 VBR -b:v:0 2000k -c:s:0 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/vobsub.part.mkv && mv -f -- /out/vobsub.part.mkv /out/vobsub.mkv',
     'expected_duration': 4.0,
+    'expected_frames': 100,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -85,6 +86,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -ss 0.5 -i /media/multitrack.mkv -map 0:2 -t 3 -filter:a:0 aresample=async=1:first_pts=0,loudnorm=I=-23:TP=-1:LRA=20:print_format=json -f null - && ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -ss 0.5 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -ss 0 -t 3 -filter:v:0 \'scale=320:180:flags=lanczos,setsar=1/1,setpts=\'"\'"\'if(eq(N,0),0,PTS)\'"\'"\',format=yuv420p\' -filter:a:1 \'aresample=async=1:first_pts=0,loudnorm=I=-23:TP=-1:LRA=20:measured_I=<a1.input_i>:measured_TP=<a1.input_tp>:measured_LRA=<a1.input_lra>:measured_thresh=<a1.input_thresh>:offset=<a1.target_offset>:linear=true:print_format=summary\' -filter:a:2 aresample=async=1:first_pts=0 -c:v:0 libx264 -crf:v:0 22 -c:a:0 copy -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 3.0,
+    'expected_frames': 75,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -288,6 +290,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:a:0 aresample=async=1:first_pts=0,aresample=out_chlayout=5.1 -filter:a:1 aresample=async=1:first_pts=0 -filter:a:2 aresample=async=1:first_pts=0 -c:v:0 copy -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -430,6 +433,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/anamorphic.mkv -map 0:0 -filter:v:0 scale=854:480:flags=spline,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 0 -map_chapters -1 -map_metadata 0 -f matroska /out/anamorphic.part.mkv && mv -f -- /out/anamorphic.part.mkv /out/anamorphic.mkv',
     'expected_duration': 2.002,
+    'expected_frames': 60,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -496,6 +500,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/anamorphic.mkv -map 0:0 -filter:v:0 scale=624:416:flags=lanczos,setsar=32/27,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 0 -map_chapters -1 -map_metadata 0 -f matroska /out/anamorphic.part.mkv && mv -f -- /out/anamorphic.part.mkv /out/anamorphic.mkv',
     'expected_duration': 2.002,
+    'expected_frames': 60,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -562,6 +567,7 @@
   dict({
     'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/movie-truehd-atmos.mkv -map 0:0 -map 0:1 -map 0:1 -map 0:1 -map 0:1 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -filter:a:1 aresample=out_chlayout=5.1 -filter:a:2 aresample=out_chlayout=stereo -c:v:0 libx265 -crf:v:0 22 -c:a:0 ac3 -b:a:0 640k -ar:a:0 48000 -c:a:1 eac3 -b:a:1 640k -ar:a:1 48000 -c:a:2 libmp3lame -b:a:2 160k -ar:a:2 48000 -c:a:3 libopus -b:a:3 384k -ar:a:3 48000 -c:a:4 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -metadata:s:a:0 'title=Dolby TrueHD Atmos 5.1' -disposition:a:0 0 -metadata:s:a:1 language=eng -metadata:s:a:1 'title=Dolby TrueHD Atmos 5.1' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 'title=Dolby TrueHD Atmos 5.1' -disposition:a:2 0 -metadata:s:a:3 language=eng -metadata:s:a:3 'title=Dolby TrueHD Atmos 5.1' -disposition:a:3 0 -metadata:s:a:4 language=eng -metadata:s:a:4 'title=Dolby TrueHD Atmos 5.1' -disposition:a:4 0 -map_chapters -1 -map_metadata 0 -f matroska /out/movie-truehd-atmos.part.mkv && mv -f -- /out/movie-truehd-atmos.part.mkv /out/movie-truehd-atmos.mkv",
     'expected_duration': 2.005,
+    'expected_frames': 48,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -700,6 +706,7 @@
   dict({
     'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/anime-ass-fonts.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map '0:t?' -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -c:a:0 flac -ar:a:0 48000 -c:a:1 libmp3lame -q:a:1 2 -ar:a:1 48000 -c:s:0 copy -c:s:1 copy -map_metadata:s -1 -map_metadata:s:t:0 0:s:t:0 -map_metadata:s:t:1 0:s:t:1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 title=Japanese -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 title=English -disposition:a:1 0 -metadata:s:s:0 language=eng -metadata:s:s:0 'title=Signs & Songs' -disposition:s:0 0 -metadata:s:s:1 language=eng -metadata:s:s:1 'title=Full Subtitles' -disposition:s:1 default -map_chapters 0 -map_metadata 0 -f matroska /out/anime-ass-fonts.part.mkv && mv -f -- /out/anime-ass-fonts.part.mkv /out/anime-ass-fonts.mkv",
     'expected_duration': 4.021,
+    'expected_frames': 96,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -818,6 +825,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:1 -map 0:1 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -filter:a:3 aresample=out_chlayout=stereo -filter:a:4 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 ac3 -b:a:0 640k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 libopus -b:a:2 512k -ar:a:2 48000 -c:a:3 libmp3lame -b:a:3 320k -ar:a:3 48000 -c:a:4 eac3 -b:a:4 224k -ar:a:4 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:a:3 language=jpn -metadata:s:a:3 \'title=Japanese 5.1\' -disposition:a:3 0 -metadata:s:a:4 language=jpn -metadata:s:a:4 \'title=Japanese 5.1\' -disposition:a:4 0 -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -962,6 +970,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=nv12 -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 av1_amf -rc:v:0 vbr_peak -b:v:0 3000k -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -1106,6 +1115,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 av1_nvenc -rc:v:0 vbr -cq:v:0 33 -b:v:0 0 -init_qpI:v:0 126 -init_qpP:v:0 134 -init_qpB:v:0 142 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -1258,6 +1268,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=nv12 -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 av1_qsv -b:v:0 4000k -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -1400,6 +1411,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va -i /media/anamorphic.mkv -map 0:0 -filter:v:0 scale=854:480:flags=lanczos,setsar=1/1,format=nv12,hwupload -c:v:0 av1_vaapi -rc_mode:v:0 CQP -global_quality:v:0 22 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 0 -map_chapters -1 -map_metadata 0 -f matroska /out/anamorphic.part.mkv && mv -f -- /out/anamorphic.part.mkv /out/anamorphic.mkv',
     'expected_duration': 2.002,
+    'expected_frames': 60,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -1472,6 +1484,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -ss 1.5 -i /media/anime-ass-fonts.mkv -f ffmetadata -i /out/anime-ass-fonts.part.chapters.txt -map 0:0 -map 0:1 -map 0:2 -map 0:4 -map \'0:t?\' -ss 0 -t 1.5 -filter:v:0 \'scale=1920:1080:flags=lanczos,setsar=1/1,setpts=PTS+1.5/TB,subtitles=filename=\'"\'"\'/media/anime-ass-fonts.mkv\'"\'"\':si=0,setpts=PTS-1.5/TB,format=yuv420p\' -c:v:0 libx265 -crf:v:0 22 -c:a:0 aac -b:a:0 160k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:s:0 copy -map_metadata:s -1 -map_metadata:s:t:0 0:s:t:0 -map_metadata:s:t:1 0:s:t:1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 title=Japanese -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 title=English -disposition:a:1 0 -metadata:s:s:0 language=eng -metadata:s:s:0 \'title=Full Subtitles\' -disposition:s:0 default -map_chapters 1 -map_metadata 0 -f matroska /out/anime-ass-fonts.part.mkv && mv -f -- /out/anime-ass-fonts.part.mkv /out/anime-ass-fonts.mkv',
     'expected_duration': 1.5,
+    'expected_frames': 36,
     'files': list([
       dict({
         'content': '''
@@ -1605,6 +1618,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -ss 1 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -ss 0 -filter:v:0 "scale=320:180:flags=lanczos,setsar=1/1,setpts=PTS+1.25/TB,subtitles=filename=\'/media/Movies/It\\\'\\\'\'s\\: a [test], ok; 100% \\\\ \\"quoted\\".srt\':charenc=\'cp1250\',setpts=PTS-1.25/TB,format=yuv420p" -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 "title=Japanese 5.1" -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 "title=English Stereo" -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 "title=Director\'s Commentary" -disposition:a:2 comment -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && move /Y /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 3.021,
+    'expected_frames': 76,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -1721,6 +1735,7 @@
   dict({
     'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/movie-pgs.mkv -itsoffset 1 -forced_subs_only:0 1 -i /media/forced.sup -map '[v]' -map 0:1 -filter_complex '[0:0][1:0]overlay=eof_action=pass,scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p[v]' -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/movie-pgs.part.mkv && mv -f -- /out/movie-pgs.part.mkv /out/movie-pgs.mkv",
     'expected_duration': 4.004,
+    'expected_frames': 96,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -1809,6 +1824,7 @@
   dict({
     'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -forced_subs_only:3 1 -i /media/movie-pgs.mkv -map '[v]' -map 0:1 -map 0:2 -map 0:4 -map 0:5 -filter_complex '[0:0]crop=1920:800:0:140[base];[base][0:3]overlay=x=0:y=-280:eof_action=pass,scale=1920:800:flags=lanczos,setsar=1/1,format=yuv420p[v]' -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx265 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 'title=English SDH' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=hun -disposition:s:2 0 -map_chapters -1 -map_metadata 0 -f matroska /out/movie-pgs.part.mkv && mv -f -- /out/movie-pgs.part.mkv /out/movie-pgs.mkv",
     'expected_duration': 4.004,
+    'expected_frames': 96,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -1921,6 +1937,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -filter:v:0 \'scale=320:180:flags=lanczos,setsar=1/1,subtitles=filename=\'"\'"\'/media/multitrack.mkv\'"\'"\':si=2,format=yuv420p\' -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -2053,6 +2070,7 @@
   dict({
     'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/vobsub.mkv -map '[v]' -map 0:1 -filter_complex '[0:0][0:2]overlay=eof_action=pass,scale=720:480:flags=lanczos,setsar=1/1,format=yuv420p[v]' -c:v:0 libx264 -crf:v:0 22 -c:s:0 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/vobsub.part.mkv && mv -f -- /out/vobsub.part.mkv /out/vobsub.mkv",
     'expected_duration': 4.0,
+    'expected_frames': 100,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -2129,6 +2147,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -ss 1 -i /media/chapters.mkv -f ffmetadata -i /out/chapters.part.chapters.txt -map 0:0 -map 0:1 -ss 0 -t 3 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 80k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters 1 -map_metadata 0 -f matroska /out/chapters.part.mkv && mv -f -- /out/chapters.part.mkv /out/chapters.mkv',
     'expected_duration': 3.0,
+    'expected_frames': 75,
     'files': list([
       dict({
         'content': '''
@@ -2235,6 +2254,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/chapters.mkv -map 0:0 -map 0:1 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 80k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/chapters.part.mkv && mv -f -- /out/chapters.part.mkv /out/chapters.mkv',
     'expected_duration': 5.021,
+    'expected_frames': 126,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -2313,6 +2333,7 @@
   dict({
     'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/movie-dv-p8.mkv -map 0:0 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p10le -c:v:0 libx265 -crf:v:0 22 -x265-params:v:0 'colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=800,300' -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/movie-dv-p8.part.mkv && mv -f -- /out/movie-dv-p8.part.mkv /out/movie-dv-p8.mkv",
     'expected_duration': 1.001,
+    'expected_frames': 24,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -2381,6 +2402,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -drc_scale:2 0 -i /media/dvd-title-interlaced.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -filter:v:0 bwdif=mode=send_frame:parity=auto,scale=854:480:flags=lanczos,setsar=1/1,setparams=color_primaries=smpte170m:color_trc=smpte170m:colorspace=smpte170m,zscale=p=bt709:t=bt709:m=bt709,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 160k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:s:0 copy -c:s:1 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -metadata:s:a:1 language=fre -disposition:a:1 0 -metadata:s:s:0 language=eng -disposition:s:0 0 -metadata:s:s:1 language=fre -disposition:s:1 0 -map_chapters 0 -map_metadata 0 -f matroska /out/dvd-title-interlaced.part.mkv && mv -f -- /out/dvd-title-interlaced.part.mkv /out/dvd-title-interlaced.mkv',
     'expected_duration': 4.004,
+    'expected_frames': 120,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -2491,6 +2513,7 @@
   dict({
     'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/show-eac3-atmos.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -c:a:0 copy -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -metadata:s:a:0 title=English -disposition:a:0 default -metadata:s:s:0 language=por -metadata:s:s:0 title=English -disposition:s:0 0 -metadata:s:s:1 language=eng -metadata:s:s:1 'title=English [SDH]' -disposition:s:1 0 -metadata:s:s:2 language=eng -metadata:s:s:2 'title=English [Forced]' -disposition:s:2 0 -map_chapters -1 -map_metadata 0 -f matroska /out/show-eac3-atmos.part.mkv && header_edit /out/show-eac3-atmos.part.mkv subtitle 1: language=por language_ietf=pt-BR && mv -f -- /out/show-eac3-atmos.part.mkv /out/show-eac3-atmos.mkv",
     'expected_duration': 4.004,
+    'expected_frames': 96,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -2623,6 +2646,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -ss 2 -i /media/multitrack.mkv -itsoffset 0.2 -ss 2 -i /media/film.srt -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 1:0 -ss 0 -t 1 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 mov_text -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=deu -disposition:s:0 0 -map_chapters -1 -map_metadata 0 -f mp4 /out/multitrack.part.mp4 && mv -f -- /out/multitrack.part.mp4 /out/multitrack.mp4',
     'expected_duration': 1.0,
+    'expected_frames': 25,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -2755,6 +2779,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -itsoffset 1.5 -sub_charenc ISO-8859-2 -i /media/ext/film.hu.srt -i /media/ext/film.en.ass -i /media/ext/film.sup -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -map 1:0 -map 2:0 -map 3:0 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -c:s:3 srt -c:s:4 copy -c:s:5 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -metadata:s:s:3 language=hun -disposition:s:3 default -metadata:s:s:4 language=eng -metadata:s:s:4 title=Fansub -disposition:s:4 0 -metadata:s:s:5 language=und -disposition:s:5 0 -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -2933,6 +2958,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -ss 0.4 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -ss 0 -t 2 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 2.0,
+    'expected_frames': 50,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -3081,6 +3107,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/phone-vfr.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1280:720:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -fpsmax:v:0 30 -c:a:0 aac -b:a:0 160k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/phone-vfr.part.mkv && mv -f -- /out/phone-vfr.part.mkv /out/phone-vfr.mkv',
     'expected_duration': 3.021,
+    'expected_frames': 91,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -3161,6 +3188,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/vfr.mp4 -map 0:0 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -r:v:0 38 -fps_mode:v:0 cfr -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/vfr.part.mkv && mv -f -- /out/vfr.part.mkv /out/vfr.mkv',
     'expected_duration': 3.0,
+    'expected_frames': 114,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -3231,6 +3259,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:2 0 -drc_scale:3 0 -i /media/movie-truehd-atmos.mkv -f ffmetadata -i /out/movie-truehd-atmos.part.chapters.txt -map 0:0 -map 0:1 -map 0:2 -map 0:3 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -filter:a:1 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 384k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -metadata:s:a:0 \'title=Dolby TrueHD Atmos 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=Dolby Digital 5.1\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 0 -map_chapters 1 -map_metadata 0 -f matroska /out/movie-truehd-atmos.part.mkv && mv -f -- /out/movie-truehd-atmos.part.mkv /out/movie-truehd-atmos.mkv',
     'expected_duration': 2.005,
+    'expected_frames': 48,
     'files': list([
       dict({
         'content': '''
@@ -3379,6 +3408,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=nv12 -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 h264_amf -rc:v:0 cqp -qp_i:v:0 6 -qp_p:v:0 8 -qp_b:v:0 9 -quality:v:0 quality -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -3529,6 +3559,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 h264_nvenc -rc:v:0 vbr -cq:v:0 22 -b:v:0 0 -init_qpI:v:0 20 -init_qpP:v:0 22 -init_qpB:v:0 24 -maxrate:v:0 200M -bufsize:v:0 400M -preset:v:0 p5 -tune:v:0 hq -profile:v:0 high -bf:v:0 3 -b_ref_mode:v:0 middle -spatial-aq:v:0 1 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 mov_text -c:s:1 mov_text -c:s:2 mov_text -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f mp4 /out/multitrack.part.mp4 && mv -f -- /out/multitrack.part.mp4 /out/multitrack.mp4',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -3697,6 +3728,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=nv12 -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 h264_qsv -global_quality:v:0 22 -preset:v:0 slow -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -3841,6 +3873,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -init_hw_device vaapi=va:/dev/dri/renderD128 -filter_hw_device va -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=nv12,hwupload -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 h264_vaapi -rc_mode:v:0 CQP -global_quality:v:0 22 -level:v:0 4.1 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -3991,6 +4024,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/movie-hdr10-sei.mkv -map 0:0 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/movie-hdr10-sei.part.mkv && mv -f -- /out/movie-hdr10-sei.part.mkv /out/movie-hdr10-sei.mkv',
     'expected_duration': 1.001,
+    'expected_frames': 24,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -4057,6 +4091,7 @@
   dict({
     'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/movie-hdr10-2160p.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p10le -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libsvtav1 -crf:v:0 22 -svtav1-params:v:0 'color-primaries=bt2020:transfer-characteristics=smpte2084:matrix-coefficients=bt2020-ncl:mastering-display=G(0.265,0.69)B(0.15,0.06)R(0.68,0.32)WP(0.3127,0.329)L(1000,0.0001):content-light=1000,400' -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/movie-hdr10-2160p.part.mkv && mv -f -- /out/movie-hdr10-2160p.part.mkv /out/movie-hdr10-2160p.mkv",
     'expected_duration': 1.005,
+    'expected_frames': 24,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -4141,6 +4176,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/movie-hdr10-2160p.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,libplacebo=tonemapping=hable:peak_detect=1:colorspace=bt709:color_primaries=bt709:color_trc=bt709:range=tv,sidedata=mode=delete:type=MASTERING_DISPLAY_METADATA,sidedata=mode=delete:type=CONTENT_LIGHT_LEVEL,sidedata=mode=delete:type=DYNAMIC_HDR_PLUS,sidedata=mode=delete:type=DOVI_RPU_BUFFER,sidedata=mode=delete:type=DOVI_METADATA,sidedata=mode=delete:type=DYNAMIC_HDR_VIVID,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/movie-hdr10-2160p.part.mkv && mv -f -- /out/movie-hdr10-2160p.part.mkv /out/movie-hdr10-2160p.mkv',
     'expected_duration': 1.005,
+    'expected_frames': 24,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -4223,6 +4259,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/movie-hdr10-2160p.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,sidedata=mode=delete:type=MASTERING_DISPLAY_METADATA,sidedata=mode=delete:type=CONTENT_LIGHT_LEVEL,sidedata=mode=delete:type=DYNAMIC_HDR_PLUS,sidedata=mode=delete:type=DOVI_RPU_BUFFER,sidedata=mode=delete:type=DOVI_METADATA,sidedata=mode=delete:type=DYNAMIC_HDR_VIVID,unsharp=lx=7:ly=7:la=0.15:cx=7:cy=7:ca=0.15,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx265 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/movie-hdr10-2160p.part.mkv && mv -f -- /out/movie-hdr10-2160p.part.mkv /out/movie-hdr10-2160p.mkv',
     'expected_duration': 1.005,
+    'expected_frames': 24,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -4305,6 +4342,7 @@
   dict({
     'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/movie-hdr10-2160p.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p10le -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx265 -crf:v:0 22 -x265-params:v:0 'colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400:hdr10-opt=1' -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/movie-hdr10-2160p.part.mkv && mv -f -- /out/movie-hdr10-2160p.part.mkv /out/movie-hdr10-2160p.mkv",
     'expected_duration': 1.005,
+    'expected_frames': 24,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -4389,6 +4427,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/hdr10.mkv -map 0:0 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=p010le -c:v:0 hevc_amf -rc:v:0 cqp -qp_i:v:0 22 -qp_p:v:0 24 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 0 -map_chapters -1 -map_metadata 0 -f matroska /out/hdr10.part.mkv && mv -f -- /out/hdr10.part.mkv /out/hdr10.mkv',
     'expected_duration': 2.0,
+    'expected_frames': 50,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -4459,6 +4498,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/movie-hdr10-2160p.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 hevc_nvenc -rc:v:0 vbr -cq:v:0 22 -b:v:0 0 -init_qpI:v:0 20 -init_qpP:v:0 22 -init_qpB:v:0 24 -maxrate:v:0 160M -bufsize:v:0 320M -profile:v:0 main10 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/movie-hdr10-2160p.part.mkv && mv -f -- /out/movie-hdr10-2160p.part.mkv /out/movie-hdr10-2160p.mkv',
     'expected_duration': 1.005,
+    'expected_frames': 24,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -4557,6 +4597,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/broadcast-hlg.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=p010le -c:v:0 hevc_qsv -global_quality:v:0 22 -c:a:0 aac -b:a:0 160k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/broadcast-hlg.part.mkv && mv -f -- /out/broadcast-hlg.part.mkv /out/broadcast-hlg.mkv',
     'expected_duration': 1.021,
+    'expected_frames': 51,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -4635,6 +4676,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -init_hw_device vaapi=va:/dev/dri/renderD129 -filter_hw_device va -i /media/hdr10.mkv -map 0:0 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=p010le,hwupload -c:v:0 hevc_vaapi -rc_mode:v:0 CQP -global_quality:v:0 22 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 0 -map_chapters -1 -map_metadata 0 -f matroska /out/hdr10.part.mkv && mv -f -- /out/hdr10.part.mkv /out/hdr10.mkv',
     'expected_duration': 2.0,
+    'expected_frames': 50,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -4707,6 +4749,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/broadcast-hlg.mkv -map 0:0 -map 0:1 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p10le -c:v:0 libx265 -crf:v:0 22 -x265-params:v:0 colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc -c:a:0 aac -b:a:0 160k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/broadcast-hlg.part.mkv && mv -f -- /out/broadcast-hlg.part.mkv /out/broadcast-hlg.mkv',
     'expected_duration': 1.021,
+    'expected_frames': 51,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -4787,6 +4830,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/interlaced.mkv -map 0:0 -filter:v:0 fieldmatch,decimate,idet=intl_thres=1.5,yadif=mode=send_field:parity=auto:deint=interlaced,nlmeans=s=2.5:p=5:pc=5:r=7:rc=7,deblock=filter=strong:block=4:alpha=0.5:beta=0.25:gamma=0.25:delta=0.25,eq=gamma=1.1,scale=320:240:flags=lanczos,setsar=1/1,cas=strength=0.5,unsharp=lx=3:ly=3:la=0:cx=9:cy=9:ca=-0.8,hue=s=0,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 0 -map_chapters -1 -map_metadata 0 -f matroska /out/interlaced.part.mkv && mv -f -- /out/interlaced.part.mkv /out/interlaced.mkv',
     'expected_duration': 2.002,
+    'expected_frames': 96,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -4853,6 +4897,7 @@
   dict({
     'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=jpn -metadata:s:v:0 title=Main -disposition:v:0 default -metadata:s:a:0 language=por -metadata:s:a:0 'title=Japanese 5.1' -disposition:a:0 default+original -metadata:s:a:1 language=chi -metadata:s:a:1 'title=English Stereo' -disposition:a:1 visual_impaired -metadata:s:a:2 language=chi -disposition:a:2 comment -metadata:s:s:0 language=srp -metadata:s:s:0 title=English -disposition:s:0 default+forced+comment+hearing_impaired+visual_impaired+original -metadata:s:s:1 language=eng -metadata:s:s:1 'title=English SDH' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 'title=Signs & Songs' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && header_edit /out/multitrack.part.mkv audio 1: language=por language_ietf=pt-BR audio 2: language=chi language_ietf=yue audio 3: language=chi language_ietf=zh-Hant subtitle 1: language=srp language_ietf=sr-Latn && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv",
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -5051,6 +5096,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 mov_text -c:s:1 mov_text -c:s:2 mov_text -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=deu -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=zho -metadata:s:s:0 title=English -disposition:s:0 0 -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f mp4 /out/multitrack.part.mp4 && mv -f -- /out/multitrack.part.mp4 /out/multitrack.mp4',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -5193,6 +5239,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/letterbox.mkv -map 0:0 -filter:v:0 crop=320:134:0:22,transpose=clock,hflip,scale=134:320:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 0 -map_chapters -1 -map_metadata 0 -f matroska /out/letterbox.part.mkv && mv -f -- /out/letterbox.part.mkv /out/letterbox.mkv',
     'expected_duration': 4.0,
+    'expected_frames': 100,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -5259,6 +5306,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:1 -filter:a:0 aresample=matrix_encoding=dplii:out_chlayout=stereo,volume=1.5dB,loudnorm=I=-23:TP=-1:LRA=20:print_format=json -f null - && ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 \'aresample=matrix_encoding=dplii:out_chlayout=stereo,volume=1.5dB,loudnorm=I=-23:TP=-1:LRA=20:measured_I=<a0.input_i>:measured_TP=<a0.input_tp>:measured_LRA=<a0.input_lra>:measured_thresh=<a0.input_thresh>:offset=<a0.target_offset>:linear=true:print_format=summary\' -c:v:0 libx265 -crf:v:0 22 -c:a:0 aac -b:a:0 160k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -5428,6 +5476,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -ss 0.5 -i /media/multitrack.mkv -map 0:1 -t 3 -filter:a:0 aresample=out_chlayout=5.1,loudnorm=I=-16:TP=-1:LRA=20:print_format=json -f null - && ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -ss 0.5 -i /media/multitrack.mkv -map 0:2 -t 3 -filter:a:0 loudnorm=I=-23:TP=-1:LRA=20:print_format=json -f null - && ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -ss 0.5 -i /media/multitrack.mkv -map 0:0 -t 3 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -b:v:0 1800k -pass:v:0 1 -passlogfile:v:0 /out/multitrack.part.passlog -fastfirstpass:v:0 0 -f null - && ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -ss 0.5 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -ss 0 -t 3 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 \'aresample=out_chlayout=5.1,loudnorm=I=-16:TP=-1:LRA=20:measured_I=<a0.input_i>:measured_TP=<a0.input_tp>:measured_LRA=<a0.input_lra>:measured_thresh=<a0.input_thresh>:offset=<a0.target_offset>:linear=true:print_format=summary\' -filter:a:1 \'loudnorm=I=-23:TP=-1:LRA=20:measured_I=<a1.input_i>:measured_TP=<a1.input_tp>:measured_LRA=<a1.input_lra>:measured_thresh=<a1.input_thresh>:offset=<a1.target_offset>:linear=true:print_format=summary\' -c:v:0 libx264 -b:v:0 1800k -pass:v:0 2 -passlogfile:v:0 /out/multitrack.part.passlog -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 3.0,
+    'expected_frames': 75,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -5748,6 +5797,7 @@
   dict({
     'display': "header_edit /media/Show.S01E02.Title.mkv audio 1: language=hun language_ietf=hu name='Magyar 5.1' default=0 original=1 audio 2: language=por language_ietf=pt-BR default=1 audio 3: delete_name subtitle 2: visual_impaired=1 subtitle 3: forced=0 title='Show – S01E02'",
     'expected_duration': 0.0,
+    'expected_frames': None,
     'files': list([
     ]),
     'job_type': 'metadata_edit',
@@ -5836,6 +5886,7 @@
   dict({
     'display': '',
     'expected_duration': 0.0,
+    'expected_frames': None,
     'files': list([
     ]),
     'job_type': 'metadata_edit',
@@ -5851,6 +5902,7 @@
   dict({
     'display': 'header_edit "C:/Media/Movie & Co.mkv" subtitle 1: name="English \\"full\\" 100%"',
     'expected_duration': 0.0,
+    'expected_frames': None,
     'files': list([
     ]),
     'job_type': 'metadata_edit',
@@ -5892,6 +5944,7 @@
   dict({
     'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/movie-dts-hd-ma.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:1 -map 0:1 -map 0:3 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:2 aresample=out_chlayout=5.1 -filter:a:3 aresample=matrix_encoding=dplii:out_chlayout=stereo,volume=-2.5dB -c:v:0 libx265 -crf:v:0 22 -c:a:0 copy -c:a:1 copy -c:a:2 ac3 -b:a:2 640k -ar:a:2 48000 -c:a:3 aac -b:a:3 160k -ar:a:3 44100 -c:s:0 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -metadata:s:a:0 'title=DTS-HD MA 5.1' -disposition:a:0 default -metadata:s:a:1 language=eng -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 'title=English AC-3' -disposition:a:2 0 -metadata:s:a:3 language=eng -metadata:s:a:3 'title=DTS-HD MA 5.1' -disposition:a:3 0 -metadata:s:s:0 language=eng -disposition:s:0 0 -map_chapters -1 -map_metadata 0 -f matroska /out/movie-dts-hd-ma.part.mkv && mv -f -- /out/movie-dts-hd-ma.part.mkv /out/movie-dts-hd-ma.mkv",
     'expected_duration': 4.004,
+    'expected_frames': 96,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -6016,6 +6069,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/movie-truehd-atmos.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -c:a:0 copy -c:a:1 copy -c:a:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -metadata:s:a:0 \'title=Dolby TrueHD Atmos 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=Dolby Digital 5.1\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 0 -map_chapters -1 -map_metadata 0 -strict -2 -f mp4 /out/movie-truehd-atmos.part.mp4 && mv -f -- /out/movie-truehd-atmos.part.mp4 /out/movie-truehd-atmos.mp4',
     'expected_duration': 2.005,
+    'expected_frames': 48,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -6114,6 +6168,7 @@
   dict({
     'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/vobsub.mkv -map 0:0 -map 0:1 -map 0:2 -filter:v:0 scale=720:480:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -c:s:0 copy -c:s:1 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=fra -metadata:s:s:1 'title=French forced' -disposition:s:1 forced -map_chapters -1 -map_metadata 0 -f mp4 /out/vobsub.part.mp4 && mv -f -- /out/vobsub.part.mp4 /out/vobsub.mp4",
     'expected_duration': 4.0,
+    'expected_frames': 100,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -6200,6 +6255,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx265 -crf:v:0 22 -tag:v:0 hvc1 -c:a:0 copy -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 mov_text -c:s:1 mov_text -c:s:2 mov_text -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=deu -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=hun -metadata:s:s:0 title=Magyar -disposition:s:0 0 -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -movflags +faststart -f mp4 /out/multitrack.part.mp4 && mv -f -- /out/multitrack.part.mp4 /out/multitrack.mp4',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -6338,6 +6394,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 hevc_nvenc -rc:v:0 vbr -b:v:0 5000k -multipass:v:0 qres -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -6484,6 +6541,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/phone-rotated.mov -map 0:0 -map 0:1 -filter:v:0 scale=720:1280:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx265 -crf:v:0 22 -c:a:0 aac -b:a:0 160k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=und -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f matroska /out/phone-rotated.part.mkv && mv -f -- /out/phone-rotated.part.mkv /out/phone-rotated.mkv',
     'expected_duration': 2.0,
+    'expected_frames': 60,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -6562,6 +6620,7 @@
   dict({
     'display': '/opt/reframe/tools/ffmpeg/bin/ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i \'/media/My Films/It\'"\'"\'s here (2024).mkv\' -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska \'/out/It\'"\'"\'s here (2024).part.mkv\' && mv -f -- \'/out/It\'"\'"\'s here (2024).part.mkv\' \'/out/It\'"\'"\'s here (2024).mkv\'',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -6704,6 +6763,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -c:v:0 copy -c:a:0 copy -c:a:1 copy -c:a:2 copy -c:s:0 mov_text -c:s:1 mov_text -c:s:2 mov_text -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f mp4 /out/multitrack.part.mp4 && mv -f -- /out/multitrack.part.mp4 /out/multitrack.mp4',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'remux',
@@ -6826,6 +6886,7 @@
   dict({
     'display': "ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/anime-ass-fonts.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map '0:t?' -c:v:0 copy -c:a:0 copy -c:a:1 copy -c:s:0 copy -c:s:1 copy -map_metadata:s -1 -map_metadata:s:t:0 0:s:t:0 -map_metadata:s:t:1 0:s:t:1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 title=Japanese -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 title=English -disposition:a:1 0 -metadata:s:s:0 language=eng -metadata:s:s:0 'title=Signs & Songs' -disposition:s:0 0 -metadata:s:s:1 language=eng -metadata:s:s:1 'title=Full Subtitles' -disposition:s:1 default -map_chapters 0 -map_metadata 0 -f matroska /out/anime-ass-fonts.part.mkv && mv -f -- /out/anime-ass-fonts.part.mkv /out/anime-ass-fonts.mkv",
     'expected_duration': 4.021,
+    'expected_frames': 96,
     'files': list([
     ]),
     'job_type': 'remux',
@@ -6934,6 +6995,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -i /media/movie-stale-stats.mkv -map 0:0 -filter:v:0 scale=1280:720:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 0 -map_chapters -1 -map_metadata 0 -f matroska /out/movie-stale-stats.part.mkv && mv -f -- /out/movie-stale-stats.part.mkv /out/movie-stale-stats.mkv',
     'expected_duration': 2.002,
+    'expected_frames': 60,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -7000,6 +7062,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p10le -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libsvtav1 -crf:v:0 22 -preset:v:0 6 -svtav1-params:v:0 tune=0:fast-decode=1:level=41:film-grain=8:film-grain-denoise=0:enable-qm=1 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -7146,6 +7209,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libsvtav1 -b:v:0 1500k -pass:v:0 1 -passlogfile:v:0 /out/multitrack.part.passlog -f null - && ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libsvtav1 -b:v:0 1500k -pass:v:0 2 -passlogfile:v:0 /out/multitrack.part.passlog -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -7332,6 +7396,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/Show.S01E02.Title.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx265 -crf:v:0 22 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata:g -1 -metadata \'title=Show – S01E02\' -metadata \'artist=A, B\' -metadata album_artist=D -metadata date=2026 -metadata \'comment={literal}\' -metadata genre=Drama -metadata description= -metadata \'synopsis=Plot / more\' -f matroska /out/Show.S01E02.Title.part.mkv && mv -f -- /out/Show.S01E02.Title.part.mkv /out/Show.S01E02.Title.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -7490,6 +7555,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -ss 1.2 -i /media/chapters.mkv -map 0:0 -map 0:1 -ss 0 -t 2 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -crf:v:0 22 -c:a:0 aac -b:a:0 80k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters 0 -map_metadata 0 -f matroska /out/chapters.part.mkv && mv -f -- /out/chapters.part.mkv /out/chapters.mkv',
     'expected_duration': 2.0,
+    'expected_frames': 50,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -7574,6 +7640,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/movie-hdr10-2160p.mkv -map 0:0 -map 0:1 -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 copy -tag:v:0 hvc1 -c:a:0 eac3 -b:a:0 1536k -ar:a:0 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -disposition:a:0 default -map_chapters -1 -map_metadata 0 -f mp4 /out/movie-hdr10-2160p.part.mp4 && mv -f -- /out/movie-hdr10-2160p.part.mp4 /out/movie-hdr10-2160p.mp4',
     'expected_duration': 1.005,
+    'expected_frames': 24,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -7654,6 +7721,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libvpx-vp9 -crf:v:0 22 -b:v:0 0 -cpu-used:v:0 3 -deadline:v:0 good -row-mt:v:0 1 -c:a:0 libopus -b:a:0 320k -ar:a:0 48000 -c:a:1 libopus -b:a:1 96k -ar:a:1 48000 -c:a:2 libopus -b:a:2 96k -ar:a:2 48000 -c:s:0 webvtt -c:s:1 webvtt -c:s:2 webvtt -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 0 -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 0 -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f webm /out/multitrack.part.webm && mv -f -- /out/multitrack.part.webm /out/multitrack.webm',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -7804,6 +7872,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:2 0 -drc_scale:3 0 -i /media/movie-truehd-atmos.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -filter:v:0 scale=1920:1080:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -filter:a:1 aresample=out_chlayout=5.1 -c:v:0 libsvtav1 -crf:v:0 22 -c:a:0 libopus -b:a:0 320k -ar:a:0 48000 -c:a:1 libopus -b:a:1 320k -ar:a:1 48000 -c:a:2 libopus -b:a:2 96k -ar:a:2 48000 -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=eng -metadata:s:a:0 \'title=Dolby TrueHD Atmos 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=Dolby Digital 5.1\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 0 -map_chapters -1 -map_metadata 0 -f webm /out/movie-truehd-atmos.part.webm && mv -f -- /out/movie-truehd-atmos.part.webm /out/movie-truehd-atmos.webm',
     'expected_duration': 2.005,
+    'expected_frames': 48,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -7920,6 +7989,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -preset:v:0 veryslow -tune:v:0 animation,fastdecode -x264-params:v:0 bframes=8:aq-mode=0:psy-rd=0.8,0:deblock=-1,-1:no-dct-decimate=1:nr=100 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -8068,6 +8138,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -crf:v:0 22 -preset:v:0 slow -tune:v:0 film -profile:v:0 high -level:v:0 4.1 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -8218,6 +8289,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx264 -b:v:0 2500k -pass:v:0 1 -passlogfile:v:0 /out/multitrack.part.passlog -fastfirstpass:v:0 1 -f null - && ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx264 -b:v:0 2500k -pass:v:0 2 -passlogfile:v:0 /out/multitrack.part.passlog -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -8406,6 +8478,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx265 -crf:v:0 22 -preset:v:0 slow -x265-params:v:0 sao=0:rd=4:deblock=-2,0:limit-tu=4 -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -8552,6 +8625,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx265 -crf:v:0 22 -preset:v:0 slow -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -8696,6 +8770,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx265 -b:v:0 2000k -x265-params:v:0 pass=1:stats=/out/multitrack.part.passlog:slow-firstpass=1 -f null - && ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx265 -b:v:0 2000k -x265-params:v:0 pass=2:stats=/out/multitrack.part.passlog -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 \'title=Japanese 5.1\' -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 \'title=English Stereo\' -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 \'title=Director\'"\'"\'s Commentary\' -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 \'title=English SDH\' -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 \'title=Signs & Songs\' -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska /out/multitrack.part.mkv && mv -f -- /out/multitrack.part.mkv /out/multitrack.mkv',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',
@@ -8878,6 +8953,7 @@
   dict({
     'display': 'ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -c:v:0 libx265 -b:v:0 2000k -x265-params:v:0 "pass=1:stats=/out/Show\\: S01E01 \\\'Pilot\\\'.part.passlog:slow-firstpass=1" -f null - && ffmpeg -hide_banner -nostdin -y -progress pipe:1 -nostats -drc_scale:1 0 -i /media/multitrack.mkv -map 0:0 -map 0:1 -map 0:2 -map 0:3 -map 0:4 -map 0:5 -map 0:6 -filter:v:0 scale=320:180:flags=lanczos,setsar=1/1,format=yuv420p -filter:a:0 aresample=out_chlayout=5.1 -c:v:0 libx265 -b:v:0 2000k -x265-params:v:0 "pass=2:stats=/out/Show\\: S01E01 \\\'Pilot\\\'.part.passlog" -c:a:0 aac -b:a:0 384k -ar:a:0 48000 -c:a:1 aac -b:a:1 160k -ar:a:1 48000 -c:a:2 aac -b:a:2 160k -ar:a:2 48000 -c:s:0 copy -c:s:1 copy -c:s:2 copy -map_metadata:s -1 -metadata:s:v:0 language=und -disposition:v:0 default -metadata:s:a:0 language=jpn -metadata:s:a:0 "title=Japanese 5.1" -disposition:a:0 default -metadata:s:a:1 language=eng -metadata:s:a:1 "title=English Stereo" -disposition:a:1 0 -metadata:s:a:2 language=eng -metadata:s:a:2 "title=Director\'s Commentary" -disposition:a:2 comment -metadata:s:s:0 language=eng -metadata:s:s:0 title=English -disposition:s:0 default -metadata:s:s:1 language=eng -metadata:s:s:1 "title=English SDH" -disposition:s:1 hearing_impaired -metadata:s:s:2 language=eng -metadata:s:s:2 "title=Signs & Songs" -disposition:s:2 forced -map_chapters -1 -map_metadata 0 -f matroska "/out/Show: S01E01 \'Pilot\'.part.mkv" && move /Y "/out/Show: S01E01 \'Pilot\'.part.mkv" "/out/Show: S01E01 \'Pilot\'.mkv"',
     'expected_duration': 4.021,
+    'expected_frames': 101,
     'files': list([
     ]),
     'job_type': 'encode',

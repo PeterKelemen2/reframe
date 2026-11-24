@@ -344,7 +344,7 @@ class JobRunner:
                 error=f"The output folder or the plan files cannot be written: {exc}",
                 plan=plan,
             )
-        tracker = ProgressTracker(plan.steps, plan.expected_duration)
+        tracker = ProgressTracker(plan.steps, plan.expected_duration, plan.expected_frames)
         active.tracker = tracker
         values: dict[str, str] = {}
         count = len(plan.steps)
@@ -731,7 +731,7 @@ class JobRunner:
             code, message = refusal
             issue = _issue(code, message, "output.edit_in_place")
             return Outcome(JobState.FAILED, error=issue.message, issues=[*job.issues, issue])
-        tracker = ProgressTracker(plan.steps, plan.expected_duration)
+        tracker = ProgressTracker(plan.steps, plan.expected_duration, plan.expected_frames)
         active.tracker = tracker
         count = len(plan.steps)
         if not count:

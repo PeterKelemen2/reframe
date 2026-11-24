@@ -35,6 +35,7 @@ from reframe.command.video import (
     encoder_and_pix_fmt,
     format_number,
     frame_rate_args,
+    output_frame_rate,
     pass_log_files,
     source_rate,
     spec,
@@ -157,6 +158,8 @@ class _Video:
     passlog: Path | None
     stats_param: bool
     label: str
+    frame_rate: Fraction | None
+    """The output's average frame rate (:func:`output_frame_rate`)."""
 
 
 def _video_plan(
@@ -176,7 +179,8 @@ def _video_plan(
         args = [spec("-c:v", V0), "copy"]
         if codec in container.codec_tags:
             args += [spec("-tag:v", V0), container.codec_tags[codec]]
-        return _Video({None: args}, None, [], None, False, None, False, "Remux")
+        rate = output_frame_rate(settings, video)
+        return _Video({None: args}, None, [], None, False, None, False, "Remux", rate)
     encoder, pix_fmt = encoder_and_pix_fmt(job, defs)
     if encoder.codec not in container.video.encode:
         raise PlanError(f"{encoder.codec_label} cannot be written into {container.label}")
@@ -222,6 +226,7 @@ def _video_plan(
     return _Video(
         codec_args, graph, hw_init, geometry, two_runs, passlog if two_runs else None,
         stats_param, encoder.label,
+        output_frame_rate(settings, video, factor=graph.rate_factor),
     )  # fmt: skip
 
 
@@ -447,6 +452,9 @@ def build_plan(
         output_tmp=tmp,
         output_final=final,
         expected_duration=round(rng.expected, 6),
+        expected_frames=(
+            round(rng.expected * vplan.frame_rate) if vplan.frame_rate is not None else None
+        ),
         display=_display(steps, tools, tmp, final, shell or default_shell()),
         files=files,
         temp_files=temp_files,

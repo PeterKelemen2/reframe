@@ -14,7 +14,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 
-from reframe.models.base import NonNegativeFloat, PositiveInt, ReframeModel
+from reframe.models.base import NonNegativeFloat, NonNegativeInt, PositiveInt, ReframeModel
 from reframe.models.text import DisplayText
 
 __all__ = [
@@ -160,6 +160,9 @@ class EncodePlan(ReframeModel):
     output_final: Path
     expected_duration: NonNegativeFloat
     """Seconds, range-adjusted, for progress."""
+    expected_frames: NonNegativeInt | None = None
+    """Video frames that the encode writes (``expected_duration`` times the output frame
+    rate), for progress when FFmpeg prints no output time; ``None`` when the rate is unknown."""
     display: DisplayText
     """Shell-quoted command preview (POSIX or Windows style); a measured value shows as
     ``<a0.input_i>``."""

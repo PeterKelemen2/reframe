@@ -386,6 +386,16 @@ many blocks on a fast machine too. What `C-11`'s parser must handle:
 - With an audio stream, `out_time` can start above 0 before the first video frame
   (`frame=0`, `out_time=00:00:00.139320`).
 - `out_time_ms` has the same value as `out_time_us` (microseconds, not milliseconds).
+- **A late subtitle in the `compat` build** (checked 2026-11-24). A 20 s libx264 + AAC source
+  with one SRT line at 15 s, encoded with `-map 0 -c:v libx264 -c:a aac -c:s copy -f matroska`,
+  `-progress pipe:1 -nostats -stats_period 1 -readrate 4`. The BtbN n8.1.3 build (`compat`)
+  prints `out_time_us=N/A` (and `speed=N/A`) in every block until the subtitle's packet, while
+  `frame` counts up (49, 151, 251), then `out_time_us=17000000` in the last block: its time is
+  that of the output stream furthest behind, and a stream without a packet has none. The n9.0.2
+  build (`default`) prints 4.48 s, 8.41 s, 12.45 s, 20.02 s. A film with a late first subtitle,
+  or a forced-subtitles track with few lines, so has no output time for most of its encode in
+  8.1.3: the progress tracker then takes the position from `frame` and the plan's
+  `expected_frames`.
 
 The fake's `progress(na_blocks=N, na_fields=[...])` action prints the same start-up blocks and
 `N/A` fields (`reframe_testing.fake_tools.progress`).
