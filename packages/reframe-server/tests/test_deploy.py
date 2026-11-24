@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import re
 import shlex
@@ -260,3 +261,13 @@ def test_a_puid_that_is_not_a_number_stops_the_container(tmp_path: Path) -> None
     result = run_entrypoint(tmp_path, PUID="1000x")
 
     assert (result.returncode, result.stdout) == (2, "")
+
+
+def test_the_image_carries_the_app_icon_for_log_viewers() -> None:
+    """Dozzle shows a container's ``dev.dozzle.icon`` label: a data URI of the app icon."""
+    icon = DOCKER.parent / "desktop" / "src-tauri" / "icons" / "source" / "reframe.svg"
+    [label] = [rest for keyword, rest in instructions() if keyword == "LABEL"]
+    [(name, value)] = [token.split("=", 1) for token in shlex.split(label)]
+    assert name == "dev.dozzle.icon"
+    assert value == "data:image/svg+xml;base64," + base64.b64encode(icon.read_bytes()).decode()
+    assert len(value) <= 16 * 1024

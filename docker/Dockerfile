@@ -118,6 +118,9 @@ ENV PUID=1000 \
     PYTHONUNBUFFERED=1
 
 EXPOSE 8765
+# The app icon for log viewers such as Dozzle, which read it from this label of the container
+# (desktop/src-tauri/icons/source/reframe.svg as a data URI; Dozzle takes up to 16 KB).
+LABEL dev.dozzle.icon="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDI0IDEwMjQiIHdpZHRoPSIxMDI0IiBoZWlnaHQ9IjEwMjQiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJiZyIgeDE9IjAiIHkxPSIwIiB4Mj0iMSIgeTI9IjEiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiM1YjRlZjAiLz4KICAgICAgPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjM2IyZmI4Ii8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB4PSIzMiIgeT0iMzIiIHdpZHRoPSI5NjAiIGhlaWdodD0iOTYwIiByeD0iMjAwIiBmaWxsPSJ1cmwoI2JnKSIvPgogIDxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZmZmZiIgc3Ryb2tlLXdpZHRoPSI4NCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4KICAgIDxwYXRoIGQ9Ik0yMTIgMzkyIFYyMTIgSDM5MiIvPgogICAgPHBhdGggZD0iTTYzMiAyMTIgSDgxMiBWMzkyIi8+CiAgICA8cGF0aCBkPSJNODEyIDYzMiBWODEyIEg2MzIiLz4KICAgIDxwYXRoIGQ9Ik0zOTIgODEyIEgyMTIgVjYzMiIvPgogIDwvZz4KICA8cGF0aCBkPSJNNDQwIDM2MiBMNjcyIDUxMiBMNDQwIDY2MiBaIiBmaWxsPSIjZmZmZmZmIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iNDAiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KPC9zdmc+Cg=="
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD ["/opt/reframe/venv/bin/python", "-c", "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:%s/api/health' % os.environ['REFRAME_PORT'], timeout=4)"]
 # The server ends a clean stop by raising SIGTERM again: tini reports that as 143.
