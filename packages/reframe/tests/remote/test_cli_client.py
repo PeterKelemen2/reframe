@@ -15,6 +15,7 @@ import signal
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ import uvicorn
 from websockets.asyncio.client import ClientConnection
 
 from reframe import cli
+from reframe import jobs as jobs_module
 from reframe.capabilities.service import CapabilityService
 from reframe.events import EventBus
 from reframe.models import (
@@ -137,10 +139,20 @@ async def test_the_owners_validation_decides_what_is_queued(
     assert server.api.reframe.queue.list() == []
 
 
+class _FixedClock:
+    @staticmethod
+    def now() -> datetime:
+        return datetime(2026, 1, 2, 14, 30)
+
+
 @pytest.mark.parametrize("preset_kind", ["default", "own rules and naming"])
-async def test_a_client_drafts_as_the_in_process_draft(server: Server, preset_kind: str) -> None:
+async def test_a_client_drafts_as_the_in_process_draft(
+    server: Server, preset_kind: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The second preset has a required track rule that no track matches (an error of the
     track stage) and its own naming template."""
+    # {time} is the current minute: the two drafts can fall on both sides of a minute.
+    monkeypatch.setattr(jobs_module, "datetime", _FixedClock)
     app = server.api.reframe
     source = server.api.media_file("Show.S01E02.1080p.BluRay.x264-GRP.mkv")
     preset = app.presets.default()
