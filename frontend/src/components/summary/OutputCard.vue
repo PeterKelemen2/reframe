@@ -132,7 +132,7 @@ function setFlag(flag: OutputFlag, value: boolean): void {
     :title="t('summary.output.title')"
     data-card="output"
   >
-    <div v-if="output" class="summary-output__body">
+    <JobNamingEditor v-if="output">
       <div class="summary-output__options">
         <Field :label="t('summary.output.container')" path="output.container">
           <template #default="{ labelId }">
@@ -192,13 +192,11 @@ function setFlag(flag: OutputFlag, value: boolean): void {
           </template>
         </Field>
       </div>
-      <JobNamingEditor />
-    </div>
+    </JobNamingEditor>
   </Card>
 </template>
 
 <style scoped>
-.summary-output__body,
 .summary-output__options {
   display: grid;
   gap: var(--rf-space-3);

@@ -33,11 +33,10 @@ import VariableChips from './VariableChips.vue'
  * job in one patch. Until then it is a pending edit of the editor store, which an add to the
  * queue waits for. An edit on its way when the editor unmounts still goes into the job.
  */
-const props = defineProps<{
-  disabled?: boolean
-  /** Variable chips and the parsed name start folded (a narrow place). */
-  compact?: boolean
-}>()
+defineProps<{ disabled?: boolean }>()
+
+/** The parts of the output settings between the name and the naming fields (the Output card's). */
+defineSlots<{ default?(): unknown }>()
 
 const { t } = useI18n()
 const editor = useEditorStore()
@@ -70,8 +69,8 @@ function sameNaming(a: JobNaming | undefined, b: JobNaming | undefined): boolean
 }
 
 const templateField = useTemplateRef<InstanceType<typeof TemplateField>>('templateField')
-const chipsOpen = ref(!props.compact)
-const parsedOpen = ref(!props.compact)
+const chipsOpen = ref(false)
+const parsedOpen = ref(false)
 
 /** The naming being edited; it reaches the job with the preview's answer. */
 const local = shallowRef<JobNaming>(namingOf(editor.job))
@@ -441,134 +440,10 @@ function useDefaultFolder(): void {
   <div class="job-naming-editor">
     <p v-if="editor.job === null" class="job-naming__empty">{{ t('naming.job.noJob') }}</p>
     <template v-else>
-      <p v-if="groupScope" class="job-naming__per-file" data-role="per-file">
-        {{ t('naming.job.perFileInGroup') }}
-      </p>
-      <Field v-else :label="t('naming.job.mode')" path="output.naming.mode" stacked>
-        <template #default="{ labelId }">
-          <SelectButton
-            :ariaLabelledby="labelId"
-            :model-value="local.mode"
-            :options="modes"
-            option-label="label"
-            option-value="value"
-            :allow-empty="false"
-            :disabled="disabled"
-            data-option="mode"
-            @update:model-value="setMode"
-          />
-        </template>
-      </Field>
-
-      <Field
-        v-if="local.mode === 'template'"
-        :label="t('naming.job.template')"
-        path="output.naming.template"
-        :issues="templateIssues"
-        stacked
+      <section
+        class="job-naming__section job-naming__output"
+        :aria-label="t('naming.preview.title')"
       >
-        <template #default="{ id, invalid }">
-          <div class="job-naming__row">
-            <TemplateField
-              :id="id"
-              ref="templateField"
-              class="job-naming__grow"
-              :model-value="templateText"
-              :variables="system.namingVariables"
-              :invalid="invalid"
-              :disabled="disabled"
-              @update:model-value="edit({ template: $event }, 'output.naming.template')"
-              @blur="onBlur"
-            />
-            <Button
-              v-if="local.template !== null && !groupScope"
-              :label="t('naming.job.resetTemplate')"
-              severity="secondary"
-              text
-              size="small"
-              :disabled="disabled"
-              data-action="reset-template"
-              @click="edit({ template: null })"
-            >
-              <template #icon>
-                <RotateCcw :size="16" aria-hidden="true" />
-              </template>
-            </Button>
-          </div>
-          <TemplateFixes :issues="templateIssues" :disabled="disabled" @use="useTemplate" />
-        </template>
-      </Field>
-      <Field
-        v-else
-        :label="t('naming.job.manualName')"
-        :help="t('naming.job.manualHelp')"
-        path="output.naming.manual_name"
-        :issues="manualIssues"
-        stacked
-      >
-        <template #default="{ id, invalid }">
-          <div class="job-naming__row">
-            <InputText
-              :id="id"
-              class="job-naming__grow"
-              :model-value="local.manual_name ?? ''"
-              :invalid="invalid"
-              :disabled="disabled"
-              fluid
-              data-option="manual_name"
-              @update:model-value="edit({ manual_name: $event ?? '' }, 'output.naming.manual_name')"
-              @blur="onBlur"
-            />
-            <Button
-              :label="t('naming.job.backToTemplate')"
-              severity="secondary"
-              text
-              size="small"
-              :disabled="disabled"
-              data-action="back-to-template"
-              @click="setMode('template')"
-            >
-              <template #icon>
-                <RotateCcw :size="16" aria-hidden="true" />
-              </template>
-            </Button>
-          </div>
-        </template>
-      </Field>
-
-      <Disclosure
-        v-if="local.mode === 'template'"
-        v-model:open="chipsOpen"
-        :title="t('naming.chips.title')"
-      >
-        <VariableChips
-          :variables="system.namingVariables"
-          :values="result?.variables ?? null"
-          :disabled="disabled"
-          @insert="insertVariable"
-        />
-      </Disclosure>
-
-      <Field :label="t('naming.job.nameSource')" path="output.naming.name_source" stacked>
-        <template #default="{ id, labelId }">
-          <Select
-            :label-id="id"
-            :ariaLabelledby="labelId"
-            :model-value="shownNameSource"
-            :options="nameSources"
-            option-label="label"
-            option-value="value"
-            :disabled="disabled"
-            data-option="name_source"
-            @update:model-value="edit({ name_source: $event === FROM_OPTIONS ? null : $event })"
-          />
-        </template>
-      </Field>
-      <p v-if="groupScope" class="job-naming__per-file" data-role="group-naming">
-        {{ t('naming.job.groupNaming') }}
-      </p>
-
-      <section class="job-naming__output" :aria-label="t('naming.preview.title')">
         <div class="job-naming__head">
           <h4>{{ t('naming.preview.title') }}</h4>
           <span class="job-naming__status" aria-live="polite">{{
@@ -636,23 +511,172 @@ function useDefaultFolder(): void {
         </ul>
       </section>
 
-      <Disclosure v-if="result" v-model:open="parsedOpen" :title="t('naming.parsed.heading')">
-        <ParsedNamePanel
-          :result="result"
-          :editable="!groupScope"
-          :overrides="local.field_overrides ?? {}"
-          :issues="overrideIssues"
-          :disabled="disabled"
-          @update:overrides="edit({ field_overrides: $event }, 'output.naming.field_overrides')"
-          @commit="onBlur"
-        />
-      </Disclosure>
+      <div v-if="$slots.default" class="job-naming__section">
+        <slot />
+      </div>
+
+      <div class="job-naming__section job-naming__fields">
+        <p v-if="groupScope" class="job-naming__per-file" data-role="per-file">
+          {{ t('naming.job.perFileInGroup') }}
+        </p>
+        <Field v-else :label="t('naming.job.mode')" path="output.naming.mode" stacked>
+          <template #default="{ labelId }">
+            <SelectButton
+              :ariaLabelledby="labelId"
+              :model-value="local.mode"
+              :options="modes"
+              option-label="label"
+              option-value="value"
+              :allow-empty="false"
+              :disabled="disabled"
+              data-option="mode"
+              @update:model-value="setMode"
+            />
+          </template>
+        </Field>
+
+        <Field
+          v-if="local.mode === 'template'"
+          :label="t('naming.job.template')"
+          path="output.naming.template"
+          :issues="templateIssues"
+          stacked
+        >
+          <template #default="{ id, invalid }">
+            <div class="job-naming__row">
+              <TemplateField
+                :id="id"
+                ref="templateField"
+                class="job-naming__grow"
+                :model-value="templateText"
+                :variables="system.namingVariables"
+                :invalid="invalid"
+                :disabled="disabled"
+                @update:model-value="edit({ template: $event }, 'output.naming.template')"
+                @blur="onBlur"
+              />
+              <Button
+                v-if="local.template !== null && !groupScope"
+                :label="t('naming.job.resetTemplate')"
+                severity="secondary"
+                text
+                size="small"
+                :disabled="disabled"
+                data-action="reset-template"
+                @click="edit({ template: null })"
+              >
+                <template #icon>
+                  <RotateCcw :size="16" aria-hidden="true" />
+                </template>
+              </Button>
+            </div>
+            <TemplateFixes :issues="templateIssues" :disabled="disabled" @use="useTemplate" />
+          </template>
+        </Field>
+        <Field
+          v-else
+          :label="t('naming.job.manualName')"
+          :help="t('naming.job.manualHelp')"
+          path="output.naming.manual_name"
+          :issues="manualIssues"
+          stacked
+        >
+          <template #default="{ id, invalid }">
+            <div class="job-naming__row">
+              <InputText
+                :id="id"
+                class="job-naming__grow"
+                :model-value="local.manual_name ?? ''"
+                :invalid="invalid"
+                :disabled="disabled"
+                fluid
+                data-option="manual_name"
+                @update:model-value="
+                  edit({ manual_name: $event ?? '' }, 'output.naming.manual_name')
+                "
+                @blur="onBlur"
+              />
+              <Button
+                :label="t('naming.job.backToTemplate')"
+                severity="secondary"
+                text
+                size="small"
+                :disabled="disabled"
+                data-action="back-to-template"
+                @click="setMode('template')"
+              >
+                <template #icon>
+                  <RotateCcw :size="16" aria-hidden="true" />
+                </template>
+              </Button>
+            </div>
+          </template>
+        </Field>
+
+        <Disclosure
+          v-if="local.mode === 'template'"
+          v-model:open="chipsOpen"
+          :title="t('naming.chips.title')"
+        >
+          <VariableChips
+            :variables="system.namingVariables"
+            :values="result?.variables ?? null"
+            :disabled="disabled"
+            @insert="insertVariable"
+          />
+        </Disclosure>
+
+        <Field :label="t('naming.job.nameSource')" path="output.naming.name_source" stacked>
+          <template #default="{ id, labelId }">
+            <Select
+              :label-id="id"
+              :ariaLabelledby="labelId"
+              :model-value="shownNameSource"
+              :options="nameSources"
+              option-label="label"
+              option-value="value"
+              :disabled="disabled"
+              data-option="name_source"
+              @update:model-value="edit({ name_source: $event === FROM_OPTIONS ? null : $event })"
+            />
+          </template>
+        </Field>
+        <p v-if="groupScope" class="job-naming__per-file" data-role="group-naming">
+          {{ t('naming.job.groupNaming') }}
+        </p>
+      </div>
+
+      <div v-if="result" class="job-naming__section">
+        <Disclosure v-if="result" v-model:open="parsedOpen" :title="t('naming.parsed.heading')">
+          <ParsedNamePanel
+            :result="result"
+            :editable="!groupScope"
+            :overrides="local.field_overrides ?? {}"
+            :issues="overrideIssues"
+            :disabled="disabled"
+            @update:overrides="edit({ field_overrides: $event }, 'output.naming.field_overrides')"
+            @commit="onBlur"
+          />
+        </Disclosure>
+      </div>
     </template>
   </div>
 </template>
 
 <style scoped>
 .job-naming-editor {
+  display: grid;
+  gap: var(--rf-space-4);
+  min-width: 0;
+}
+
+/* A hairline between the parts: the name and its folder, the output options, the naming. */
+.job-naming__section + .job-naming__section {
+  padding-top: var(--rf-space-4);
+  border-top: 1px solid var(--rf-color-border);
+}
+
+.job-naming__fields {
   display: grid;
   gap: var(--rf-space-4);
   min-width: 0;
