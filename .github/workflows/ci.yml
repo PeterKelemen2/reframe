@@ -6,7 +6,15 @@ on:
   push:
     branches: [main]
   pull_request:
+  # A manual run can run one job (`gh workflow run CI --ref BRANCH -f job=desktop-smoke`);
+  # a push or a pull request runs every job.
   workflow_dispatch:
+    inputs:
+      job:
+        description: Run only this job
+        type: choice
+        default: all
+        options: [all, python, frontend, desktop, desktop-smoke, frontend-server, api-contract, ffmpeg-override, benchmark]
 
 permissions:
   contents: read
@@ -23,6 +31,7 @@ defaults:
 
 jobs:
   python:
+    if: ${{ !inputs.job || inputs.job == 'all' || inputs.job == 'python' }}
     name: Python ${{ matrix.python }} (${{ matrix.os }}${{ matrix.group && format(', {0}/{1}', matrix.group, matrix.splits) || '' }})
     strategy:
       fail-fast: false
@@ -122,6 +131,7 @@ jobs:
           ${{ matrix.group && format('--splits {0} --group {1}', matrix.splits, matrix.group) || '' }}
 
   frontend:
+    if: ${{ !inputs.job || inputs.job == 'all' || inputs.job == 'frontend' }}
     name: Frontend (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -152,6 +162,7 @@ jobs:
       - run: npm run build:desktop
 
   desktop:
+    if: ${{ !inputs.job || inputs.job == 'all' || inputs.job == 'desktop' }}
     # The Tauri shell. The Windows runner is the only place where its cfg(windows) code compiles.
     name: Desktop shell (${{ matrix.os }})
     strategy:
@@ -208,6 +219,7 @@ jobs:
         working-directory: desktop/src-tauri
 
   desktop-smoke:
+    if: ${{ !inputs.job || inputs.job == 'all' || inputs.job == 'desktop-smoke' }}
     # The release app with its frozen sidecar and no FFmpeg, driven through tauri-driver
     # (desktop/tests/smoke): it starts, reaches its backend, installs the default FFmpeg build
     # from the cached archive (Install from file), opens a file from argv, finishes a job and
@@ -311,6 +323,7 @@ jobs:
         working-directory: desktop
 
   frontend-server:
+    if: ${{ !inputs.job || inputs.job == 'all' || inputs.job == 'frontend-server' }}
     # The frontend against a real reframe-server and a real FFmpeg: the server tests (vitest)
     # and the browser flows (Playwright, Chromium, Firefox and WebKit). Linux only: the tests find the
     # pinned FFmpeg through .tools/ and start the servers with a POSIX shell.
@@ -409,6 +422,7 @@ jobs:
           E2E_SHARD: ${{ matrix.shard }}
 
   api-contract:
+    if: ${{ !inputs.job || inputs.job == 'all' || inputs.job == 'api-contract' }}
     # The committed TypeScript types must match the server's OpenAPI document.
     name: API contract (ubuntu-latest)
     runs-on: ubuntu-latest
@@ -437,6 +451,7 @@ jobs:
         run: scripts/gen-api.sh --check
 
   ffmpeg-override:
+    if: ${{ !inputs.job || inputs.job == 'all' || inputs.job == 'ffmpeg-override' }}
     # The path override (REFRAME_FFMPEG / REFRAME_FFPROBE) with a different FFmpeg build.
     # The build is deliberately NOT on PATH.
     name: FFmpeg override path (ubuntu-latest)
@@ -493,6 +508,7 @@ jobs:
         run: uv run pytest -m "needs_ffmpeg and not needs_gpu and not benchmark" -n logical
 
   benchmark:
+    if: ${{ !inputs.job || inputs.job == 'all' || inputs.job == 'benchmark' }}
     # Performance budgets run as a NON-blocking job. A failure here does not fail the
     # workflow; it is a signal to look at (a later step comments on PRs with regressions).
     name: Benchmarks (${{ matrix.os }}, non-blocking)
