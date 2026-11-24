@@ -7,6 +7,7 @@ import json
 import logging
 import logging.config
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -311,5 +312,7 @@ def test_the_console_leaves_out_the_health_checks_that_pass(
     finally:
         server.terminate()
         _out, err = server.communicate(timeout=30)
-    assert '"GET /api/system HTTP/1.1" 200' in err
-    assert "/api/health" not in err
+    # uvicorn colours its access lines where it sees a terminal (the Windows runner).
+    console = re.sub(r"\x1b\[[0-9;]*m", "", err)
+    assert '"GET /api/system HTTP/1.1" 200' in console
+    assert "/api/health" not in console

@@ -92,6 +92,7 @@ def test_the_image_starts_a_web_server_with_its_roots_and_the_frontend(
     assert config.static_dir == build
 
 
+@linux_only
 def test_the_drives_compose_file_lets_the_server_write_on_every_drive_it_reads(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
