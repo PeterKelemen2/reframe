@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n'
 import { apiQuiet, unwrap } from '@/api/client'
 import type { FrameLink, Geometry, JobSettings, PreviewClip } from '@/api/types'
 import SplitCompare from '@/components/media/SplitCompare.vue'
+import { type DecodedClip, useClipsStore } from '@/stores/clips'
 
 import { absolute, compareTimes, millis, reason } from './clip'
 
@@ -20,6 +21,7 @@ const props = defineProps<{
 }>()
 
 const { t, n } = useI18n()
+const clips = useClipsStore()
 
 interface Pair {
   /** Seconds from the start of the clip. */
@@ -70,15 +72,19 @@ async function load(): Promise<void> {
         .then(unwrap),
     ])
     if (request !== own) return
-    geometry.value = picture.geometry
     const sources = new Map(sourceFrames.frames.map((frame) => [millis(frame.timestamp), frame]))
-    pairs.value = clipFrames.frames.flatMap((after) => {
-      const before = sources.get(millis(start + after.timestamp))
-      return before === undefined
-        ? []
-        : [{ time: after.timestamp, before: absolute(before), after: absolute(after) }]
-    })
-    notes.value = [...new Set([...clipFrames.notes, ...sourceFrames.notes])]
+    const decoded = {
+      geometry: picture.geometry,
+      pairs: clipFrames.frames.flatMap((after) => {
+        const before = sources.get(millis(start + after.timestamp))
+        return before === undefined
+          ? []
+          : [{ time: after.timestamp, before: absolute(before), after: absolute(after) }]
+      }),
+      notes: [...new Set([...clipFrames.notes, ...sourceFrames.notes])],
+    }
+    clips.keepDecoded(id, decoded)
+    showDecoded(decoded)
   } catch (failure) {
     if (request !== own) return
     pairs.value = []
@@ -91,13 +97,22 @@ async function load(): Promise<void> {
   }
 }
 
+function showDecoded(decoded: DecodedClip): void {
+  geometry.value = decoded.geometry
+  pairs.value = decoded.pairs
+  notes.value = decoded.notes
+}
+
+// A clip decoded before (a return from the player, or to its frame) shows at once.
 watch(
   () => props.clip.id,
-  () => {
+  (id) => {
     retried = false
     broken.value = false
     at.value = 0
-    void load()
+    const decoded = clips.decodedClip(id)
+    if (decoded === null) void load()
+    else showDecoded(decoded)
   },
   { immediate: true },
 )

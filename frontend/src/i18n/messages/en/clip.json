@@ -12,7 +12,7 @@
   "failed": "The preview could not be encoded: {reason}",
   "failedWithoutReason": "the server gave no reason",
   "summary": "{duration} from {start} · {codec} · {size}",
-  "outOfDate": "The job or the file has changed since this clip was made: it is out of date. Encode it again to see the changes.",
+  "noneForThis": "No clip of this frame, length and settings yet. A clip made earlier shows again when its frame, length and settings are chosen again.",
   "linkFailed": "The clip cannot be opened: {reason}",
   "compareFrames": "Compare frames",
   "play": "Play the clip",
