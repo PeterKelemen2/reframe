@@ -1,0 +1,54 @@
+# Reframe from the published image, with an NVIDIA GPU, on a host whose drives are mounted
+# under one folder (/mnt): the videos are read from any drive and the encodes are written back
+# next to them. Needs the NVIDIA driver and the NVIDIA Container Toolkit on the host. See
+# docs/deployment.md, "The published image on an NVIDIA host".
+#
+# Copy this file into a folder of its own on the host (config/ and data/ are made there), then:
+#   mkdir -p config data                         # as the user of PUID:PGID
+#   docker compose up -d
+#   docker compose exec -it reframe reframe-server --set-password
+# The web UI is on http://<host>:8765/.
+
+services:
+  reframe:
+    # A version instead of latest (ghcr.io/peterkelemen2/reframe:0.9.0) keeps that version.
+    image: ghcr.io/peterkelemen2/reframe:latest
+    restart: unless-stopped
+    # A running encode is stopped and its partial file removed before the container exits.
+    stop_grace_period: 30s
+    ports:
+      - "8765:8765"
+    environment:
+      # The user and group (id -u, id -g) that own config/, data/ and the encoded files. They
+      # must be able to write on every drive.
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Etc/UTC
+      # The server writes only inside its output roots: here every drive. The default output
+      # folder is the source's folder; Settings → Output can choose a fixed one.
+      REFRAME_OUTPUT_ROOTS: '["/media"]'
+      # The FFmpeg build downloaded at the first start, after the driver that nvidia-smi shows:
+      # 610 or newer: default; 570 to 609 (a GeForce 10 series card with driver 580): compat.
+      REFRAME_FFMPEG_BUILD: default
+      # Without this list every IP address works in the browser's address bar, and no host
+      # name does. A list replaces that default, so name the addresses you use too:
+      # REFRAME_ALLOWED_HOSTS: '["nas.local", "192.168.1.10"]'
+    volumes:
+      - ./config:/config
+      # The queue, the logs and the downloaded FFmpeg: keep it, or every new container
+      # downloads FFmpeg again.
+      - ./data:/data
+      # The drives, read and write. rslave: a drive mounted after the container started (at
+      # boot, after Docker) appears in it too.
+      - type: bind
+        source: ${MEDIA_DIR:-/mnt}
+        target: /media
+        bind:
+          propagation: rslave
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, video, compute, utility]
