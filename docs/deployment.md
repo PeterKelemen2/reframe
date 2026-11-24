@@ -142,6 +142,41 @@ time, each with its own notices.
 `interrupted` at the next start. The CLI works in the container too, for example
 `docker compose exec reframe reframe tools status`.
 
+### The published image on an NVIDIA host
+
+`docker/compose.nvidia.yml` builds nothing: it runs the release's image
+(`ghcr.io/peterkelemen2/reframe`) on an NVIDIA host whose drives are mounted under one folder,
+`/mnt` (another one: `MEDIA_DIR=/srv/disks docker compose up -d`). It differs from the
+example above:
+
+- **The drives are read and written.** The folder is mounted read-write as `/media`, and
+  `REFRAME_OUTPUT_ROOTS: '["/media"]'` makes it the output root too: the server writes only
+  inside its output roots, so without that line each write there is refused
+  (`path.outside_roots`). An encode goes into its source's folder (the default of
+  Settings → Output), and metadata edits in place work on the drives. There is no `/output`.
+- **`rslave` propagation.** The drives that are mounted when the container starts are in it.
+  With `restart: unless-stopped`, Docker can start the container at boot before the drives are
+  mounted; with `rslave`, a drive mounted later appears in the container too. Docker refuses it
+  when the folder's mount is private (`findmnt -o TARGET,PROPAGATION /mnt` shows `shared` on a
+  systemd host): then delete the `bind:` lines and restart the container after the drives are
+  mounted.
+- **Permissions.** `PUID:PGID` must be able to write on every drive. The entrypoint changes
+  `/config` and `/data` only. For NTFS and exFAT drives the owner comes from the mount options
+  (`uid=1000,gid=1000` in `/etc/fstab`).
+- **The image tag.** `latest` follows the releases (`docker compose pull` then `up -d`); a
+  version tag such as `0.9.0` keeps one.
+
+Install the NVIDIA Container Toolkit first, and set `REFRAME_FFMPEG_BUILD` after the host's
+driver ([GPU](#gpu)). Copy the file into a folder of its own, then:
+
+```sh
+mkdir -p config data
+docker compose up -d
+docker compose exec -it reframe reframe-server --set-password
+```
+
+The folder browser shows `/media` twice, as a media folder and as an output folder.
+
 ### What the image sets
 
 | Variable | Value | Why |

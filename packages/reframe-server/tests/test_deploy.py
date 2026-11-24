@@ -15,12 +15,14 @@ import pytest
 
 from reframe import paths
 from reframe_server.config import ServerConfig, is_loopback
+from reframe_server.security import jail_read, jail_write
 from reframe_testing.server import ApiFactory
 
 DOCKER = Path(__file__).resolve().parents[3] / "docker"
 DOCKERFILE = DOCKER / "Dockerfile"
 ENTRYPOINT = DOCKER / "entrypoint.sh"
 COMPOSE = DOCKER / "compose.example.yml"
+COMPOSE_NVIDIA = DOCKER / "compose.nvidia.yml"
 
 linux_only = pytest.mark.skipif(sys.platform == "win32", reason="the image is Linux")
 
@@ -89,9 +91,38 @@ def test_the_image_starts_a_web_server_with_its_roots_and_the_frontend(
     assert config.static_dir == build
 
 
+def test_the_drives_compose_file_lets_the_server_write_on_every_drive_it_reads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """compose.nvidia.yml mounts a folder of drives read-write; without it as an output root,
+    every write there is refused (``path.outside_roots``)."""
+    text = COMPOSE_NVIDIA.read_text("utf-8")
+    [target] = re.findall(r"^ +target: (/\S+)$", text, re.M)
+    overrides = {
+        name: shlex.split(value)[0]
+        for name, value in re.findall(r"^ {6}(REFRAME_\w+): (.+)$", text, re.M)
+    }
+    use_image_env(monkeypatch)
+    read = {f"REFRAME_{name.upper()}" for name in ServerConfig.model_fields}
+    assert set(overrides) <= read
+    for name, value in overrides.items():
+        monkeypatch.setenv(name, value)
+    build = tmp_path / "frontend"
+    build.mkdir()
+    (build / "index.html").touch()
+    monkeypatch.setenv("REFRAME_STATIC_DIR", str(build))
+
+    config = ServerConfig()
+    source = Path(target) / "disk3" / "Show" / "Show.S01E02.mkv"
+
+    assert jail_read(config, source) == source
+    assert jail_write(config, source.with_suffix(".mp4")) == source.with_suffix(".mp4")
+
+
 @linux_only
+@pytest.mark.parametrize("compose", [COMPOSE, COMPOSE_NVIDIA], ids=lambda path: path.name)
 def test_the_server_keeps_its_files_in_the_mounts_that_the_entrypoint_hands_to_puid(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, compose: Path
 ) -> None:
     use_image_env(monkeypatch)
     # Under `docker run --user` the home is /, so a folder the image does not name is no mount.
@@ -100,7 +131,7 @@ def test_the_server_keeps_its_files_in_the_mounts_that_the_entrypoint_hands_to_p
         monkeypatch.delenv(name, raising=False)
     [handed_over] = re.findall(r"^for dir in (.+); do$", ENTRYPOINT.read_text("utf-8"), re.M)
     owned = [Path(folder) for folder in handed_over.split()]
-    mounted = re.findall(r"^ +- [^\s:#]+:(/[^\s:]+)", COMPOSE.read_text("utf-8"), re.M)
+    mounted = re.findall(r"^ +- [^\s:#]+:(/[^\s:]+)", compose.read_text("utf-8"), re.M)
 
     assert {str(folder) for folder in owned} <= set(mounted)
     for folder in (paths.config_dir(), paths.data_dir(), paths.cache_dir()):
@@ -121,7 +152,8 @@ async def test_the_health_check_asks_a_route_that_answers_without_a_login(
 
 
 @linux_only
-def test_the_image_has_no_ffmpeg_and_a_download_lands_in_the_data_mount() -> None:
+@pytest.mark.parametrize("compose", [COMPOSE, COMPOSE_NVIDIA], ids=lambda path: path.name)
+def test_the_image_has_no_ffmpeg_and_a_download_lands_in_the_data_mount(compose: Path) -> None:
     """A build downloaded in the container must survive a new container: in the bind mount."""
     code = [line for line in DOCKERFILE.read_text("utf-8").splitlines() if not line.startswith("#")]
     assert not re.search(r"ffmpeg|ffprobe|fetch-tools", "\n".join(code), re.IGNORECASE)
@@ -134,7 +166,7 @@ def test_the_image_has_no_ffmpeg_and_a_download_lands_in_the_data_mount() -> Non
 
     environ = {paths.DATA_DIR_ENV: image_env()["REFRAME_DATA_DIR"]}
     download = paths.data_dir(environ) / "tools" / paths.BUNDLED_SUBDIRS["ffmpeg"]
-    mounted = re.findall(r"^ +- [^\s:#]+:(/[^\s:]+)", COMPOSE.read_text("utf-8"), re.M)
+    mounted = re.findall(r"^ +- [^\s:#]+:(/[^\s:]+)", compose.read_text("utf-8"), re.M)
 
     assert download.parent in paths.bundled_tool_roots(
         environ=environ, frozen=False, platform="linux"
