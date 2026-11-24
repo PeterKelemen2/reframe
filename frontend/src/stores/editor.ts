@@ -4,6 +4,7 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { api, ApiError, apiQuiet, unwrap } from '@/api/client'
 import { text } from '@/api/text'
 import type {
+  AudioDefaults,
   BatchGroup,
   BatchResolution,
   BatchRun,
@@ -16,6 +17,7 @@ import type {
   JsonPatchOp,
   Preset,
   Resolution,
+  SubtitleDefaults,
   TaskInfo,
   TemplateSection,
 } from '@/api/types'
@@ -67,11 +69,21 @@ export type GroupScope = 'group' | 'file'
 export type RuleKind = 'audio' | 'subtitle'
 
 /**
+ * Audio or subtitle defaults applied to a job in the defaults dialog. The job holds only the
+ * tracks they gave; the editor keeps the defaults for the template (the *modified* marker, the
+ * dialog, *Save as new preset*) while the job is open.
+ */
+export interface OwnDefaults {
+  audio_defaults?: AudioDefaults
+  subtitle_defaults?: SubtitleDefaults
+}
+
+/**
  * What the tabs edit: one job, or a batch group (a template with per-file overrides). The
  * tabs read and write through the store's `get`, `set` and `patch`, so they work for both.
  */
 export type EditorTarget =
-  | { kind: 'job'; sourceId: string; job: JobSettings }
+  | { kind: 'job'; sourceId: string; job: JobSettings; defaults?: OwnDefaults }
   | {
       kind: 'group'
       groupId: string
@@ -349,7 +361,9 @@ export const useEditorStore = defineStore('editor', () => {
     const current = job.value
     const base = jobPreset.value
     if (current === null || base === null) return null
-    return templateOf(current, base, settings.settings?.output?.naming ?? null)
+    const template = templateOf(current, base, settings.settings?.output?.naming ?? null)
+    const own = target.value?.kind === 'job' ? target.value.defaults : undefined
+    return own === undefined ? template : { ...template, ...own }
   })
   const modified = computed(() => presetChanges.value.length > 0)
   const canUndo = computed(() => history.value.done.length > 0)
@@ -364,6 +378,11 @@ export const useEditorStore = defineStore('editor', () => {
   // Each open, preset change, loadJob and close counts: an older one's answer is dropped.
   let loads = 0
   const stepDrafts = new WeakMap<Step, { before: JobDraft | null; after: JobDraft | null }>()
+  /** The job's own defaults before and after a step that changed them. */
+  const stepDefaults = new WeakMap<
+    Step,
+    { before: OwnDefaults | undefined; after: OwnDefaults | undefined }
+  >()
 
   async function load<T>(request: () => Promise<T>, apply: (value: T) => void): Promise<void> {
     const mine = ++loads
@@ -448,9 +467,11 @@ export const useEditorStore = defineStore('editor', () => {
         const step = history.value.done.at(-1)
         if (step !== undefined && step !== last) {
           stepDrafts.set(step, { before: draft.value, after: answer })
+          stepDefaults.set(step, { before: current.defaults, after: undefined })
         }
         diffAtOnce = true
-        place({ ...current, job: next }, answer, false)
+        // The new preset's defaults gave the tracks: the job's own ones are gone.
+        place({ kind: 'job', sourceId: current.sourceId, job: next }, answer, false)
       },
     )
   }
@@ -478,9 +499,10 @@ export const useEditorStore = defineStore('editor', () => {
         const step = history.value.done.at(-1)
         if (step !== undefined && step !== last) {
           stepDrafts.set(step, { before: draft.value, after: answer })
+          stepDefaults.set(step, { before: current.defaults, after: undefined })
         }
         diffAtOnce = true
-        place({ ...current, job: answer.job }, answer, false)
+        place({ kind: 'job', sourceId: current.sourceId, job: answer.job }, answer, false)
       },
     )
   }
@@ -619,7 +641,38 @@ export const useEditorStore = defineStore('editor', () => {
     history.value = moved.history
     const drafts = stepDrafts.get(moved.step)
     if (drafts !== undefined) draft.value = drafts[side]
-    target.value = { ...current, job: next }
+    const own = stepDefaults.get(moved.step)
+    target.value =
+      own === undefined
+        ? { ...current, job: next }
+        : { kind: 'job', sourceId: current.sourceId, job: next, defaults: own[side] }
+  }
+
+  /**
+   * The tracks that edited defaults gave (`jobs/explain`) into the open job, one undo step, and
+   * the defaults kept as the job's own. Tracks that did not change make no step; the defaults
+   * are still kept.
+   */
+  function applyDefaults(
+    kind: RuleKind,
+    tracks: JobSettings['audio'] | JobSettings['subtitles'],
+    defaults: AudioDefaults | SubtitleDefaults,
+  ): void {
+    const current = target.value
+    if (current?.kind !== 'job') throw new Error('editor.applyDefaults: no job is open')
+    const list = kind === 'audio' ? 'audio' : 'subtitles'
+    const next = applyOps(current.job, [{ op: 'add', path: `/${list}`, value: tracks }])
+    const own: OwnDefaults = {
+      ...current.defaults,
+      [kind === 'audio' ? 'audio_defaults' : 'subtitle_defaults']: defaults,
+    }
+    const last = history.value.done.at(-1)
+    history.value = record(history.value, current.job, next)
+    const step = history.value.done.at(-1)
+    if (step !== undefined && step !== last) {
+      stepDefaults.set(step, { before: current.defaults, after: own })
+    }
+    target.value = { ...current, job: next, defaults: own }
   }
 
   /** An undo or redo while edits of scope `group` wait for their derive only drops those edits. */
@@ -1645,6 +1698,7 @@ export const useEditorStore = defineStore('editor', () => {
     editing,
     editFailure,
     open,
+    applyDefaults,
     applyPreset,
     applyRemuxDraft,
     loadJob,

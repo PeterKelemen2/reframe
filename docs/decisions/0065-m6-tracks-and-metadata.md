@@ -56,7 +56,9 @@ card, a second opened file not selected while another is open.
    the defaults draft (one undo step). The job keeps no defaults of its own: `JobSettings` has
    none, and adding them is a persisted-schema change that M6 does not need. Edited defaults
    are kept by saving them into a user preset; a built-in preset's defaults are shown
-   read-only. The batch-group target is typed and not built (M7).
+   read-only. The batch-group target is typed and not built (M7). Since
+   [0106](0106-applied-defaults-stay-with-the-open-job.md) the open job keeps the applied
+   defaults in the editor (still none in `JobSettings`).
 5. **In-place edits in web mode** stay as the server has them: allowed only for a source in a
    folder that is both a media root and an output root. The UI shows the server's
    `inplace.not_allowed` with its reason. `scripts/dev-server.py --output-fixtures` makes such a

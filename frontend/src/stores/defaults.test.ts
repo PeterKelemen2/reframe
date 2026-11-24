@@ -511,6 +511,41 @@ describe('the defaults store', () => {
       expect(editor.canUndo).toBe(false)
     })
 
+    it("keeps the applied defaults as the job's own: the template, the diff and the dialog have them, until an undo", async () => {
+      const defaults = await opened()
+      const editor = useEditorStore()
+      defaults.setRule(0, rule({ codec: 'ac3', max_bitrate: 320 }))
+      await defaults.apply()
+      const edited = { codec: 'ac3', max_bitrate: 320 }
+      expect(editor.currentTemplate?.audio_defaults?.codec_rules?.[0]).toMatchObject(edited)
+      await vi.advanceTimersByTimeAsync(5000)
+      const diffs = server.requests.filter((each) => each.path === '/api/presets/diff')
+      const sent = diffs.at(-1)?.body as { template: JobTemplate }
+      expect(sent.template.audio_defaults?.codec_rules?.[0]).toMatchObject(edited)
+      await defaults.open('audio', { kind: 'job' })
+      await flush()
+      expect(defaults.audio?.codec_rules?.[0]).toMatchObject(edited)
+      defaults.close()
+      editor.undo()
+      expect(editor.currentTemplate?.audio_defaults?.codec_rules?.[0]).not.toMatchObject(edited)
+      editor.redo()
+      expect(editor.currentTemplate?.audio_defaults?.codec_rules?.[0]).toMatchObject(edited)
+    })
+
+    it("drops the job's own defaults when another preset is chosen, and an undo brings them back", async () => {
+      const defaults = await opened()
+      const editor = useEditorStore()
+      defaults.setRule(0, rule({ codec: 'ac3', max_bitrate: 320 }))
+      await defaults.apply()
+      await editor.applyPreset(MINE)
+      await flush()
+      expect(editor.target?.kind === 'job' && editor.target.defaults).toBeFalsy()
+      editor.undo()
+      expect(editor.currentTemplate?.audio_defaults?.codec_rules?.[0]).toMatchObject({
+        codec: 'ac3',
+      })
+    })
+
     it('replaces the subtitle tracks from the subtitle defaults', async () => {
       const subtitle: SubtitleOutputTrack = { action: 'burn', forced_only: true, source: 6 }
       server.explained = trackDraft({ audio: [encoded(1, 'ac3', 320)], subtitles: [subtitle] })

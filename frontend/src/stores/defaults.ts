@@ -432,7 +432,8 @@ export const useDefaultsStore = defineStore('defaults', () => {
         return
       }
       if (editor.session !== session || editor.job === null) return
-      editor.set(`/${list}`, list === 'audio' ? draft.audio : draft.subtitles)
+      if (list === 'audio') editor.applyDefaults('audio', draft.audio, audio.value as AudioDefaults)
+      else editor.applyDefaults('subtitle', draft.subtitles, subtitles.value as SubtitleDefaults)
       close()
     })
   }
