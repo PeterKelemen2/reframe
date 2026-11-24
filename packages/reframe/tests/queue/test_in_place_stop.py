@@ -180,7 +180,8 @@ async def test_a_paused_edit_that_a_stop_lets_finish_is_shown_running(
     )
     await h.wait_for(lambda: stop_requested(h, job_id))
     await h.wait_for(lambda: h.states(job_id)[-1] == ("paused", "running"))
-    assert inhibit_held(h)  # the machine does not sleep under the write
+    # The state changes, then the inhibit is taken: the machine does not sleep under the write.
+    await h.wait_for(lambda: inhibit_held(h))
     h.writer.release()
     await stopping
     end = ("running", "cancelled") if stop == "cancel" else ("running", "interrupted")
