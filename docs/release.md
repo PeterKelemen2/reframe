@@ -134,7 +134,9 @@ The version is `X.Y.Z` (the same in PEP 440 and SemVer). The tag is `v` and that
    ```
 
 3. **Write the changelog.**
-   - The first release (`v1.0.0`): write its section in `CHANGELOG.md` by hand from
+   - The first release (`v0.9.0`, the rehearsal of
+     [decision 0105](decisions/0105-release-rehearsal-and-unsigned-windows-installers.md)):
+     write its section in `CHANGELOG.md` by hand from
      `docs/status.md`, in place of the comment under `## [Unreleased]`. The commits before it
      are not conventional commits.
    - Every later release: let git-cliff write the section from the commits since the last `v*`

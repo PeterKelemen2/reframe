@@ -215,7 +215,8 @@ The changes of [decision 0103](../decisions/0103-owner-decisions-before-v1.md) (
 preset, `default_container` removed, Align A/V start, batch crop per file, track name
 templates, no power actions in Docker, the queue's fix actions, AMF pre-analysis, Start for
 one job, help texts, the AppImage's GStreamer plugins and desktop entry). Then the first push
-to GitHub and a `v1.0.0-rc.1` tag, before the user docs.
+to GitHub and a `v0.9.0` release that rehearses the release pipeline, before the user docs (a
+pre-release tag cannot be released: [decision 0105](../decisions/0105-release-rehearsal-and-unsigned-windows-installers.md)).
 
 ### Release checklist
 
@@ -225,9 +226,10 @@ to GitHub and a `v1.0.0-rc.1` tag, before the user docs.
 - [ ] Docker image published. The compose example works with VAAPI, and with NVENC when an
       NVIDIA host is available ([decision 0043](../decisions/0043-plan-review-before-m3.md)
       item 7).
-- [ ] Windows installer (signed) and Linux AppImage/deb/rpm attached to the release (or the set
+- [ ] Windows installer (unsigned in v1, said in the release notes:
+      [decision 0105](../decisions/0105-release-rehearsal-and-unsigned-windows-installers.md)) and Linux AppImage/deb/rpm attached to the release (or the set
       chosen in [01 open question 6](01-scope.md#open-questions-owner-to-decide)).
-- [ ] The updater picks up a test release.
+- [ ] The updater picks up a test release: an installed `v0.9.0` updates to `v1.0.0` (0105).
 - [ ] Performance budgets ([09 §Q-3](09-quality-and-release.md#q-3-performance-budgets)) are met.
 - [ ] Third-party licence notices are bundled ([09 §Licensing](09-quality-and-release.md#licensing)).
 - [ ] The release's notices name its sources release, and that release has the corresponding
