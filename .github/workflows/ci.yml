@@ -171,6 +171,25 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
+      # The runners' Ubuntu mirror is sometimes slow (the browsers' 140 MB took from 31 s to
+      # 11 min): apt keeps what it downloads in a cached folder for the next run.
+      - name: Keep apt's packages in a cached folder
+        id: apt
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p ~/apt-archives/partial
+          printf 'Dir::Cache::Archives "%s";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            "$HOME/apt-archives" | sudo tee /etc/apt/apt.conf.d/90reframe-cache
+          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the apt packages of Tauri
+        if: runner.os == 'Linux'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives/*.deb
+          key: apt-tauri-${{ steps.apt.outputs.image }}
+          restore-keys: apt-tauri-
+
       - name: Tauri's Linux libraries
         if: runner.os == 'Linux'
         run: |
@@ -351,6 +370,25 @@ jobs:
 
       - run: npm ci
         working-directory: frontend
+
+      # The runners' Ubuntu mirror is sometimes slow (the browsers' 140 MB took from 31 s to
+      # 11 min): apt keeps what it downloads in a cached folder for the next run.
+      - name: Keep apt's packages in a cached folder
+        id: apt
+        if: matrix.script == 'e2e'
+        run: |
+          mkdir -p ~/apt-archives/partial
+          printf 'Dir::Cache::Archives "%s";\nAPT::Keep-Downloaded-Packages "true";\n' \
+            "$HOME/apt-archives" | sudo tee /etc/apt/apt.conf.d/90reframe-cache
+          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the apt packages of the browsers
+        if: matrix.script == 'e2e'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives/*.deb
+          key: apt-browsers-${{ steps.apt.outputs.image }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: apt-browsers-
 
       - name: Install the browsers
         if: matrix.script == 'e2e'
