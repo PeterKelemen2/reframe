@@ -262,7 +262,13 @@ watch(
       local.value = namingOf(job)
     }
     const draft = editor.draft
-    if (draft?.job === job && draft.naming && sameNaming(local.value, job.output?.naming)) {
+    // A draft made before the naming options changed (in Settings) names into their old folder.
+    if (
+      draft?.job === job &&
+      draft.naming &&
+      editor.draftNamingCurrent &&
+      sameNaming(local.value, job.output?.naming)
+    ) {
       runner.cancel()
       pending.value = false
       result.value = draft.naming
@@ -378,16 +384,32 @@ const defaultFolder = computed(() => {
   const named = applied.value?.result ?? result.value
   return named?.path ? folderOf(named.path, named.relative_path) : null
 })
-const ownFolder = computed(
+/** The folder of the naming options when the file was drafted. */
+const draftedFolder = computed(() => {
+  const named = editor.draft?.naming
+  return named?.path ? folderOf(named.path, named.relative_path) : null
+})
+/**
+ * The job is in the naming options' folder, now or as they were when the file was drafted: it
+ * follows them when they change. A folder picked for the job stays.
+ */
+const followsOptions = computed(
   () =>
-    folder.value !== null && defaultFolder.value !== null && folder.value !== defaultFolder.value,
+    folder.value !== null &&
+    (folder.value === defaultFolder.value || folder.value === draftedFolder.value),
+)
+const ownFolder = computed(
+  () => folder.value !== null && defaultFolder.value !== null && !followsOptions.value,
 )
 /** The path the job's naming gives now, when the job's path is another (the job changed since). */
 const expectedPath = computed(() => {
   const now = applied.value
   const job = editor.job
   if (now === null || job === null || now.job !== job || pending.value || inGroup.value) return null
-  const expected = nextOutputPath(job.output?.path, now.result.relative_path, now.result)
+  const expected =
+    followsOptions.value && now.result.path
+      ? now.result.path
+      : nextOutputPath(job.output?.path, now.result.relative_path, now.result)
   if (expected === null || expected === (job.output?.path ?? null)) return null
   return expected === job.source.path ? null : expected
 })

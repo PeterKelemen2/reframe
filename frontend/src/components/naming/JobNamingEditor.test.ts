@@ -11,6 +11,7 @@ import { sampleDraft, sampleJob, samplePreset } from '@/editor/testing/samples'
 import { platform } from '@/platform'
 import { type GroupScope, useEditorStore } from '@/stores/editor'
 import { templateOfPreset } from '@/stores/presets'
+import { useSettingsStore } from '@/stores/settings'
 import { useSystemStore } from '@/stores/system'
 import { useToastStore } from '@/stores/toasts'
 
@@ -44,7 +45,7 @@ function named(job: JobSettings): NameResult {
   return hacksawResult({
     template: given.template ?? '{main_title}',
     relative_path: relative,
-    path: `/output/${relative}`,
+    path: `${optionsFolder}/${relative}`,
     issues,
   })
 }
@@ -57,6 +58,8 @@ function draftedJob(): JobSettings {
 
 let server: FakeServer
 let pinia: Pinia
+/** The folder of the naming options (Settings → Output) that the server names into. */
+let optionsFolder = '/output'
 
 function previews(): PreviewBody[] {
   return server.requests
@@ -84,6 +87,7 @@ function naming(editor: ReturnType<typeof useEditorStore>): JobNaming | undefine
 }
 
 beforeEach(() => {
+  optionsFolder = '/output'
   vi.useFakeTimers()
   pinia = createPinia()
   setActivePinia(pinia)
@@ -425,6 +429,42 @@ describe('JobNamingEditor', () => {
     expect(editor.job?.output?.path).toBe('/output/Hacksaw.Ridge.mp4')
     await settle()
     expect(wrapper.find('[data-testid="stale-path"]').exists()).toBe(false)
+  })
+
+  it('offers the folder of changed naming options to a job still in the folder it was drafted with', async () => {
+    const editor = useEditorStore()
+    await editor.open('src')
+    await flushPromises()
+    // Settings → Output names another folder after the file was drafted.
+    optionsFolder = '/encoded'
+    useSettingsStore().namingRevision += 1
+    const wrapper = mountBase(JobNamingEditor, { pinia })
+    useSystemStore().namingVariables = VARIABLES
+    await settle()
+    expect(wrapper.get('[data-testid="job-folder"]').element.parentElement?.textContent).toBe(
+      '/output from the naming options',
+    )
+    expect(wrapper.find('[data-action="default-folder"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="stale-path"]').text()).toContain('/encoded/Hacksaw.Ridge.mkv')
+    await wrapper.get('[data-action="update-path"]').trigger('click')
+    expect(editor.job?.output?.path).toBe('/encoded/Hacksaw.Ridge.mkv')
+    await settle()
+    expect(wrapper.find('[data-testid="stale-path"]').exists()).toBe(false)
+  })
+
+  it('keeps a folder picked for the job when the naming options name another', async () => {
+    const { editor, wrapper } = await mountOpened()
+    editor.set('/output/path', '/picked/Hacksaw.Ridge.mkv')
+    await settle()
+    wrapper.unmount()
+    optionsFolder = '/encoded'
+    const again = mountBase(JobNamingEditor, { pinia })
+    await settle()
+    expect(again.get('[data-testid="job-folder"]').element.parentElement?.textContent).toBe(
+      '/picked chosen for this file',
+    )
+    expect(again.find('[data-testid="stale-path"]').exists()).toBe(false)
+    expect(editor.job?.output?.path).toBe('/picked/Hacksaw.Ridge.mkv')
   })
 
   it('names the job by hand, starting from the name it has', async () => {
