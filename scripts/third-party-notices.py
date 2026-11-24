@@ -383,8 +383,17 @@ def _copyright_texts(entry: Mapping[str, Any], doc_root: Path) -> list[tuple[str
         read(doc_root / str(package).partition(":")[0] / "copyright")
         for package in entry.get("binary_packages", [])
     ]
-    named = dict.fromkeys(name for _, text in texts for name in _COMMON_LICENCE.findall(text))
-    return texts + [read(doc_root.parent / "common-licenses" / name) for name in named]
+    common = doc_root.parent / "common-licenses"
+
+    def common_licence(name: str) -> Path:
+        # Some copyright files add ".0" to the file's name (Ubuntu 22.04's pango: GPL-2.0).
+        short = common / name.removesuffix(".0")
+        return short if not (common / name).exists() and short.exists() else common / name
+
+    named = dict.fromkeys(
+        common_licence(name) for _, text in texts for name in _COMMON_LICENCE.findall(text)
+    )
+    return texts + [read(path) for path in named]
 
 
 def source_text_entries(
