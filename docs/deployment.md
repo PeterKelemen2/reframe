@@ -167,13 +167,17 @@ example above:
   version tag such as `0.9.0` keeps one.
 
 Install the NVIDIA Container Toolkit first, and set `REFRAME_FFMPEG_BUILD` after the host's
-driver ([GPU](#gpu)). Copy the file into a folder of its own, then:
+driver ([GPU](#gpu)). Copy the file as `compose.yml` into a folder of its own, then run each
+command from that folder (elsewhere, `docker compose` says `no configuration file provided`):
 
 ```sh
 mkdir -p config data
 docker compose up -d
 docker compose exec -it reframe reframe-server --set-password
 ```
+
+`docker exec -it reframe reframe-server --set-password` works from any folder: it names the
+container, and the image's `reframe-server` runs as `PUID:PGID` there too.
 
 The folder browser shows `/media` twice, as a media folder and as an output folder.
 
