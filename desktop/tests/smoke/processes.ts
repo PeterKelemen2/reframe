@@ -161,11 +161,21 @@ export async function closeWindows(pid: number): Promise<void> {
 }
 
 // The common file dialog's controls: the file name box (1148) and the Open button (1). The
-// box is a combo box whose edit has the same id; on some Windows versions only the edit takes
-// a value, so the first control with the id and the pattern is used.
+// text goes in with WM_SETTEXT, the click with BM_CLICK: not every Windows version offers UI
+// Automation's Value pattern on the box. A failure lists the dialog's controls.
 const CHOOSE_FILE_WINDOWS = `
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
+Add-Type -Namespace Smoke -Name Dialog -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern System.IntPtr SendText(System.IntPtr hwnd, uint msg, System.IntPtr w, string l);
+[System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SendMessageW")]
+public static extern System.IntPtr Send(System.IntPtr hwnd, uint msg, System.IntPtr w, System.IntPtr l);
+[System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "PostMessageW")]
+public static extern bool Post(System.IntPtr hwnd, uint msg, System.IntPtr w, System.IntPtr l);
+[System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "FindWindowExW", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern System.IntPtr FindChild(System.IntPtr parent, System.IntPtr after, string cls, string title);
+'@
 $target = [int]$args[0]
 $path = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($args[1]))
 $deadline = (Get-Date).AddSeconds(30)
@@ -181,20 +191,40 @@ while (-not $dialog) {
   $dialog = $root.FindFirst([Windows.Automation.TreeScope]::Descendants, $both)
   if (-not $dialog) { Start-Sleep -Milliseconds 250 }
 }
-function Pattern($id, $pattern) {
+function Fail($text) {
+  $all = $dialog.FindAll([Windows.Automation.TreeScope]::Descendants,
+    [Windows.Automation.Condition]::TrueCondition)
+  $lines = $all | ForEach-Object {
+    $c = $_.Current
+    'id={0} class={1} type={2} hwnd={3}' -f $c.AutomationId, $c.ClassName,
+      $c.ControlType.ProgrammaticName, $c.NativeWindowHandle
+  }
+  Write-Error (@($text) + $lines -join [Environment]::NewLine)
+}
+function Window($id) {
   $condition = New-Object Windows.Automation.PropertyCondition(
     [Windows.Automation.AutomationElement]::AutomationIdProperty, $id)
   while ($true) {
     foreach ($element in $dialog.FindAll([Windows.Automation.TreeScope]::Descendants, $condition)) {
-      $found = $null
-      if ($element.TryGetCurrentPattern($pattern, [ref]$found)) { return $found }
+      if ($element.Current.NativeWindowHandle -ne 0) { return $element }
     }
-    if ((Get-Date) -gt $deadline) { Write-Error "no control $id of the file dialog takes the input" }
+    if ((Get-Date) -gt $deadline) { Fail "no window with id $id in the file dialog:" }
     Start-Sleep -Milliseconds 250
   }
 }
-(Pattern '1148' ([Windows.Automation.ValuePattern]::Pattern)).SetValue($path)
-(Pattern '1' ([Windows.Automation.InvokePattern]::Pattern)).Invoke()`
+$box = Window '1148'
+$edit = [IntPtr]$box.Current.NativeWindowHandle
+if ($box.Current.ClassName -ne 'Edit') {
+  $combo = $edit
+  # CBEM_GETEDITCONTROL: the edit of a ComboBoxEx32; a plain ComboBox has it as a child.
+  $edit = [Smoke.Dialog]::Send($combo, 0x0407, [IntPtr]::Zero, [IntPtr]::Zero)
+  if ($edit -eq [IntPtr]::Zero) { $edit = [Smoke.Dialog]::FindChild($combo, [IntPtr]::Zero, 'Edit', $null) }
+  if ($edit -eq [IntPtr]::Zero) { Fail "no edit in the file name box:" }
+}
+[void][Smoke.Dialog]::SendText($edit, 0x000C, [IntPtr]::Zero, $path) # WM_SETTEXT
+$open = Window '1'
+# BM_CLICK, posted: the dialog closes while it handles the click.
+[void][Smoke.Dialog]::Post([IntPtr]$open.Current.NativeWindowHandle, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)`
 
 /**
  * Chooses `path` in the file dialog that `pid` opens, as a user who types the path: GTK's
