@@ -162,7 +162,8 @@ async function open(): Promise<void> {
 .workspace__columns {
   display: grid;
   flex: 1;
-  grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) minmax(16rem, 24rem);
+  /* The preview column holds the clip's length buttons and Encode preview on one row. */
+  grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) minmax(16rem, 26rem);
   min-height: 0;
 }
 

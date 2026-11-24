@@ -136,9 +136,9 @@ describe('the Summary tab', () => {
     expect(wrapper.findAll('[data-card]').map((card) => card.attributes('data-card'))).toEqual([
       'source',
       'job-type',
-      'output',
       'picture',
       'video',
+      'output',
       'tracks',
       'issues',
       'estimate',

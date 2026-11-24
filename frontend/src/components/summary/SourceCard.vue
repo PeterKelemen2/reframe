@@ -120,9 +120,9 @@ const chapters = computed(() => {
   gap: var(--rf-space-3) var(--rf-space-4);
 }
 
+/* The picture takes the card's width; the facts go under it. */
 .summary-source__thumb {
-  flex: 1 1 12rem;
-  max-width: 18rem;
+  flex: 1 1 100%;
   display: grid;
   place-items: center;
   overflow: hidden;

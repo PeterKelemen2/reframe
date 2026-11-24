@@ -7,6 +7,7 @@ import { geometryOf, letterboxDetection } from '@/components/dimensions/testing'
 import { previewServer } from '@/components/preview/testing'
 import { mountShell } from '@/components/shell/testing'
 import { platform } from '@/platform'
+import { useClipsStore } from '@/stores/clips'
 import { useEditorStore } from '@/stores/editor'
 import { usePreviewStore } from '@/stores/preview'
 import { useTasksStore } from '@/stores/tasks'
@@ -172,7 +173,6 @@ describe('the preview clip', () => {
       fake.on('POST /api/jobs/geometry', geometryOf()),
     )
     const sent = sentJob(server)
-    useEditorStore().set('/dimensions/rotate', 90)
     const from = server.requests.length
     await wrapper.find('[data-action="compare-frames"]').trigger('click')
     await flushPromises()
@@ -379,13 +379,49 @@ describe('the preview clip', () => {
     expect(open).toHaveBeenCalledWith('http://server/api/preview/clips/clip-1?sig=1')
   })
 
-  it('says that the clip is out of date after an edit of the job', async () => {
+  it('hides the clip after an edit of the job and shows it again when the edit is undone', async () => {
     const { wrapper } = await encoded()
-    expect(wrapper.find('[data-field="clip-out-of-date"]').exists()).toBe(false)
-    useEditorStore().set('/video/quality', 30)
+    const editor = useEditorStore()
+    editor.set('/video/quality', 30)
     await flushPromises()
-    expect(wrapper.find('[data-field="clip-out-of-date"]').exists()).toBe(true)
+    expect(wrapper.find('[data-field="clip-result"]').exists()).toBe(false)
+    expect(wrapper.find('[data-field="clip-none"]').exists()).toBe(true)
+    editor.undo()
+    await flushPromises()
+    expect(wrapper.find('[data-field="clip-result"]').exists()).toBe(true)
     expect(video(wrapper).exists()).toBe(true)
+  })
+
+  it('keeps a clip with its frame and length: another one hides it, and going back shows it', async () => {
+    const { wrapper } = await encoded()
+    const preview = usePreviewStore()
+    const first = preview.index
+    preview.index = (first ?? 0) + 1
+    await flushPromises()
+    expect(wrapper.find('[data-field="clip-result"]').exists()).toBe(false)
+    expect(wrapper.find('[data-field="clip-none"]').exists()).toBe(true)
+    preview.index = first
+    await flushPromises()
+    expect(wrapper.find('[data-field="clip-result"]').exists()).toBe(true)
+    useClipsStore().length = 30
+    await flushPromises()
+    expect(wrapper.find('[data-field="clip-result"]').exists()).toBe(false)
+  })
+
+  it('decodes the frames to compare once for a clip: Play and Compare again ask nothing', async () => {
+    const { wrapper, server } = await encoded((fake) =>
+      fake.on('POST /api/jobs/geometry', geometryOf()),
+    )
+    const decoded = () =>
+      server.requests.filter((request) => request.path === '/api/preview/clips/clip-1/frames')
+    await wrapper.find('[data-action="compare-frames"]').trigger('click')
+    await flushPromises()
+    expect(decoded()).toHaveLength(1)
+    await wrapper.find('[data-action="play-clip"]').trigger('click')
+    await wrapper.find('[data-action="compare-frames"]').trigger('click')
+    await flushPromises()
+    expect(decoded()).toHaveLength(1)
+    expect(wrapper.find('[data-field="clip-compare"]').text()).not.toContain('Decoding')
   })
 
   it('drops the clip when another file is shown', async () => {
