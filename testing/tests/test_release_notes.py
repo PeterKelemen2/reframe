@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from reframe import __version__
 from reframe_testing.scripts import load_script
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -92,12 +93,16 @@ def test_a_missing_or_empty_section_exits_1(tmp_path: Path, version: str, says: 
     assert says in err
 
 
-def test_the_committed_changelog_has_no_release_section_yet() -> None:
-    # The frame's note on the first release's heading must not read as a section.
-    headings = re.findall(r"(?m)^## .*", CHANGELOG.read_text(encoding="utf-8"))
+def test_the_committed_changelog_has_a_section_of_git_cliffs_shape_for_the_version() -> None:
+    text = CHANGELOG.read_text(encoding="utf-8")
+    headings = re.findall(r"(?m)^## .*", text)
 
-    assert headings == ["## [Unreleased]"]
-    assert rn.section(CHANGELOG.read_text(encoding="utf-8"), "VERSION") is None
+    assert headings[0] == "## [Unreleased]"
+    for heading in headings[1:]:
+        assert re.fullmatch(r"## \[\d+\.\d+\.\d+\] - \d{4}-\d{2}-\d{2}", heading), heading
+    # A released version (no pre-release part) is tagged only with its section written.
+    if re.fullmatch(r"\d+\.\d+\.\d+", __version__):
+        assert rn.section(text, __version__), f"CHANGELOG.md has no section for {__version__}"
 
 
 def _header() -> str:
