@@ -98,21 +98,50 @@ button {
   outline-offset: calc(-1 * var(--p-focus-ring-width));
 }
 
-/* The target of `ui.reveal(path)` (useReveal), for a moment. */
+/*
+ * The target of `ui.reveal(path)` (useReveal), for a moment: the ring closes in while the page
+ * scrolls to it, stays, then fades out with the tint. Its last frame is the element without
+ * them, so the class goes at the end with no jump.
+ */
 .is-revealed {
   border-radius: var(--rf-radius-md);
-  animation: rf-reveal var(--rf-reveal-duration) ease-out;
-  outline: 2px solid var(--rf-color-primary);
+  animation: rf-reveal var(--rf-reveal-duration) ease-in-out both;
+  outline: 2px solid transparent;
   outline-offset: 2px;
 }
 
 @keyframes rf-reveal {
-  from {
+  0% {
+    outline-color: transparent;
+    outline-offset: 8px;
+    background: transparent;
+  }
+
+  15% {
+    outline-color: var(--rf-color-primary);
+    outline-offset: 2px;
     background: var(--p-highlight-background);
   }
 
-  to {
+  55% {
+    outline-color: var(--rf-color-primary);
+    outline-offset: 2px;
+    background: var(--p-highlight-background);
+  }
+
+  100% {
+    outline-color: transparent;
+    outline-offset: 2px;
     background: transparent;
+  }
+}
+
+/* Without motion the ring shows at once, for as long as the class stays. */
+@media (prefers-reduced-motion: reduce) {
+  .is-revealed {
+    animation: none;
+    outline-color: var(--rf-color-primary);
+    background: var(--p-highlight-background);
   }
 }
 
