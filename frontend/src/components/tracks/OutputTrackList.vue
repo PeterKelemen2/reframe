@@ -430,13 +430,15 @@ async function reload(): Promise<void> {
             <span class="rf-sr-only">{{ t('tracks.bulk.selectColumn') }}</span>
           </template>
           <template #body="{ data }">
-            <Checkbox
-              binary
-              :model-value="selected.includes(data.index)"
-              :ariaLabel="t('tracks.bulk.select', { n: data.index + 1 })"
-              :data-select="data.index"
-              @update:model-value="(on: boolean) => select(data.index, on)"
-            />
+            <div class="output-tracks__check">
+              <Checkbox
+                binary
+                :model-value="selected.includes(data.index)"
+                :ariaLabel="t('tracks.bulk.select', { n: data.index + 1 })"
+                :data-select="data.index"
+                @update:model-value="(on: boolean) => select(data.index, on)"
+              />
+            </div>
           </template>
         </Column>
         <Column body-class="output-tracks__editor">
@@ -519,7 +521,26 @@ async function reload(): Promise<void> {
 .output-tracks__table :deep(.output-tracks__select) {
   width: 2rem;
   padding-inline: var(--rf-space-1);
-  padding-top: var(--rf-space-5);
+}
+
+/* The handle and the check box stand beside the row's first control (its padding, the label
+   row, the gap), centred on it as the row's number is. */
+.output-tracks__table {
+  --output-tracks-control-top: calc(
+    var(--rf-space-2) + var(--rf-field-label-height) + var(--rf-space-1)
+  );
+}
+
+.output-tracks__check {
+  display: flex;
+  align-items: center;
+  height: var(--rf-control-height);
+  margin-top: var(--output-tracks-control-top);
+}
+
+.output-tracks__table :deep(.output-tracks__handle .p-datatable-reorderable-row-handle) {
+  display: block;
+  margin-top: calc(var(--output-tracks-control-top) + (var(--rf-control-height) - 1rem) / 2);
 }
 
 .output-tracks__selection {
@@ -552,7 +573,6 @@ async function reload(): Promise<void> {
 .output-tracks__table :deep(.output-tracks__handle) {
   width: 2rem;
   padding-inline: var(--rf-space-1);
-  padding-top: var(--rf-space-4);
   cursor: grab;
 }
 </style>

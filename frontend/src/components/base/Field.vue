@@ -246,6 +246,7 @@ const overrideItems = computed(() => {
   align-items: center;
   gap: var(--rf-space-1);
   min-width: 0;
+  min-height: var(--rf-field-label-height);
   color: var(--rf-color-text);
   font-weight: var(--rf-font-weight-medium);
 }

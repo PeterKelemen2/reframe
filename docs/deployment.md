@@ -194,7 +194,7 @@ The folder browser shows `/media` twice, as a media folder and as an output fold
 | `REFRAME_CONTAINER` | `1` | The server runs in a container: see below |
 | `PUID`, `PGID` | `1000` | The user the server runs as |
 
-The `HEALTHCHECK` calls the port of `REFRAME_PORT`. To change the port in the container, set
+The image's label `dev.dozzle.icon` holds the app icon (an SVG data URI), so log viewers that read it, such as [Dozzle](https://dozzle.dev/guide/app-icons), show Reframe's icon next to the container. The `HEALTHCHECK` calls the port of `REFRAME_PORT`. To change the port in the container, set
 `REFRAME_PORT`, not `--port` in the command: with `--port` the container becomes
 `unhealthy`. To use another port on the host, change only the published one (`9000:8765`).
 

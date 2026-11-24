@@ -18,7 +18,14 @@ import { multitrackSource, sampleDefinitions } from './testing'
 
 // The naming editor is tested on its own; here it would need a complete naming preview.
 vi.mock('@/components/naming/JobNamingEditor.vue', () => ({
-  default: { name: 'JobNamingEditor', render: () => null },
+  // The Output card's options are in its slot.
+  default: {
+    name: 'JobNamingEditor',
+    setup:
+      (_props: unknown, { slots }: { slots: { default?: () => unknown } }) =>
+      () =>
+        slots.default?.(),
+  },
 }))
 
 const SOON = { timeout: 2000, interval: 20 }

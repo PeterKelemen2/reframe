@@ -224,6 +224,27 @@ describe('JobNamingEditor', () => {
     expect(editor.job).toEqual(before)
   })
 
+  it('shows the name and its folder first, then the slot, then the naming, with the variables and the parsed name folded', async () => {
+    const editor = useEditorStore()
+    await editor.open('src')
+    await flushPromises()
+    const wrapper = mountBase(JobNamingEditor, {
+      pinia,
+      slots: { default: '<p data-testid="options">options</p>' },
+    })
+    useSystemStore().namingVariables = VARIABLES
+    await settle()
+    const sections = wrapper.findAll('.job-naming__section').map((section) => section.element)
+    expect(sections).toHaveLength(4)
+    expect(sections[0]?.querySelector('[data-testid="naming-result"]')).not.toBeNull()
+    expect(sections[0]?.querySelector('[data-action="choose-folder"]')).not.toBeNull()
+    expect(sections[1]?.querySelector('[data-testid="options"]')).not.toBeNull()
+    expect(sections[2]?.querySelector('[data-option="mode"]')).not.toBeNull()
+    expect(sections[3]?.querySelector('.parsed-name__fields')).not.toBeNull()
+    const toggles = wrapper.findAll('.naming-disclosure__toggle')
+    expect(toggles.map((toggle) => toggle.attributes('aria-expanded'))).toEqual(['false', 'false'])
+  })
+
   it('keeps the folder chosen for the job when the name changes', async () => {
     const { editor, wrapper } = await mountOpened()
     editor.set('/output/path', '/picked/Hacksaw.Ridge.mkv')

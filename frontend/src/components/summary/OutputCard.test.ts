@@ -16,7 +16,14 @@ import { sampleDefinitions } from './testing'
 
 // It previews the job on its own; here only the container and the path matter.
 vi.mock('@/components/naming/JobNamingEditor.vue', () => ({
-  default: { name: 'JobNamingEditor', render: () => null },
+  // The Output card's options are in its slot.
+  default: {
+    name: 'JobNamingEditor',
+    setup:
+      (_props: unknown, { slots }: { slots: { default?: () => unknown } }) =>
+      () =>
+        slots.default?.(),
+  },
 }))
 
 stubDom()
