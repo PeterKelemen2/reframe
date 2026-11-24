@@ -4,6 +4,7 @@ import type {
   Definitions,
   SubtitleOutputTrack,
   TrackDecision,
+  TrackDraft,
 } from '@/api/types'
 
 type Translate = (key: string, named?: Record<string, unknown>) => string
@@ -42,6 +43,26 @@ export function subtitleOutputText(output: SubtitleOutputTrack, t: Translate): s
     return t('defaults.preview.convert', { format: output.convert_to.toUpperCase() })
   }
   return t('defaults.preview.copy')
+}
+
+/**
+ * The decisions of one kind in the order their tracks are written: by their first output's
+ * place in the draft, then the tracks without an output in source order.
+ */
+export function inOutputOrder(draft: TrackDraft, kind: 'audio' | 'subtitle'): TrackDecision[] {
+  const decisions = (kind === 'audio' ? draft.decisions : draft.subtitle_decisions) ?? []
+  const streams =
+    kind === 'audio'
+      ? (draft.audio ?? []).map((track) => track.source_stream)
+      : (draft.subtitles ?? []).map((track) =>
+          typeof track.source === 'number' ? track.source : null,
+        )
+  const place = (decision: TrackDecision): number => {
+    const found = streams.indexOf(decision.source_stream)
+    return found === -1 ? streams.length : found
+  }
+  // The sort is stable: equal places keep the source order.
+  return decisions.toSorted((a, b) => place(a) - place(b))
 }
 
 /** One line per output of a decision; empty for a dropped track. */
