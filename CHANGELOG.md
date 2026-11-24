@@ -6,6 +6,39 @@ commits ([docs/release.md](docs/release.md)).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-24
+
+### Added
+
+- A preview clip is kept for each frame, clip length and set of job settings: another frame or
+  a changed setting hides it, and going back shows it again, for an easy comparison. The frames
+  of *Compare frames* are decoded once per clip.
+- The web app shows the preview large in a modal (the desktop app opens it in its own window).
+- Audio and subtitle defaults applied to a job stay with it while it is open: the preset shows
+  *modified*, the dialog opens with them again, and *Save as new preset* keeps them.
+- The Summary's Output card shows the output name, folder and path first, then the container
+  and its options, then the naming; the variables and the parsed name start folded.
+- The Summary's top row gives Source, Job type and Picture pipeline (with Video under it) parts
+  of 3, 2 and 1 on a wide screen, and the source picture takes the card's width.
+- `docker/compose.nvidia.yml`: the published image on an NVIDIA host, with the drives under one
+  folder read and written in place.
+- The Docker image carries the app icon for log viewers such as Dozzle.
+
+### Fixed
+
+- Encoding progress stayed at 0 % with the `compat` FFmpeg build when a subtitle track started
+  late; it now counts the frames when FFmpeg reports no position.
+- A changed output folder in Settings did not reach an open file, which also called the old
+  folder "chosen for this file". The file now offers the new folder.
+- The defaults dialog's preview lists the tracks in the order they are written.
+- The web app had no favicon.
+- The Docker image's health checks no longer fill the server's console.
+- A track row's number, buttons, drag handle and check box are centred on its source field.
+- The web app's clip button says that it opens the clip in a new tab.
+- The preview column fits the clip lengths and *Encode preview* on one row.
+- The highlight of a field reached through a link fades in and out instead of vanishing.
+- The corners of button groups are concentric with their selected button.
+
 ## [0.9.0] - 2026-11-24
 
 The first release, a rehearsal of the release before v1.0.0. The Windows installers are not

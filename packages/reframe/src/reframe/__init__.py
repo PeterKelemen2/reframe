@@ -3,7 +3,7 @@
 Everything else is internal and can change.
 """
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 
 from reframe.service import Reframe
 

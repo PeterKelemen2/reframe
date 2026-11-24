@@ -1,6 +1,6 @@
 [package]
 name = "reframe-desktop"
-version = "0.9.0"
+version = "0.10.0"
 description = "Reframe desktop app: a Tauri 2 shell around the frozen reframe-server"
 license = "GPL-3.0-or-later"
 edition = "2024"
