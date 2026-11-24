@@ -57,16 +57,18 @@ const unplaced = computed<ValidationIssue[]>(() =>
     :data-severity="severity ?? undefined"
   >
     <div class="track-row__header">
-      <span class="track-row__number">{{ index + 1 }}</span>
-      <template v-if="severity">
-        <component
-          :is="SEVERITY_ICON[severity]"
-          class="track-row__mark"
-          :size="16"
-          aria-hidden="true"
-        />
-        <span class="rf-sr-only">{{ severityLabel(severity) }}</span>
-      </template>
+      <span class="track-row__badge">
+        <span class="track-row__number">{{ index + 1 }}</span>
+        <template v-if="severity">
+          <component
+            :is="SEVERITY_ICON[severity]"
+            class="track-row__mark"
+            :size="16"
+            aria-hidden="true"
+          />
+          <span class="rf-sr-only">{{ severityLabel(severity) }}</span>
+        </template>
+      </span>
       <div class="track-row__lead">
         <slot name="header" />
       </div>
@@ -137,7 +139,21 @@ const unplaced = computed<ValidationIssue[]>(() =>
 .track-row__header {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--rf-space-2);
+}
+
+/* The header's field is a label over a control: the number and the buttons stand beside the
+   control, centred on it. */
+.track-row__badge,
+.track-row__buttons {
+  display: flex;
   align-items: center;
+  height: var(--rf-control-height);
+  margin-top: calc(var(--rf-field-label-height) + var(--rf-space-1));
+}
+
+.track-row__badge {
   gap: var(--rf-space-2);
 }
 
@@ -181,7 +197,6 @@ const unplaced = computed<ValidationIssue[]>(() =>
 }
 
 .track-row__buttons {
-  display: flex;
   flex: none;
   gap: var(--rf-space-1);
   margin-inline-start: auto;

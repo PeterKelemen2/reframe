@@ -29,6 +29,12 @@
   --rf-space-5: calc(1.5rem * var(--rf-density));
   --rf-space-6: calc(2rem * var(--rf-density));
 
+  /* A text field's or select's height: one line, the form field padding and its 1px borders. */
+  --rf-control-height: calc(var(--rf-line-height) * 1rem + 2 * var(--p-form-field-padding-y) + 2px);
+  /* A field's label row: as high as its help or override button, so that fields side by side
+     start their controls on one line. */
+  --rf-field-label-height: 1.75rem;
+
   --rf-radius-sm: var(--p-border-radius-sm);
   --rf-radius-md: var(--p-border-radius-md);
   --rf-radius-lg: var(--p-border-radius-lg);
