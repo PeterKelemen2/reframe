@@ -115,7 +115,9 @@ Benchmarks run in CI as a non-blocking job. A regression of more than 20 % comme
 - [x] Changelog from conventional commits (the step ID as scope: `fix(F-17): …`), made by git-cliff.
 - [x] A release workflow on tag `v*` builds (built and tested locally; not run on GitHub yet):
   - Docker image → GHCR (`linux/amd64`, `linux/arm64` without HW encoders).
-  - Windows NSIS (+ MSI) and Linux AppImage/deb/rpm → GitHub Release, signed.
+  - Windows NSIS (+ MSI) and Linux AppImage/deb/rpm → GitHub Release; the Windows installers
+    of v1 are unsigned ([decision 0105](../decisions/0105-release-rehearsal-and-unsigned-windows-installers.md)),
+    the release's checksums are GPG-signed.
   - Updater manifest `latest.json`.
   - The sources release of [decision 0073](../decisions/0073-gpl-corresponding-source-per-tool-pin.md),
     made before the packages if its manifest's hash is new, never "latest", and named in
