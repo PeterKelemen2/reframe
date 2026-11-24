@@ -1,6 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
 import { projectServers, webServers } from './e2e/support/servers'
+import { shardOf, specFiles } from './e2e/support/shard'
 
 // Headless only, in every project: a headed browser or the UI mode would open windows on the
 // owner's displays (docs/m4-breakdown.md, "Displays, windows and the pointer"). The list
@@ -9,9 +10,12 @@ import { projectServers, webServers } from './e2e/support/servers'
 const headless = true
 
 const servers = projectServers(['chromium', 'firefox', 'webkit'])
+const shard = shardOf()
 
 export default defineConfig({
   testDir: './e2e',
+  // CI's E2E_SHARD: a part of the files and of the gate's screens (e2e/support/shard.ts).
+  ...(shard ? { testMatch: specFiles('./e2e', shard).map((path) => `**/e2e/${path}`) } : {}),
   outputDir: './e2e/.results',
   forbidOnly: true,
   // A flaky flow must fail, not pass on a second try.

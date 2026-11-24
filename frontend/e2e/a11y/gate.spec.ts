@@ -1,3 +1,4 @@
+import { inShard } from '../support/shard'
 import { expect, test } from '../support/test'
 import { asKnown, checkScreen, compare, preparePage } from './gate'
 import { known as pictureKnown } from './known/picture'
@@ -22,7 +23,7 @@ test('every screen id is unique and every known entry names a screen', () => {
   expect(misplaced, 'known entries of a screen another area owns, or of no screen').toEqual([])
 })
 
-for (const screen of SCREENS) {
+for (const screen of SCREENS.filter((_, position) => inShard(position))) {
   test(`a11y gate: ${screen.area} ${screen.id}`, async ({ page }, info) => {
     test.setTimeout(300_000)
     await preparePage(page)
