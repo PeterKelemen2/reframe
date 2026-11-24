@@ -110,6 +110,33 @@ describe('the preview panel', () => {
     const { wrapper } = await panel()
     expect(wrapper.find('[data-action="detach"]').exists()).toBe(false)
   })
+
+  it('shows the preview large in a dialog in the web app, and the panel says where it is', async () => {
+    const { wrapper, preview } = await panel()
+    await wrapper.get('[data-action="enlarge"]').trigger('click')
+    await flushPromises()
+    const dialog = document.querySelector('[data-dialog="preview"]')!
+    const thumb = dialog.querySelector('[data-field="thumb"]')!
+    expect(wrapper.find('[data-state="enlarged"]').exists()).toBe(true)
+    expect(wrapper.find('.preview-panel__content [data-field="thumb"]').exists()).toBe(false)
+    expect(preview.panelOpen).toBe(true)
+    press(thumb, 'ArrowRight')
+    expect(preview.index).toBe(1)
+    dialog.querySelector<HTMLElement>('.p-dialog-close-button')!.click()
+    await flushPromises()
+    expect(wrapper.find('[data-state="enlarged"]').exists()).toBe(false)
+    expect(wrapper.find('.preview-panel__content [data-field="thumb"]').exists()).toBe(true)
+  })
+
+  it('closes the large preview when the file is closed', async () => {
+    const { wrapper } = await panel()
+    await wrapper.get('[data-action="enlarge"]').trigger('click')
+    await flushPromises()
+    useEditorStore().close()
+    await flushPromises()
+    expect(wrapper.find('[data-state="enlarged"]').exists()).toBe(false)
+    expect(wrapper.get('[data-action="enlarge"]').attributes('disabled')).toBeDefined()
+  })
 })
 
 /** What the preview window says to the main window. */

@@ -3,7 +3,9 @@
     "detach": "Open the preview in its own window",
     "detached": "The preview is in its own window.",
     "focus": "Show the preview window",
-    "failed": "The preview window could not be opened"
+    "failed": "The preview window could not be opened",
+    "enlarge": "Show the preview large",
+    "enlarged": "The preview is shown large."
   },
   "settings": {
     "title": "Desktop app",

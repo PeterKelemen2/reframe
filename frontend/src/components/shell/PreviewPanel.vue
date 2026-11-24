@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { PanelRightClose, PanelRightOpen, PictureInPicture2 } from '@lucide/vue'
+import { Maximize2, PanelRightClose, PanelRightOpen, PictureInPicture2 } from '@lucide/vue'
 import Button from 'primevue/button'
+import Dialog from 'primevue/dialog'
 import vTooltip from 'primevue/tooltip'
 import { onScopeDispose, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -24,6 +25,14 @@ const ui = useUiStore()
 const toasts = useToastStore()
 // Only the desktop app has a preview window to share with.
 const { detached } = platform.desktop === null ? { detached: ref(false) } : shareWithPreviewWindow()
+/** The browser's large preview: a modal on this page, with the same stores. */
+const enlarged = ref(false)
+watch(
+  () => preview.sourceId,
+  (id) => {
+    if (id === null) enlarged.value = false
+  },
+)
 
 /** The view a tab shows; on the other tabs the panel shows the view the user chose. */
 const TAB_VIEWS: Partial<Record<EditorTabId, ViewMode>> = { dimensions: 'source', filters: 'split' }
@@ -43,9 +52,9 @@ watch(
   { immediate: true },
 )
 
-// While detached, the preview window asks for the output frames.
+// While detached, the preview window asks for the output frames; the large preview does too.
 watch(
-  () => !collapsed.value && !detached.value,
+  () => (!collapsed.value && !detached.value) || enlarged.value,
   (open) => {
     preview.panelOpen = open
   },
@@ -90,6 +99,21 @@ async function openWindow(): Promise<void> {
         </template>
       </Button>
       <Button
+        v-if="platform.desktop === null && !collapsed"
+        v-tooltip.left="t('window.preview.enlarge')"
+        class="preview-panel__detach"
+        text
+        severity="secondary"
+        :aria-label="t('window.preview.enlarge')"
+        :disabled="preview.sourceId === null"
+        data-action="enlarge"
+        @click="enlarged = true"
+      >
+        <template #icon>
+          <Maximize2 :size="18" aria-hidden="true" />
+        </template>
+      </Button>
+      <Button
         v-tooltip.left="collapsed ? t('shell.preview.show') : t('shell.preview.hide')"
         class="preview-panel__toggle"
         text
@@ -121,11 +145,28 @@ async function openWindow(): Promise<void> {
           @click="openWindow"
         />
       </div>
+      <p v-else-if="enlarged" class="preview-panel__detached" data-state="enlarged">
+        {{ t('window.preview.enlarged') }}
+      </p>
       <template v-else>
         <FrameViewer />
         <PreviewClip />
       </template>
     </div>
+    <Dialog
+      v-model:visible="enlarged"
+      modal
+      maximizable
+      class="preview-dialog"
+      :header="t('shell.preview.title')"
+      :style="{ width: 'min(100rem, calc(100vw - 2rem))' }"
+      data-dialog="preview"
+    >
+      <div class="preview-dialog__content" @keydown="stepOnArrowKeys">
+        <FrameViewer />
+        <PreviewClip />
+      </div>
+    </Dialog>
   </aside>
 </template>
 
@@ -167,6 +208,12 @@ async function openWindow(): Promise<void> {
 
 .preview-panel__detached p {
   margin: 0;
+}
+
+.preview-dialog__content {
+  display: grid;
+  align-content: start;
+  gap: var(--rf-space-3);
 }
 
 .preview-panel__content {
