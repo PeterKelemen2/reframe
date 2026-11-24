@@ -211,6 +211,42 @@ describe('Field', () => {
     expect(document.activeElement).toBe(wrapper.get('input.control').element)
   })
 
+  it('keeps the reveal class until its animation ends, or for its length without one', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      Element.prototype.scrollIntoView = vi.fn<() => void>()
+      const wrapper = mountField({ path: 'video.encoder' })
+      const ui = useUiStore()
+      const ended = (name: string) =>
+        wrapper.element.dispatchEvent(
+          Object.assign(new Event('animationend'), { animationName: name }),
+        )
+      ui.reveal('video.encoder')
+      await flushPromises()
+      await nextTick()
+      ended('another')
+      expect(wrapper.classes()).toContain(REVEALED_CLASS)
+      ended('rf-reveal')
+      expect(wrapper.classes()).not.toContain(REVEALED_CLASS)
+      // No animation (reduced motion): the class goes after the animation's length.
+      ui.reveal('video.encoder')
+      await flushPromises()
+      await nextTick()
+      vi.advanceTimersByTime(2000)
+      expect(wrapper.classes()).toContain(REVEALED_CLASS)
+      // A reveal while one runs starts it again: the first one's time does not end it.
+      ui.reveal('video.encoder')
+      await flushPromises()
+      await nextTick()
+      vi.advanceTimersByTime(1000)
+      expect(wrapper.classes()).toContain(REVEALED_CLASS)
+      vi.advanceTimersByTime(1400)
+      expect(wrapper.classes()).not.toContain(REVEALED_CLASS)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('gives the focus to the pressed button of a button group, when revealed', async () => {
     Element.prototype.scrollIntoView = vi.fn<() => void>()
     const wrapper = mountBase(Field, {

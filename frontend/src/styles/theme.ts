@@ -223,6 +223,11 @@ export const ReframePreset = definePreset(Aura, {
         },
       },
     },
+    // The tray's corners are concentric with its checked chip's: the chip's radius plus the
+    // option's padding (togglebutton.padding), not the same radius 4px further out.
+    selectbutton: {
+      root: { borderRadius: 'calc({content.border.radius} + 0.25rem)' },
+    },
     // A SelectButton's options: the checked one is filled with the primary colour, since a white
     // chip in a light grey group is 1.1:1.
     togglebutton: {
