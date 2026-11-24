@@ -5,7 +5,7 @@
  */
 import { execFile } from 'node:child_process'
 import { readdir, readFile, readlink } from 'node:fs/promises'
-import { join, relative, resolve, sep } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 
 const run = promisify(execFile)
@@ -108,7 +108,8 @@ function samePath(a: string, b: string): boolean {
 
 export function isInside(path: string, folder: string): boolean {
   const rel = relative(resolve(folder), resolve(path))
-  const inside = rel !== '' && !rel.startsWith(`..${sep}`) && rel !== '..'
+  // Across Windows drives, relative() returns the absolute path.
+  const inside = rel !== '' && !rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel)
   return inside || samePath(resolve(path), resolve(folder))
 }
 
