@@ -443,6 +443,10 @@ functions in a registry, grouped by area.
 - [ ] Silent losses: gain / DRC / loudness on a copied
       passthru track, an x265 level too small for the output
       ([0014](../decisions/0014-validation-rules-and-severities.md) "Follow-up (M2 review)").
+- [x] Output truth ([0109](../decisions/0109-stale-track-names-and-lossless-downmix.md)): a
+      re-encoded track whose name names a codec or layout that the written track does not
+      have (`metadata.name_stale`, warning, with a rename fix), and a lossless source track
+      written by a lossy encoder with fewer channels (`audio.lossless_downmix`, info).
 - [ ] NVENC levels ([0102](../decisions/0102-nvenc-on-linux.md)): an H.264 or H.265 NVENC
       level too small for the output (`encoder.level_too_low`), and in bitrate mode a bitrate
       above what NVENC takes at the level (`encoder.level_bitrate_too_high`, measured table).

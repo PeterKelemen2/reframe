@@ -46,10 +46,17 @@ def test_default_preset_prints_issues_then_the_command(movie: Path, cli_env: ft.
     assert "template {main_title} on the folder name" in out
     assert "  Audio    #1  " in out
     assert out.index("Issues (") < out.index("Command (")
-    issues = section(out, "Issues (0 errors, 0 warnings, 1 info)")
-    assert issues[0].startswith("  info     Crop detection did not run for this job")
-    assert "[dimensions.crop_not_detected · dimensions.crop]" in issues[1]
-    assert "fix: Do not crop" in issues[2]
+    # The AAC stereo tracks keep the source titles "Dolby TrueHD Atmos 5.1" and "Dolby Digital
+    # 5.1"; the TrueHD track is mixed down.
+    issues = section(out, "Issues (0 errors, 2 warnings, 2 info)")
+    assert issues[0].startswith("  warning  Audio track 1 is written as AAC Stereo, but its name")
+    assert "[metadata.name_stale · audio[0].metadata.name]" in issues[1]
+    assert "fix: Rename it to 'AAC 2.0'" in issues[2]
+    crop = next(i for i, line in enumerate(issues) if "Crop detection did not run" in line)
+    assert issues[crop].startswith("  info     ")
+    assert "[dimensions.crop_not_detected · dimensions.crop]" in issues[crop + 1]
+    assert "fix: Do not crop" in issues[crop + 2]
+    assert "[audio.lossless_downmix · audio[0].mixdown]" in out
     command = section(out, "Command (encode, 2 steps)")
     assert len(command) == 1  # one line, to copy into a terminal
     assert command[0].startswith(f"{cli_env.ffmpeg} -hide_banner")

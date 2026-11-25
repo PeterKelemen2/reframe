@@ -7,11 +7,13 @@ from dataclasses import dataclass
 from pathlib import PurePath
 
 from reframe.command import planned_audio
+from reframe.command.audio import layout_channels
 from reframe.command.subtitles import EXTERNAL_FORMATS
 from reframe.definitions import AudioEncoderDef, ContainerDef, Definitions
 from reframe.models.issues import Fix, JsonPatchOp
 from reframe.models.job import AudioOutputTrack, Container, Mixdown, SubtitleOutputTrack
 from reframe.models.media import AudioStream, SubtitleKind
+from reframe.naming.context import audio_channels_label
 from reframe.validation.common import DEFAULT_AUDIO_ENCODER, replace, switch_container_fixes
 from reframe.validation.context import JobContext
 
@@ -26,6 +28,8 @@ __all__ = [
     "switch_container",
     "track_encoder",
     "track_stream",
+    "written_channels",
+    "written_layout",
 ]
 
 
@@ -80,6 +84,21 @@ def encoded_audio(
         bitrate=planned.bitrate if track.bitrate is not None else None,
         samplerate=planned.samplerate,
     )
+
+
+def written_channels(definitions: Definitions, planned: EncodedAudio) -> int:
+    """The channel count the builder writes (0 = unknown)."""
+    if planned.mixdown is not None:
+        return definitions.mixdowns[planned.mixdown].channels
+    written = layout_channels(planned.layout)
+    return len(written) if written is not None else planned.source_channels
+
+
+def written_layout(definitions: Definitions, planned: EncodedAudio) -> str:
+    """The written layout as its mixdown's label (``Stereo``), else as ``N.M``."""
+    if planned.mixdown is not None:
+        return definitions.mixdowns[planned.mixdown].label
+    return audio_channels_label(written_channels(definitions, planned), planned.layout)
 
 
 def track_stream(ctx: JobContext, track: AudioOutputTrack) -> AudioStream | None:
