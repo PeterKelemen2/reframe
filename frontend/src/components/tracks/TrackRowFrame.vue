@@ -165,8 +165,10 @@ const unplaced = computed<ValidationIssue[]>(() =>
   height: 1.75rem;
   border-radius: 50%;
   background: var(--p-status-off-background);
+  font-family: var(--rf-font-mono);
   font-size: var(--rf-font-size-sm);
-  font-weight: var(--rf-font-weight-bold);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--rf-font-weight-medium);
 }
 
 .track-row--error .track-row__number {
