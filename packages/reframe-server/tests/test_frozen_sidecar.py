@@ -21,6 +21,7 @@ import psutil
 import pytest
 
 import reframe
+from reframe.tools.fetch import load_manifest
 from reframe_server import parent
 from reframe_testing import fake_tools as ft
 from reframe_testing import media
@@ -120,13 +121,15 @@ def test_the_frozen_server_answers_from_its_bundled_data(
     assert "libx265" in definitions["video_encoders"]
     assert client.get("/api/presets").json()["presets"]
     assert client.get("/api/languages").json()["languages"]
-    fetch = client.post("/api/system/tools/fetch", json={"build": "no-such-build"}).json()
-
-    def fetched() -> Any:
-        task = client.get(f"/api/tasks/{fetch['task_id']}").json()
-        return task if task["state"] not in ("queued", "running") else None
-
-    assert "has no build 'no-such-build'" in wait_for(fetched)["error"]
+    # The refusal names the offered builds, which come from the bundled FFmpeg manifest.
+    refused = client.post("/api/system/tools/fetch", json={"build": "no-such-build"})
+    offered = [build.name for build in load_manifest().values() if build.offered]
+    assert offered
+    assert (refused.status_code, refused.json()["code"], refused.json()["detail"]) == (
+        422,
+        "tools.build_not_offered",
+        f"The offered builds are {', '.join(offered)}.",
+    )
     source = tmp_path / "media" / RELEASE_NAME
     source.parent.mkdir()
     source.write_bytes(b"not really matroska")
