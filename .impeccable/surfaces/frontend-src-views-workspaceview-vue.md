@@ -19,7 +19,7 @@ Decisions taken: subtitle lanes are solid with the cue count shown in Tracks (th
 
 THESIS: Every track is a lane in one programme, coloured by its language the way a dubbing script colours its voices. It refuses the category default: a grey admin panel with one indigo accent, where every value is a link or a chip.
 
-OWN-WORLD: Light: cool white ground, white panels, carbon ink text and an ink-filled primary button. Dark: deep blue-black panels, cool white text, the primary button turns paper-light; the preview column is a booth, one step darker. Coloured-pencil language colours (viridian, cobalt, violet, teal, plum, moss, sepia, slate), one per language everywhere; the picture is the only full-colour thing. Red Hat Text for the UI, Red Hat Mono for every number, path and timecode; a real heading scale; full-row selection; hairline panels.
+OWN-WORLD: Light: cool white ground, white panels, carbon ink text and an ink-filled primary button. Dark: deep blue-black panels, cool white text, the primary button turns paper-light; the preview column is a booth, one step darker. Coloured-pencil language colours (viridian, cobalt, violet, teal, plum, moss, slate, ultramarine; no red or amber family), one per language everywhere; the picture is the only full-colour thing. Red Hat Text for the UI, Red Hat Mono for every number, path and timecode; a real heading scale; full-row selection; hairline panels.
 
 STORY: The visitor sees, before queueing, every output track as a coloured lane over the programme with its range and chapters, reads the Summary as a receipt of what will be written, and queues the whole season from the status bar's primary action.
 
