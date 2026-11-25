@@ -136,6 +136,13 @@ const overrideItems = computed(() => {
     :data-path="path"
   >
     <div class="rf-field__label">
+      <component
+        :is="SEVERITY_ICON[severity]"
+        v-if="severity === 'error' || severity === 'warning'"
+        class="rf-field__tone"
+        :size="16"
+        aria-hidden="true"
+      />
       <label :id="labelId" :for="id">{{ label }}</label>
       <span
         v-if="overridden"
@@ -323,8 +330,8 @@ const overrideItems = computed(() => {
   color: var(--p-status-info-color);
 }
 
-/* A bar in the gutter marks the field whatever its control is; known controls get the outline,
-   except while focused, so that the focus stays visible. */
+/* An icon before the label marks the field whatever its control is; known controls get the
+   outline, except while focused, so that the focus stays visible. */
 .rf-field--error {
   --rf-field-tone: var(--p-status-error-border-color);
 }
@@ -333,15 +340,16 @@ const overrideItems = computed(() => {
   --rf-field-tone: var(--p-status-warn-border-color);
 }
 
-.rf-field--error::before,
-.rf-field--warning::before {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: calc(-1 * var(--rf-space-2));
-  width: 3px;
-  border-radius: 2px;
-  background: var(--rf-field-tone);
-  content: '';
+.rf-field__tone {
+  flex: none;
+}
+
+.rf-field--error .rf-field__tone {
+  color: var(--p-status-error-color);
+}
+
+.rf-field--warning .rf-field__tone {
+  color: var(--p-status-warn-color);
 }
 
 .rf-field--error .rf-field__control,

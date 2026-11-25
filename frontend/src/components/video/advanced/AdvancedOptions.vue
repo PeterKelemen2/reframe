@@ -280,8 +280,7 @@ onUpdated(() => {
   align-items: center;
   gap: var(--rf-space-2);
   padding: var(--rf-space-1) var(--rf-space-2);
-  border: 0;
-  border-inline-start: 3px solid transparent;
+  border: 1px solid transparent;
   border-radius: var(--rf-radius-sm);
   background: none;
   color: var(--rf-color-text);
@@ -294,9 +293,9 @@ onUpdated(() => {
   background: var(--rf-color-surface-hover);
 }
 
-/* The tint alone is too faint to tell the selection: the bar is the mark. */
+/* The tint alone is too faint to tell the selection: the border is the mark. */
 .advanced-options__category[aria-current='true'] {
-  border-inline-start-color: var(--rf-color-primary);
+  border-color: var(--rf-color-primary);
   background: color-mix(in srgb, var(--rf-color-primary) 16%, transparent);
   font-weight: var(--rf-font-weight-medium);
 }
