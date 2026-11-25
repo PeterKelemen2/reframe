@@ -491,18 +491,18 @@ function onDialogKey(event: KeyboardEvent): void {
   align-items: start;
   gap: var(--rf-space-2);
   padding: var(--rf-space-2) var(--rf-space-3);
-  border-left: 3px solid transparent;
   cursor: pointer;
   user-select: none;
 }
 
 .language-picker__option--active {
-  border-left-color: var(--rf-color-primary);
+  outline: 2px solid var(--rf-color-primary);
+  outline-offset: -2px;
   background: var(--rf-color-surface-hover);
 }
 
 .language-picker__option[aria-selected='true'] {
-  background: color-mix(in srgb, var(--rf-color-primary) 16%, transparent);
+  background: color-mix(in srgb, var(--rf-color-primary) 8%, transparent);
 }
 
 .language-picker__check {

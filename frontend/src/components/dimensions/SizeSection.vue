@@ -203,6 +203,12 @@ function setNumber(pointer: string, value: number | null | undefined): void {
 </template>
 
 <style scoped>
+/* A measured number: mono, tabular. */
+:deep(.p-inputnumber-input) {
+  font-family: var(--rf-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
 .size-section {
   display: grid;
   gap: var(--rf-space-3);

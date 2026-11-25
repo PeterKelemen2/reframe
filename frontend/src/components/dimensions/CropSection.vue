@@ -217,6 +217,12 @@ function redetect(): void {
 </template>
 
 <style scoped>
+/* A measured number: mono, tabular. */
+:deep(input[type='number']) {
+  font-family: var(--rf-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
 .crop-section {
   display: grid;
   gap: var(--rf-space-3);

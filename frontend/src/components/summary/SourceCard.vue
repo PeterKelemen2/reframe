@@ -64,10 +64,11 @@ const chapters = computed(() => {
           />
           <KeyValue
             :label="t('summary.source.duration')"
+            mono
             :value="formatDuration(container?.duration)"
           />
-          <KeyValue :label="t('summary.source.size')" :value="size" />
-          <KeyValue :label="t('summary.source.bitrate')" :value="bitrate" />
+          <KeyValue :label="t('summary.source.size')" mono :value="size" />
+          <KeyValue :label="t('summary.source.bitrate')" mono :value="bitrate" />
           <KeyValue :label="t('summary.source.video')">
             <span data-field="video-line">{{ line ?? t('summary.source.noVideo') }}</span>
           </KeyValue>

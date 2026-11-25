@@ -15,6 +15,7 @@ import type {
   ValidationIssue,
 } from '@/api/types'
 import Field from '@/components/base/Field.vue'
+import { useLanguageColor } from '@/components/base/languageColor'
 import { findLanguage } from '@/components/base/languages'
 import type { Container } from '@/components/language/catalog'
 import LanguagePicker from '@/components/language/LanguagePicker.vue'
@@ -244,6 +245,9 @@ watch(
   { immediate: true },
 )
 
+const colorOf = useLanguageColor()
+const markColor = computed(() => colorOf(metadata.value?.language ?? sourceLanguage.value))
+
 const summary = computed(() => {
   const value = metadata.value
   const language =
@@ -282,6 +286,12 @@ const summary = computed(() => {
     >
       <ChevronRight class="track-metadata__chevron" :size="16" aria-hidden="true" />
       <span class="track-metadata__title">{{ t('tracks.metadata.title') }}</span>
+      <span
+        class="track-metadata__mark"
+        :class="{ 'is-pale': metadata?.commentary }"
+        :style="{ background: markColor }"
+        aria-hidden="true"
+      />
       <span class="track-metadata__summary" data-role="summary">{{ summary }}</span>
     </button>
     <div v-show="open" :id="bodyId" class="track-metadata__body">
@@ -426,6 +436,18 @@ const summary = computed(() => {
 .track-metadata__title {
   flex: none;
   font-weight: var(--rf-font-weight-medium);
+}
+
+/* The language's colour, as the track lists and the programme strip draw it. */
+.track-metadata__mark {
+  flex: none;
+  width: 0.25rem;
+  height: 1rem;
+  border-radius: 1px;
+}
+
+.track-metadata__mark.is-pale {
+  opacity: var(--rf-lang-pale);
 }
 
 .track-metadata__summary {

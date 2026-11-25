@@ -7,7 +7,7 @@ import type { TrackRoleInfo } from '@/api/types'
 
 import type { TrackKind } from './types'
 
-/** Solid when a disposition flag sets the role, outlined for a title or heuristic; the tooltip names the evidence. */
+/** Ink when a disposition flag sets the role, muted for a title, dashed for a guess; the tooltip names the evidence. */
 const props = defineProps<{
   role: TrackRoleInfo
   /** Picks the name of `description`: audio description, or descriptions on subtitles. */
@@ -65,27 +65,27 @@ const tooltip = computed(() =>
 </template>
 
 <style scoped>
+/* Quiet beside the track's language and codec: a role describes the track, it is not a problem. */
 .rf-role-badge {
   display: inline-flex;
   align-items: center;
   padding: 0 var(--rf-space-2);
-  border: 1px solid var(--rf-color-primary);
-  border-radius: var(--rf-radius-pill);
+  border: 1px solid var(--rf-color-border);
+  border-radius: var(--rf-radius-sm);
   font-size: var(--rf-font-size-xs);
   font-weight: var(--rf-font-weight-medium);
-  line-height: 1.5rem;
+  line-height: 1.25rem;
   white-space: nowrap;
   cursor: default;
 }
 
+/* Set by a flag: the strongest evidence reads in ink. */
 .rf-role-badge--solid {
-  background: var(--rf-color-primary);
-  color: var(--rf-color-on-primary);
+  color: var(--rf-color-text);
 }
 
 .rf-role-badge--outlined {
-  background: transparent;
-  color: var(--rf-color-primary);
+  color: var(--rf-color-text-muted);
 }
 
 /* A guess is weaker evidence than a title: dashed. */

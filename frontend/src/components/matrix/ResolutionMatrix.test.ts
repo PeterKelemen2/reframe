@@ -73,9 +73,7 @@ async function mountMatrix(
 
 /** Each shown row's mark and label: `⚠ E05`. */
 function rowLabels(): string[] {
-  return [...document.querySelectorAll('[data-row-mark]')].map((el) =>
-    [...el.querySelectorAll('span')].map((span) => span.textContent?.trim()).join(' '),
-  )
+  return [...document.querySelectorAll('[data-row-mark]')].map((el) => text(el))
 }
 
 /** The text of the cell of `episode` in the column `kind:rule`. */
@@ -94,8 +92,17 @@ function cellName(episode: number, which: string): string {
 function text(element: Element | null | undefined): string {
   if (!element) return ''
   const parts: string[] = []
-  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
-  while (walker.nextNode()) parts.push(walker.currentNode.textContent?.trim() ?? '')
+  // A mark is a drawn icon: its glyph is in `data-mark`. A language is checked on its own.
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT)
+  while (walker.nextNode()) {
+    const node = walker.currentNode
+    if (node instanceof Element) {
+      if (node.classList.contains('matrix__mark')) parts.push(node.getAttribute('data-mark') ?? '')
+      continue
+    }
+    if (node.parentElement?.closest('.matrix__mark, .rf-language-chip')) continue
+    parts.push(node.textContent?.trim() ?? '')
+  }
   return parts.filter(Boolean).join(' ').replaceAll(/\s+/g, ' ')
 }
 
@@ -166,6 +173,9 @@ describe('the matrix', () => {
   it("shows E11's cells as 04's matrix, tracks by absolute stream index, with their messages", async () => {
     await mountMatrix()
     expect(text(cell(1, 'audio:1'))).toBe('✓ #2')
+    expect(cell(1, 'audio:1').querySelector('.rf-language-chip')?.getAttribute('data-tag')).toBe(
+      'eng',
+    )
     expect(text(cell(5, 'subtitle:0'))).toBe('✓ #4')
     expect(text(cell(11, 'audio:1'))).toBe('✗ none no track matches')
     expect(cell(11, 'audio:1').dataset.status).toBe('missing')
@@ -189,12 +199,12 @@ describe('the matrix', () => {
   it("lists a cell's state in its label the way the locale writes a list", async () => {
     const wrapper = await mountMatrix()
     expect(cellName(11, 'subtitle:0')).toContain(
-      'Matched after relaxing, #2, matched without title',
+      'Matched after relaxing, eng, #2, matched without title',
     )
     // Japanese joins a list without the English comma and space.
     ;(wrapper.vm as unknown as { $i18n: { locale: string } }).$i18n.locale = 'ja'
     await settle()
-    const parts = ['Matched after relaxing', '#2', 'matched without title']
+    const parts = ['Matched after relaxing', 'eng', '#2', 'matched without title']
     const japanese = new Intl.ListFormat('ja', { style: 'short', type: 'unit' }).format(parts)
     expect(japanese).not.toBe(parts.join(', '))
     expect(cellName(11, 'subtitle:0')).toContain(japanese)

@@ -35,7 +35,7 @@ const tooltip = computed(() => {
 
 <style scoped>
 .rf-codec-label {
-  font-weight: var(--rf-font-weight-bold);
+  font-weight: var(--rf-font-weight-medium);
   white-space: nowrap;
 }
 

@@ -128,10 +128,10 @@ async function applyFix(fix: Fix): Promise<void> {
 }
 
 .rf-issue {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: var(--rf-space-1) var(--rf-space-2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--rf-space-1) var(--rf-space-3);
   padding: var(--rf-space-2) var(--rf-space-3);
   border: 1px solid var(--rf-issue-border);
   border-radius: var(--rf-radius-md);
@@ -158,21 +158,24 @@ async function applyFix(fix: Fix): Promise<void> {
 }
 
 .rf-issue__icon {
+  flex: none;
   margin-top: 0.2em;
   color: var(--rf-issue-accent);
 }
 
 .rf-issue__message {
-  grid-column: 2;
+  flex: 1 1 16rem;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
+/* Beside the message while it fits, else on their own line at the end. */
 .rf-issue__actions {
   display: flex;
   flex-wrap: wrap;
-  grid-column: 2;
   align-items: center;
   gap: var(--rf-space-2);
+  margin-inline-start: auto;
 }
 
 .rf-issue__actions:empty {

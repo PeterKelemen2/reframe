@@ -202,17 +202,16 @@ async function copyCommand(): Promise<void> {
   font-weight: var(--rf-font-weight-medium);
 }
 
+/* Ink and muted only: green and amber would read as a state. */
 .cmd-option {
-  color: var(--rf-color-primary);
+  color: var(--rf-color-text);
+  font-weight: var(--rf-font-weight-medium);
   white-space: nowrap;
 }
 
-.cmd-path {
-  color: var(--p-status-ok-color);
-}
-
+.cmd-path,
 .cmd-filter {
-  color: var(--p-status-warn-color);
+  color: var(--rf-color-text-muted);
 }
 
 .cmd-operator {

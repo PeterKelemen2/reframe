@@ -95,6 +95,8 @@ describe('Field', () => {
     await flushPromises()
     expect(wrapper.findAll('.rf-field__issue').map((li) => li.text())).toEqual(['Warning: Own'])
     expect(wrapper.classes()).toContain('rf-field--warning')
+    // Marked by an icon before the label, not by a bar beside the field.
+    expect(wrapper.find('.rf-field__label .rf-field__tone').exists()).toBe(true)
     expect(wrapper.get('input.control').attributes('data-invalid')).toBe('false')
   })
 

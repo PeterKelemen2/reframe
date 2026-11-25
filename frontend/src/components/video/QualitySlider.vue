@@ -213,6 +213,8 @@ function typed(value: number | null | undefined): void {
 
 .quality-slider__input :deep(input) {
   width: 100%;
+  font-family: var(--rf-font-mono);
+  font-variant-numeric: tabular-nums;
   text-align: end;
 }
 

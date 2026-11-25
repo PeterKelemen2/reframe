@@ -51,16 +51,19 @@ const linked = computed(() => tabForPath(props.path) !== 'summary')
   text-align: start;
 }
 
+/* A value reads as plain text; the link shows itself on hover and focus. */
 button.summary-link {
-  color: var(--rf-color-primary);
-  text-decoration: underline;
+  border-radius: var(--rf-radius-sm);
+  text-decoration: underline transparent;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.2em;
   cursor: pointer;
+  transition: text-decoration-color var(--rf-duration) ease;
 }
 
-button.summary-link:hover {
-  text-decoration-thickness: 2px;
+button.summary-link:hover,
+button.summary-link:focus-visible {
+  text-decoration-color: currentcolor;
 }
 
 button.summary-link:focus-visible {

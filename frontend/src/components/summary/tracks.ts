@@ -48,6 +48,8 @@ export interface AudioChip extends TrackChip {
   layout: string | null
   /** The source's codec and layout (`DTS-HD MA 5.1`) when the track is written with others. */
   from: string | null
+  /** kb/s of an encoded track; `null` for a copied one or the encoder's default. */
+  bitrate: number | null
 }
 
 export interface SubtitleChip extends TrackChip {
@@ -57,6 +59,8 @@ export interface SubtitleChip extends TrackChip {
   external: string | null
   /** The format a converted track gets, also on a copy that the container converts. */
   convertTo: string | null
+  /** The source track's events, once they are counted. */
+  events: number | null
 }
 
 /** The output flags that a role badge set by the source's disposition already names. */
@@ -150,6 +154,7 @@ export function audioChips(
       from: changed
         ? [stream.display_codec || stream.codec, channelsText(stream)].filter(Boolean).join(' ')
         : null,
+      bitrate: passthru ? null : (track.bitrate ?? null),
     }
   })
 }
@@ -197,6 +202,7 @@ export function subtitleChips(
       action: track.action,
       external: external === null ? null : fileName(external.path),
       convertTo: format === null ? null : (CONVERTED[format] ?? format),
+      events: stream?.event_count ?? null,
     }
   })
 }

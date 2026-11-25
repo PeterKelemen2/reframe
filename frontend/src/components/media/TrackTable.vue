@@ -193,6 +193,10 @@ function toggle(stream: SourceStream): void {
 
 const columns = computed(() => (props.kind === 'audio' ? 8 : 7))
 
+function commentary(stream: SourceStream): boolean {
+  return (stream.roles ?? []).some((role) => role.role === 'commentary')
+}
+
 function flagLabel(flag: ShownFlag): string {
   switch (flag) {
     case 'default':
@@ -368,14 +372,16 @@ function tagsOf(stream: SourceStream): [string, string][] {
                 @click.stop="toggle(stream)"
               >
                 <ChevronRight class="track-table__chevron" :size="16" aria-hidden="true" />
-                <span aria-hidden="true">{{ trackNumber(stream) }}</span>
+                <span class="rf-mono" aria-hidden="true">{{ trackNumber(stream) }}</span>
               </button>
             </td>
-            <td><LanguageChip :tag="streamLanguage(stream)" /></td>
+            <td>
+              <LanguageChip :tag="streamLanguage(stream)" :pale="commentary(stream)" />
+            </td>
             <td class="track-table__name">{{ stream.title || '—' }}</td>
             <template v-if="stream.kind === 'audio'">
               <td><CodecLabel :stream="stream" /></td>
-              <td>{{ channelsText(stream) ?? '—' }}</td>
+              <td class="rf-mono">{{ channelsText(stream) ?? '—' }}</td>
               <td>
                 <div class="track-table__roles">
                   <RoleBadge
@@ -394,7 +400,7 @@ function tagsOf(stream: SourceStream): [string, string][] {
                   </span>
                 </div>
               </td>
-              <td class="track-table__nowrap" data-column="secondary">
+              <td class="track-table__nowrap rf-mono" data-column="secondary">
                 {{ rateDepth(stream) ?? '—' }}
               </td>
               <td
@@ -405,6 +411,7 @@ function tagsOf(stream: SourceStream): [string, string][] {
                 <span class="track-table__value">
                   <span
                     v-if="stream.bitrate?.value"
+                    class="rf-mono"
                     v-tooltip.top="bitrateHelp(stream.bitrate!.source)"
                   >
                     {{ kbps(stream.bitrate!) }}
@@ -455,7 +462,7 @@ function tagsOf(stream: SourceStream): [string, string][] {
               </td>
               <td class="track-table__events" data-column="secondary">
                 <span class="track-table__value">
-                  <span v-tooltip.top="eventsHelp(stream)">{{
+                  <span v-tooltip.top="eventsHelp(stream)" class="rf-mono">{{
                     count(stream.event_count) ?? '—'
                   }}</span>
                   <ScanControl
@@ -740,7 +747,8 @@ tbody + tbody .track-table__row td {
   cursor: pointer;
 }
 
-.track-table__row:hover {
+.track-table__row:hover,
+.track-table__row--open {
   background: var(--rf-color-surface-hover);
 }
 
@@ -754,7 +762,6 @@ tbody + tbody .track-table__row td {
   background: none;
   color: inherit;
   font: inherit;
-  font-weight: var(--rf-font-weight-bold);
   cursor: pointer;
 }
 
@@ -828,13 +835,14 @@ tbody + tbody .track-table__row td {
   min-width: 6rem;
 }
 
+/* A flag describes the track: muted, like a role named by a title. */
 .track-table__flag {
   padding: 0 var(--rf-space-2);
+  border: 1px solid var(--rf-color-border);
   border-radius: var(--rf-radius-sm);
-  background: var(--p-status-info-background);
-  color: var(--p-status-info-color);
+  color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-xs);
-  line-height: 1.5rem;
+  line-height: 1.25rem;
   white-space: nowrap;
 }
 

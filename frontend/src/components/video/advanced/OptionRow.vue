@@ -213,12 +213,12 @@ async function reset(): Promise<void> {
   display: grid;
   gap: var(--rf-space-1);
   padding: var(--rf-space-1) var(--rf-space-2);
-  border-inline-start: 3px solid transparent;
+  border: 1px solid transparent;
   border-radius: var(--rf-radius-sm);
 }
 
 .advanced-row--changed {
-  border-inline-start-color: var(--rf-color-primary);
+  border-color: color-mix(in srgb, var(--rf-color-primary) 30%, transparent);
   background: color-mix(in srgb, var(--rf-color-primary) 10%, transparent);
 }
 

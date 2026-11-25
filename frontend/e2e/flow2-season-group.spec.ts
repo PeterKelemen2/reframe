@@ -136,14 +136,17 @@ test('a season folder: edit the group, check the matrix, queue the group', async
   const marks = rows.locator('.matrix__file .matrix__mark')
   const ok = (problems: Record<string, string>) => EPISODES.map((e) => problems[e] ?? '✓')
   await expect(rows.locator('.matrix__label')).toHaveText(EPISODES)
-  await expect(marks).toHaveText(ok({ E05: '⚠', E11: '✗' }))
-  await expect(row('E11').locator('[data-cell="audio:1"] .matrix__mark')).toHaveText('✗')
-  await expect(row('E11').locator('[data-cell="subtitle:0"] .matrix__mark')).toHaveText('≈')
+  // A mark is a drawn icon; `data-mark` holds the glyph `reframe batch` prints.
+  const markOf = (cell: string) => row('E11').locator(`[data-cell="${cell}"] .matrix__mark`)
+  const shownMarks = () => marks.evaluateAll((els) => els.map((el) => el.getAttribute('data-mark')))
+  await expect.poll(shownMarks).toEqual(ok({ E05: '⚠', E11: '✗' }))
+  await expect(markOf('audio:1')).toHaveAttribute('data-mark', '✗')
+  await expect(markOf('subtitle:0')).toHaveAttribute('data-mark', '≈')
 
   await row('E11').locator('.matrix__file').click()
   await page.getByRole('button', { name: 'Make the rule optional' }).click()
-  await expect(row('E11').locator('[data-cell="audio:1"] .matrix__mark')).toHaveText('–')
-  await expect(marks).toHaveText(ok({ E05: '⚠', E11: '⚠' }))
+  await expect(markOf('audio:1')).toHaveAttribute('data-mark', '–')
+  await expect.poll(shownMarks).toEqual(ok({ E05: '⚠', E11: '⚠' }))
   await matrix.getByRole('button', { name: 'Close' }).click()
   await expect(matrix).toBeHidden()
 
