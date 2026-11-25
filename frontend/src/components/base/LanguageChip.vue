@@ -5,15 +5,21 @@ import { useI18n } from 'vue-i18n'
 
 import { useSystemStore } from '@/stores/system'
 
+import { useLanguageColor } from './languageColor'
 import { findLanguage, isUndetermined } from './languages'
 
-/** A language by its tag (BCP 47 or ISO 639-2): the name, the code in the tooltip; `und` or none: undetermined. */
-const props = defineProps<{ tag: string | null | undefined }>()
+/**
+ * A language by its tag (BCP 47 or ISO 639-2): its colour mark and name, the code in the tooltip;
+ * `und` or none: undetermined. `pale` draws the mark of a commentary or secondary track.
+ */
+const props = defineProps<{ tag: string | null | undefined; pale?: boolean }>()
 
 const { t } = useI18n()
 const system = useSystemStore()
 
+const colorOf = useLanguageColor()
 const undetermined = computed(() => isUndetermined(props.tag))
+const color = computed(() => colorOf(props.tag))
 const language = computed(() => findLanguage(system.languages, props.tag))
 
 const text = computed(() => {
@@ -36,22 +42,36 @@ const tooltip = computed(() => {
     class="rf-language-chip"
     :class="{ 'rf-language-chip--undetermined': undetermined }"
     :data-tag="tag ?? undefined"
+    :style="{ '--rf-language-color': color }"
   >
-    {{ text }}
+    <span class="rf-language-chip__mark" :class="{ 'is-pale': pale }" aria-hidden="true" />{{
+      text
+    }}
   </span>
 </template>
 
 <style scoped>
 .rf-language-chip {
   display: inline-flex;
+  gap: var(--rf-space-2);
   align-items: center;
-  padding: 0 var(--rf-space-2);
-  border-radius: var(--rf-radius-pill);
-  background: var(--p-status-off-background);
   color: var(--rf-color-text);
   font-size: var(--rf-font-size-sm);
   line-height: 1.5rem;
   white-space: nowrap;
+}
+
+/* The language's lane colour, as the programme strip draws it. */
+.rf-language-chip__mark {
+  flex: none;
+  width: 0.25rem;
+  height: 1rem;
+  border-radius: 1px;
+  background: var(--rf-language-color);
+}
+
+.rf-language-chip__mark.is-pale {
+  opacity: var(--rf-lang-pale);
 }
 
 .rf-language-chip--undetermined {

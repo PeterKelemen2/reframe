@@ -410,8 +410,9 @@ reach the server fails with `tools.fetch_offline`.
 
 ## Stack
 
-Vue 3.5+ · TypeScript 6 (strict) · Vite · Pinia · Vue Router · oxlint · oxfmt · PrimeVue 4 (styled mode, custom
-Aura preset) · Lucide icons · VueUse · vue-i18n · `openapi-fetch` · Vitest · Playwright.
+Vue 3.5+ · TypeScript 6 (strict) · Vite · Pinia · Vue Router · oxlint · oxfmt · PrimeVue 4 (styled mode, Aura's
+components in Reframe's own preset, [0113](../decisions/0113-the-spotting-list-visual-world.md)) · Red Hat
+Text and Red Hat Mono (bundled, Fontsource) · Lucide icons · VueUse · vue-i18n · `openapi-fetch` · Vitest · Playwright.
 
 PrimeVue stays on 4 (MIT) with `@primeuix/themes` 2.x, and TypeScript stays on 6 (vue-tsc
 needs it). See [decision 0003](../decisions/0003-frontend-held-back-majors.md).
@@ -507,6 +508,9 @@ oxfmt's output on a few `.vue` files with templates once before you commit to it
       uses `Field`.
 - [x] `RoleBadge` (solid = flag, outlined = heuristic, tooltip = evidence), `CodecLabel`
       (commercial name + raw codec in the tooltip), `LanguageChip`.
+- [ ] The "Spotting List" visual world: ink and paper palettes for light and dark, eight
+      language colours, Red Hat Text and Mono, the programme strip under the preview
+      ([decision 0113](../decisions/0113-the-spotting-list-visual-world.md)).
 - [x] **i18n from the first view**: every string the user sees goes through vue-i18n. A CI
       check fails on literal text in a `<template>` (oxlint does not read templates; pick a
       small script or a Vitest check here)

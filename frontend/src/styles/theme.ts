@@ -56,24 +56,76 @@ const WARN_NOTICE_LIGHT = {
 }
 
 /**
- * Reframe's PrimeVue preset: Aura with colours that meet WCAG AA in both schemes, and the
- * app's own colour tokens (`--p-app-*`, `--p-status-*`). `contrast.test.ts` checks the pairs.
+ * The light scheme's neutrals: cool greys up to carbon ink. They are the primary palette too: the
+ * primary action is ink on paper, not a hue.
+ */
+const INK = {
+  0: '#ffffff',
+  50: '#f7f8fa',
+  100: '#eef0f3',
+  200: '#e3e6eb',
+  300: '#cdd2da',
+  400: '#9aa3b2',
+  500: '#677080',
+  600: '#5b6474',
+  700: '#434b59',
+  800: '#2c3442',
+  900: '#1b2330',
+  950: '#12161e',
+}
+
+/** The dark scheme's neutrals: blue-black panels; 950 is the preview's darker surround. */
+const BOOTH = {
+  0: '#ffffff',
+  50: '#f1f3f6',
+  100: '#e4e7ec',
+  200: '#d0d5dd',
+  300: '#b4bbc6',
+  400: '#98a1b0',
+  500: '#6e7787',
+  600: '#4e5664',
+  700: '#343b47',
+  800: '#232934',
+  900: '#171b22',
+  950: '#0d1014',
+}
+
+/**
+ * Language colours, one per slot (`languageColor.ts` gives each language its slot). No red or
+ * amber family: those colours mean a problem. Each is at least 3:1 on its scheme's surfaces.
+ */
+const LANGUAGE_LIGHT = {
+  1: '#1f8a6b',
+  2: '#2e5bba',
+  3: '#7a4fb5',
+  4: '#0f7c8c',
+  5: '#a23c8c',
+  6: '#5e7d1e',
+  7: '#4f6b8a',
+  8: '#4f4fb0',
+  und: '#848d9c',
+}
+
+const LANGUAGE_DARK = {
+  1: '#4db894',
+  2: '#7a9eea',
+  3: '#a98be0',
+  4: '#45b5c4',
+  5: '#d57ec0',
+  6: '#9bbf5a',
+  7: '#8fa8c4',
+  8: '#9a9cf0',
+  und: '#7c8595',
+}
+
+/**
+ * Reframe's PrimeVue preset: Aura's components in Reframe's own colours (ink and paper, the
+ * language colours), meeting WCAG AA in both schemes, plus the app's colour tokens (`--p-app-*`,
+ * `--p-status-*`, `--p-language-*`). `contrast.test.ts` checks the pairs.
  */
 export const ReframePreset = definePreset(Aura, {
   semantic: {
-    primary: {
-      50: '{indigo.50}',
-      100: '{indigo.100}',
-      200: '{indigo.200}',
-      300: '{indigo.300}',
-      400: '{indigo.400}',
-      500: '{indigo.500}',
-      600: '{indigo.600}',
-      700: '{indigo.700}',
-      800: '{indigo.800}',
-      900: '{indigo.900}',
-      950: '{indigo.950}',
-    },
+    primary: INK,
     focusRing: { width: '2px' },
     // Aura shows a focused field by its border colour alone, 1.3:1 against the grey it replaces.
     formField: {
@@ -87,17 +139,22 @@ export const ReframePreset = definePreset(Aura, {
     },
     colorScheme: {
       light: {
-        // Aura's 500 shades are below 4.5:1 for white text.
+        surface: INK,
         primary: {
-          color: '{primary.600}',
+          color: '{primary.900}',
           contrastColor: '#ffffff',
-          hoverColor: '{primary.700}',
-          activeColor: '{primary.800}',
+          hoverColor: '{primary.800}',
+          activeColor: '{primary.950}',
         },
-        highlight: { color: '{primary.800}', focusColor: '{primary.900}' },
+        highlight: {
+          background: '{primary.100}',
+          focusBackground: '{primary.200}',
+          color: '{primary.900}',
+          focusColor: '{primary.950}',
+        },
         text: {
-          color: '{surface.800}',
-          hoverColor: '{surface.900}',
+          color: '{surface.900}',
+          hoverColor: '{surface.950}',
           mutedColor: '{surface.600}',
           hoverMutedColor: '{surface.700}',
         },
@@ -107,20 +164,21 @@ export const ReframePreset = definePreset(Aura, {
           hoverBorderColor: '{surface.600}',
           invalidBorderColor: '{red.600}',
           invalidPlaceholderColor: '{red.700}',
-          color: '{surface.800}',
+          color: '{surface.900}',
           placeholderColor: '{surface.500}',
           iconColor: '{surface.500}',
         },
-        app: { background: '{surface.50}', borderColor: '{surface.200}' },
+        app: { background: '{surface.50}', borderColor: '{surface.200}', booth: '{surface.0}' },
+        language: LANGUAGE_LIGHT,
         status: {
           error: { color: '{red.700}', background: '{red.50}', borderColor: '{red.600}' },
           warn: { color: '{amber.800}', background: '{amber.50}', borderColor: '{amber.700}' },
           info: { color: '{blue.700}', background: '{blue.50}', borderColor: '{blue.600}' },
           ok: { color: '{green.700}', background: '{green.50}', borderColor: '{green.700}' },
           busy: {
-            color: '{primary.600}',
-            background: '{primary.50}',
-            borderColor: '{primary.600}',
+            color: '{primary.900}',
+            background: '{primary.100}',
+            borderColor: '{primary.700}',
           },
           off: {
             color: '{surface.600}',
@@ -130,22 +188,42 @@ export const ReframePreset = definePreset(Aura, {
         },
       },
       dark: {
+        surface: BOOTH,
+        // Paper on ink: the primary action turns light.
+        primary: {
+          color: '{surface.100}',
+          contrastColor: '{surface.950}',
+          hoverColor: '{surface.0}',
+          activeColor: '{surface.300}',
+        },
+        highlight: {
+          background: 'rgba(228, 231, 236, 0.14)',
+          focusBackground: 'rgba(228, 231, 236, 0.22)',
+          color: '{surface.50}',
+          focusColor: '{surface.0}',
+        },
         formField: {
           borderColor: '{surface.500}',
           hoverBorderColor: '{surface.400}',
           invalidBorderColor: '{red.400}',
         },
-        text: { mutedColor: '{surface.400}', hoverMutedColor: '{surface.300}' },
-        app: { background: '{surface.950}', borderColor: '{surface.800}' },
+        text: {
+          color: '{surface.100}',
+          hoverColor: '{surface.0}',
+          mutedColor: '{surface.400}',
+          hoverMutedColor: '{surface.300}',
+        },
+        app: { background: '#101318', borderColor: '{surface.700}', booth: '{surface.950}' },
+        language: LANGUAGE_DARK,
         status: {
           error: { color: '{red.300}', background: '{red.950}', borderColor: '{red.400}' },
           warn: { color: '{amber.300}', background: '{amber.950}', borderColor: '{amber.400}' },
           info: { color: '{blue.300}', background: '{blue.950}', borderColor: '{blue.400}' },
           ok: { color: '{green.400}', background: '{green.950}', borderColor: '{green.500}' },
           busy: {
-            color: '{primary.300}',
-            background: '{primary.950}',
-            borderColor: '{primary.400}',
+            color: '{surface.100}',
+            background: '{surface.800}',
+            borderColor: '{surface.300}',
           },
           off: {
             color: '{surface.400}',
@@ -163,7 +241,7 @@ export const ReframePreset = definePreset(Aura, {
           root: perSeverity(solidLight),
           outlined: {
             // An outlined button's border is its only edge: 3:1 against the surface.
-            primary: { borderColor: '{primary.500}' },
+            primary: { borderColor: '{primary.color}' },
             secondary: { borderColor: '{surface.500}', color: '{surface.600}' },
             ...perSeverity((palette) => ({
               borderColor: `{${palette}.600}`,
@@ -178,7 +256,7 @@ export const ReframePreset = definePreset(Aura, {
         },
         dark: {
           outlined: {
-            primary: { borderColor: '{primary.500}' },
+            primary: { borderColor: '{primary.color}' },
             secondary: { borderColor: '{surface.500}', color: '{surface.300}' },
             ...perSeverity((palette) => ({ borderColor: `{${palette}.600}` })),
             plain: { borderColor: '{surface.500}' },

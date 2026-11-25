@@ -12,6 +12,40 @@ body {
   font-family: var(--rf-font-family);
   font-size: var(--rf-font-size-md);
   line-height: var(--rf-line-height);
+  caret-color: var(--rf-color-primary);
+}
+
+/* The parts the browser draws carry the palette too. */
+::selection {
+  background: color-mix(in srgb, var(--rf-color-primary) 22%, transparent);
+}
+
+html {
+  scrollbar-color: var(--p-surface-400) transparent;
+}
+
+html.reframe-dark {
+  scrollbar-color: var(--p-surface-600) transparent;
+}
+
+a {
+  text-underline-offset: 0.2em;
+}
+
+/* Figures line up in columns wherever values are compared. */
+table,
+code,
+kbd,
+samp,
+.rf-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+code,
+kbd,
+samp,
+.rf-mono {
+  font-family: var(--rf-font-mono);
 }
 
 #app {

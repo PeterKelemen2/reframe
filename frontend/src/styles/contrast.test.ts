@@ -119,7 +119,7 @@ function contrast(foreground: string, background: string, scheme: Scheme): numbe
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
 }
 
-const SURFACES = ['content-background', 'app-background']
+const SURFACES = ['content-background', 'app-background', 'app-booth']
 const TONES = ['error', 'warn', 'info', 'ok', 'busy', 'off']
 /** The tones of an issue: IssueList puts links and outlined fix buttons on their background. */
 const ISSUE_TONES = ['error', 'warn', 'info']
@@ -129,6 +129,8 @@ const TOASTS = ['info', 'success', 'warn', 'error', 'secondary', 'contrast']
 const TAGS = ['primary', 'secondary', 'success', 'info', 'warn', 'danger', 'contrast']
 
 type Pair = [foreground: string, background: string]
+
+const LANGUAGE_SLOTS = ['1', '2', '3', '4', '5', '6', '7', '8', 'und']
 
 /** WCAG AA: 4.5:1 for text. */
 const TEXT_PAIRS: Pair[] = [
@@ -227,6 +229,8 @@ const GRAPHIC_PAIRS: Pair[] = [
   ]),
   // SelectButton: the checked option against its group is what shows the choice.
   ['togglebutton-content-checked-background', 'togglebutton-checked-background'],
+  // A language's mark and its lane in the programme strip.
+  ...SURFACES.flatMap((bg) => LANGUAGE_SLOTS.map((slot): Pair => [`language-${slot}`, bg])),
 ]
 
 /** Each pair below the ratio, with its ratio, or with the reason it cannot be measured. */
@@ -268,6 +272,20 @@ describe.each(['light', 'dark'] as const)('the %s colours', (scheme) => {
     expect(
       Number.parseFloat(resolve('--p-form-field-focus-ring-width', scheme)),
     ).toBeGreaterThanOrEqual(2)
+  })
+
+  // Red and amber mean a problem; a language never takes their hue.
+  it('keep the language colours out of the red and amber family', () => {
+    const warm = LANGUAGE_SLOTS.filter((slot) => {
+      const { r, g, b } = parse(resolve(`--p-language-${slot}`, scheme), scheme)
+      const max = Math.max(r, g, b)
+      const min = Math.min(r, g, b)
+      if (max === min || max !== r) return false
+      const hue = (60 * (g - b)) / (max - min)
+      const saturation = (max - min) / max
+      return saturation > 0.45 && hue > -20 && hue < 50
+    })
+    expect(warm).toEqual([])
   })
 
   it('give toasts a background the page does not show through', () => {
