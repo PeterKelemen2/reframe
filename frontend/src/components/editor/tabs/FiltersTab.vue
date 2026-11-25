@@ -62,6 +62,7 @@ const selected = computed(
 
 <style scoped>
 .filters-tab {
+  container: filters-tab / inline-size;
   display: grid;
   gap: var(--rf-space-4);
   padding: var(--rf-space-4);
@@ -83,9 +84,15 @@ const selected = computed(
 
 .filters-tab__columns {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
   align-items: start;
   gap: var(--rf-space-4);
+}
+
+/* The help stays beside the list down to the width the tab has next to the open preview. */
+@container filters-tab (width >= 34rem) {
+  .filters-tab__columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .filters-tab__list {
