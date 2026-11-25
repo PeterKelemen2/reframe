@@ -271,7 +271,8 @@ describe('the Summary tab', () => {
     await wrapper.find('[data-card="issues"] .rf-issue__fix').trigger('click')
     await flushPromises()
     expect(editor.job?.audio?.[0]?.metadata?.name).toBe('Japanese 2.0')
-    expect(chip().find('[data-role="name"]').text()).toBe('Japanese 5.1 renamed to Japanese 2.0')
+    expect(chip().find('[data-role="renamed-from"]').text()).toBe('Japanese 5.1 renamed to')
+    expect(chip().find('[data-role="name"]').text()).toBe('Japanese 2.0')
   })
 
   it('links the Picture card to the Dimensions and the Filters tab', async () => {

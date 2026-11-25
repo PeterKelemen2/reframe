@@ -102,12 +102,16 @@ function flagLabel(flag: Flag): string {
                 <strong v-else>{{ chip.encoder }}</strong>
               </span>
               <span v-if="chip.layout" class="summary-track__layout">{{ chip.layout }}</span>
+              <span
+                v-if="chip.name && chip.sourceName"
+                class="summary-track__from"
+                data-role="renamed-from"
+              >
+                {{ chip.sourceName }}
+                <ArrowRight class="summary-track__arrow" :size="14" aria-hidden="true" />
+                <span class="rf-sr-only">{{ t('summary.tracks.renamedTo') }}</span>
+              </span>
               <span v-if="chip.name" class="summary-track__name" data-role="name">
-                <template v-if="chip.sourceName">
-                  {{ chip.sourceName }}
-                  <ArrowRight class="summary-track__arrow" :size="14" aria-hidden="true" />
-                  <span class="rf-sr-only">{{ t('summary.tracks.renamedTo') }}</span>
-                </template>
                 {{ chip.name }}
               </span>
               <RoleBadge v-for="role in chip.roles" :key="role.role" :role="role" />
@@ -155,12 +159,16 @@ function flagLabel(flag: Flag): string {
                 </template>
                 <span v-else-if="chip.action === 'burn'">{{ t('summary.tracks.burn') }}</span>
               </span>
+              <span
+                v-if="chip.name && chip.sourceName"
+                class="summary-track__from"
+                data-role="renamed-from"
+              >
+                {{ chip.sourceName }}
+                <ArrowRight class="summary-track__arrow" :size="14" aria-hidden="true" />
+                <span class="rf-sr-only">{{ t('summary.tracks.renamedTo') }}</span>
+              </span>
               <span v-if="chip.name" class="summary-track__name" data-role="name">
-                <template v-if="chip.sourceName">
-                  {{ chip.sourceName }}
-                  <ArrowRight class="summary-track__arrow" :size="14" aria-hidden="true" />
-                  <span class="rf-sr-only">{{ t('summary.tracks.renamedTo') }}</span>
-                </template>
                 {{ chip.name }}
               </span>
               <RoleBadge v-for="role in chip.roles" :key="role.role" :role="role" kind="subtitle" />
