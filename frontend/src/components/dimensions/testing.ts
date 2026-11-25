@@ -44,6 +44,11 @@ export function geometryOf(
   }
 }
 
+/** `text` with the no-break space that keeps each crop edge's letter with its value (`T 22`). */
+export function edgesText(text: string): string {
+  return text.replaceAll(/\b([TBLR]) (\d)/g, '$1 $2')
+}
+
 const LETTERBOX_BARS = { top: 22, bottom: 24, left: 0, right: 0 }
 const PILLARBOX_BARS = { top: 0, bottom: 0, left: 40, right: 40 }
 
@@ -56,9 +61,7 @@ export function letterboxDetection(): CropDetection {
     auto: { ...LETTERBOX_BARS },
     auto_frames: 5,
     conservative: { top: 0, bottom: 0, left: 0, right: 0 },
-    notes: [
-      'The frames disagree: automatic 22 / 24 / 0 / 0, conservative 0 / 0 / 0 / 0 (top / bottom / left / right).',
-    ],
+    notes: [],
   }
 }
 

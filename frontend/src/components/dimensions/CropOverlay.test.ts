@@ -74,6 +74,18 @@ describe('the crop overlay', () => {
     expect(wrapper.find('[data-overlay="crop"]').exists()).toBe(false)
   })
 
+  it('draws a conservative crop too, without handles', async () => {
+    const job = manualJob()
+    job.dimensions!.crop = {
+      mode: 'conservative',
+      rect: { top: 20, bottom: 20, left: 0, right: 0 },
+    }
+    const { wrapper } = await mountOverlay(job)
+    const frame = wrapper.find('.crop-overlay__frame').element as HTMLElement
+    expect(frame.style.top).toBe(`${(20 / 180) * 100}%`)
+    expect(wrapper.find('[data-crop-handle]').exists()).toBe(false)
+  })
+
   it('names each handle and its value', async () => {
     const { wrapper } = await mountOverlay(manualJob())
     const top = handle(wrapper, 'top')

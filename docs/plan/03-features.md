@@ -115,12 +115,17 @@ Mode (segmented control): **Automatic** · **Conservative** · **None** · **Man
 
 - **Automatic**: runs FFmpeg `cropdetect` on N sample frames (default 10, same frames as the
   preview strip) and picks the most common result. Shows
-  `Detected 0 / 0 / 140 / 140 on 9 of 10 frames`.
+  `Detected T 0 · B 0 · L 140 · R 140 on 9 of 10 frames`. When it removes more than is black
+  on every sample (the frames disagree), that is a warning issue with *Use Conservative* and
+  *Check crop on all frames* ([decision 0110](../decisions/0110-crop-review-in-every-crop-mode.md)).
 - **Conservative**: crops only the area that is black on *all* samples. This is safe for
   films with changing aspect ratios (IMAX scenes).
 - **Manual**: Top / Bottom / Left / Right inputs, plus drag handles on the preview.
 
-**Crop magnifier (manual mode):**
+Crop values always name their edges, top, bottom, left, right: `T 22 · B 24 · L 0 · R 0`.
+The preview draws the crop in every mode; only Manual has handles.
+
+**Crop magnifier (every crop mode but None; read-only outside Manual):**
 
 ```
 ┌───────────────────────── frame (fit) ─────────────────────────┐   ┌─ Top edge ×4 ───────────────┐
@@ -171,8 +176,8 @@ display size: a 720×480 16:9 DVD made square becomes 854×480, which is not an 
 | Modulus | 2 · 4 · 8 · 16 | 2 | "Rounds the output size to a multiple of this number. Most encoders need 2." |
 | Scaler | Lanczos · Bicubic · Spline · Bilinear | Lanczos | Speed and sharpness trade-off, in one sentence |
 
-Done when: the dimension maths has property tests (see `C-5`). Manual crop shows the
-magnifier. The pipeline header always matches the command that the builder makes.
+Done when: the dimension maths has property tests (see `C-5`). Automatic, Conservative and
+Manual crop show the magnifier and the check; only Manual changes the crop. The pipeline header always matches the command that the builder makes.
 
 ---
 

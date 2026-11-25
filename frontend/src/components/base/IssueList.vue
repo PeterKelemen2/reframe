@@ -14,7 +14,8 @@ import { bySeverity, SEVERITY_ICON, useSeverityLabel } from './severity'
 /**
  * Issues, most severe first, each with its fix buttons (`editor.applyFix`) and a link to its
  * field (`ui.reveal(issue.path)`). An unavailable video encoder that another FFmpeg build can
- * make available adds *Use another FFmpeg…*. Used by the Summary tab and the status bar.
+ * make available adds *Use another FFmpeg…*; frames that disagree on the crop add *Check crop on
+ * all frames*. Used by the Summary tab and the status bar.
  */
 const props = defineProps<{
   issues: ValidationIssue[]
@@ -93,6 +94,15 @@ async function applyFix(fix: Fix): Promise<void> {
           :loading="applying === fix"
           :disabled="applying !== null"
           @click="applyFix(fix)"
+        />
+        <Button
+          v-if="issue.code === 'dimensions.crop_frames_disagree'"
+          class="rf-issue__check-crop"
+          size="small"
+          severity="secondary"
+          outlined
+          :label="t('crop.magnifier.check')"
+          @click="ui.checkCrop()"
         />
         <Button
           v-if="buildMismatch(issue)"

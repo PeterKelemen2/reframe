@@ -91,7 +91,8 @@ describe('the Dimensions tab against a real server', () => {
       conservative: { top: 0, bottom: 0, left: 0, right: 0 },
     })
     expect(crop.detection?.samples).toHaveLength(10)
-    expect(crop.detection?.notes.join(' ')).toContain('The frames disagree')
+    expect(crop.disagreement).toMatchObject({ frames: 5, total: 10 })
+    expect(crop.issues.map((issue) => issue.code)).toEqual(['dimensions.crop_frames_disagree'])
     expect(editor.get('/dimensions/crop')).toEqual({
       mode: 'auto',
       rect: { top: 22, bottom: 24, left: 0, right: 0 },

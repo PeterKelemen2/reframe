@@ -91,10 +91,8 @@ async def test_automatic_and_conservative_differ_on_changing_aspect_ratios(
     assert result.auto_frames == 5
     assert result.conservative == CropRect()
     assert result.auto != result.conservative
-    assert result.notes == [
-        "The frames disagree: automatic 22 / 24 / 0 / 0, conservative 0 / 0 / 0 / 0 "
-        "(top / bottom / left / right)."
-    ]
+    # The client tells the disagreement from the two crops, in the user's language.
+    assert result.notes == []
 
 
 async def test_the_samples_are_the_frames_of_the_strip(

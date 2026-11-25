@@ -50,17 +50,24 @@
       "bottom": "Bottom",
       "left": "Left",
       "right": "Right"
-    }
+    },
+    "rect": "T {top} · B {bottom} · L {left} · R {right}",
+    "readOnly": "Choose Manual to move the edges."
   },
   "detection": {
     "running": "Detecting the black bars…",
-    "auto": "Detected {top} / {bottom} / {left} / {right} on the one sample frame | Detected {top} / {bottom} / {left} / {right} on {frames} of {total} frames",
-    "conservative": "Black on the one sample frame: {top} / {bottom} / {left} / {right} | Black on every frame: {top} / {bottom} / {left} / {right} ({total} frames)",
+    "auto": "Detected {rect} on the one sample frame | Detected {rect} on {frames} of {total} frames",
+    "conservative": "Black on the one sample frame: {rect} | Black on every frame: {rect} ({total} frames)",
+    "moreBars": "Some frames have more black bars: {rect} on {frames} of {total} frames.",
     "failed": "Crop detection failed: {reason}",
     "cancelled": "The crop detection was cancelled.",
     "again": "Detect again",
     "group": "In a group, Automatic and Conservative detect the black bars of each file when the group is queued. Choose Manual to crop every file the same way.",
     "shownFile": "This file: {line}"
+  },
+  "disagree": {
+    "issue": "Automatic removes {rect}, but only {safe} is black on every sample frame. On the other frames the crop can remove picture.",
+    "conservative": "Use Conservative"
   },
   "snap": {
     "grid": "{edge} {from} → {to} ({grid} chroma grid)",

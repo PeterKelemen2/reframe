@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { ref } from 'vue'
 
 import { issue } from '@/editor/testing/samples'
 
@@ -40,5 +41,21 @@ describe('the validation store', () => {
     expect(validation.hasErrors).toBe(false)
     validation.issues = [...validation.issues, issue('c', 'z')]
     expect(validation.hasErrors).toBe(true)
+  })
+
+  it("keeps the client's own issues beside the server's, which replace only their own", () => {
+    const validation = useValidationStore()
+    const found = ref([issue('dimensions.crop_frames_disagree', 'dimensions.crop', 'warning')])
+    validation.addLocal('crop', () => found.value)
+    validation.issues = [issue('a', 'x', 'info')]
+    expect(validation.issues.map((each) => each.code)).toEqual([
+      'a',
+      'dimensions.crop_frames_disagree',
+    ])
+    expect(validation.issuesFor('dimensions.crop')).toEqual(found.value)
+    validation.issues = []
+    expect(validation.counts).toEqual({ error: 0, warning: 1, info: 0 })
+    found.value = []
+    expect(validation.issues).toEqual([])
   })
 })

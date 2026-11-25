@@ -27,6 +27,7 @@ const validation = reactive({
   issues: [],
   pending: false,
   counts: { error: 0, warning: 0, info: 0 },
+  addLocal: () => {},
 })
 const useValidation = vi.fn<() => void>()
 const actions = {

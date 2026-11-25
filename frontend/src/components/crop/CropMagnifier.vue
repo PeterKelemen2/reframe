@@ -11,6 +11,7 @@ import { formatTime } from '@/components/chapters/chapters'
 import { type Edge, EDGES, NO_CROP } from '@/components/dimensions/grid'
 import { useCropStore } from '@/stores/crop'
 import { usePreviewStore } from '@/stores/preview'
+import { useUiStore } from '@/stores/ui'
 
 import CropCheckGrid from './CropCheckGrid.vue'
 import { useFrameBitmap } from './frames'
@@ -30,11 +31,11 @@ import {
 const { t } = useI18n()
 const preview = usePreviewStore()
 const crop = useCropStore()
+const ui = useUiStore()
 const id = useId()
 
 const zoom = ref<MagnifierZoom>(4)
 const grid = ref(false)
-const checking = ref(false)
 const zoomOptions = computed(() =>
   ZOOMS.map((value) => ({ value, label: t('crop.magnifier.zoomFactor', { zoom: value }) })),
 )
@@ -134,7 +135,11 @@ watch(
   schedule,
   { flush: 'post' },
 )
-onBeforeUnmount(() => cancelAnimationFrame(pending))
+onBeforeUnmount(() => {
+  cancelAnimationFrame(pending)
+  // A check left open would come back with the magnifier, unasked.
+  ui.cropCheckOpen = false
+})
 </script>
 
 <template>
@@ -224,10 +229,10 @@ onBeforeUnmount(() => cancelAnimationFrame(pending))
         :label="t('crop.magnifier.check')"
         :disabled="preview.strip.length === 0"
         data-action="check-crop"
-        @click="checking = true"
+        @click="ui.cropCheckOpen = true"
       />
     </nav>
-    <CropCheckGrid v-model:visible="checking" />
+    <CropCheckGrid v-model:visible="ui.cropCheckOpen" />
   </section>
 </template>
 

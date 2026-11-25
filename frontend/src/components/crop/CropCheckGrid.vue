@@ -188,7 +188,7 @@ function show(index: number): void {
             <span class="crop-check__bars">
               {{
                 item.bars !== null
-                  ? t('crop.check.bars', item.bars)
+                  ? t('crop.check.bars', { rect: t('dimensions.crop.rect', { ...item.bars }) })
                   : crop.detecting
                     ? t('crop.check.detecting')
                     : t('crop.check.noResult')

@@ -38,7 +38,7 @@ function inAdvancedPanel(path: string): boolean {
 
 /**
  * UI state that several areas share: the editor's tab, "show me this field", the matrix, the
- * advanced panel.
+ * advanced panel, the crop check.
  */
 export const useUiStore = defineStore('ui', () => {
   const activeTab = ref<EditorTabId>('summary')
@@ -68,11 +68,22 @@ export const useUiStore = defineStore('ui', () => {
     matrixOpen.value = true
   }
 
+  /** *Check crop on all frames* is open. */
+  const cropCheckOpen = ref(false)
+
+  /** Shows the crop on the Dimensions tab and opens the check of every sample frame. */
+  function checkCrop(): void {
+    reveal('dimensions.crop')
+    cropCheckOpen.value = true
+  }
+
   return {
     activeTab,
     revealed,
     reveal,
     revealDone,
+    cropCheckOpen,
+    checkCrop,
     advancedOpen,
     matrixOpen,
     matrixFocus,
