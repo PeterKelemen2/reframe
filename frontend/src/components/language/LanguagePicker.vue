@@ -502,7 +502,7 @@ function onDialogKey(event: KeyboardEvent): void {
 }
 
 .language-picker__option[aria-selected='true'] {
-  background: color-mix(in srgb, var(--rf-color-primary) 16%, transparent);
+  background: color-mix(in srgb, var(--rf-color-primary) 8%, transparent);
 }
 
 .language-picker__check {

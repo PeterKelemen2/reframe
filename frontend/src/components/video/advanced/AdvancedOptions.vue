@@ -296,7 +296,7 @@ onUpdated(() => {
 /* The tint alone is too faint to tell the selection: the border is the mark. */
 .advanced-options__category[aria-current='true'] {
   border-color: var(--rf-color-primary);
-  background: color-mix(in srgb, var(--rf-color-primary) 16%, transparent);
+  background: color-mix(in srgb, var(--rf-color-primary) 10%, transparent);
   font-weight: var(--rf-font-weight-medium);
 }
 
