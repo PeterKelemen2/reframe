@@ -202,7 +202,7 @@ describe('the sources panel', () => {
       'Near match: added with differences E05 1 extra track (eng AC-3 2.0 "Commentary")',
     )
     expect(referenced(item('Show.S01E01.mkv'), 'aria-labelledby')).toBe(
-      'Matches the group E01 · Pilot',
+      'Matches the group E01 Pilot',
     )
     // Speech input finds a row by what it shows (WCAG 2.5.3): its visible words, unbroken.
     for (const row of [item('movie.mkv'), item('Show.S01E05.mkv'), item('Show.S01E01.mkv')]) {
@@ -214,8 +214,9 @@ describe('the sources panel', () => {
   it('shows a group with its size, level and near matches, its members by episode', async () => {
     await mountPanel(withShow)
     expect(text($('.sources-panel__group-name'))).toBe('Show S01')
+    expect(text($('.sources-panel__group-count'))).toBe('3 files')
     expect($$('.sources-panel__group-meta').map((meta) => [...meta.children].map(text))).toEqual([
-      ['3 files', 'standard match'],
+      ['standard match', 'Edit group'],
       ['1 near match'],
     ])
     expect($$('.sources-panel__member .source-item__label').map(text)).toEqual([
@@ -225,7 +226,7 @@ describe('the sources panel', () => {
     ])
     // The episode leads; its file name is the row's tooltip.
     const shownEpisodes = $$('.sources-panel__member .source-item__episode')
-    expect(shownEpisodes.map(text)).toEqual(['E01 · Pilot', 'E02', 'E05'])
+    expect(shownEpisodes.map(text)).toEqual(['E01 Pilot', 'E02', 'E05'])
     expect(shownEpisodes.map((found) => found.title)).toEqual(
       episodes.map((episode) => episode.path),
     )
@@ -244,19 +245,20 @@ describe('the sources panel', () => {
     // Inside it, a group's name and visible text would hold every member's.
     expect(groupItem().querySelector('[role="treeitem"]')).toBeNull()
     const rows = $$('[role="tree"] > [role="treeitem"]')
+    // The groups come first, the files in no group after them.
     expect(rows.map((row) => row.dataset.key)).toEqual([
-      'source:movie.mkv',
       'group:g1',
       'source:Show.S01E01.mkv',
       'source:Show.S01E02.mkv',
       'source:Show.S01E05.mkv',
+      'source:movie.mkv',
     ])
     expect(rows.map(place)).toEqual([
       ['1', '1', '2'],
-      ['1', '2', '2'],
       ['2', '1', '3'],
       ['2', '2', '3'],
       ['2', '3', '3'],
+      ['1', '2', '2'],
     ])
     expect($('.sources-panel__group-name')?.title).toBe('Show S01')
   })
@@ -291,9 +293,7 @@ describe('the sources panel', () => {
     const { select } = await mountPanel(withShow)
     expect(item('movie.mkv').tabIndex).toBe(0)
     expect(groupItem().tabIndex).toBe(-1)
-    item('movie.mkv').focus()
-    await key('ArrowDown')
-    expect(document.activeElement).toBe(groupItem())
+    groupItem().focus()
     await key('ArrowDown')
     await key('ArrowDown')
     expect(document.activeElement).toBe(item('Show.S01E02.mkv'))
@@ -301,11 +301,21 @@ describe('the sources panel', () => {
     await key('Enter')
     expect(select).toHaveBeenCalledExactlyOnceWith('Show.S01E02.mkv')
     await key('End')
-    expect(document.activeElement).toBe(item('Show.S01E05.mkv'))
-    await key('Home')
     expect(document.activeElement).toBe(item('movie.mkv'))
     await key('ArrowUp')
-    expect(document.activeElement).toBe(item('movie.mkv'))
+    expect(document.activeElement).toBe(item('Show.S01E05.mkv'))
+    await key('Home')
+    expect(document.activeElement).toBe(groupItem())
+    await key('ArrowUp')
+    expect(document.activeElement).toBe(groupItem())
+  })
+
+  it('heads the files in no group under the groups, for the eye only', async () => {
+    await mountPanel(withShow)
+    const heading = $('[data-field="other-files"]')
+    expect(text(heading)).toBe('Other files 1')
+    expect(heading?.getAttribute('aria-hidden')).toBe('true')
+    expect(heading?.nextElementSibling?.getAttribute('data-key')).toBe('source:movie.mkv')
   })
 
   it('asks before Delete removes a source, then moves the focus to the next one', async () => {

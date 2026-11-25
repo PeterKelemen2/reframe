@@ -5,7 +5,6 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import type { Schemas, SourceEntry } from '@/api/types'
-import StatusDot from '@/components/base/StatusDot.vue'
 import { fileName } from '@/components/shell/format'
 
 import { sourceSummary } from './panel'
@@ -30,6 +29,8 @@ const name = computed(() => fileName(props.entry.path))
 const summary = computed(() => sourceSummary(props.entry).join(' · '))
 const warnings = computed(() => props.entry.source?.warnings ?? [])
 const near = computed(() => props.member?.match === 'near')
+/** The label is an episode code (`E05`), not the file name standing in for one. */
+const episodic = computed(() => props.label !== undefined && props.label !== name.value)
 </script>
 
 <template>
@@ -37,18 +38,24 @@ const near = computed(() => props.member?.match === 'near')
     <div class="source-item__head">
       <span :id="`${idBase}-title`" class="source-item__title">
         <template v-if="member">
-          <StatusDot
-            :tone="near ? 'warn' : 'ok'"
-            :label="near ? t('sources.group.near') : t('sources.group.exact')"
-            :data-match="member.match"
-          />
+          <!-- A near match shows its differences below; the name says how it matched. -->
+          <span class="rf-sr-only">{{
+            near ? t('sources.group.near') : t('sources.group.exact')
+          }}</span>
           <!-- Words apart in the row's name, which is built from these spans. -->
           {{ ' ' }}
           <span class="source-item__episode" :title="entry.path">
-            <span class="source-item__label">{{ label }}</span>
+            <span
+              class="source-item__label"
+              :class="{
+                'source-item__label--code': episodic,
+                'source-item__label--alone': episodic && !subTitle,
+              }"
+              >{{ label }}</span
+            >
             <template v-if="subTitle">
               {{ ' ' }}
-              <span class="source-item__sub-title" data-field="sub-title">· {{ subTitle }}</span>
+              <span class="source-item__sub-title" data-field="sub-title">{{ subTitle }}</span>
             </template>
           </span>
         </template>
@@ -76,7 +83,10 @@ const near = computed(() => props.member?.match === 'near')
         {{ summary }}
       </p>
       <ul v-if="near && member?.differences?.length" class="source-item__differences">
-        <li v-for="line in member.differences" :key="line" data-field="difference">{{ line }}</li>
+        <li v-for="line in member.differences" :key="line" data-field="difference">
+          <TriangleAlert :size="14" aria-hidden="true" />
+          <span>{{ line }}</span>
+        </li>
       </ul>
       <div v-if="entry.source === null" class="source-item__stale" data-state="stale">
         <span>{{ t('sources.panel.stale') }}</span>
@@ -104,6 +114,8 @@ const near = computed(() => props.member?.match === 'near')
 
 <style scoped>
 .source-item {
+  --source-item-code: 2.25rem;
+
   display: grid;
   gap: 0.125rem;
   min-width: 0;
@@ -140,19 +152,49 @@ const near = computed(() => props.member?.match === 'near')
   white-space: nowrap;
 }
 
-.source-item__name,
-.source-item__label {
-  font-weight: var(--rf-font-weight-medium);
+/* An episode row: its code in a column of its own, then its title. */
+.source-item__episode {
+  display: flex;
+  align-items: baseline;
+  gap: var(--rf-space-2);
 }
 
 .source-item__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-item__label--code {
+  flex: none;
+  min-width: var(--source-item-code);
+  color: var(--rf-color-text-muted);
+  font-family: var(--rf-font-mono);
+  font-size: var(--rf-font-size-sm);
   font-variant-numeric: tabular-nums;
+}
+
+.source-item__sub-title {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+/* The open row: the code in ink too, the name a step heavier. */
+[aria-selected='true'] > .source-item .source-item__label--code,
+.source-item__label--alone {
+  color: var(--rf-color-text);
+}
+
+[aria-selected='true'] > .source-item .source-item__name,
+[aria-selected='true'] > .source-item .source-item__sub-title {
+  font-weight: var(--rf-font-weight-medium);
 }
 
 .source-item__remove {
   flex: none;
   width: 1.75rem;
   height: 1.75rem;
+  margin-block: -0.25rem;
   margin-inline-start: auto;
   opacity: 0;
 }
@@ -167,7 +209,7 @@ const near = computed(() => props.member?.match === 'near')
   overflow: hidden;
   margin: 0;
   color: var(--rf-color-text-muted);
-  font-size: var(--rf-font-size-sm);
+  font-size: var(--rf-font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -178,15 +220,16 @@ const near = computed(() => props.member?.match === 'near')
   gap: 0.125rem;
   margin: 0;
   padding: 0;
-  font-size: var(--rf-font-size-sm);
+  font-size: var(--rf-font-size-xs);
   list-style: none;
 }
 
+/* Under the title, past the code column. */
 .source-item__differences {
-  padding-inline-start: calc(0.625rem + var(--rf-space-2));
-  color: var(--rf-color-text-muted);
+  padding-inline-start: calc(var(--source-item-code) + var(--rf-space-2));
 }
 
+.source-item__differences li,
 .source-item__warnings li {
   display: flex;
   align-items: flex-start;
@@ -194,9 +237,10 @@ const near = computed(() => props.member?.match === 'near')
   color: var(--p-status-warn-color);
 }
 
+.source-item__differences li > svg,
 .source-item__warnings li > svg {
   flex: none;
-  margin-top: 0.2em;
+  margin-top: 0.15em;
 }
 
 .source-item__stale {

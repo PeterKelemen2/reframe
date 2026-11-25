@@ -78,4 +78,14 @@ const state = computed<{ tone: StatusTone; label: string; short: string | null }
 .connection-status__label {
   color: var(--rf-color-text-muted);
 }
+
+/* In the rail an open connection is a small quiet mark; a problem keeps its colour and words. */
+.connection-status--compact :deep(.rf-status-dot__mark) {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+.connection-status--compact[data-connection='open'] :deep(.rf-status-dot) {
+  --rf-dot-color: var(--rf-color-text-muted);
+}
 </style>

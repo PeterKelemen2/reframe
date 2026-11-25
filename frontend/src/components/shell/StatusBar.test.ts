@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 
 import { deferred } from '@/api/testing/fakes'
-import type { JobSettings, QueueJob, Severity, ValidationIssue } from '@/api/types'
+import type { JobDraft, JobSettings, QueueJob, Severity, ValidationIssue } from '@/api/types'
 import type { ActiveGroup, ChangesQuestion } from '@/composables/useQueueActions'
 import type { EditorTarget } from '@/stores/editor'
 import { useQueueStore } from '@/stores/queue'
@@ -16,6 +16,7 @@ import { mountShell } from './testing'
 // Test doubles of the editor and validation stores and of the queue actions.
 const editor = reactive({
   job: null as JobSettings | null,
+  draft: null as JobDraft | null,
   target: null as EditorTarget | null,
   session: 0,
   applyFix: vi.fn<() => Promise<void>>(),
@@ -54,6 +55,7 @@ const mounted: { unmount(): void }[] = []
 
 beforeEach(() => {
   editor.target = null
+  editor.draft = null
   editor.job = {
     schema_version: 1,
     source: { path: '/m/a.mkv' },
@@ -105,6 +107,27 @@ describe('the status bar', () => {
     editor.job = null
     await flushPromises()
     expect(wrapper.find('[data-field="output"]').text()).toContain('No output path yet')
+  })
+
+  it("names the job by its parsed name, episode and container, once the file's draft is in", async () => {
+    editor.job = {
+      schema_version: 1,
+      source: { path: '/m/The.Sopranos.S03E02.mkv' },
+      output: { path: '/out/a.mkv', container: 'mkv' },
+    } as JobSettings
+    const wrapper = await mountBar()
+    expect(wrapper.find('[data-field="identity"]').text()).toBe('The.Sopranos.S03E02 · MKV')
+    editor.draft = {
+      job: { source: { path: '/m/The.Sopranos.S03E02.mkv' } },
+      naming: {
+        fields: { kind: 'episode', name: 'The.Sopranos', separator: '.', season: 3, episode: 2 },
+      },
+    } as JobDraft
+    await flushPromises()
+    expect(wrapper.find('[data-field="identity"]').text()).toBe('The Sopranos · S03E02 · MKV')
+    editor.job = null
+    await flushPromises()
+    expect(wrapper.find('[data-field="identity"]').exists()).toBe(false)
   })
 
   it('sums up the issues by severity, and says when there are none or a check runs', async () => {

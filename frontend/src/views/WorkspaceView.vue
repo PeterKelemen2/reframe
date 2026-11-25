@@ -152,6 +152,7 @@ async function open(): Promise<void> {
   align-items: center;
   justify-content: space-between;
   gap: var(--rf-space-2) var(--rf-space-4);
+  min-height: 3.25rem;
   padding: var(--rf-space-2) var(--rf-space-4);
   border-bottom: 1px solid var(--rf-color-border);
   background: var(--rf-color-surface);
@@ -159,7 +160,7 @@ async function open(): Promise<void> {
 
 .workspace__source {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--rf-space-3);
   min-width: 0;
 }
@@ -167,13 +168,18 @@ async function open(): Promise<void> {
 .workspace__title {
   overflow: hidden;
   margin: 0;
-  font-size: var(--rf-font-size-lg);
+  font-size: var(--rf-text-title);
+  font-weight: var(--rf-font-weight-bold);
+  line-height: var(--rf-line-height-tight);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .workspace__duration {
+  flex: none;
   color: var(--rf-color-text-muted);
+  font-family: var(--rf-font-mono);
+  font-size: var(--rf-font-size-sm);
   font-variant-numeric: tabular-nums;
 }
 

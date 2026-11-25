@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The workspace's sources column: open, probe progress, warnings, groups. Takes no props.
-import { ChevronDown, ChevronRight, FilePlus, FolderOpen, FolderTree } from '@lucide/vue'
+import { ChevronDown, ChevronRight, FolderTree, TriangleAlert } from '@lucide/vue'
 import Button from 'primevue/button'
 import ContextMenu from 'primevue/contextmenu'
 import type { MenuItem } from 'primevue/menuitem'
@@ -10,7 +10,6 @@ import { useI18n } from 'vue-i18n'
 
 import { ApiError } from '@/api/client'
 import type { SourceEntry } from '@/api/types'
-import StatusDot from '@/components/base/StatusDot.vue'
 import ApplyToGroupDialog from '@/components/batch/ApplyToGroupDialog.vue'
 import {
   clipboard,
@@ -62,7 +61,20 @@ interface PendingRemoval {
 /** A removal waiting for its confirmation. */
 const pending = ref<PendingRemoval | null>(null)
 
-const items = computed(() => panelItems(sources.entries, sources.grouping))
+/** The groups first, then the files in no group, each in the order they were opened. */
+const items = computed(() => {
+  const all = panelItems(sources.entries, sources.grouping)
+  return [
+    ...all.filter((item) => item.kind === 'group'),
+    ...all.filter((item) => item.kind === 'source'),
+  ]
+})
+
+/** The files in no group get a heading of their own when a group is above them. */
+const others = computed(() => {
+  const first = items.value.findIndex((item) => item.kind === 'source')
+  return first > 0 ? { first, count: items.value.length - first } : null
+})
 
 interface Node {
   key: string
@@ -486,27 +498,27 @@ onBeforeUnmount(() => stopDrops?.())
       <Button
         class="sources-panel__open-files"
         size="small"
+        severity="secondary"
+        outlined
         :label="t('sources.panel.openFiles')"
         aria-keyshortcuts="Control+O"
         data-action="open-files"
         @click="openFiles"
-      >
-        <template #icon><FilePlus :size="16" aria-hidden="true" /></template>
-      </Button>
+      />
       <Button
         class="sources-panel__open-folder"
         size="small"
         severity="secondary"
+        outlined
         :label="t('sources.panel.openFolder')"
         data-action="open-folder"
         @click="openFolder(false)"
-      >
-        <template #icon><FolderOpen :size="16" aria-hidden="true" /></template>
-      </Button>
+      />
       <Button
+        class="sources-panel__open-recursive"
         size="small"
         severity="secondary"
-        outlined
+        text
         :aria-label="t('sources.panel.openFolderRecursive')"
         v-tooltip.bottom="t('sources.panel.openFolderRecursive')"
         data-action="open-folder-recursive"
@@ -579,6 +591,18 @@ onBeforeUnmount(() => stopDrops?.())
         v-for="(item, index) in items"
         :key="item.kind === 'group' ? item.group.id : item.entry.id"
       >
+        <!-- A heading for the eye: the files stay items of the tree's first level. -->
+        <li
+          v-if="others !== null && index === others.first"
+          role="none"
+          aria-hidden="true"
+          class="sources-panel__others"
+          data-field="other-files"
+        >
+          <span class="sources-panel__group-name">{{ t('sources.panel.otherFiles') }}</span>
+          {{ ' ' }}
+          <span class="sources-panel__group-count rf-mono">{{ others.count }}</span>
+        </li>
         <li
           v-if="item.kind === 'source'"
           role="treeitem"
@@ -621,16 +645,12 @@ onBeforeUnmount(() => stopDrops?.())
             <span class="sources-panel__group-name" :title="item.group.name">{{
               item.group.name
             }}</span>
-            <span
-              v-if="editedGroup(item.group.id)"
-              class="sources-panel__group-editing"
-              data-field="editing"
-              >{{ t('sources.group.editing') }}</span
-            >
+            <span class="sources-panel__group-count" data-field="count">{{
+              t('sources.group.files', item.rows.length)
+            }}</span>
           </div>
           <div class="sources-panel__group-meta" @click="toggle(item.group.id)">
-            <span data-field="count">{{ t('sources.group.files', item.rows.length) }}</span>
-            <span>
+            <span class="sources-panel__group-level">
               <template v-if="item.group.level === 'strict'">{{
                 t('sources.group.level.strict')
               }}</template>
@@ -639,30 +659,34 @@ onBeforeUnmount(() => stopDrops?.())
               }}</template>
               <template v-else>{{ t('sources.group.level.standard') }}</template>
             </span>
+            <span
+              v-if="editedGroup(item.group.id)"
+              class="sources-panel__group-editing"
+              data-field="editing"
+              >{{ t('sources.group.editing') }}</span
+            >
+            <!-- Out of the Tab order as the rows' other buttons: the keyboard has the context menu.
+                 The edited group's actions are the banner's, and the status bar queues. -->
+            <span v-else class="sources-panel__group-actions" @click.stop>
+              <Button
+                size="small"
+                text
+                tabindex="-1"
+                :label="t('group.actions.edit')"
+                data-action="edit-group"
+                @click="editGroup(item.group.id)"
+              />
+            </span>
           </div>
           <div
             v-if="nearCount(item) > 0"
-            class="sources-panel__group-meta"
+            class="sources-panel__group-meta sources-panel__group-near"
             @click="toggle(item.group.id)"
           >
-            <StatusDot
-              tone="warn"
-              show-label
-              :label="t('sources.group.nearCount', nearCount(item))"
-              data-field="near-count"
-            />
-          </div>
-          <!-- Out of the Tab order as the rows' other buttons: the keyboard has the context menu.
-               The edited group's actions are the banner's, and the status bar queues. -->
-          <div v-if="!editedGroup(item.group.id)" class="sources-panel__group-actions" @click.stop>
-            <Button
-              size="small"
-              text
-              tabindex="-1"
-              :label="t('group.actions.edit')"
-              data-action="edit-group"
-              @click="editGroup(item.group.id)"
-            />
+            <span data-field="near-count">
+              <TriangleAlert :size="14" aria-hidden="true" />
+              {{ t('sources.group.nearCount', nearCount(item)) }}
+            </span>
           </div>
         </li>
         <template v-if="item.kind === 'group' && !isCollapsed(item)">
@@ -730,9 +754,13 @@ onBeforeUnmount(() => stopDrops?.())
 .sources-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--rf-space-3);
-  padding: var(--rf-space-3);
+  gap: var(--rf-space-2);
+  padding-bottom: var(--rf-space-3);
   background: var(--rf-color-surface);
+}
+
+.sources-panel > :not(.sources-panel__actions) {
+  margin-inline: var(--rf-space-2);
 }
 
 .sources-panel ul {
@@ -742,13 +770,25 @@ onBeforeUnmount(() => stopDrops?.())
 }
 
 .sources-panel__actions {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: var(--rf-space-2);
+  padding: var(--rf-space-2) var(--rf-space-3);
+  border-bottom: 1px solid var(--rf-color-border);
 }
 
-.sources-panel__open-files {
-  grid-column: 1 / -1;
+/* A label keeps to one line: a narrow column wraps the buttons, not their words. */
+.sources-panel__open-files,
+.sources-panel__open-folder {
+  flex: 1 1 6.5rem;
+  padding-inline: var(--rf-space-2);
+  white-space: nowrap;
+}
+
+.sources-panel__open-recursive {
+  flex: none;
+  color: var(--rf-color-text-muted);
 }
 
 .sources-panel__runs {
@@ -775,6 +815,8 @@ onBeforeUnmount(() => stopDrops?.())
 
 .sources-panel__run-message {
   color: var(--rf-color-text-muted);
+  font-family: var(--rf-font-mono);
+  font-size: var(--rf-font-size-xs);
   font-variant-numeric: tabular-nums;
 }
 
@@ -796,88 +838,107 @@ onBeforeUnmount(() => stopDrops?.())
 }
 
 .sources-panel__source {
-  padding: var(--rf-space-2);
-  border-left: 3px solid transparent;
+  padding: 0.375rem var(--rf-space-2);
   cursor: pointer;
+  transition: background-color var(--rf-duration);
 }
 
 .sources-panel__source:hover {
   background: var(--rf-color-surface-hover);
 }
 
-.sources-panel__source--active {
-  border-left-color: var(--rf-color-primary);
-  background: color-mix(in srgb, var(--rf-color-primary) 14%, transparent);
-}
-
+/* The open file: the whole row tinted. */
+.sources-panel__source--active,
 .sources-panel__source--active:hover {
-  background: color-mix(in srgb, var(--rf-color-primary) 20%, transparent);
+  background: var(--p-highlight-background);
 }
 
-.sources-panel__group {
-  padding: var(--rf-space-1) 0;
+.sources-panel__group,
+.sources-panel__others {
+  padding: var(--rf-space-3) 0 var(--rf-space-1);
 }
 
 .sources-panel__group-head,
-.sources-panel__group-meta {
+.sources-panel__others {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--rf-space-1) var(--rf-space-2);
-  padding: 0 var(--rf-space-2);
+  gap: var(--rf-space-2);
+  min-width: 0;
+  padding-inline: var(--rf-space-2);
+}
+
+.sources-panel__group-head {
   cursor: pointer;
+}
+
+.sources-panel__group-head > svg {
+  flex: none;
+  color: var(--rf-color-text-muted);
 }
 
 .sources-panel__group-name {
   overflow: hidden;
+  min-width: 0;
+  font-size: var(--rf-text-subheading);
   font-weight: var(--rf-font-weight-bold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sources-panel__group-meta {
-  padding-inline-start: calc(var(--rf-space-2) + 16px + var(--rf-space-2));
+.sources-panel__group-count {
+  flex: none;
   color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-sm);
+  white-space: nowrap;
 }
 
-.sources-panel__group--edited {
-  box-shadow: inset 3px 0 0 var(--rf-color-primary);
-}
-
-.sources-panel__group-editing {
-  flex: none;
-  color: var(--rf-color-primary);
-  font-size: var(--rf-font-size-sm);
-  font-weight: var(--rf-font-weight-medium);
-}
-
-.sources-panel__group-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 var(--rf-space-1);
-  padding-inline-start: calc(var(--rf-space-2) + 16px);
-}
-
-.sources-panel__group-meta > span + span::before {
+.sources-panel__group-count::before {
   content: '·';
   margin-inline-end: var(--rf-space-2);
 }
 
-.sources-panel__member {
-  position: relative;
-  margin-inline-start: var(--rf-space-4);
-  padding-block: 0.125rem;
+.sources-panel__group-editing {
+  flex: none;
+  margin-inline: auto var(--rf-space-2);
+  padding: 0 0.375rem;
+  border: 1px solid currentColor;
+  border-radius: var(--rf-radius-sm);
+  color: var(--rf-color-text);
+  font-size: var(--rf-font-size-xs);
+  font-weight: var(--rf-font-weight-medium);
+  line-height: 1.4;
 }
 
-/* The edited group's bar runs on down its members, which sit beside it in the tree. */
-.sources-panel__member--edited::before {
-  position: absolute;
-  inset-block: -1px 0;
-  inset-inline-start: calc(-1 * var(--rf-space-4) - 3px);
-  width: 3px;
-  background: var(--rf-color-primary);
-  content: '';
+.sources-panel__group-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--rf-space-3);
+  min-height: 1.75rem;
+  padding-inline: calc(var(--rf-space-2) + 16px + var(--rf-space-2)) var(--rf-space-1);
+  color: var(--rf-color-text-muted);
+  font-size: var(--rf-font-size-sm);
+  cursor: pointer;
+}
+
+.sources-panel__group-near {
+  min-height: 0;
+  color: var(--p-status-warn-color);
+  font-size: var(--rf-font-size-xs);
+}
+
+.sources-panel__group-near > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rf-space-1);
+}
+
+.sources-panel__group-actions {
+  margin-inline-start: auto;
+}
+
+.sources-panel__group-actions :deep(.p-button) {
+  padding-block: 0.125rem;
 }
 
 .sources-panel__confirm {

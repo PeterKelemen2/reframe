@@ -98,7 +98,7 @@ test('a season folder: edit the group, check the matrix, queue the group', async
   await expect(members.locator('.source-item__label')).toHaveText(EPISODES)
   // A row leads with its episode and title; the file name is its tooltip.
   await expect(members.locator('.source-item__episode')).toHaveText(
-    EPISODES.map((episode, index) => `${episode} · ${TITLES[index]}`),
+    EPISODES.map((episode, index) => `${episode} ${TITLES[index]}`),
   )
   // The open episode belongs to the group: the status bar's primary add is the season's.
   const statusBar = page.locator('.status-bar')

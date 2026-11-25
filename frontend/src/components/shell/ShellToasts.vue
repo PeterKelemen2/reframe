@@ -99,32 +99,54 @@ function closed(event: { message: ToastMessageOptions }): void {
   visibility: hidden;
 }
 
-/* The theme's toast colours are see-through: here they are laid over the surface, unblurred. */
+/* A note on the panel's own ground: ink text, the state told by its icon and its border colour.
+   The theme's toast colours are see-through and blurred over the page. */
 .shell-toasts .p-toast-message {
+  --shell-toast-tone: var(--p-status-info-color);
+  --shell-toast-edge: var(--p-status-info-border-color);
+
+  border: 1px solid var(--shell-toast-edge);
+  border-radius: var(--rf-radius-md);
+  background: var(--rf-color-surface);
+  color: var(--rf-color-text);
+  box-shadow: 0 6px 20px -8px rgb(18 22 30 / 0.28);
   backdrop-filter: none;
 }
 
 .shell-toasts .p-toast-message-success {
-  background:
-    linear-gradient(var(--p-toast-success-background), var(--p-toast-success-background)),
-    var(--rf-color-surface);
-}
-
-.shell-toasts .p-toast-message-info {
-  background:
-    linear-gradient(var(--p-toast-info-background), var(--p-toast-info-background)),
-    var(--rf-color-surface);
+  --shell-toast-tone: var(--p-status-ok-color);
+  --shell-toast-edge: var(--p-status-ok-border-color);
 }
 
 .shell-toasts .p-toast-message-warn {
-  background:
-    linear-gradient(var(--p-toast-warn-background), var(--p-toast-warn-background)),
-    var(--rf-color-surface);
+  --shell-toast-tone: var(--p-status-warn-color);
+  --shell-toast-edge: var(--p-status-warn-border-color);
 }
 
 .shell-toasts .p-toast-message-error {
-  background:
-    linear-gradient(var(--p-toast-error-background), var(--p-toast-error-background)),
-    var(--rf-color-surface);
+  --shell-toast-tone: var(--p-status-error-color);
+  --shell-toast-edge: var(--p-status-error-border-color);
+}
+
+.shell-toasts .p-toast-message .p-toast-message-icon {
+  color: var(--shell-toast-tone);
+}
+
+.shell-toasts .p-toast-message .p-toast-summary {
+  color: var(--rf-color-text);
+  font-weight: var(--rf-font-weight-bold);
+}
+
+.shell-toasts .p-toast-message .p-toast-detail {
+  color: var(--rf-color-text);
+}
+
+.shell-toasts .p-toast-message .p-toast-close-button {
+  color: var(--rf-color-text-muted);
+}
+
+.shell-toasts .p-toast-message .p-toast-close-button:hover {
+  background: var(--rf-color-surface-hover);
+  color: var(--rf-color-text);
 }
 </style>
