@@ -6,11 +6,12 @@ import VirtualScroller from 'primevue/virtualscroller'
 import { computed, nextTick, onMounted, ref, toRef, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import StatusDot from '@/components/base/StatusDot.vue'
 import { useQueueStore } from '@/stores/queue'
 import { useToastStore } from '@/stores/toasts'
 
-import { jobStateLabel, sourceName, STATE_TONE } from './format'
+import { jobStateLabel, sourceName, splitStamp, STATE_TONE } from './format'
+import { identityLine } from './identity'
+import JobStateMark from './JobStateMark.vue'
 import { useJobLog } from './useJobLog'
 
 /** A job's whole log in a drawer, following the job while it writes. */
@@ -108,14 +109,15 @@ function onVisible(value: boolean): void {
     <template #header>
       <div class="job-log__title">
         <h2 class="job-log__heading">
-          {{ t('queue.log.title', { job: job ? sourceName(job) : '' }) }}
+          {{ t('queue.log.title', { job: job ? identityLine(job) : '' }) }}
         </h2>
-        <StatusDot
+        <JobStateMark
           v-if="job"
+          :state="job.state"
           :tone="STATE_TONE[job.state]"
           :label="jobStateLabel(job, t)"
-          show-label
         />
+        <span v-if="job" class="job-log__file rf-mono" dir="ltr">{{ sourceName(job) }}</span>
       </div>
     </template>
     <div class="job-log__toolbar">
@@ -164,7 +166,8 @@ function onVisible(value: boolean): void {
             class="job-log__line"
             :style="{ height: `${lineHeight}px`, lineHeight: `${lineHeight}px` }"
           >
-            {{ item }}
+            <span class="job-log__stamp">{{ splitStamp(item)[0] }}</span
+            >{{ splitStamp(item)[1] }}
           </div>
         </template>
       </VirtualScroller>
@@ -177,14 +180,25 @@ function onVisible(value: boolean): void {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--rf-space-3);
+  gap: var(--rf-space-1) var(--rf-space-3);
   min-width: 0;
 }
 
 .job-log__heading {
   margin: 0;
   overflow-wrap: anywhere;
-  font-size: var(--rf-font-size-lg);
+  font-size: var(--rf-text-heading);
+  line-height: var(--rf-line-height-tight);
+}
+
+.job-log__file {
+  flex-basis: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--rf-color-text-muted);
+  font-size: var(--rf-font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .job-log__toolbar {
@@ -201,17 +215,28 @@ function onVisible(value: boolean): void {
   font-size: var(--rf-font-size-sm);
 }
 
+.job-log__count {
+  margin-inline-start: auto;
+  font-family: var(--rf-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
 .job-log__scroller {
-  height: calc(100vh - 10rem);
+  height: calc(100vh - 11rem);
   border: 1px solid var(--rf-color-border);
   border-radius: var(--rf-radius-md);
-  background: var(--rf-color-bg);
+  background: var(--rf-color-booth);
 }
 
 .job-log__line {
-  padding-inline: var(--rf-space-2);
+  padding-inline: var(--rf-space-3);
   font-family: var(--rf-font-mono);
   font-size: var(--rf-font-size-sm);
+  font-variant-numeric: tabular-nums;
   white-space: pre;
+}
+
+.job-log__stamp {
+  color: var(--rf-color-text-muted);
 }
 </style>

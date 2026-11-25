@@ -105,7 +105,7 @@ const order = () =>
   [...document.querySelectorAll('[data-job]')].map((el) => el.getAttribute('data-job'))
 
 describe('the queue table', () => {
-  it('shows the jobs in queue order with state, source, output, preset and live progress', async () => {
+  it('shows the jobs in queue order with state, identity, output, preset and live progress', async () => {
     queue.jobs = [
       job('a', 'running', {
         progress: {
@@ -124,10 +124,9 @@ describe('the queue table', () => {
     await mountTable()
     expect(order()).toEqual(['a', 'b'])
     const cells = [...row('a').querySelectorAll('td')].map((td) => td.textContent?.trim())
-    expect(cells.slice(1, 10)).toEqual([
+    expect(cells.slice(1, 9)).toEqual([
       'Running',
-      'a.mkv',
-      'a.mkv',
+      'a · MKVa.mkv',
       'H.265 MKV 1080p',
       '42.5 %Pass 2 of 2 · step 2 of 2',
       '24.0 fps',
@@ -506,7 +505,7 @@ describe('the queue table', () => {
     it('is marked so, with the fix actions of the Video tab’s banner', async () => {
       queue.jobs = [unavailable(), job('b', 'failed', { error: 'Other' })]
       await mountTable()
-      expect(row('a').querySelector('.rf-status-dot')?.textContent?.trim()).toBe(
+      expect(row('a').querySelector('[data-field="state"]')?.textContent?.trim()).toBe(
         'Failed — encoder unavailable',
       )
       expect(row('b').textContent).not.toContain('encoder unavailable')

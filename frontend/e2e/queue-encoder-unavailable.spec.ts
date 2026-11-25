@@ -52,7 +52,7 @@ test('a queued job whose encoder is unavailable: its state, its fixes, then it r
 
   await page.locator('.nav-rail').getByRole('link', { name: 'Queue' }).click()
   const row = page.locator('tr', { has: page.locator(`[data-job="${failed!.id}"]`) })
-  await expect(row.locator('.rf-status-dot')).toHaveText('Failed — encoder unavailable')
+  await expect(row.locator('[data-field="state"]')).toHaveText('Failed — encoder unavailable')
   const fixes = page.getByRole('group', { name: 'Fixes for multitrack.mkv' })
   await expect(fixes.getByRole('button')).toHaveText([
     /^Use libx265 \(closest match/,

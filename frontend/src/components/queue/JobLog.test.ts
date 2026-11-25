@@ -66,6 +66,13 @@ async function write(text: string): Promise<void> {
 }
 
 describe('the job log viewer', () => {
+  it('heads the log with the job’s identity', async () => {
+    queue.jobs = [job('a', 'running')]
+    mounted.push((await mountQueue(JobLog, { props: { jobId: 'a' } })).wrapper)
+    await settle()
+    expect(el<HTMLElement>('.job-log__heading').textContent?.trim()).toBe('Log of a · MKV')
+  })
+
   it('shows the whole log and copies all of it', async () => {
     queue.jobs = [job('a', 'done')]
     file = 'one\ntwo\nlast without newline'
