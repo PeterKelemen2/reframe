@@ -156,6 +156,38 @@ def test_blocks_without_an_output_time_count_the_frames() -> None:
     assert without_rate.update(ProgressBlock(frame=500), mono=0, wall=0).percent == 0.0
 
 
+def test_an_output_time_that_stops_moving_counts_the_frames() -> None:
+    """The compat build's out_time stays at a subtitle track's last line until the input ends,
+    then drops back or reads N/A: the frames carry the position on from the last time."""
+    tracker = ProgressTracker(ENCODE, expected_duration=100.0, expected_frames=2500)
+    tracker.start_step(0)
+    t, frame = 0.0, 0
+    while t <= 10.0 + 1e-9:
+        out_time = min(frame / 25, 6.0)  # the last subtitle line ends at 6 s
+        tracker.update(ProgressBlock(out_time=out_time, frame=frame), mono=t, wall=t)
+        t += 0.5
+        frame += 25
+    progress = tracker.snapshot()
+    assert progress.percent == pytest.approx(20.0, abs=0.01)  # frame 500 of 2500
+    assert progress.speed == pytest.approx(2.0, rel=1e-3)
+    assert progress.eta == pytest.approx(40.0, abs=0.2)
+    assert tracker.update(
+        ProgressBlock(out_time=15.0, frame=550), mono=10.5, wall=10.5
+    ).percent == (pytest.approx(22.0))
+    assert tracker.update(ProgressBlock(frame=575), mono=11, wall=11).percent == pytest.approx(23)
+    # An output time ahead of the frames moves the position again.
+    assert (
+        tracker.update(ProgressBlock(out_time=30.0, frame=600), mono=11.5, wall=11.5).percent == 30
+    )
+    two_pass = ProgressTracker(
+        [step("pass1", 0.5), step("pass2", 0.5)], expected_duration=100.0, expected_frames=2500
+    )
+    two_pass.start_step(0)
+    two_pass.update(ProgressBlock(out_time=100.0, frame=2500), mono=0, wall=0)
+    two_pass.start_step(1)  # the frames of the next pass count from 0 again
+    assert two_pass.update(ProgressBlock(frame=250), mono=1, wall=1).percent == pytest.approx(55)
+
+
 def test_frames_of_an_analyse_step_are_no_position() -> None:
     tracker = ProgressTracker([step("analyse", 1.0), *ENCODE], 100.0, expected_frames=2500)
     tracker.start_step(0)

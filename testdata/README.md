@@ -396,6 +396,17 @@ many blocks on a fast machine too. What `C-11`'s parser must handle:
   or a forced-subtitles track with few lines, so has no output time for most of its encode in
   8.1.3: the progress tracker then takes the position from `frame` and the plan's
   `expected_frames`.
+- **`out_time` that stops** (checked 2026-11-25, decision 0107). `out_time` is a scheduler
+  value: in n8.x the lowest last DTS + duration of the output streams whose source has not
+  finished (`trailing_dts`), in n9.x the highest (`progressing_dts`). A 30 s 1080p libx264 +
+  AAC encode of a source with two SRT lines (the last ends at 6 s), `-map 0 -c:s copy
+  -progress pipe:1 -nostats -stats_period 1`: BtbN n8.1.3 prints `out_time_us=6000000` in every
+  block from frame 162 to 750, `progress=end` included (a copied subtitle track stays open
+  until the input ends). n9.1 (Arch) and n9.0.2 (pinned) follow the video, then print
+  `26480000` and `N/A` in the last blocks. With an AAC track that ends at 10 s, n9.1 prints
+  `9914921` in four blocks before it follows the video again. So the tracker carries the
+  position on with the frames while `out_time` does not move forward
+  (`test_an_output_time_that_stops_moving_counts_the_frames`).
 
 The fake's `progress(na_blocks=N, na_fields=[...])` action prints the same start-up blocks and
 `N/A` fields (`reframe_testing.fake_tools.progress`).

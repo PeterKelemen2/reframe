@@ -177,6 +177,8 @@ class ProgressTracker:
         self._ffmpeg_speed: float | None = None
         self._ffmpeg_fps: float | None = None
         self._size: int | None = None
+        self._last_position: tuple[float, int] | None = None
+        """Output seconds and frame of the last block of the step that had a position."""
 
     @property
     def percent(self) -> float:
@@ -188,6 +190,7 @@ class ProgressTracker:
         if index < len(self._starts):
             self._raise_percent(100.0 * self._starts[index])
         self._anchor = None
+        self._last_position = None
         self._speed = self._fps = None
         self._ffmpeg_speed = self._ffmpeg_fps = None
         self._clean = True
@@ -219,11 +222,7 @@ class ProgressTracker:
         """Read one block of the current step."""
         video = self._step < len(self._kinds) and self._kinds[self._step] in _VIDEO_STEPS
         frame = block.frame if video else None
-        media = block.out_time
-        # Some FFmpeg releases print out_time=N/A until every output stream has a packet, so a
-        # subtitle track whose first line comes late leaves no time; the frames still count.
-        if media is None and frame is not None and self._frame_time is not None:
-            media = frame * self._frame_time
+        media = self._position(block.out_time, frame)
         fraction: float | None = None
         if block.end:
             fraction = 1.0
@@ -254,6 +253,23 @@ class ProgressTracker:
         rate = max(self._percent - anchor.percent, 0.0) / interval
         self._rate = _smooth(self._rate, rate, interval)
         return self.snapshot()
+
+    def _position(self, out_time: float | None, frame: int | None) -> float | None:
+        """Seconds of output written. ``out_time`` follows one output stream: while it is
+        ``N/A`` or does not move forward, the frames carry the position on from the last one."""
+        if frame is None or self._frame_time is None:
+            return out_time
+        last = self._last_position
+        if last is None:
+            media = out_time if out_time is not None else frame * self._frame_time
+        else:
+            last_media, last_frame = last
+            if out_time is not None and out_time > last_media:
+                media = out_time
+            else:
+                media = last_media + max(frame - last_frame, 0) * self._frame_time
+        self._last_position = (media, frame)
+        return media
 
     def snapshot(self) -> JobProgress:
         speed = self._speed
