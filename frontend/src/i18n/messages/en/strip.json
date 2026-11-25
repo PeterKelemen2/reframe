@@ -1,0 +1,37 @@
+{
+  "title": "Programme",
+  "span": "{start}–{end}",
+  "chapters": "no chapters | {n} chapter | {n} chapters",
+  "lanes": "no lanes | {n} lane | {n} lanes",
+  "unknown": "The source does not give its length: the lanes show no times.",
+  "row": {
+    "chapters": "Ch",
+    "frames": "Fr"
+  },
+  "lane": {
+    "audio": "A{n}",
+    "subtitle": "S{n}",
+    "forced": "F"
+  },
+  "frames": "Sampled frames",
+  "frame": "Frame at {time}",
+  "lanesLabel": "Output tracks",
+  "describe": {
+    "audio": "Audio {n}, {language}, {format}, {span}",
+    "subtitle": "Subtitles {n}, {language}, {format}, {span}",
+    "commentary": "commentary",
+    "burn": "burned in",
+    "forcedOnly": "forced only",
+    "whole": "whole programme",
+    "range": "{start} to {end}",
+    "undetermined": "language not set",
+    "programme": "Programme {start} to {end}, range {range}.",
+    "chapters": "no chapters | {n} chapter | {n} chapters"
+  },
+  "legend": {
+    "label": "Legend",
+    "pale": "pale = commentary",
+    "outline": "outline = burned in",
+    "forced": "F = forced only"
+  }
+}

@@ -151,15 +151,19 @@ const notes = computed(() => [
     <p v-if="preview.sourceId === null" class="frame-viewer__state" data-state="empty">
       {{ t('preview.empty') }}
     </p>
-    <p v-else-if="preview.noVideo" class="frame-viewer__state" data-state="no-video">
-      {{ t('preview.noVideo') }}
-    </p>
+    <template v-else-if="preview.noVideo">
+      <p class="frame-viewer__state" data-state="no-video">
+        {{ t('preview.noVideo') }}
+      </p>
+      <slot name="programme" />
+    </template>
     <template v-else>
       <!-- A tab stop while zoomed (the arrow keys scroll it); it keeps the focus while the next
            frame is on its way. -->
       <ScrollStage
         ref="stage"
         class="frame-viewer__stage"
+        :class="{ 'frame-viewer__stage--pixels': preview.zoom !== 'fit' }"
         role="group"
         :label="t('preview.stage')"
         :tabindex="preview.zoom === 'fit' ? -1 : 0"
@@ -269,14 +273,7 @@ const notes = computed(() => [
           @loaded="preview.imageLoaded"
         />
       </ScrollStage>
-      <p
-        v-if="position !== null"
-        class="frame-viewer__position"
-        aria-live="polite"
-        data-field="position"
-      >
-        {{ position }}
-      </p>
+      <slot name="programme" />
       <div
         v-if="preview.strip.length > 0"
         class="frame-viewer__strip"
@@ -305,6 +302,14 @@ const notes = computed(() => [
           />
         </button>
       </div>
+      <p
+        v-if="position !== null"
+        class="frame-viewer__position"
+        aria-live="polite"
+        data-field="position"
+      >
+        {{ position }}
+      </p>
     </template>
 
     <form v-if="hasFrames" class="frame-viewer__seek" data-field="seek" @submit.prevent="seek">
@@ -350,13 +355,46 @@ const notes = computed(() => [
 
 .frame-viewer__title {
   margin: 0;
+  color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-sm);
+  font-weight: var(--rf-font-weight-medium);
 }
 
 .frame-viewer__controls {
   display: flex;
   flex-wrap: wrap;
   gap: var(--rf-space-2);
+}
+
+/* Joined segments on the booth, the chosen one filled with ink: the picture keeps the colour. */
+.frame-viewer__controls :deep(.p-selectbutton) {
+  --p-selectbutton-border-radius: var(--rf-radius-md);
+  --p-togglebutton-sm-padding: 0;
+  --p-togglebutton-content-sm-padding: 0.25rem 0.75rem;
+  --p-togglebutton-background: transparent;
+  --p-togglebutton-border-color: var(--p-form-field-border-color);
+  --p-togglebutton-color: var(--rf-color-text);
+  --p-togglebutton-hover-background: var(--rf-color-surface-hover);
+  --p-togglebutton-hover-color: var(--rf-color-text);
+  --p-togglebutton-checked-background: var(--rf-color-primary);
+  --p-togglebutton-checked-border-color: var(--rf-color-primary);
+  --p-togglebutton-checked-color: var(--rf-color-on-primary);
+  --p-togglebutton-content-checked-background: transparent;
+  --p-togglebutton-content-checked-shadow: none;
+
+  background: transparent;
+}
+
+.frame-viewer__controls :deep(.p-togglebutton) {
+  font-weight: var(--rf-font-weight-medium);
+}
+
+.frame-viewer__controls :deep([data-field='view-mode']) {
+  flex: 1 1 100%;
+}
+
+.frame-viewer__controls :deep([data-field='view-mode'] .p-togglebutton) {
+  flex: 1 1 auto;
 }
 
 .frame-viewer__state {
@@ -413,14 +451,15 @@ const notes = computed(() => [
 
 .frame-viewer__strip {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(4rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr));
   gap: var(--rf-space-1);
 }
 
 .frame-viewer__thumb {
+  overflow: hidden;
   padding: 0;
-  border: 2px solid transparent;
-  border-radius: var(--rf-radius-sm);
+  border: 0;
+  border-radius: 2px;
   background: #000;
   cursor: pointer;
 }
@@ -431,13 +470,25 @@ const notes = computed(() => [
   object-fit: contain;
 }
 
+.frame-viewer__thumb:hover img {
+  opacity: 0.85;
+}
+
+/* The current frame is marked in ink, not a colour: a ring with a gap of the booth around it. */
 .frame-viewer__thumb--current {
-  border-color: var(--rf-color-primary);
+  box-shadow:
+    0 0 0 1px var(--rf-color-booth),
+    0 0 0 3px var(--rf-color-text);
 }
 
 .frame-viewer__thumb:focus-visible {
-  outline: 2px solid var(--rf-color-primary);
-  outline-offset: 2px;
+  outline: 2px solid var(--p-focus-ring-color);
+  outline-offset: 5px;
+}
+
+/* At 100 % and more each source pixel is a block: smoothing would blur what is checked. */
+.frame-viewer__stage--pixels :deep(img) {
+  image-rendering: pixelated;
 }
 
 .frame-viewer__seek {

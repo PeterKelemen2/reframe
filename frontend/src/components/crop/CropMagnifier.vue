@@ -336,6 +336,8 @@ onBeforeUnmount(() => {
 /* The border goes outside the drawing: inside it, the canvas would be scaled down and smoothed. */
 .crop-magnifier__canvas {
   display: block;
+  /* A canvas the page scales (a fractional device pixel ratio) keeps its pixels square. */
+  image-rendering: pixelated;
   box-sizing: content-box;
   border: 1px solid var(--rf-color-border);
   background: var(--rf-color-surface);

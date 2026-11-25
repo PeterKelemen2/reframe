@@ -88,5 +88,6 @@ onBeforeUnmount(() => cancelAnimationFrame(pending))
 
 .crop-loupe__canvas {
   display: block;
+  image-rendering: pixelated;
 }
 </style>
