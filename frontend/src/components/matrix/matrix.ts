@@ -1,3 +1,6 @@
+import { Check, EqualApproximately, Minus, TriangleAlert, X } from '@lucide/vue'
+import type { Component } from 'vue'
+
 import type {
   AudioStream,
   GroupMember,
@@ -22,6 +25,21 @@ export const MATCH_MARK: Record<TrackMatch['status'], string> = {
 }
 
 export const ROW_MARK: Record<Resolution['status'], string> = { ok: '✓', warning: '⚠', error: '✗' }
+
+/** The drawn icons of the marks; the glyph stays in `data-mark` for tests and the CLI's words. */
+export const MATCH_ICON: Record<TrackMatch['status'], Component> = {
+  exact: Check,
+  relaxed: EqualApproximately,
+  ambiguous: EqualApproximately,
+  missing: X,
+  skipped: Minus,
+}
+
+export const ROW_ICON: Record<Resolution['status'], Component> = {
+  ok: Check,
+  warning: TriangleAlert,
+  error: X,
+}
 
 /** The parsed-name fields the naming column shows and edits. */
 export const NAME_FIELDS = ['name', 'season', 'episode', 'sub_title', 'year'] as const

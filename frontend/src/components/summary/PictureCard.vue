@@ -80,7 +80,8 @@ const chips = computed(() => filterChips(editor.job?.filters, system.definitions
         <KeyValue :label="t('summary.picture.cropLabel')">
           <SummaryLink path="dimensions.crop">
             <span class="summary-picture__crop" data-field="crop">
-              <span v-if="cropRect" :class="{ 'rf-mono': crop?.rect }">{{ cropRect }}</span>{{ ' ' }}
+              <span v-if="cropRect" :class="{ 'rf-mono': crop?.rect }">{{ cropRect }}</span
+              >{{ ' ' }}
               <span v-if="cropMode" class="summary-picture__mode">
                 {{ cropRect ? t('summary.picture.cropMode', { mode: cropMode }) : cropMode }}
               </span>

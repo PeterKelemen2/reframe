@@ -13,17 +13,23 @@ import type {
   SourceEntry,
   TrackMatch,
 } from '@/api/types'
+import LanguageChip from '@/components/base/LanguageChip.vue'
+import { findLanguage, isUndetermined } from '@/components/base/languages'
+import { streamLanguage } from '@/components/media/streams'
 import { fileName, formatList } from '@/components/shell/format'
 import { useEditorStore } from '@/stores/editor'
 import { useSourcesStore } from '@/stores/sources'
+import { useSystemStore } from '@/stores/system'
 
 import CandidatePicker from './CandidatePicker.vue'
 import {
+  MATCH_ICON,
   MATCH_MARK,
   matchOf,
   NAME_FIELDS,
   nameIssues,
   pickedByHand,
+  ROW_ICON,
   ROW_MARK,
   rowLabels,
   sortRows,
@@ -46,6 +52,7 @@ const props = defineProps<{
 const { t, locale } = useI18n()
 const editor = useEditorStore()
 const sources = useSourcesStore()
+const system = useSystemStore()
 
 /** Fixed, so that the virtual scroller can place rows without measuring them. */
 const ROW_HEIGHT = 60
@@ -121,6 +128,23 @@ function streamsText(streams: number[] | undefined): string {
   return (streams ?? []).map((stream) => `#${stream}`).join(' ')
 }
 
+/** The language of the file's track that a cell matched, for its colour mark. */
+function cellLanguage(item: MatrixRow, match: TrackMatch): string | null {
+  const stream = match.streams?.[0]
+  if (stream === undefined) return null
+  const source = item.entry?.source
+  const tracks = (match.kind === 'audio' ? source?.audio : source?.subtitles) ?? []
+  const found = tracks.find((track) => track.index === stream)
+  return found === undefined ? null : streamLanguage(found)
+}
+
+/** The name `LanguageChip` shows, so that the cell's name holds its visible words. */
+function languageName(tag: string | null): string | null {
+  if (tag === null) return null
+  if (isUndetermined(tag)) return t('base.language.undetermined')
+  return findLanguage(system.languages, tag)?.english_name ?? tag
+}
+
 function videoSize(item: MatrixRow): string {
   const video = item.entry?.source?.video?.[0]
   return video === undefined ? '' : `${video.width}×${video.height}`
@@ -134,7 +158,12 @@ function picked(item: MatrixRow, column: MatrixColumn): boolean {
 }
 
 function cellLabel(item: MatrixRow, column: MatrixColumn, match: TrackMatch): string {
-  const state = [matchState(match.status), streamsText(match.streams), match.message]
+  const state = [
+    matchState(match.status),
+    languageName(cellLanguage(item, match)),
+    streamsText(match.streams),
+    match.message,
+  ]
   if (picked(item, column)) state.push(t('matrix.cell.picked'))
   return t('matrix.cell.open', {
     column: column.label,
@@ -290,9 +319,13 @@ onMounted(async () => {
             :aria-label="t('matrix.row.issues', { label: data.label, status: rowState(data.row) })"
             @click="openPanel({ kind: 'issues', path: data.path }, $event)"
           >
-            <span class="matrix__mark" aria-hidden="true">{{
-              ROW_MARK[(data.row as Resolution).status]
-            }}</span>
+            <span
+              class="matrix__mark"
+              :data-mark="ROW_MARK[(data.row as Resolution).status]"
+              aria-hidden="true"
+            >
+              <component :is="ROW_ICON[(data.row as Resolution).status]" :size="16" />
+            </span>
             <span class="matrix__label" dir="ltr">{{ data.label }}</span>
           </button>
         </template>
@@ -320,8 +353,14 @@ onMounted(async () => {
               })
             "
           >
-            <span class="matrix__mark matrix__mark--exact" aria-hidden="true">✓</span>
-            {{ videoSize(data) }}
+            <span
+              class="matrix__mark matrix__mark--exact"
+              :data-mark="MATCH_MARK.exact"
+              aria-hidden="true"
+            >
+              <component :is="MATCH_ICON.exact" :size="16" />
+            </span>
+            <span class="rf-mono">{{ videoSize(data) }}</span>
           </span>
           <div v-else-if="column.kind === 'name' && data.row.job" class="matrix__name">
             <button
@@ -370,10 +409,21 @@ onMounted(async () => {
             @click="openPanel({ kind: 'cell', path: data.path, column: index }, $event)"
           >
             <span class="matrix__track">
-              <span class="matrix__mark" aria-hidden="true">{{
-                MATCH_MARK[(data.cells[index] as TrackMatch).status]
+              <span
+                class="matrix__mark"
+                :data-mark="MATCH_MARK[(data.cells[index] as TrackMatch).status]"
+                aria-hidden="true"
+              >
+                <component :is="MATCH_ICON[(data.cells[index] as TrackMatch).status]" :size="16" />
+              </span>
+              <LanguageChip
+                v-if="cellLanguage(data, data.cells[index])"
+                :tag="cellLanguage(data, data.cells[index])"
+                class="matrix__language"
+              />
+              <span class="rf-mono">{{
+                streamsText(data.cells[index].streams) || t('matrix.cell.none')
               }}</span>
-              <span>{{ streamsText(data.cells[index].streams) || t('matrix.cell.none') }}</span>
               <Hand
                 v-if="picked(data, column)"
                 :size="14"
@@ -493,7 +543,12 @@ onMounted(async () => {
 }
 
 .matrix__mark {
-  font-weight: var(--rf-font-weight-bold);
+  display: inline-flex;
+  flex: none;
+}
+
+.matrix__language {
+  font-size: inherit;
 }
 
 [data-status='ok'] > .matrix__mark,
