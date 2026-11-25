@@ -110,7 +110,8 @@
     "noSubtitles": "No subtitle track is written.",
     "passthru": "passthru",
     "burn": "burned in",
-    "convert": "to {format}",
+    "writtenAs": "written as",
+    "renamedTo": "renamed to",
     "flag": {
       "default": "Default",
       "forced": "Forced",

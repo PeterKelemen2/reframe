@@ -46,6 +46,66 @@ describe('the audio track chips', () => {
   })
 })
 
+describe('a track written with another codec, layout or name than its source', () => {
+  it('names the source codec and layout it is made from', () => {
+    const [japanese, english] = audioChips(sampleJob(), multitrackSource(), DEFINITIONS)
+    // AC-3 5.1 → AAC Stereo; AAC-LC stereo → AAC stereo is the same codec and layout.
+    expect(japanese).toMatchObject({ from: 'AC-3 5.1', encoder: 'AAC', layout: 'Stereo' })
+    expect(english).toMatchObject({ from: null, encoder: 'AAC', layout: 'Stereo' })
+  })
+
+  it('names the source title of a renamed track', () => {
+    const job = sampleJob()
+    job.audio![0]!.metadata!.name = 'Japanese 2.0'
+    job.subtitles![0]!.metadata!.name = 'English (full)'
+    const [japanese, english] = audioChips(job, multitrackSource(), DEFINITIONS)
+    expect(japanese).toMatchObject({ name: 'Japanese 2.0', sourceName: 'Japanese 5.1' })
+    expect(english).toMatchObject({ name: 'English Stereo', sourceName: null })
+    expect(subtitleChips(job, multitrackSource())[0]).toMatchObject({
+      name: 'English (full)',
+      sourceName: 'English',
+    })
+  })
+
+  it('keeps the source layout where a mixdown would upmix', () => {
+    const job = sampleJob()
+    job.audio![1]!.mixdown = '5.1'
+    expect(audioChips(job, multitrackSource(), DEFINITIONS)[1]).toMatchObject({
+      layout: 'stereo',
+      from: null,
+    })
+  })
+
+  it('shows a passthru track that the container cannot hold as encoded by its fallback', () => {
+    const definitions = sampleDefinitions()
+    definitions.containers!.mkv!.audio = { copy: ['ac3'], encode: ['aac', 'ac3'] }
+    const job = sampleJob()
+    job.audio![0]!.action = 'passthru'
+    job.audio![1]!.action = 'passthru'
+    job.audio![1]!.encoder = null
+    const [copied, fallback] = audioChips(job, multitrackSource(), definitions)
+    expect(copied).toMatchObject({ passthru: true, encoder: null, from: null })
+    expect(fallback).toMatchObject({ passthru: false, encoder: 'AAC', from: null })
+  })
+
+  it('shows the format a container converts a copied text subtitle to', () => {
+    const definitions = sampleDefinitions()
+    definitions.containers!.mp4 = {
+      ...definitions.containers!.mp4!,
+      subtitles: { copy: ['mov_text'], encode: ['mov_text'] },
+      text_subtitle_target: 'mov_text',
+    }
+    const job = sampleJob()
+    job.output!.container = 'mp4'
+    expect(subtitleChips(job, multitrackSource(), undefined, definitions)[0]).toMatchObject({
+      action: 'copy',
+      convertTo: 'mov_text',
+    })
+    job.output!.container = 'mkv'
+    expect(subtitleChips(job, multitrackSource(), undefined, definitions)[0]?.convertTo).toBe(null)
+  })
+})
+
 describe('the names of the track chips', () => {
   it('are the names the server filled in, when they are for these tracks', () => {
     const job = sampleJob()

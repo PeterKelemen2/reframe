@@ -363,6 +363,10 @@ Each output track row has:
   `loudnorm` in two passes. The measurement pass runs as part of the job.
 - **Metadata** (new, see [Track metadata](#track-metadata--languages)): language, name, flags.
 
+A lossless source track that is written by a lossy encoder with fewer channels gets a note
+(`audio.lossless_downmix`), with fixes to pass it through or keep the source layout
+([0109](../decisions/0109-stale-track-names-and-lossless-downmix.md)).
+
 Rows can be reordered by dragging. Buttons: **Add track**, **Add all**, **Reload from preset
 rules**.
 
@@ -526,7 +530,7 @@ block:
 | Field | Control | Written as |
 |-------|---------|------------|
 | Language | Language picker (below) | MKV: `language` (ISO 639-2/B) + `LanguageIETF` (BCP 47). MP4: ISO 639-2/T |
-| Name | Text, or a name template such as `{lang_name} {channels} {codec}` → `Japanese 5.1 Opus`. A name with a brace that parses and uses only the track variables (`lang`, `lang_name`, `lang_native`, `channels`, `codec`, `bitrate`, `title`, `source_codec`) is a template, expanded when the job is planned; `{{` and `}}` write a brace, `<…>` is an optional group; any other name is written as typed ([0103](../decisions/0103-owner-decisions-before-v1.md) item 6) | `title` |
+| Name | Text, or a name template such as `{lang_name} {channels} {codec}` → `Japanese 5.1 Opus`. A name with a brace that parses and uses only the track variables (`lang`, `lang_name`, `lang_native`, `channels`, `codec`, `bitrate`, `title`, `source_codec`) is a template, expanded when the job is planned; `{{` and `}}` write a brace, `<…>` is an optional group; any other name is written as typed ([0103](../decisions/0103-owner-decisions-before-v1.md) item 6). A re-encoded track whose name names a codec or layout it is not written with (`DTS-HD MA 5.1` on AAC stereo) gets a warning with a one-click rename (`AAC 2.0`); the source title is never changed on its own ([0109](../decisions/0109-stale-track-names-and-lossless-downmix.md)) | `title` |
 | Default | Toggle. Usually one track per type is default; more than one is allowed, with a warning that offers to keep only the first ([0044](../decisions/0044-code-review-follow-ups.md)) | disposition / FlagDefault |
 | Forced | Toggle | FlagForced |
 | Commentary | Toggle | FlagCommentary |

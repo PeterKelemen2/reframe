@@ -17,6 +17,7 @@ from reframe.definitions.models import drop_upmix
 from reframe.models.issues import Fix, ValidationIssue
 from reframe.models.job import AudioOutputTrack, Mixdown
 from reframe.models.media import AudioStream
+from reframe.naming.context import audio_channels_label
 from reframe.validation.common import (
     DEFAULT_AUDIO_ENCODER,
     drop_track,
@@ -34,6 +35,8 @@ from reframe.validation.tracks import (
     passthru_copies,
     track_encoder,
     track_stream,
+    written_channels,
+    written_layout,
 )
 
 
@@ -304,4 +307,33 @@ def samplerates(ctx: JobContext) -> Iterator[ValidationIssue]:
                 f"Use {written} Hz",
                 replace(f"audio[{index}].samplerate", written),
             ),
+        )
+
+
+@job_rule("audio", "audio.lossless_downmix")
+def lossless_downmixes(ctx: JobContext) -> Iterator[ValidationIssue]:
+    """A lossless source track written by a lossy encoder with fewer channels: two losses that
+    no single field shows. Info: a preset may want exactly that."""
+    defs = ctx.definitions
+    for index, track, stream, planned in _encoded_tracks(ctx):
+        encoder = planned.encoder
+        channels = written_channels(defs, planned)
+        if not stream.lossless or encoder.lossless or not 0 < channels < planned.source_channels:
+            continue
+        codec = stream.display_codec or stream.codec or "audio"
+        fixes: list[Fix] = []
+        if stream.codec is not None and ctx.container.audio.can_copy(stream.codec):
+            fixes.append(
+                fix(f"Pass {codec} through", replace(f"audio[{index}].action", "passthru"))
+            )
+        kept = encoded_audio(track.model_copy(update={"mixdown": None}), stream, encoder, defs)
+        if written_channels(defs, kept) >= planned.source_channels:
+            fixes.append(_mixdown_fix(ctx, index, None))
+        source = audio_channels_label(stream.channels, stream.channel_layout)
+        yield info(
+            "audio.lossless_downmix",
+            f"audio[{index}].mixdown",
+            f"The source of audio track {index + 1} is lossless {codec} {source}; the track is "
+            f"written as lossy {encoder.label} {written_layout(defs, planned)}.",
+            *fixes,
         )

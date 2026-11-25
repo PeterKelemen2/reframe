@@ -155,7 +155,8 @@ def test_plan_shows_a_skipped_dry_run(movie: Path, dry_run: DryRun) -> None:
     out = result.stdout
     assert "did not finish within 30 s" in out
     assert "[encoder.dry_run_skipped · video.encoder]" in out
-    assert "Issues (0 errors, 1 warning, " in out
+    # The other two: the AAC stereo tracks keep their "… 5.1" source titles.
+    assert "Issues (0 errors, 3 warnings, " in out
     assert DRY_RUN_NOTE not in out
     assert "Command (encode, " in out
 

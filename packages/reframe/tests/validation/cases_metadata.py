@@ -1,4 +1,5 @@
-"""Rule cases of external subtitle encodings, tag values and generated chapters."""
+"""Rule cases of external subtitle encodings, tag values, track names and generated
+chapters."""
 
 from __future__ import annotations
 
@@ -36,6 +37,32 @@ def tags(**values: str | None) -> Any:
 def track_name(value: str) -> Any:
     def mod(s: Any) -> None:
         s.job.audio[0].metadata.name = value
+
+    return mod
+
+
+def source_title(title: str, *, copy: bool = False) -> Any:
+    """The first source audio track (AC-3 5.1, encoded to AAC stereo) titled ``title``; the
+    output track keeps the source title, or with ``copy`` passes the track through."""
+
+    def mod(s: Any) -> None:
+        s.source.audio[0].title = title
+        if copy:
+            s.job.audio[0].action = "passthru"
+
+    return mod
+
+
+def lossless_source(s: Any) -> None:
+    stream = s.source.audio[0]
+    stream.codec, stream.display_codec, stream.lossless = "truehd", "TrueHD", True
+
+
+def subtitle_converted(name: str | None, convert_to: str = "ass") -> Any:
+    def mod(s: Any) -> None:
+        track = s.job.subtitles[0]
+        track.action, track.convert_to = "convert", convert_to
+        track.metadata.name = name
 
     return mod
 
@@ -123,6 +150,26 @@ def cases(h: Any) -> list[Any]:
             "track_name_with_another_variable", "metadata.name_variable_unknown",
             "audio[0].metadata.name", h.WARN,
             track_name("{lang_name} {episode}"), track_name("{lang_name} {{episode}}"),
+        ),
+        case(
+            "track_name_names_the_source_codec", "metadata.name_stale",
+            "audio[0].metadata.name", h.WARN,
+            track_name("English AC-3 5.1"), track_name("English AAC Stereo"),
+        ),
+        case(
+            "source_title_names_the_source_layout", "metadata.name_stale",
+            "audio[0].metadata.name", h.WARN,
+            source_title("Japanese 5.1"), source_title("Japanese 5.1", copy=True),
+        ),
+        case(
+            "converted_subtitle_names_its_old_format", "metadata.name_stale",
+            "subtitles[0].metadata.name", h.WARN,
+            subtitle_converted("English SRT"), subtitle_converted("English SRT", "srt"),
+        ),
+        case(
+            "lossless_source_mixed_down_to_lossy", "audio.lossless_downmix", "audio[0].mixdown",
+            h.INFO,
+            lossless_source, h.both(lossless_source, h.audio(0, mixdown=None)),
         ),
         case(
             "tag_too_long", "metadata.tag_too_long", "tags.plot", err,

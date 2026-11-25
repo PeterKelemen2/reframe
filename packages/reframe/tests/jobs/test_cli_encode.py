@@ -68,10 +68,15 @@ def test_a_season_folder_and_a_file(season: Path, queues: Queues, tmp_path: Path
     out = result.stdout.splitlines()
     assert out[0] == "Preset: H.265 MKV 1080p"
     # One job per media file, in natural order (E10 after E02), each named by the template.
+    # Each job's warnings follow its line: the AAC stereo track keeps the title "Japanese 5.1".
+    assert [line for line in out if " → " in line] == [
+        f"[1/4] {EPISODES[0]} → {season / 'Show.S01E01.Title.1.mkv'}",
+        f"[2/4] {EPISODES[1]} → {season / 'Show.S01E02.Title.2.mkv'}",
+        f"[3/4] {EPISODES[2]} → {season / 'Show.S01E10.Title.10.mkv'}",
+        f"[4/4] movie.mkv → {movie_output}",
+    ]
     assert out[1] == f"[1/4] {EPISODES[0]} → {season / 'Show.S01E01.Title.1.mkv'}"
-    assert out[2] == f"[2/4] {EPISODES[1]} → {season / 'Show.S01E02.Title.2.mkv'}"
-    assert out[3] == f"[3/4] {EPISODES[2]} → {season / 'Show.S01E10.Title.10.mkv'}"
-    assert out[4] == f"[4/4] movie.mkv → {movie_output}"
+    assert "'Japanese 5.1' says 5.1." in out[2]
     assert "Queued 4 jobs." in out
     assert "[1/4] running" in out
     assert "[1/4] 25.0% · 48.0 fps · 2.00x · ETA 0:00:06 · 244.1 KiB" in out

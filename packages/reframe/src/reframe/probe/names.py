@@ -14,6 +14,7 @@ __all__ = [
     "LOSSLESS_AUDIO_CODECS",
     "LOSSLESS_DTS_PROFILES",
     "audio_display_name",
+    "audio_name_codecs",
     "codec_name",
     "container_display_name",
     "is_lossless_audio",
@@ -137,6 +138,36 @@ def audio_display_name(codec: str | None, profile: str | None) -> str | None:
         if name is not None:
             return name
     return _AUDIO_BASE.get(codec, codec)
+
+
+def audio_name_codecs() -> dict[str, str | None]:
+    """Each commercial audio name, the parts of ffprobe's ``A + B`` profiles (``Dolby
+    TrueHD``, ``Dolby Atmos``) and each feature word that several codecs' profile names share
+    (``Atmos``), with the codec an encoder writes under that name; ``None`` for a profile no
+    encoder writes (``DTS-HD MA``, ``TrueHD Atmos``). Any AAC profile name counts as AAC."""
+    found: dict[str, str | None] = {"PCM": None, "Dolby Digital": "ac3"}
+    for codec, base in _AUDIO_BASE.items():
+        found.setdefault(base, codec)
+    features: dict[str, set[str]] = {}
+    for codec, profiles in _AUDIO_PROFILES.items():
+        base = _AUDIO_BASE[codec]
+        for profile, name in profiles.items():
+            if " + " in profile:
+                first, *extensions = profile.split(" + ")
+                found.setdefault(first, codec)
+                found.update(
+                    {extension: None for extension in extensions if extension not in found}
+                )
+            if name == base:
+                continue
+            if profiles is _AAC_PROFILES:
+                found.setdefault(name, found[base])
+                continue
+            found[name] = None
+            if name.startswith(f"{base} "):
+                features.setdefault(name.removeprefix(f"{base} "), set()).add(codec)
+    found.update({word: None for word, codecs in features.items() if len(codecs) > 1})
+    return found
 
 
 def is_lossless_audio(codec: str | None, profile: str | None) -> bool:
