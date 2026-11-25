@@ -4499,6 +4499,11 @@ export interface components {
              * @description The episode number from the file name, when there is one.
              */
             episode?: number | null;
+            /**
+             * Sub Title
+             * @description The episode title from the file name (``{sub_title}``), when there is one.
+             */
+            sub_title?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
