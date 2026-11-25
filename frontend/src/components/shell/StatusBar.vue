@@ -4,7 +4,7 @@ export const STATUS_BAR_HEIGHT = '--shell-status-bar-height'
 </script>
 
 <script setup lang="ts">
-import { ListPlus, ListVideo, LoaderCircle, Play, Plus } from '@lucide/vue'
+import { ListVideo, LoaderCircle, Play, Plus } from '@lucide/vue'
 import { useResizeObserver } from '@vueuse/core'
 import Button from 'primevue/button'
 import vTooltip from 'primevue/tooltip'
@@ -21,6 +21,7 @@ import { useSourcesStore } from '@/stores/sources'
 import ConnectionStatus from './ConnectionStatus.vue'
 import { focusLost } from './focus'
 import FocusSafeButton from './FocusSafeButton'
+import { identityParts, jobIdentity } from './identity'
 import ValidationSummary from './ValidationSummary.vue'
 
 const { t } = useI18n()
@@ -106,6 +107,15 @@ function queueWithoutChanges(): void {
 
 const outputPath = computed(() => editor.job?.output?.path || null)
 
+/** `The Sopranos · S03E02 · MKV`: the parsed name of the shown file, once its draft is in. */
+const identity = computed(() => {
+  const job = editor.job
+  if (job === null) return null
+  const path = job.source.path
+  const draft = editor.draft?.job.source.path === path ? editor.draft : null
+  return jobIdentity(identityParts(draft?.naming?.fields, path, job.output?.container))
+})
+
 useResizeObserver(root, ([entry]) => {
   const height = entry?.borderBoxSize?.[0]?.blockSize ?? entry?.contentRect.height ?? 0
   document.documentElement.style.setProperty(STATUS_BAR_HEIGHT, `${Math.ceil(height)}px`)
@@ -162,6 +172,7 @@ const queueSummary = computed(() => {
         />
       </div>
     </div>
+    <span v-if="identity" class="status-bar__identity" data-field="identity">{{ identity }}</span>
     <div class="status-bar__output" data-field="output">
       <span class="status-bar__caption">{{ t('shell.status.output') }}</span>
       <span
@@ -184,23 +195,17 @@ const queueSummary = computed(() => {
     </RouterLink>
     <div class="status-bar__actions">
       <FocusSafeButton
-        v-tooltip.top="shortcut"
-        class="status-bar__add"
+        class="status-bar__add-all"
         size="small"
-        :label="addLabel"
-        :disabled="!canAdd"
-        :aria-busy="(busy && adding === null) || undefined"
-        aria-keyshortcuts="Control+Enter"
-        @click="actions.addCurrent()"
+        severity="secondary"
+        text
+        :label="t('shell.queue.addAll')"
+        :disabled="!canAddAll"
+        :aria-busy="(busy && adding === 'all') || undefined"
+        @click="run('all', actions.addAll)"
       >
-        <template #icon>
-          <LoaderCircle
-            v-if="busy && adding === null"
-            class="status-bar__spin"
-            :size="16"
-            aria-hidden="true"
-          />
-          <Plus v-else :size="16" aria-hidden="true" />
+        <template v-if="busy && adding === 'all'" #icon>
+          <LoaderCircle class="status-bar__spin" :size="16" aria-hidden="true" />
         </template>
       </FocusSafeButton>
       <FocusSafeButton
@@ -220,23 +225,23 @@ const queueSummary = computed(() => {
         </template>
       </FocusSafeButton>
       <FocusSafeButton
-        class="status-bar__add-all"
+        v-tooltip.top="shortcut"
+        class="status-bar__add"
         size="small"
-        severity="secondary"
-        outlined
-        :label="t('shell.queue.addAll')"
-        :disabled="!canAddAll"
-        :aria-busy="(busy && adding === 'all') || undefined"
-        @click="run('all', actions.addAll)"
+        :label="addLabel"
+        :disabled="!canAdd"
+        :aria-busy="(busy && adding === null) || undefined"
+        aria-keyshortcuts="Control+Enter"
+        @click="actions.addCurrent()"
       >
         <template #icon>
           <LoaderCircle
-            v-if="busy && adding === 'all'"
+            v-if="busy && adding === null"
             class="status-bar__spin"
             :size="16"
             aria-hidden="true"
           />
-          <ListPlus v-else :size="16" aria-hidden="true" />
+          <Plus v-else :size="16" aria-hidden="true" />
         </template>
       </FocusSafeButton>
       <FocusSafeButton
@@ -269,27 +274,41 @@ const queueSummary = computed(() => {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--rf-space-2) var(--rf-space-4);
-  padding: var(--rf-space-2) var(--rf-space-3);
+  min-height: 3.5rem;
+  padding: var(--rf-space-2) var(--rf-space-4);
   border-top: 1px solid var(--rf-color-border);
   background: var(--rf-color-surface);
   font-size: var(--rf-font-size-sm);
 }
 
+.status-bar__identity {
+  overflow: hidden;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 22rem;
+  color: var(--rf-color-text-muted);
+  font-size: var(--rf-font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-bar__output {
   display: flex;
-  flex: 1 1 16rem;
+  flex: 1 1 14rem;
   align-items: baseline;
   gap: var(--rf-space-2);
   min-width: 0;
 }
 
 .status-bar__caption {
+  flex: none;
   color: var(--rf-color-text-muted);
 }
 
 .status-bar__path {
   overflow: hidden;
   font-family: var(--rf-font-mono);
+  font-size: var(--rf-font-size-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
   /* The file name at the end matters most: the ellipsis cuts the start of the path. */
@@ -299,6 +318,7 @@ const queueSummary = computed(() => {
 
 .status-bar__path--none {
   font-family: inherit;
+  font-size: inherit;
   color: var(--rf-color-text-muted);
   direction: ltr;
 }
@@ -307,11 +327,15 @@ const queueSummary = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: var(--rf-space-1);
+  border-radius: var(--rf-radius-sm);
   color: var(--rf-color-text-muted);
+  text-decoration: none;
 }
 
-.status-bar__queue:hover {
+.status-bar__queue:hover,
+.status-bar__queue:focus-visible {
   color: var(--rf-color-text);
+  text-decoration: underline;
 }
 
 .status-bar__spin {
@@ -327,6 +351,7 @@ const queueSummary = computed(() => {
 .status-bar__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--rf-space-2);
   margin-left: auto;
 }

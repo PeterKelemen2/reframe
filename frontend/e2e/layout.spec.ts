@@ -289,13 +289,27 @@ test('a disabled Add to queue does not look like an enabled button, in light and
   await page.locator('.preset-picker__trigger').click()
   await page.locator(`.preset-picker__list [data-preset="${UNAVAILABLE_PRESET}"]`).click()
   await expect(page.locator('.status-bar__add')).toBeDisabled()
-  await expect(page.locator('[data-action="open-files"]')).toBeEnabled()
 
+  // An enabled primary button's fill: the add is the status bar's only one.
+  await page.evaluate(() => {
+    interface Box {
+      id: string
+      style: { background: string; width: string; height: string }
+      append(child: Box): void
+    }
+    const doc = Reflect.get(globalThis, 'document') as {
+      createElement(tag: string): Box
+      querySelector(s: string): Box
+    }
+    const probe = doc.createElement('span')
+    probe.id = 'primary-fill'
+    probe.style.background = 'var(--p-button-primary-background)'
+    probe.style.width = '1px'
+    probe.style.height = '1px'
+    doc.querySelector('.status-bar__actions').append(probe)
+  })
   const fills = async (): Promise<number> =>
-    contrast(
-      await paintedFill(page, '.status-bar__add'),
-      await paintedFill(page, '[data-action="open-files"]'),
-    )
+    contrast(await paintedFill(page, '.status-bar__add'), await paintedFill(page, '#primary-fill'))
   // Colours change with a short transition: measure once they have settled.
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' })
   await expect(page.locator('html')).not.toHaveClass(/reframe-dark/)

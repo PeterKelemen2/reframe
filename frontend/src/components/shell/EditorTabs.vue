@@ -57,6 +57,13 @@ watch(active, () => {
 
 <style scoped>
 .editor-tabs {
+  /* Text tabs: the open one in ink (paper in dark) over a 2px rule, the others muted. One
+     weight for all, so a tab keeps its width when it opens. */
+  --p-tabs-active-bar-height: 2px;
+  --p-tabs-tab-active-color: var(--rf-color-text);
+  --p-tabs-active-bar-background: var(--rf-color-text);
+  --p-tabs-tab-font-weight: var(--rf-font-weight-medium);
+
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -66,6 +73,7 @@ watch(active, () => {
 /* All eight tabs fit beside the open preview at 1440 px. The same width everywhere keeps each
    tab in its place when a tab opens or closes the preview. */
 .editor-tabs :deep([role='tab']) {
+  padding-block: 0.6875rem;
   padding-inline: 0.5rem;
 }
 

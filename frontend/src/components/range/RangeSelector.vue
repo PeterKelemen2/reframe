@@ -481,6 +481,7 @@ function reset(): void {
 
 .range-selector__length {
   color: var(--rf-color-text-muted);
+  font-family: var(--rf-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
