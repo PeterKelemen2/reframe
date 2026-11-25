@@ -19,6 +19,7 @@ import { fileName, formatDuration } from '@/components/shell/format'
 import PreviewPanel from '@/components/shell/PreviewPanel.vue'
 import StatusBar from '@/components/shell/StatusBar.vue'
 import SourcesPanel from '@/components/sources/SourcesPanel.vue'
+import ProgrammeStrip from '@/components/strip/ProgrammeStrip.vue'
 import { useValidation } from '@/composables/useValidation'
 import { platform } from '@/platform'
 import { useCropStore } from '@/stores/crop'
@@ -106,7 +107,12 @@ async function open(): Promise<void> {
         <SourcesPanel />
         <section class="workspace__editor" :aria-label="t('shell.workspace.tabs')">
           <GroupBanner />
-          <EditorTabs v-if="sources.active !== null" />
+          <EditorTabs v-if="sources.active !== null">
+            <!-- One strip on screen: here while the preview column is collapsed. -->
+            <template v-if="previewCollapsed" #above-panels>
+              <ProgrammeStrip class="workspace__strip" docked />
+            </template>
+          </EditorTabs>
           <div v-else class="workspace__empty" data-state="empty">
             <FolderOpen class="workspace__empty-icon" :size="40" aria-hidden="true" />
             <h2 class="workspace__empty-title">{{ t('shell.workspace.emptyTitle') }}</h2>
@@ -208,6 +214,12 @@ async function open(): Promise<void> {
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+.workspace__strip {
+  padding: var(--rf-space-3) var(--rf-space-4);
+  border-bottom: 1px solid var(--rf-color-border);
+  background: var(--rf-color-surface);
 }
 
 .workspace__empty {

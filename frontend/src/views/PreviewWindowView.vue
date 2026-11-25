@@ -38,6 +38,6 @@ onScopeDispose(() => {
   height: 100vh;
   padding: var(--rf-space-3);
   overflow: auto;
-  background: var(--rf-color-surface);
+  background: var(--rf-color-booth);
 }
 </style>

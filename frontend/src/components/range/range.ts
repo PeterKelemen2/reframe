@@ -224,7 +224,7 @@ export function rangeSeconds(job: { range?: Range }, source: MediaSource | null)
 }
 
 /** The span of `range` in seconds (`end: null` = to the end); `null` without the data. */
-function spanOf(
+export function rangeSpan(
   range: Range,
   source: MediaSource | null,
 ): { start: number; end: number | null } | null {
@@ -285,7 +285,7 @@ function chaptersHolding(
 export function convertRange(range: Range, kind: RangeKind, source: MediaSource | null): Range {
   if (range.kind === kind) return range
   if (kind === 'full') return FULL
-  const span = spanOf(range, source)
+  const span = rangeSpan(range, source)
   if (span === null) return defaultOf(kind, source)
   switch (kind) {
     case 'time':

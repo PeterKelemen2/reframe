@@ -128,6 +128,36 @@ describe('the preview panel', () => {
     expect(wrapper.find('.preview-panel__content [data-field="thumb"]').exists()).toBe(true)
   })
 
+  it('puts the programme strip directly under the frame, and keeps it while the preview is large', async () => {
+    const { wrapper } = await panel()
+    const stage = wrapper.get('[data-field="stage"]').element
+    expect(stage.nextElementSibling?.getAttribute('data-component')).toBe('programme-strip')
+    await wrapper.get('[data-action="enlarge"]').trigger('click')
+    await flushPromises()
+    const dialog = document.querySelector('[data-dialog="preview"]')!
+    expect(dialog.querySelector('[data-component="programme-strip"]')).toBeNull()
+    expect(
+      wrapper.findAll('.preview-panel__content [data-component="programme-strip"]'),
+    ).toHaveLength(1)
+  })
+
+  it('has no strip while collapsed: the editor column shows it then', async () => {
+    const { wrapper } = await panel(true)
+    expect(wrapper.find('[data-component="programme-strip"]').exists()).toBe(false)
+  })
+
+  it('draws the picture without smoothing at 100 % and 200 %, and smooths it to fit', async () => {
+    const { wrapper, preview } = await panel()
+    const pixels = () => wrapper.get('[data-field="stage"]').classes('frame-viewer__stage--pixels')
+    expect(pixels()).toBe(false)
+    preview.zoom = 1
+    await flushPromises()
+    expect(pixels()).toBe(true)
+    preview.zoom = 2
+    await flushPromises()
+    expect(pixels()).toBe(true)
+  })
+
   it('closes the large preview when the file is closed', async () => {
     const { wrapper } = await panel()
     await wrapper.get('[data-action="enlarge"]').trigger('click')

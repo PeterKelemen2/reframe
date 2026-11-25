@@ -9,6 +9,7 @@ import { useI18n } from 'vue-i18n'
 import PreviewClip from '@/components/clip/PreviewClip.vue'
 import type { EditorTabId } from '@/components/editor/tabs/registry'
 import FrameViewer from '@/components/media/FrameViewer.vue'
+import ProgrammeStrip from '@/components/strip/ProgrammeStrip.vue'
 import { platform } from '@/platform'
 import { usePreviewStore, type ViewMode } from '@/stores/preview'
 import { useToastStore } from '@/stores/toasts'
@@ -136,21 +137,28 @@ async function openWindow(): Promise<void> {
       class="preview-panel__content"
       @keydown="stepOnArrowKeys"
     >
-      <div v-if="detached" class="preview-panel__detached" data-state="detached">
-        <p>{{ t('window.preview.detached') }}</p>
-        <Button
-          :label="t('window.preview.focus')"
-          severity="secondary"
-          size="small"
-          data-action="focus-window"
-          @click="openWindow"
-        />
-      </div>
-      <p v-else-if="enlarged" class="preview-panel__detached" data-state="enlarged">
-        {{ t('window.preview.enlarged') }}
-      </p>
+      <template v-if="detached || enlarged">
+        <div v-if="detached" class="preview-panel__detached" data-state="detached">
+          <p>{{ t('window.preview.detached') }}</p>
+          <Button
+            :label="t('window.preview.focus')"
+            severity="secondary"
+            size="small"
+            data-action="focus-window"
+            @click="openWindow"
+          />
+        </div>
+        <p v-else class="preview-panel__detached" data-state="enlarged">
+          {{ t('window.preview.enlarged') }}
+        </p>
+        <ProgrammeStrip v-if="!collapsed" />
+      </template>
       <template v-else>
-        <FrameViewer />
+        <FrameViewer>
+          <template #programme>
+            <ProgrammeStrip v-if="!collapsed" />
+          </template>
+        </FrameViewer>
         <PreviewClip />
       </template>
     </div>
@@ -178,7 +186,7 @@ async function openWindow(): Promise<void> {
   min-width: 0;
   min-height: 0;
   border-left: 1px solid var(--rf-color-border);
-  background: var(--rf-color-surface);
+  background: var(--rf-color-booth);
 }
 
 .preview-panel__header {
@@ -186,7 +194,7 @@ async function openWindow(): Promise<void> {
   align-items: center;
   justify-content: space-between;
   gap: var(--rf-space-2);
-  padding: var(--rf-space-2) var(--rf-space-2) var(--rf-space-2) var(--rf-space-3);
+  padding: var(--rf-space-3) var(--rf-space-2) 0 var(--rf-space-4);
 }
 
 .preview-panel--collapsed .preview-panel__header {
@@ -204,7 +212,9 @@ async function openWindow(): Promise<void> {
 .preview-panel__title {
   flex: 1;
   margin: 0;
-  font-size: var(--rf-font-size-md);
+  font-size: var(--rf-text-heading);
+  font-weight: var(--rf-font-weight-bold);
+  line-height: var(--rf-line-height-tight);
 }
 
 .preview-panel__detached {
@@ -225,8 +235,11 @@ async function openWindow(): Promise<void> {
 }
 
 .preview-panel__content {
+  display: grid;
   flex: 1;
+  align-content: start;
+  gap: var(--rf-space-4);
   overflow: auto;
-  padding: var(--rf-space-3);
+  padding: var(--rf-space-3) var(--rf-space-4) var(--rf-space-4);
 }
 </style>

@@ -47,6 +47,7 @@ watch(active, () => {
         {{ t(tab.labelKey) }}
       </Tab>
     </TabList>
+    <slot name="above-panels" />
     <TabPanels ref="panels" class="editor-tabs__panels">
       <TabPanel v-for="tab in EDITOR_TABS" :key="tab.id" :value="tab.id" :data-panel="tab.id">
         <component :is="components[tab.id]" />
