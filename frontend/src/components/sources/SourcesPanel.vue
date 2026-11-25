@@ -781,7 +781,7 @@ onBeforeUnmount(() => stopDrops?.())
 /* A label keeps to one line: a narrow column wraps the buttons, not their words. */
 .sources-panel__open-files,
 .sources-panel__open-folder {
-  flex: 1 1 6.5rem;
+  flex: 1 1 5rem;
   padding-inline: var(--rf-space-2);
   white-space: nowrap;
 }

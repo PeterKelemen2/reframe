@@ -370,7 +370,7 @@ const notes = computed(() => [
 .frame-viewer__controls :deep(.p-selectbutton) {
   --p-selectbutton-border-radius: var(--rf-radius-md);
   --p-togglebutton-sm-padding: 0;
-  --p-togglebutton-content-sm-padding: 0.25rem 0.75rem;
+  --p-togglebutton-content-sm-padding: 0.25rem 0.5rem;
   --p-togglebutton-background: transparent;
   --p-togglebutton-border-color: var(--p-form-field-border-color);
   --p-togglebutton-color: var(--rf-color-text);
@@ -387,6 +387,7 @@ const notes = computed(() => [
 
 .frame-viewer__controls :deep(.p-togglebutton) {
   font-weight: var(--rf-font-weight-medium);
+  white-space: nowrap;
 }
 
 .frame-viewer__controls :deep([data-field='view-mode']) {
@@ -450,9 +451,12 @@ const notes = computed(() => [
 }
 
 .frame-viewer__strip {
+  /* One row: the frames are a sequence in time. A long one scrolls instead of wrapping. */
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr));
+  grid-auto-columns: minmax(1.5rem, 1fr);
+  grid-auto-flow: column;
   gap: var(--rf-space-1);
+  overflow-x: auto;
 }
 
 .frame-viewer__thumb {

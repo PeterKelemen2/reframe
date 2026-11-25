@@ -49,7 +49,8 @@ spotting lists and dubbing rythmo bands, where each voice has its colour.
 
 - **The editor on the ground.** The tab panels lie on the cool-white ground (blue-black in
   dark), the cards on white panels. Below 1440 px the sources and preview columns narrow
-  (15rem and 20rem at most), so all eight tabs fit beside the open preview at 1280 px.
+  (17rem and 21rem at most) and the tabs close up, so all eight fit beside the open preview
+  at 1280 px; the frame thumbnails stay on one row.
 
 ## Consequences
 

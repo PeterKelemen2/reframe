@@ -81,6 +81,13 @@ watch(active, () => {
   padding-inline: 0.5rem;
 }
 
+/* Where the side columns narrow (WorkspaceView), the tabs close up so that all eight still fit. */
+@media (60rem <= width < 90rem) {
+  .editor-tabs :deep([role='tab']) {
+    padding-inline: 0.375rem;
+  }
+}
+
 /* The first label lines up with the panels' content. */
 .editor-tabs :deep([role='tablist']) {
   padding-inline-start: 0.625rem;
