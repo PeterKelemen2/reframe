@@ -160,8 +160,10 @@ async function downloadPinned(name: string): Promise<void> {
 }
 
 .tools-section__subtitle {
-  margin: 0;
-  font-size: var(--rf-font-size-md);
+  margin: var(--rf-space-2) 0 0;
+  font-size: var(--rf-text-subheading);
+  font-weight: var(--rf-font-weight-bold);
+  line-height: var(--rf-line-height-tight);
 }
 
 .tools-section__mismatch {

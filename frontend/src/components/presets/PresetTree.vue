@@ -214,7 +214,9 @@ defineExpose({ focusPreset })
           <ChevronRight class="preset-tree__chevron" :size="16" aria-hidden="true" />
           <span>{{ item.name }}</span>
           <!-- The spaces keep the name's words apart: the template drops the plain ones. -->
-          <span class="preset-tree__count" aria-hidden="true">&nbsp;{{ n(item.count) }}</span>
+          <span class="preset-tree__count rf-mono" aria-hidden="true"
+            >&nbsp;{{ n(item.count) }}</span
+          >
           <span class="rf-sr-only">&nbsp;{{ t('presets.tree.count', item.count) }}</span>
         </div>
       </li>
@@ -278,6 +280,11 @@ defineExpose({ focusPreset })
   outline: none;
 }
 
+/* A category opens a new group: more room above its heading than below. */
+.preset-tree__category:not(:first-child) {
+  margin-top: var(--rf-space-3);
+}
+
 .preset-tree__row {
   display: flex;
   align-items: center;
@@ -288,11 +295,14 @@ defineExpose({ focusPreset })
 }
 
 .preset-tree__row--category {
+  font-size: var(--rf-text-heading);
   font-weight: var(--rf-font-weight-bold);
+  line-height: var(--rf-line-height-tight);
 }
 
 .preset-tree__chevron {
   flex: none;
+  color: var(--rf-color-text-muted);
   transition: transform var(--rf-duration);
 }
 
@@ -319,9 +329,11 @@ defineExpose({ focusPreset })
   background: var(--rf-color-surface-hover);
 }
 
+/* The chosen preset: the whole row is tinted. */
 .preset-tree__preset--selected > .preset-tree__row {
   background: var(--p-highlight-background);
   color: var(--p-highlight-color);
+  font-weight: var(--rf-font-weight-medium);
 }
 
 .preset-tree__category:focus-visible > .preset-tree__row,
@@ -342,11 +354,9 @@ defineExpose({ focusPreset })
   color: var(--rf-color-text-muted);
 }
 
-.preset-tree__mark--current {
-  color: var(--rf-color-primary);
-}
-
+/* The open job's preset and the default are told apart by their shapes, in ink. */
+.preset-tree__mark--current,
 .preset-tree__mark--default {
-  color: var(--p-status-warn-color);
+  color: var(--rf-color-text);
 }
 </style>

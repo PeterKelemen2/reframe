@@ -60,7 +60,8 @@ async function closeLog(): Promise<void> {
 
 .queue-view__title {
   margin: 0;
-  font-size: var(--rf-font-size-2xl);
+  font-size: var(--rf-text-title);
+  line-height: var(--rf-line-height-tight);
 }
 
 .queue-view__when-done {

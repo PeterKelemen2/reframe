@@ -197,7 +197,10 @@ async function remove(): Promise<void> {
       <StatusDot :tone="toolTone(tool)" :label="statusLabel" show-label />
     </div>
     <dl class="rf-kv-list tool-row__facts">
-      <KeyValue :label="t('settings.tools.version')" :value="tool.version" />
+      <KeyValue :label="t('settings.tools.version')">
+        <span v-if="tool.version" class="rf-mono">{{ tool.version }}</span>
+        <template v-else>—</template>
+      </KeyValue>
       <KeyValue :label="t('settings.tools.from')">
         <span data-field="origin">{{ originLabel }}</span>
         <span v-if="tool.next_to_ffmpeg" class="tool-row__muted">

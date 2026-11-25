@@ -1,5 +1,5 @@
 {
-  "intro": "Every base component in the states that matter. Switch the theme and density to see them in each.",
+  "intro": "Every base component in both colour schemes, side by side. The density switch changes both; the theme switch changes the page around them.",
   "theme": {
     "label": "Theme",
     "system": "System",
@@ -15,7 +15,8 @@
     "text": "Text",
     "muted": "Muted text",
     "primary": "Primary",
-    "sample": "Sphinx of black quartz, judge my vow"
+    "sample": "Sphinx of black quartz, judge my vow",
+    "booth": "Booth"
   },
   "field": {
     "title": "Field",
@@ -61,7 +62,9 @@
     "title": "Codec labels"
   },
   "language": {
-    "title": "Language chips"
+    "title": "Language chips",
+    "pale": "Pale",
+    "unknown": "Unknown"
   },
   "status": {
     "title": "Status dots",
@@ -94,5 +97,22 @@
     "open": "Open in the editor",
     "options": "Naming options",
     "job": "This job's name"
+  },
+  "type": {
+    "title": "Title: The Sopranos S03",
+    "heading": "Heading: Tracks",
+    "subheading": "Subheading: Output naming",
+    "label": "Label · Audio · 3",
+    "mono": "1920×1080 · 23.976 fps · 0:57:41"
+  },
+  "controls": {
+    "title": "Controls",
+    "primary": "Add to queue",
+    "secondary": "Secondary",
+    "outlined": "Outlined",
+    "text": "Text",
+    "danger": "Delete",
+    "disabled": "Disabled",
+    "progress": "Progress"
   }
 }

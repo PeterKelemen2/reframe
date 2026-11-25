@@ -217,3 +217,11 @@ export function runState(
     held: waiting.filter((job) => !named.has(job.id)).length,
   }
 }
+
+const STAMP = /^(\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\] ?)(.*)$/s
+
+/** A log line as its time stamp (Reframe's own lines have one) and the rest; `''` for none. */
+export function splitStamp(line: string): [stamp: string, text: string] {
+  const found = STAMP.exec(line)
+  return found ? [found[1] ?? '', found[2] ?? ''] : ['', line]
+}

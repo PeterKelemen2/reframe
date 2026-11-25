@@ -10,6 +10,7 @@ import {
   jobActions,
   jobStateLabel,
   liveColumns,
+  splitStamp,
   runState,
   stepText,
 } from './format'
@@ -204,5 +205,15 @@ describe('the run state', () => {
     // `gone` left the queue; the server keeps its id until the run goes idle.
     expect(runState(true, ['a', 'gone'], jobs)).toEqual({ mode: 'only', onlyCount: 1, held: 2 })
     expect(runState(true, ['b'], jobs)).toEqual({ mode: 'only', onlyCount: 1, held: 1 })
+  })
+})
+
+describe('a log line', () => {
+  it('sets Reframe’s time stamp apart from the text', () => {
+    expect(splitStamp('[2026-11-25 18:02:27] step 1 of 2')).toEqual([
+      '[2026-11-25 18:02:27] ',
+      'step 1 of 2',
+    ])
+    expect(splitStamp('frame=7720 fps=61')).toEqual(['', 'frame=7720 fps=61'])
   })
 })

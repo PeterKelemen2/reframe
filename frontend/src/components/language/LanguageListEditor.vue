@@ -5,6 +5,7 @@ import vTooltip from 'primevue/tooltip'
 import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 
+import LanguageChip from '@/components/base/LanguageChip.vue'
 import { useSystemStore } from '@/stores/system'
 
 import { type Container, describeTag, writtenAs } from './catalog'
@@ -20,6 +21,8 @@ const props = defineProps<{
   labelledby?: string
   /** The ISO 639-2 code shown is the one this container writes (MP4: 639-2/T). */
   container?: Container
+  /** Each language with its colour mark, as the track lists draw it. */
+  colored?: boolean
 }>()
 
 const model = defineModel<string[]>({ required: true })
@@ -186,8 +189,9 @@ function dropSide(index: number): 'before' | 'after' | null {
         </span>
         <span class="language-list__number" aria-hidden="true">{{ index + 1 }}</span>
         <span class="language-list__text">
-          <span class="language-list__name">{{ item.name }}</span>
-          <span v-if="item.codes" class="language-list__codes">{{ ` ${item.codes}` }}</span>
+          <LanguageChip v-if="colored" class="language-list__name" :tag="item.tag" />
+          <span v-else class="language-list__name">{{ item.name }}</span>
+          <span v-if="item.codes" class="language-list__codes rf-mono">{{ ` ${item.codes}` }}</span>
         </span>
         <span class="language-list__buttons">
           <Button
@@ -316,9 +320,13 @@ function dropSide(index: number): 'before' | 'after' | null {
 .language-list__text {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 0 var(--rf-space-2);
   min-width: 0;
+}
+
+.language-list__text .language-list__name {
+  font-size: inherit;
 }
 
 .language-list__codes,

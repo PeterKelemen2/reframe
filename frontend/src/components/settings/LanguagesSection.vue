@@ -71,6 +71,9 @@ const lists = computed(() => [
 
 <template>
   <Section :title="t('settings.languages.title')">
+    <p class="languages-section__colors" data-field="colors-help">
+      {{ t('settings.languages.colorsHelp') }}
+    </p>
     <div class="languages-section__fields">
       <Field
         v-for="list in lists"
@@ -88,6 +91,7 @@ const lists = computed(() => [
             :input-id="id"
             :labelledby="labelId"
             :disabled="locked"
+            colored
             @update:model-value="list.setting.save($event)"
           />
         </template>
@@ -97,6 +101,12 @@ const lists = computed(() => [
 </template>
 
 <style scoped>
+.languages-section__colors {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--rf-color-text-muted);
+}
+
 .languages-section__fields {
   display: grid;
   gap: var(--rf-space-5);

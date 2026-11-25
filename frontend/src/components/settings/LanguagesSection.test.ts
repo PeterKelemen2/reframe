@@ -65,12 +65,30 @@ const shown = (list: keyof typeof LISTS) =>
     ),
   ].map((item) => item.dataset.tag)
 
+/** The colour each language of a list is marked with. */
+const colour = (list: keyof typeof LISTS) =>
+  [
+    ...document.querySelectorAll<HTMLElement>(
+      `[data-field="${LISTS[list].field}"] .rf-language-chip`,
+    ),
+  ].map((chip) => chip.style.getPropertyValue('--rf-language-color'))
+
 describe('the Languages section', () => {
   it('shows the three lists of the settings', async () => {
     await mountSection()
     expect(shown('favourites')).toEqual(['hu'])
     expect(shown('audio')).toEqual(['hu', 'en'])
     expect(shown('subtitle')).toEqual([])
+  })
+
+  it('marks each language with the colour it has everywhere, and says where the order comes from', async () => {
+    await mountSection()
+    // The preferred audio languages take the first slots; a favourite keeps its slot.
+    expect(colour('audio')).toEqual(['var(--rf-lang-1)', 'var(--rf-lang-2)'])
+    expect(colour('favourites')).toEqual(['var(--rf-lang-1)'])
+    expect(document.querySelector('[data-field="colors-help"]')?.textContent).toContain(
+      'preferred audio languages take the first colours',
+    )
   })
 
   it.each(Object.keys(LISTS) as (keyof typeof LISTS)[])(

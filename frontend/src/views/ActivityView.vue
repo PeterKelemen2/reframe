@@ -5,8 +5,8 @@ import SelectButton from 'primevue/selectbutton'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-import StatusDot from '@/components/base/StatusDot.vue'
 import { ACTIVITY_KINDS, type ActivityKind, describeEntry } from '@/components/queue/activityLines'
+import { TONE_ICON } from '@/components/queue/stateIcons'
 import { useActivityStore } from '@/stores/activity'
 
 const { t, locale } = useI18n()
@@ -94,13 +94,16 @@ const lines = computed(() =>
           :data-kind="line.kind"
           :data-type="entry.event.type"
         >
-          <time class="activity-view__time" :datetime="entry.at.toISOString()">
+          <time class="activity-view__time rf-mono" :datetime="entry.at.toISOString()">
             {{ time.format(entry.at) }}
           </time>
-          <StatusDot :tone="line.tone" :label="kindLabel(line.kind)" />
+          <span class="activity-view__mark" :data-tone="line.tone">
+            <component :is="TONE_ICON[line.tone]" :size="16" aria-hidden="true" />
+            <span class="rf-sr-only">{{ kindLabel(line.kind) }}</span>
+          </span>
           <div class="activity-view__text">
             <span data-field="text">{{ line.text }}</span>
-            <span v-if="line.detail" class="activity-view__detail" data-field="detail">
+            <span v-if="line.detail" class="activity-view__detail rf-mono" data-field="detail">
               {{ line.detail }}
             </span>
           </div>
@@ -127,7 +130,8 @@ const lines = computed(() =>
 
 .activity-view__title {
   margin: 0;
-  font-size: var(--rf-font-size-2xl);
+  font-size: var(--rf-text-title);
+  line-height: var(--rf-line-height-tight);
 }
 
 .activity-view__clear {
@@ -142,32 +146,70 @@ const lines = computed(() =>
 }
 
 .activity-view__empty {
+  margin: 0;
   color: var(--rf-color-text-muted);
 }
 
+/* The lines of a log in one hairline panel, newest at the top. */
 .activity-view__list {
   margin: 0;
   padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--rf-color-border);
+  border-radius: var(--rf-radius-lg);
+  background: var(--rf-color-surface);
   list-style: none;
 }
 
 .activity-view__entry {
   display: grid;
-  grid-template-columns: auto auto 1fr;
-  align-items: baseline;
+  grid-template-columns: max-content 1rem minmax(0, 1fr);
+  align-items: start;
   gap: var(--rf-space-3);
-  padding: var(--rf-space-2) 0;
-  border-bottom: 1px solid var(--rf-color-border);
+  padding: var(--rf-space-2) var(--rf-space-4);
 }
 
+.activity-view__entry + .activity-view__entry {
+  border-top: 1px solid var(--rf-color-border);
+}
+
+.activity-view__entry:hover {
+  background: var(--rf-color-surface-hover);
+}
+
+/* Time and icon sit on the first line of the text. */
 .activity-view__time {
   color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-sm);
-  font-variant-numeric: tabular-nums;
+  line-height: calc(var(--rf-line-height) * 1rem);
+}
+
+.activity-view__mark {
+  display: inline-flex;
+  align-items: center;
+  height: calc(var(--rf-line-height) * 1rem);
+  color: var(--rf-color-text-muted);
+}
+
+.activity-view__mark[data-tone='ok'] {
+  color: var(--p-status-ok-color);
+}
+
+.activity-view__mark[data-tone='busy'] {
+  color: var(--rf-color-text);
+}
+
+.activity-view__mark[data-tone='warn'] {
+  color: var(--p-status-warn-color);
+}
+
+.activity-view__mark[data-tone='error'] {
+  color: var(--p-status-error-color);
 }
 
 .activity-view__text {
   display: grid;
+  gap: var(--rf-space-1);
   min-width: 0;
 }
 

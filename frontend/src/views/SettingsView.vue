@@ -185,7 +185,8 @@ watch([() => route.hash, ready, menuEntry], focusHash)
 
 .settings-view__title {
   margin: 0;
-  font-size: var(--rf-font-size-lg);
+  font-size: var(--rf-text-title);
+  line-height: var(--rf-line-height-tight);
 }
 
 .settings-view__nav {
@@ -213,13 +214,18 @@ watch([() => route.hash, ready, menuEntry], focusHash)
 
 .settings-view__content {
   display: grid;
-  gap: var(--rf-space-6);
+  gap: var(--rf-space-4);
   max-width: 64rem;
   margin-inline: auto;
   padding: var(--rf-space-5) var(--rf-space-5) var(--rf-space-6);
 }
 
+/* Each section is a hairline panel on the ground, as the workspace's cards. */
 .settings-view__section {
+  padding: var(--rf-space-4) var(--rf-space-5) var(--rf-space-5);
+  border: 1px solid var(--rf-color-border);
+  border-radius: var(--rf-radius-lg);
+  background: var(--rf-color-surface);
   scroll-margin-top: var(--rf-space-4);
 }
 

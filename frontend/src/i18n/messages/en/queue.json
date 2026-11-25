@@ -34,8 +34,7 @@
   "columns": {
     "drag": "Drag to reorder",
     "state": "State",
-    "source": "Source",
-    "output": "Output",
+    "job": "Job",
     "preset": "Preset and encoder",
     "progress": "Progress",
     "fps": "FPS",

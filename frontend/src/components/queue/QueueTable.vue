@@ -27,7 +27,6 @@ import { RouterLink, useRouter } from 'vue-router'
 import { ApiError } from '@/api/client'
 import type { QueueJob } from '@/api/types'
 import { SEVERITY_ICON, useSeverityLabel } from '@/components/base/severity'
-import StatusDot from '@/components/base/StatusDot.vue'
 import FocusSafeButton from '@/components/shell/FocusSafeButton'
 import { focusLost, focusWorkspace } from '@/components/shell/focus'
 import { fileName } from '@/components/shell/format'
@@ -51,6 +50,8 @@ import {
   sourceName,
   STATE_TONE,
 } from './format'
+import { identityLine } from './identity'
+import JobStateMark from './JobStateMark.vue'
 
 const emit = defineEmits<{ openLog: [jobId: string, opener: HTMLElement] }>()
 
@@ -74,6 +75,7 @@ const rows = computed(() =>
     index,
     actions: jobActions(job, canReveal, isHeld(job, queue.processing, queue.only)),
     live: liveColumns(job, t, n),
+    identity: identityLine(job),
   })),
 )
 
@@ -251,10 +253,6 @@ const ICONS = {
   reveal: FolderOpen,
 } as const
 
-function severity(action: JobAction): 'danger' | 'secondary' {
-  return action === 'remove' || action === 'cancel' ? 'danger' : 'secondary'
-}
-
 /** The row button that had the focus before the jobs changed: its job, action and place. */
 let focused: { jobId: string; name: string | null; index: number; row: number } | null = null
 
@@ -372,22 +370,22 @@ async function move(index: number, to: number): Promise<void> {
       </Column>
       <Column :header="t('queue.columns.state')" body-class="queue-table__state">
         <template #body="{ data }">
-          <StatusDot
+          <JobStateMark
+            :state="data.job.state"
             :tone="STATE_TONE[data.job.state as QueueJob['state']]"
             :label="jobStateLabel(data.job, t)"
-            show-label
           />
         </template>
       </Column>
-      <Column :header="t('queue.columns.source')" body-class="queue-table__name">
+      <Column :header="t('queue.columns.job')" body-class="queue-table__job">
         <template #body="{ data }">
-          <span v-tooltip.top="data.job.settings.source.path" data-field="source" dir="ltr">
-            {{ sourceName(data.job) }}
+          <span
+            v-tooltip.top="data.job.settings.source.path"
+            class="queue-table__identity"
+            data-field="source"
+          >
+            {{ data.identity }}
           </span>
-        </template>
-      </Column>
-      <Column :header="t('queue.columns.output')" body-class="queue-table__name">
-        <template #body="{ data }">
           <span
             v-if="data.job.settings.output?.edit_in_place"
             v-tooltip.top="inPlaceTip(data.job)"
@@ -405,6 +403,7 @@ async function move(index: number, to: number): Promise<void> {
           <span
             v-else-if="outputPath(data.job)"
             v-tooltip.top="outputPath(data.job)"
+            class="queue-table__file rf-mono"
             data-field="output"
             dir="ltr"
           >
@@ -412,7 +411,7 @@ async function move(index: number, to: number): Promise<void> {
           </span>
         </template>
       </Column>
-      <Column :header="t('queue.columns.preset')">
+      <Column :header="t('queue.columns.preset')" body-class="queue-table__preset">
         <template #body="{ data }">
           <span data-field="preset">{{ data.job.settings.preset_name ?? '—' }}</span>
           <span v-if="encoderName(data.job)" class="queue-table__encoder" data-field="encoder">
@@ -429,7 +428,7 @@ async function move(index: number, to: number): Promise<void> {
               class="queue-table__bar"
               :pt="{ root: { 'aria-label': t('queue.columns.progress') } }"
             />
-            <span class="queue-table__percent" data-field="percent">
+            <span class="queue-table__percent rf-mono" data-field="percent">
               {{ data.live.percentText }}
             </span>
             <span v-if="data.live.step" class="queue-table__step" data-field="step">
@@ -438,22 +437,38 @@ async function move(index: number, to: number): Promise<void> {
           </template>
         </template>
       </Column>
-      <Column :header="t('queue.columns.fps')" body-class="queue-table__number">
+      <Column
+        :header="t('queue.columns.fps')"
+        header-class="queue-table__number"
+        body-class="queue-table__number rf-mono"
+      >
         <template #body="{ data }">
           <span data-field="fps">{{ data.live.fps }}</span>
         </template>
       </Column>
-      <Column :header="t('queue.columns.speed')" body-class="queue-table__number">
+      <Column
+        :header="t('queue.columns.speed')"
+        header-class="queue-table__number"
+        body-class="queue-table__number rf-mono"
+      >
         <template #body="{ data }">
           <span data-field="speed">{{ data.live.speed }}</span>
         </template>
       </Column>
-      <Column :header="t('queue.columns.eta')" body-class="queue-table__number">
+      <Column
+        :header="t('queue.columns.eta')"
+        header-class="queue-table__number"
+        body-class="queue-table__number rf-mono"
+      >
         <template #body="{ data }">
           <span data-field="eta">{{ data.live.eta }}</span>
         </template>
       </Column>
-      <Column :header="t('queue.columns.size')" body-class="queue-table__number">
+      <Column
+        :header="t('queue.columns.size')"
+        header-class="queue-table__number"
+        body-class="queue-table__number rf-mono"
+      >
         <template #body="{ data }">
           <span data-field="size">{{ data.live.size }}</span>
         </template>
@@ -495,7 +510,7 @@ async function move(index: number, to: number): Promise<void> {
               text
               rounded
               size="small"
-              :severity="severity(action)"
+              severity="secondary"
               :data-action="action"
               :disabled="action === 'edit' && editing !== null"
               :aria-busy="(action === 'edit' && editing === data.job.id) || undefined"
@@ -550,7 +565,11 @@ async function move(index: number, to: number): Promise<void> {
 </template>
 
 <style scoped>
+/* A dense table: tighter cells than PrimeVue's, still following the density. */
 .queue-table {
+  --p-datatable-header-cell-padding: var(--rf-space-2);
+  --p-datatable-body-cell-padding: var(--rf-space-2);
+
   min-width: 0;
 }
 
@@ -566,7 +585,7 @@ async function move(index: number, to: number): Promise<void> {
 .queue-table__empty-title {
   margin: 0;
   color: var(--rf-color-text);
-  font-size: var(--rf-font-size-xl);
+  font-size: var(--rf-text-heading);
 }
 
 .queue-table__empty-text {
@@ -575,11 +594,41 @@ async function move(index: number, to: number): Promise<void> {
 
 .queue-table__empty-link {
   color: var(--rf-color-primary);
+  font-weight: var(--rf-font-weight-medium);
+}
+
+.queue-table :deep(.p-datatable) {
+  overflow: hidden;
+  border: 1px solid var(--rf-color-border);
+  border-radius: var(--rf-radius-lg);
+  background: var(--rf-color-surface);
+}
+
+/* Column names as the group labels of the workspace: small capitals over the rows. */
+.queue-table :deep(.p-datatable-thead > tr > th) {
+  color: var(--rf-color-text-muted);
+  font-size: var(--rf-text-label);
+  font-weight: var(--rf-font-weight-medium);
+  letter-spacing: var(--rf-tracking-label);
+  text-transform: uppercase;
+}
+
+.queue-table :deep(.p-datatable-tbody > tr > td) {
+  vertical-align: middle;
+}
+
+.queue-table :deep(.p-datatable-tbody > tr:last-child > td) {
+  border-bottom: none;
+}
+
+.queue-table :deep(.p-datatable-tbody > tr:hover) {
+  background: var(--rf-color-surface-hover);
 }
 
 .queue-table :deep(.queue-table__handle) {
   width: 2rem;
-  padding-inline: var(--rf-space-1);
+  padding-inline: var(--rf-space-2) 0;
+  color: var(--rf-color-text-muted);
   cursor: grab;
 }
 
@@ -587,27 +636,60 @@ async function move(index: number, to: number): Promise<void> {
   white-space: nowrap;
 }
 
-.queue-table :deep(.queue-table__name) {
-  max-width: 16rem;
+.queue-table :deep(.queue-table__job) {
+  width: 40%;
+  min-width: 11rem;
+  padding-inline-start: var(--rf-space-3);
+}
+
+.queue-table__identity {
+  display: block;
+  font-weight: var(--rf-font-weight-medium);
   overflow-wrap: anywhere;
+}
+
+/* A path is copied, not read: one line, the whole of it in the tooltip. It takes the room the
+   column has and asks for none, so a long name never widens the table. */
+.queue-table__file {
+  display: block;
+  contain: inline-size;
+  overflow: hidden;
+  color: var(--rf-color-text-muted);
+  font-size: var(--rf-font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .queue-table__in-place {
   display: inline-flex;
+  font-size: var(--rf-font-size-sm);
   align-items: center;
   gap: var(--rf-space-1);
+  color: var(--rf-color-text-muted);
 }
 
 .queue-table__in-place svg {
   flex: none;
 }
 
+.queue-table :deep(.queue-table__preset) {
+  white-space: nowrap;
+}
+
 .queue-table :deep(.queue-table__progress) {
-  min-width: 9rem;
+  min-width: 7rem;
 }
 
 .queue-table__bar {
-  height: 0.5rem;
+  height: 0.25rem;
+  margin-block: var(--rf-space-1);
+  border-radius: var(--rf-radius-pill);
+  background: var(--p-content-border-color);
+}
+
+.queue-table__bar :deep(.p-progressbar-value) {
+  border-radius: inherit;
+  background: var(--rf-color-text);
 }
 
 .queue-table__percent,
@@ -618,9 +700,18 @@ async function move(index: number, to: number): Promise<void> {
   font-size: var(--rf-font-size-xs);
 }
 
+.queue-table__percent {
+  color: var(--rf-color-text);
+  font-size: var(--rf-font-size-sm);
+}
+
 .queue-table :deep(.queue-table__number) {
-  font-variant-numeric: tabular-nums;
+  text-align: end;
   white-space: nowrap;
+}
+
+.queue-table :deep(th.queue-table__number .p-datatable-column-header-content) {
+  justify-content: flex-end;
 }
 
 .queue-table__buttons {
@@ -629,14 +720,24 @@ async function move(index: number, to: number): Promise<void> {
   justify-content: flex-end;
 }
 
-/* The table gives the last column what is left; the buttons keep their size. */
+/* The table gives the last column what is left; the buttons keep their size, a row of seven
+   still above the 24 px target size. */
 .queue-table__buttons > :deep(.p-button) {
   flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 /* A small icon-only button's padding leaves less than the icon's width: it would shrink. */
 .queue-table__buttons :deep(.p-button svg) {
   flex: none;
+}
+
+/* Cancel and Remove ask for no confirmation: they show their danger under the pointer and the
+   focus, so the rows are not a column of red. */
+.queue-table__buttons
+  :deep(:is([data-action='cancel'], [data-action='remove']):is(:hover, :focus-visible)) {
+  color: var(--p-status-error-color);
 }
 
 .queue-table__spin {
@@ -661,6 +762,12 @@ async function move(index: number, to: number): Promise<void> {
   align-items: flex-start;
   gap: var(--rf-space-2);
   margin: 0;
+}
+
+.queue-table__error svg,
+.queue-table__issues svg {
+  flex: none;
+  margin-top: 0.15em;
 }
 
 .queue-table__error,
