@@ -508,7 +508,7 @@ oxfmt's output on a few `.vue` files with templates once before you commit to it
       uses `Field`.
 - [x] `RoleBadge` (solid = flag, outlined = heuristic, tooltip = evidence), `CodecLabel`
       (commercial name + raw codec in the tooltip), `LanguageChip`.
-- [ ] The "Spotting List" visual world: ink and paper palettes for light and dark, eight
+- [x] The "Spotting List" visual world: ink and paper palettes for light and dark, eight
       language colours, Red Hat Text and Mono, the programme strip under the preview
       ([decision 0113](../decisions/0113-the-spotting-list-visual-world.md)).
 - [x] **i18n from the first view**: every string the user sees goes through vue-i18n. A CI
