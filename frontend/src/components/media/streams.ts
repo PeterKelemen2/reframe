@@ -99,12 +99,21 @@ export function streamLanguage(stream: SourceStream): string | null {
   return stream.language_ietf || stream.language || null
 }
 
-/** `2 · eng · DTS-HD MA 5.1 · English Dub`: what a source choice shows. */
-export function streamLabel(stream: SourceStream): string {
+/**
+ * `2 · eng · DTS-HD MA 5.1 · English Dub`: what a source choice shows; with `languageName`, the
+ * language by its name (`2 · English · …`).
+ */
+export function streamLabel(
+  stream: SourceStream,
+  languageName?: (tag: string | null) => string,
+): string {
   const codec = stream.display_codec || stream.codec || null
   const format =
     stream.kind === 'audio' ? [codec, channelsText(stream)].filter(Boolean).join(' ') : codec
-  return [String(trackNumber(stream)), streamLanguage(stream) ?? 'und', format, stream.title]
+  const language = languageName
+    ? languageName(streamLanguage(stream))
+    : (streamLanguage(stream) ?? 'und')
+  return [String(trackNumber(stream)), language, format, stream.title]
     .filter((part) => part !== null && part !== undefined && part !== '')
     .join(' · ')
 }

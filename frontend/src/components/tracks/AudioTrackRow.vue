@@ -8,6 +8,7 @@ import { useI18n } from 'vue-i18n'
 
 import type { AudioOutputTrack, AudioStream } from '@/api/types'
 import Field from '@/components/base/Field.vue'
+import { findLanguage, isUndetermined } from '@/components/base/languages'
 import { groupedKbps, kiloHertz, streamLabel } from '@/components/media/streams'
 import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
@@ -26,6 +27,7 @@ import {
 } from './ops'
 import { metadataPaths } from './metadata'
 import TrackMetadataEditor from './TrackMetadataEditor.vue'
+import StreamOption from './StreamOption.vue'
 import TrackRowFrame from './TrackRowFrame.vue'
 
 const props = defineProps<{
@@ -68,8 +70,20 @@ const copied = computed(
 )
 
 const sourceOptions = computed(() =>
-  props.streams.map((candidate) => ({ value: candidate.index, label: streamLabel(candidate) })),
+  props.streams.map((candidate) => ({
+    value: candidate.index,
+    label: streamLabel(candidate, languageName),
+  })),
 )
+
+function languageName(tag: string | null): string {
+  if (isUndetermined(tag)) return t('base.language.undetermined')
+  return findLanguage(system.languages, tag)?.english_name ?? tag ?? ''
+}
+
+function streamOf(index: number | null | undefined) {
+  return props.streams.find((candidate) => candidate.index === index)
+}
 const sourcePlaceholder = computed(() =>
   props.track.source_stream === null || props.track.source_stream === undefined
     ? t('tracks.output.noSource')
@@ -247,7 +261,15 @@ function onLoudness(value: AudioOutputTrack['loudness']): void {
             :disabled="streams.length === 0"
             :invalid="invalid"
             @update:model-value="onSource"
-          />
+          >
+            <template #value="{ value, placeholder }">
+              <StreamOption v-if="streamOf(value)" :stream="streamOf(value)!" />
+              <span v-else>{{ placeholder }}</span>
+            </template>
+            <template #option="{ option }">
+              <StreamOption v-if="streamOf(option.value)" :stream="streamOf(option.value)!" />
+            </template>
+          </Select>
         </template>
       </Field>
     </template>

@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 
 import type { SubtitleOutputTrack, SubtitleStream } from '@/api/types'
 import Field from '@/components/base/Field.vue'
+import { findLanguage, isUndetermined } from '@/components/base/languages'
 import { streamLabel } from '@/components/media/streams'
 import { fileName } from '@/components/shell/format'
 import { useEditorStore } from '@/stores/editor'
@@ -24,6 +25,7 @@ import ExternalSubtitleFields from './ExternalSubtitleFields.vue'
 import { inspected } from './external'
 import { metadataPaths } from './metadata'
 import TrackMetadataEditor from './TrackMetadataEditor.vue'
+import StreamOption from './StreamOption.vue'
 import TrackRowFrame from './TrackRowFrame.vue'
 
 const props = defineProps<{
@@ -84,8 +86,20 @@ const convertedOnCopy = computed<string | null>(() => {
 })
 
 const sourceOptions = computed(() =>
-  props.streams.map((candidate) => ({ value: candidate.index, label: streamLabel(candidate) })),
+  props.streams.map((candidate) => ({
+    value: candidate.index,
+    label: streamLabel(candidate, languageName),
+  })),
 )
+
+function languageName(tag: string | null): string {
+  if (isUndetermined(tag)) return t('base.language.undetermined')
+  return findLanguage(system.languages, tag)?.english_name ?? tag ?? ''
+}
+
+function streamOf(index: number | null | undefined) {
+  return props.streams.find((candidate) => candidate.index === index)
+}
 
 function onSource(index: number): void {
   const next = props.streams.find((candidate) => candidate.index === index)
@@ -160,7 +174,15 @@ const formatOptions = computed(() =>
             :disabled="streams.length === 0"
             :invalid="invalid"
             @update:model-value="onSource"
-          />
+          >
+            <template #value="{ value, placeholder }">
+              <StreamOption v-if="streamOf(value)" :stream="streamOf(value)!" />
+              <span v-else>{{ placeholder }}</span>
+            </template>
+            <template #option="{ option }">
+              <StreamOption v-if="streamOf(option.value)" :stream="streamOf(option.value)!" />
+            </template>
+          </Select>
         </template>
       </Field>
     </template>
