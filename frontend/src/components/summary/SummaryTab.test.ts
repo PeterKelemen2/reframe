@@ -258,6 +258,27 @@ describe('the Summary tab', () => {
     expect(ui.revealed?.path).toBe('video.rate_control')
   })
 
+  it('marks a re-encoded track with its source, and renames a stale track name in one click', async () => {
+    const rename = {
+      label: "Rename it to 'Japanese 2.0'",
+      patch: [{ op: 'add' as const, path: '/audio/0/metadata/name', value: 'Japanese 2.0' }],
+      target: 'job' as const,
+    }
+    const { wrapper, editor } = await mountSummary({
+      issues: [issue('metadata.name_stale', 'audio[0].metadata.name', 'warning', [rename])],
+    })
+    const chip = () => wrapper.find('[data-card="tracks"] [data-path="audio[0]"]')
+    expect(chip().find('[data-role="from"]').text()).toBe('AC-3 5.1 written as')
+    expect(chip().find('[data-role="name"]').text()).toBe('Japanese 5.1')
+    expect(chip().classes()).toContain('summary-track--warning')
+    expect(wrapper.find('[data-path="audio[1]"] [data-role="from"]').exists()).toBe(false)
+
+    await wrapper.find('[data-card="issues"] .rf-issue__fix').trigger('click')
+    await flushPromises()
+    expect(editor.job?.audio?.[0]?.metadata?.name).toBe('Japanese 2.0')
+    expect(chip().find('[data-role="name"]').text()).toBe('Japanese 5.1 renamed to Japanese 2.0')
+  })
+
   it('links the Picture card to the Dimensions and the Filters tab', async () => {
     const { wrapper } = await mountSummary()
     await wrapper.find('[data-field="filters"] button').trigger('click')

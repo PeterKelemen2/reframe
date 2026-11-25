@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ArrowRight } from '@lucide/vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -41,8 +42,8 @@ const audio = computed(() =>
 const subtitles = computed(() =>
   editor.job === null
     ? []
-    : subtitleChips(editor.job, source.value, names.value?.subtitles).map((chip) =>
-        Object.assign(chip, { severity: severityOf(chip.path) }),
+    : subtitleChips(editor.job, source.value, names.value?.subtitles, system.definitions).map(
+        (chip) => Object.assign(chip, { severity: severityOf(chip.path) }),
       ),
 )
 
@@ -62,19 +63,6 @@ function flagLabel(flag: Flag): string {
       return t('summary.tracks.flag.original')
   }
   return flag
-}
-
-function action(chip: (typeof subtitles.value)[number]): string | null {
-  switch (chip.action) {
-    case 'burn':
-      return t('summary.tracks.burn')
-    case 'convert':
-      return chip.convertTo === null
-        ? null
-        : t('summary.tracks.convert', { format: chip.convertTo })
-    default:
-      return null
-  }
 }
 </script>
 
@@ -101,6 +89,11 @@ function action(chip: (typeof subtitles.value)[number]): string | null {
             >
               <span class="summary-track__index">{{ index + 1 }}</span>
               <LanguageChip :tag="chip.language" />
+              <span v-if="chip.from" class="summary-track__from" data-role="from">
+                {{ chip.from }}
+                <ArrowRight class="summary-track__arrow" :size="14" aria-hidden="true" />
+                <span class="rf-sr-only">{{ t('summary.tracks.writtenAs') }}</span>
+              </span>
               <span class="summary-track__codec">
                 <template v-if="chip.passthru">
                   <CodecLabel v-if="chip.stream" :stream="chip.stream" />
@@ -109,7 +102,14 @@ function action(chip: (typeof subtitles.value)[number]): string | null {
                 <strong v-else>{{ chip.encoder }}</strong>
               </span>
               <span v-if="chip.layout" class="summary-track__layout">{{ chip.layout }}</span>
-              <span v-if="chip.name" class="summary-track__name">{{ chip.name }}</span>
+              <span v-if="chip.name" class="summary-track__name" data-role="name">
+                <template v-if="chip.sourceName">
+                  {{ chip.sourceName }}
+                  <ArrowRight class="summary-track__arrow" :size="14" aria-hidden="true" />
+                  <span class="rf-sr-only">{{ t('summary.tracks.renamedTo') }}</span>
+                </template>
+                {{ chip.name }}
+              </span>
               <RoleBadge v-for="role in chip.roles" :key="role.role" :role="role" />
               <span v-for="flag in chip.flags" :key="flag" class="summary-track__flag">
                 {{ flagLabel(flag) }}
@@ -148,9 +148,21 @@ function action(chip: (typeof subtitles.value)[number]): string | null {
               <span class="summary-track__codec">
                 <CodecLabel v-if="chip.stream" :stream="chip.stream" />
                 <strong v-else-if="chip.external">{{ chip.external }}</strong>
-                <span v-if="action(chip)">{{ action(chip) }}</span>
+                <template v-if="chip.convertTo && chip.action !== 'burn'">
+                  <ArrowRight class="summary-track__arrow" :size="14" aria-hidden="true" />
+                  <span class="rf-sr-only">{{ t('summary.tracks.writtenAs') }}</span>
+                  <strong>{{ chip.convertTo }}</strong>
+                </template>
+                <span v-else-if="chip.action === 'burn'">{{ t('summary.tracks.burn') }}</span>
               </span>
-              <span v-if="chip.name" class="summary-track__name">{{ chip.name }}</span>
+              <span v-if="chip.name" class="summary-track__name" data-role="name">
+                <template v-if="chip.sourceName">
+                  {{ chip.sourceName }}
+                  <ArrowRight class="summary-track__arrow" :size="14" aria-hidden="true" />
+                  <span class="rf-sr-only">{{ t('summary.tracks.renamedTo') }}</span>
+                </template>
+                {{ chip.name }}
+              </span>
               <RoleBadge v-for="role in chip.roles" :key="role.role" :role="role" kind="subtitle" />
               <span v-for="flag in chip.flags" :key="flag" class="summary-track__flag">
                 {{ flagLabel(flag) }}
@@ -257,6 +269,25 @@ function action(chip: (typeof subtitles.value)[number]): string | null {
 
 .summary-track__name {
   color: var(--rf-color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.summary-track__from {
+  display: inline-flex;
+  gap: var(--rf-space-1);
+  align-items: center;
+  color: var(--rf-color-text-muted);
+  white-space: nowrap;
+}
+
+.summary-track__arrow {
+  flex: none;
+  color: var(--rf-color-text-muted);
+  vertical-align: -0.125em;
+}
+
+.summary-track__arrow:dir(rtl) {
+  transform: scaleX(-1);
 }
 
 .summary-track__flag {
