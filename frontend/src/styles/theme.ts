@@ -48,6 +48,12 @@ function message(palette: string, scheme: 'light' | 'dark') {
   }
 }
 
+/** An info toast: ink on the panel, like an info note. */
+const NEUTRAL_NOTICE = {
+  light: { background: '{surface.0}', borderColor: '{surface.300}', color: '{surface.800}' },
+  dark: { background: '{surface.800}', borderColor: '{surface.600}', color: '{surface.100}' },
+}
+
 function neutralMessage(scheme: 'light' | 'dark') {
   const tone =
     scheme === 'light'
@@ -158,9 +164,10 @@ export const ReframePreset = definePreset(Aura, {
           hoverColor: '{primary.800}',
           activeColor: '{primary.950}',
         },
+        // A selected row stands clear of both the white panels and the cool-white ground.
         highlight: {
-          background: '{primary.100}',
-          focusBackground: '{primary.200}',
+          background: '#e8ecf2',
+          focusBackground: '#dde2ea',
           color: '{primary.900}',
           focusColor: '{primary.950}',
         },
@@ -185,7 +192,12 @@ export const ReframePreset = definePreset(Aura, {
         status: {
           error: { color: '{red.700}', background: '{red.50}', borderColor: '{red.600}' },
           warn: { color: '{amber.800}', background: '{amber.50}', borderColor: '{amber.700}' },
-          info: { color: '{blue.700}', background: '{blue.50}', borderColor: '{blue.600}' },
+          // A note is information, not a state: ink, so that only the picture carries a hue.
+          info: {
+            color: '{surface.800}',
+            background: '{surface.100}',
+            borderColor: '{surface.500}',
+          },
           ok: { color: '{green.700}', background: '{green.50}', borderColor: '{green.700}' },
           busy: {
             color: '{primary.900}',
@@ -209,8 +221,8 @@ export const ReframePreset = definePreset(Aura, {
           activeColor: '{surface.300}',
         },
         highlight: {
-          background: 'rgba(228, 231, 236, 0.14)',
-          focusBackground: 'rgba(228, 231, 236, 0.22)',
+          background: '#252c38',
+          focusBackground: '#2e3644',
           color: '{surface.50}',
           focusColor: '{surface.0}',
         },
@@ -230,7 +242,11 @@ export const ReframePreset = definePreset(Aura, {
         status: {
           error: { color: '{red.300}', background: '{red.950}', borderColor: '{red.400}' },
           warn: { color: '{amber.300}', background: '{amber.950}', borderColor: '{amber.400}' },
-          info: { color: '{blue.300}', background: '{blue.950}', borderColor: '{blue.400}' },
+          info: {
+            color: '{surface.100}',
+            background: '{surface.800}',
+            borderColor: '{surface.500}',
+          },
           ok: { color: '{green.400}', background: '{green.950}', borderColor: '{green.500}' },
           busy: {
             color: '{surface.100}',
@@ -280,13 +296,13 @@ export const ReframePreset = definePreset(Aura, {
     toast: {
       colorScheme: {
         light: {
-          info: notice('blue', 'light'),
+          info: NEUTRAL_NOTICE.light,
           success: notice('green', 'light'),
           warn: WARN_NOTICE_LIGHT,
           error: notice('red', 'light'),
         },
         dark: {
-          info: notice('blue', 'dark'),
+          info: NEUTRAL_NOTICE.dark,
           success: notice('green', 'dark'),
           warn: notice('yellow', 'dark'),
           error: notice('red', 'dark'),
