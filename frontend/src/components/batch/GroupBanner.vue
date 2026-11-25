@@ -300,19 +300,19 @@ watch(mode, async () => {
   gap: var(--rf-space-2) var(--rf-space-4);
   padding: var(--rf-space-2) var(--rf-space-4);
   border-bottom: 1px solid var(--rf-color-border);
-  border-left: 3px solid var(--rf-color-primary);
-  background: color-mix(in srgb, var(--rf-color-primary) 8%, var(--rf-color-surface));
+  /* The whole band tinted, as the edited group's row in the sources. */
+  background: var(--p-highlight-background);
 }
 
 .group-banner--slim {
   padding-block: var(--rf-space-1);
-  border-left-color: var(--rf-color-border);
   background: var(--rf-color-surface);
 }
 
 .group-banner__title {
   margin: 0;
-  font-weight: var(--rf-font-weight-medium);
+  font-size: var(--rf-text-subheading);
+  font-weight: var(--rf-font-weight-bold);
 }
 
 .group-banner--slim .group-banner__title {
