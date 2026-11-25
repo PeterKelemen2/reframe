@@ -91,8 +91,7 @@
   "output": {
     "title": "Output tracks",
     "add": "Add track",
-    "addAll": "Add all",
-    "addAllHelp": "Adds an output track for every source track that has none yet",
+    "addUnused": "Every source track not added yet ({count})",
     "reload": "Reload from preset rules",
     "reloadHelp": "Replaces these tracks with what the preset's rules choose for this source (Undo brings them back)",
     "defaults": "Defaults…",

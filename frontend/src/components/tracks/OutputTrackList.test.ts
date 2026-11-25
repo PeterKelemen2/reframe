@@ -74,11 +74,9 @@ describe('the output track list in a group', () => {
   it('in scope file offers no adding or reordering, and points to the matrix', async () => {
     const { wrapper } = await mountInGroup('file')
     expect(button('add').disabled).toBe(true)
-    expect(button('add-all').disabled).toBe(true)
     expect(wrapper.find('.output-tracks__handle').exists()).toBe(false)
     expect(wrapper.get('[data-role="file-scope"]').text()).toContain('pick it in the matrix')
     expect(description(button('add'))).toContain('pick it in the matrix')
-    expect(description(button('add-all'))).toContain('pick it in the matrix')
   })
 
   it('in scope file moves and removes no track, and says why', async () => {
