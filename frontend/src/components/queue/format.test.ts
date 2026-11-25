@@ -106,6 +106,13 @@ describe('the live columns', () => {
   it('shows a done job full and a waiting or ended one empty', () => {
     expect(liveColumns(job('a', 'done'), t, n).percent).toBe(100)
     expect(liveColumns(job('a', 'done'), t, n).percentText).toBe('100.0 %')
+    expect(liveColumns(job('a', 'done'), t, n).size).toBeNull()
+    // The finished file's size, not the last size the encode reported.
+    const done = job('a', 'done', {
+      output_size: 5 * 1024 ** 3,
+      progress: progress({ eta: 0, fps: 90, output_size: 4 * 1024 ** 3 }),
+    })
+    expect(liveColumns(done, t, n)).toMatchObject({ size: '5.00 GiB', eta: null, fps: null })
     // A progress left on a job that is no longer running is not shown.
     expect(liveColumns(job('a', 'failed', { progress: progress() }), t, n).percent).toBeNull()
     expect(liveColumns(job('a', 'waiting'), t, n).percentText).toBeNull()

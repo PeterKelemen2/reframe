@@ -6247,6 +6247,11 @@ export interface components {
             finished_at?: string | null;
             /** Output Path */
             output_path?: string | null;
+            /**
+             * Output Size
+             * @description Bytes of the finished output; ``None`` until the job is done.
+             */
+            output_size?: number | null;
             /** Log Path */
             log_path?: string | null;
             /** Error */

@@ -107,7 +107,11 @@ function digits(count: number): Intl.NumberFormatOptions {
 
 export function liveColumns(job: QueueJob, t: Translate, n: FormatNumber): LiveColumns {
   const percentText = (value: number) => t('queue.units.percent', { value: n(value, digits(1)) })
-  if (job.state === 'done') return { ...NONE, percent: 100, percentText: percentText(100) }
+  const bytes = (value: number | null | undefined) =>
+    known(value) ? formatBytes(value, t, n) : null
+  if (job.state === 'done') {
+    return { ...NONE, percent: 100, percentText: percentText(100), size: bytes(job.output_size) }
+  }
   const progress = job.progress
   if ((job.state !== 'running' && job.state !== 'paused') || !progress) return NONE
   const percent = Math.max(0, Math.min(100, progress.percent))
@@ -120,7 +124,7 @@ export function liveColumns(job: QueueJob, t: Translate, n: FormatNumber): LiveC
       ? t('queue.units.speed', { value: n(progress.speed, digits(2)) })
       : null,
     eta: job.state === 'running' ? formatDuration(progress.eta) : null,
-    size: known(progress.output_size) ? formatBytes(progress.output_size, t, n) : null,
+    size: bytes(progress.output_size),
   }
 }
 
