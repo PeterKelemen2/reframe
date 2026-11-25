@@ -453,10 +453,16 @@ const notes = computed(() => [
 .frame-viewer__strip {
   /* One row: the frames are a sequence in time. A long one scrolls instead of wrapping. */
   display: grid;
-  grid-auto-columns: minmax(1.5rem, 1fr);
+  /* The gap holds a focused thumbnail's ring clear of its neighbours' pictures, and spaces the
+     targets (24px circles do not meet) where a thumbnail is narrower than 24px. */
+  grid-auto-columns: minmax(1.375rem, 1fr);
   grid-auto-flow: column;
-  gap: var(--rf-space-1);
+  gap: 0.5rem;
   overflow-x: auto;
+  /* Room for a thumbnail's focus ring (2px at a 4px offset): a scrolling box clips what lies
+     outside its padding. The margin keeps the row where it was. */
+  margin: -0.4375rem;
+  padding: 0.4375rem;
 }
 
 .frame-viewer__thumb {
@@ -485,9 +491,10 @@ const notes = computed(() => [
     0 0 0 3px var(--rf-color-text);
 }
 
+/* Clear of the current frame's 3px ring, inside the row's padding and the gap. */
 .frame-viewer__thumb:focus-visible {
   outline: 2px solid var(--p-focus-ring-color);
-  outline-offset: 5px;
+  outline-offset: 4px;
 }
 
 /* At 100 % and more each source pixel is a block: smoothing would blur what is checked. */
