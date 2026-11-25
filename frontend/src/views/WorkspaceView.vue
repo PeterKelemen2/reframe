@@ -201,6 +201,17 @@ async function open(): Promise<void> {
   grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) 3rem;
 }
 
+/* Below 1440 px the side columns give way, so that all eight tabs fit beside the open preview. */
+@media (60rem <= width < 90rem) {
+  .workspace__columns {
+    grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr) minmax(16rem, 20rem);
+  }
+
+  .workspace__columns--preview-collapsed {
+    grid-template-columns: minmax(13rem, 15rem) minmax(0, 1fr) 3rem;
+  }
+}
+
 .workspace__columns > :deep(*) {
   min-height: 0;
   overflow: auto;

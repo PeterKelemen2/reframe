@@ -64,6 +64,9 @@ watch(active, () => {
   --p-tabs-tab-active-color: var(--rf-color-text);
   --p-tabs-active-bar-background: var(--rf-color-text);
   --p-tabs-tab-font-weight: var(--rf-font-weight-medium);
+  /* The cards lie on the cool-white ground (blue-black in dark), not on a panel of their own
+     colour; the tab strip stays on the panel. */
+  --p-tabs-tabpanel-background: var(--rf-color-bg);
 
   display: flex;
   flex-direction: column;
