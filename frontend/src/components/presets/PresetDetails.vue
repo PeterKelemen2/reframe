@@ -9,6 +9,7 @@ import {
   SlidersHorizontal,
   Star,
   Trash2,
+  UserRound,
 } from '@lucide/vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -183,7 +184,11 @@ const subtitles = computed(() => {
           <Lock :size="14" aria-hidden="true" />
           {{ t('presets.details.locked') }}
         </span>
-        <span v-if="isDefault" class="preset-details__badge preset-details__badge--default">
+        <span v-else class="preset-details__badge" data-badge="user">
+          <UserRound :size="14" aria-hidden="true" />
+          {{ t('presets.details.userPreset') }}
+        </span>
+        <span v-if="isDefault" class="preset-details__badge" data-badge="default">
           <Star :size="14" aria-hidden="true" />
           {{ t('presets.default') }}
         </span>
@@ -334,7 +339,7 @@ const subtitles = computed(() => {
 <style scoped>
 .preset-details {
   display: grid;
-  gap: var(--rf-space-4);
+  gap: var(--rf-space-5);
   align-content: start;
 }
 
@@ -347,37 +352,41 @@ const subtitles = computed(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--rf-space-2);
+  gap: var(--rf-space-2) var(--rf-space-3);
 }
 
 .preset-details__name {
   margin: 0;
-  font-size: var(--rf-font-size-xl);
+  font-size: var(--rf-text-title);
+  line-height: var(--rf-line-height-tight);
 }
 
+/* What the preset is, in words: a label, never a colour. */
 .preset-details__badge {
   display: inline-flex;
   align-items: center;
   gap: var(--rf-space-1);
   padding: 0 var(--rf-space-2);
   border: 1px solid var(--rf-color-border);
-  border-radius: var(--rf-radius-pill);
+  border-radius: var(--rf-radius-sm);
   color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-sm);
+  line-height: 1.5rem;
 }
 
-.preset-details__badge--default {
-  border-color: var(--p-status-warn-border-color);
-  color: var(--p-status-warn-color);
+.preset-details__badge svg {
+  flex: none;
 }
 
-.preset-details__description,
-.preset-details__hint {
+.preset-details__description {
+  max-width: 72ch;
   margin: 0;
   color: var(--rf-color-text-muted);
 }
 
 .preset-details__hint {
+  margin: 0;
+  color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-sm);
 }
 
@@ -385,5 +394,6 @@ const subtitles = computed(() => {
   display: flex;
   flex-wrap: wrap;
   gap: var(--rf-space-2);
+  margin-top: var(--rf-space-2);
 }
 </style>

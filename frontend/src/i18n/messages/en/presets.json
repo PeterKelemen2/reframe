@@ -155,6 +155,7 @@
   },
   "details": {
     "locked": "Built-in",
+    "userPreset": "User preset",
     "lockedHint": "Built-in presets cannot be changed or deleted. Duplicate one to make a copy you can change.",
     "noDescription": "No description.",
     "actions": "Preset actions",

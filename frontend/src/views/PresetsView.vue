@@ -337,7 +337,8 @@ const renameInitial = computed<PresetDetailsInput>(() => ({
 
 .presets-view__title {
   margin: 0;
-  font-size: var(--rf-font-size-2xl);
+  font-size: var(--rf-text-title);
+  line-height: var(--rf-line-height-tight);
 }
 
 .presets-view__tools {
