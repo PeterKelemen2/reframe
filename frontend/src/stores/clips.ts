@@ -9,7 +9,7 @@ import { CLIP_LENGTHS, millis, reason } from '@/components/clip/clip'
 
 import { useCropStore } from './crop'
 import { useEditorStore } from './editor'
-import { usePreviewStore } from './preview'
+import { usePreviewStore, type Zoom } from './preview'
 import { TaskLostError, useTasksStore } from './tasks'
 
 /** A clip and what it was made from. */
@@ -48,6 +48,7 @@ export const useClipsStore = defineStore('clips', () => {
   const tasks = useTasksStore()
 
   const length = ref<number>(CLIP_LENGTHS[0])
+  const zoom = ref<Zoom>('fit')
   const clips = shallowRef<ReadonlyMap<string, MadeClip>>(new Map())
   const starting = ref(false)
   const taskId = ref<string | null>(null)
@@ -182,6 +183,7 @@ export const useClipsStore = defineStore('clips', () => {
 
   return {
     length,
+    zoom,
     starting,
     taskId,
     encodeError,

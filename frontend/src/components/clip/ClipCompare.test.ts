@@ -8,6 +8,7 @@ import SplitCompare from '@/components/media/SplitCompare.vue'
 import { frameLink, previewServer } from '@/components/preview/testing'
 import { mountShell } from '@/components/shell/testing'
 import { sampleJob } from '@/editor/testing/samples'
+import { useClipsStore } from '@/stores/clips'
 
 import ClipCompare from './ClipCompare.vue'
 
@@ -85,6 +86,40 @@ describe('the frame compare of a clip', () => {
     expect(split().props('before').url).toBe('http://server/frames/movie-500-source.png')
     expect(split().props('after').url).toBe('http://server/frames/clip-300.png')
     expect(wrapper.find('[data-field="compare-position"]').text()).toBe('Frame 1 of 5 · 0.5 s')
+  })
+
+  it('calls the two pictures the source and the encoded preview', async () => {
+    const { wrapper, split } = await compare()
+    expect(split().props('beforeLabel')).toBe('Source')
+    expect(split().props('afterLabel')).toBe('Encoded preview')
+    const labels = wrapper.findAll('.split-compare__label').map((label) => label.text())
+    expect(labels).toEqual(['Source', 'Encoded preview'])
+  })
+
+  it('zooms the pictures to fit, 100 % and 200 % of the clip frame, scrolling inside its stage', async () => {
+    const { wrapper, split } = await compare()
+    const stage = wrapper.find('[data-field="compare-stage"]')
+    expect(stage.find('.split-compare').element).toBe(split().element)
+    expect(split().attributes('style')).toContain('width: min(100%, 106.66')
+    const zoom = (label: string) =>
+      wrapper
+        .findAll('[data-field="compare-zoom"] [role="button"], [data-field="compare-zoom"] button')
+        .find((option) => option.text() === label)
+    await zoom('100 %')?.trigger('click')
+    expect(split().attributes('style')).toContain('width: 320px')
+    expect(stage.attributes('tabindex')).toBe('0')
+    await zoom('200 %')?.trigger('click')
+    expect(split().attributes('style')).toContain('width: 640px')
+    await zoom('Fit')?.trigger('click')
+    expect(stage.attributes('tabindex')).toBe('-1')
+  })
+
+  it('keeps the zoom when it steps to another frame', async () => {
+    const { wrapper, split } = await compare()
+    useClipsStore().zoom = 2
+    await flushPromises()
+    await wrapper.find('[data-action="compare-next"]').trigger('click')
+    expect(split().attributes('style')).toContain('width: 640px')
   })
 
   it('crops the source frames as the job the clip was made from says', async () => {

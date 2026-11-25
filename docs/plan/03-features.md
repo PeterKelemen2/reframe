@@ -737,13 +737,17 @@ It is in Settings → Output, in the preset editor, and on the Summary tab's Out
 
 - **Frame strip**: N evenly spaced frames (default 10, configurable), or seek to any timestamp.
 - **View modes**: Source · Output (crop + scale + filters, rendered by FFmpeg) · Split slider ·
-  Side by side. Zoom: fit / 100% / 200%.
+  Side by side. Zoom: fit / 100% / 200%. A zoomed picture scrolls; holding **Space** and
+  dragging scrolls it the same way. Each section has a title that says what it shows: the frame
+  viewer *Source frame*, *Output frame* or *Source and output frames*, and the clip *Encoded
+  preview*.
 - **Live preview clip** (HandBrake parity): encode 10 / 15 / 30 / 60 s from the current
   position with the full job settings. The clip plays in the built-in player if the webview
   can decode it. If not, **Open in external player**.
 - **Encoded frame compare**: FFmpeg decodes frames from the preview clip to PNG, and the split
-  view shows them next to the matching source frame. This works for every codec, even when
-  the webview cannot play the clip.
+  view shows them next to the matching source frame, labelled *Source* and *Encoded preview*,
+  with the same zoom and Space-drag scroll as the frame viewer. This works for every codec,
+  even when the webview cannot play the clip.
 - Frames are cached on disk by source fingerprint + timestamp + settings hash.
 
 ---

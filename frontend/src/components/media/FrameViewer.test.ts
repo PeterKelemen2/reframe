@@ -101,6 +101,21 @@ describe('the frame viewer', () => {
     expect(wrapper.find('[data-field="position"]').text()).toBe('2.5 s')
   })
 
+  it('names what the picture shows in each view', async () => {
+    const { wrapper, preview } = await viewer()
+    const title = () => wrapper.find('[data-field="frame-title"]').text()
+    expect(title()).toBe('Source frame')
+    preview.viewMode = 'output'
+    await flushPromises()
+    expect(title()).toBe('Output frame')
+    preview.viewMode = 'split'
+    await flushPromises()
+    expect(title()).toBe('Source and output frames')
+    preview.viewMode = 'side'
+    await flushPromises()
+    expect(title()).toBe('Source and output frames')
+  })
+
   it('sizes the picture box for each zoom', async () => {
     const { wrapper, preview } = await viewer()
     const box = () => wrapper.find('.frame-viewer__picture').attributes('style')
@@ -157,9 +172,9 @@ describe('the frame viewer', () => {
     )
     previewServer()
     await state.find('[data-action="render-again"]').trigger('click')
-    await flushPromises()
+    // The render is scheduled on a timer: one flush of promises may come before it is due.
+    await vi.waitFor(() => expect(wrapper.find('.split-compare').exists()).toBe(true))
     expect(wrapper.find('[data-state="render-failed"]').exists()).toBe(false)
-    expect(wrapper.find('.split-compare').exists()).toBe(true)
     expect(document.activeElement).toBe(wrapper.find('[data-field="stage"]').element)
   })
 

@@ -12,6 +12,12 @@
     "100": "100 %",
     "200": "200 %"
   },
+  "title": {
+    "source": "Source frame",
+    "output": "Output frame",
+    "split": "Source and output frames",
+    "side": "Source and output frames"
+  },
   "empty": "Open a file to see its frames.",
   "noVideo": "This file has no video stream: there are no frames to show.",
   "loading": "Making the frames…",

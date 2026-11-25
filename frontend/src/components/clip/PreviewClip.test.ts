@@ -125,6 +125,12 @@ function sentJob(server: FakeServer): JobSettings | undefined {
 }
 
 describe('the preview clip', () => {
+  it('is titled as the encoded preview, to tell it from the source frames above it', async () => {
+    const { wrapper } = await panel()
+    expect(wrapper.find('.preview-clip__title').text()).toBe('Encoded preview')
+    expect(wrapper.find('section').attributes('aria-label')).toBe('Encoded preview')
+  })
+
   it('encodes the chosen length from the current frame with the editor job', async () => {
     const { wrapper, server } = await panel()
     usePreviewStore().select(2)

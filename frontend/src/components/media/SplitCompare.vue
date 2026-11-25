@@ -13,8 +13,11 @@ const props = withDefaults(
     /** The job's geometry: `before` is shown cropped, turned and flipped as `after` is. */
     geometry: Geometry | null
     layout?: 'split' | 'side'
+    /** What the labels call `before` and `after`; the source and the output when left out. */
+    beforeLabel?: string
+    afterLabel?: string
   }>(),
-  { layout: 'split' },
+  { layout: 'split', beforeLabel: undefined, afterLabel: undefined },
 )
 
 const emit = defineEmits<{
@@ -50,6 +53,8 @@ const view = computed(() => {
 })
 
 const aspect = computed(() => `${props.after.width} / ${props.after.height}`)
+const beforeName = computed(() => props.beforeLabel ?? t('preview.compare.before'))
+const afterName = computed(() => props.afterLabel ?? t('preview.compare.after'))
 </script>
 
 <template>
@@ -60,7 +65,7 @@ const aspect = computed(() => `${props.after.width} / ${props.after.height}`)
           v-if="layout === 'split'"
           class="split-compare__after"
           :src="after.url"
-          :alt="t('preview.compare.after')"
+          :alt="afterName"
           draggable="false"
           @load="emit('loaded', after)"
           @error="emit('failed', after)"
@@ -71,7 +76,7 @@ const aspect = computed(() => `${props.after.width} / ${props.after.height}`)
           preserveAspectRatio="none"
           :style="layout === 'split' ? { clipPath: `inset(0 ${100 - position}% 0 0)` } : undefined"
           role="img"
-          :aria-label="t('preview.compare.before')"
+          :aria-label="beforeName"
           data-part="before"
         >
           <image
@@ -88,10 +93,10 @@ const aspect = computed(() => `${props.after.width} / ${props.after.height}`)
         </svg>
         <template v-if="layout === 'split'">
           <span class="split-compare__label split-compare__label--before" aria-hidden="true">
-            {{ t('preview.compare.before') }}
+            {{ beforeName }}
           </span>
           <span class="split-compare__label split-compare__label--after" aria-hidden="true">
-            {{ t('preview.compare.after') }}
+            {{ afterName }}
           </span>
           <input
             v-model.number="position"
@@ -110,19 +115,19 @@ const aspect = computed(() => `${props.after.width} / ${props.after.height}`)
           />
         </template>
       </div>
-      <figcaption v-if="layout === 'side'">{{ t('preview.compare.before') }}</figcaption>
+      <figcaption v-if="layout === 'side'">{{ beforeName }}</figcaption>
     </figure>
     <figure v-if="layout === 'side'" class="split-compare__pane">
       <div class="split-compare__frame" :style="{ aspectRatio: aspect }">
         <img
           class="split-compare__after"
           :src="after.url"
-          :alt="t('preview.compare.after')"
+          :alt="afterName"
           @load="emit('loaded', after)"
           @error="emit('failed', after)"
         />
       </div>
-      <figcaption>{{ t('preview.compare.after') }}</figcaption>
+      <figcaption>{{ afterName }}</figcaption>
     </figure>
   </div>
 </template>

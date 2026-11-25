@@ -2,13 +2,17 @@
 import { ChevronLeft, ChevronRight } from '@lucide/vue'
 import Button from 'primevue/button'
 import Message from 'primevue/message'
+import SelectButton from 'primevue/selectbutton'
 import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { apiQuiet, unwrap } from '@/api/client'
 import type { FrameLink, Geometry, JobSettings, PreviewClip } from '@/api/types'
+import ScrollStage from '@/components/media/ScrollStage.vue'
 import SplitCompare from '@/components/media/SplitCompare.vue'
+import { boxWidth } from '@/components/media/zoom'
 import { type DecodedClip, useClipsStore } from '@/stores/clips'
+import type { Zoom } from '@/stores/preview'
 
 import { absolute, compareTimes, millis, reason } from './clip'
 
@@ -134,6 +138,13 @@ function step(delta: 1 | -1): void {
 
 const pair = computed(() => pairs.value[at.value] ?? null)
 
+const zooms = computed(() =>
+  (['fit', 1, 2] as const).map((value) => ({
+    value,
+    label: t(`preview.zoom.${value === 'fit' ? 'fit' : value * 100}`),
+  })),
+)
+
 function time(seconds: number): string {
   return t('preview.seconds', { seconds: n(seconds, { maximumFractionDigits: 3 }) })
 }
@@ -163,12 +174,34 @@ function time(seconds: number): string {
       {{ t('clip.compare.none') }}
     </p>
     <template v-else>
-      <SplitCompare
-        :before="pair.before"
-        :after="pair.after"
-        :geometry="geometry"
-        @failed="failed"
+      <SelectButton
+        :model-value="clips.zoom"
+        :options="zooms"
+        option-label="label"
+        option-value="value"
+        :allow-empty="false"
+        size="small"
+        :pt="{ root: { 'aria-label': t('preview.zoom.label') } }"
+        data-field="compare-zoom"
+        @update:model-value="clips.zoom = $event as Zoom"
       />
+      <ScrollStage
+        class="clip-compare__stage"
+        role="group"
+        :label="t('clip.compare.stage')"
+        :tabindex="clips.zoom === 'fit' ? -1 : 0"
+        data-field="compare-stage"
+      >
+        <SplitCompare
+          :style="{ width: boxWidth(pair.after, clips.zoom) }"
+          :before="pair.before"
+          :after="pair.after"
+          :geometry="geometry"
+          :before-label="t('clip.compare.before')"
+          :after-label="t('clip.compare.after')"
+          @failed="failed"
+        />
+      </ScrollStage>
       <div class="clip-compare__nav">
         <Button
           severity="secondary"
@@ -220,6 +253,10 @@ function time(seconds: number): string {
   gap: var(--rf-space-2);
   margin: 0;
   color: var(--rf-color-text-muted);
+}
+
+.clip-compare__stage > .split-compare {
+  margin-inline: auto;
 }
 
 .clip-compare__nav {

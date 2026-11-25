@@ -12,7 +12,9 @@ import CropOverlay from '@/components/dimensions/CropOverlay.vue'
 import { useCropStore } from '@/stores/crop'
 import { usePreviewStore, type ViewMode, type Zoom } from '@/stores/preview'
 
+import ScrollStage from './ScrollStage.vue'
 import SplitCompare from './SplitCompare.vue'
+import { boxWidth } from './zoom'
 
 const { t, n, locale } = useI18n()
 const preview = usePreviewStore()
@@ -34,13 +36,6 @@ const zooms = computed(() =>
 
 function time(seconds: number): string {
   return t('preview.seconds', { seconds: n(seconds, { maximumFractionDigits: 3 }) })
-}
-
-/** The width of a picture box: the panel's width at `fit` (no taller than the screen allows). */
-function boxWidth(frame: FrameLink, zoom: Zoom, pictures = 1): string {
-  if (zoom === 'fit')
-    return pictures === 1 ? `min(100%, ${(60 * frame.width) / frame.height}vh)` : '100%'
-  return `${frame.width * zoom * pictures}px`
 }
 
 const position = computed(() => {
@@ -94,7 +89,7 @@ const pendingBox = computed(() => {
 const hasFrames = computed(() => preview.sourceId !== null && !preview.noVideo)
 
 // The button goes away while the frames are made: the stage, where they show, takes the focus.
-const stage = useTemplateRef<HTMLElement>('stage')
+const stage = useTemplateRef<{ focus(): void }>('stage')
 
 function retry(again: () => unknown): void {
   stage.value?.focus()
@@ -125,6 +120,9 @@ const notes = computed(() => [
 
 <template>
   <div class="frame-viewer">
+    <h3 v-if="hasFrames" class="frame-viewer__title" data-field="frame-title">
+      {{ t(`preview.title.${preview.viewMode}`) }}
+    </h3>
     <div v-if="hasFrames" class="frame-viewer__controls">
       <SelectButton
         :model-value="preview.viewMode"
@@ -159,11 +157,11 @@ const notes = computed(() => [
     <template v-else>
       <!-- A tab stop while zoomed (the arrow keys scroll it); it keeps the focus while the next
            frame is on its way. -->
-      <div
+      <ScrollStage
         ref="stage"
         class="frame-viewer__stage"
         role="group"
-        :aria-label="t('preview.stage')"
+        :label="t('preview.stage')"
         :tabindex="preview.zoom === 'fit' ? -1 : 0"
         data-field="stage"
         :data-view="preview.viewMode"
@@ -270,7 +268,7 @@ const notes = computed(() => [
           @failed="failed"
           @loaded="preview.imageLoaded"
         />
-      </div>
+      </ScrollStage>
       <p
         v-if="position !== null"
         class="frame-viewer__position"
@@ -350,6 +348,11 @@ const notes = computed(() => [
   gap: var(--rf-space-3);
 }
 
+.frame-viewer__title {
+  margin: 0;
+  font-size: var(--rf-font-size-sm);
+}
+
 .frame-viewer__controls {
   display: flex;
   flex-wrap: wrap;
@@ -362,16 +365,6 @@ const notes = computed(() => [
   gap: var(--rf-space-2);
   margin: 0;
   color: var(--rf-color-text-muted);
-}
-
-.frame-viewer__stage {
-  overflow: auto;
-  max-height: 70vh;
-}
-
-.frame-viewer__stage:focus-visible {
-  outline: 2px solid var(--rf-color-primary);
-  outline-offset: 2px;
 }
 
 .frame-viewer__pending {

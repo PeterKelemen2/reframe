@@ -1,5 +1,5 @@
 {
-  "title": "Preview clip",
+  "title": "Encoded preview",
   "length": "Clip length",
   "seconds": "{seconds} s",
   "encode": "Encode preview",
@@ -32,6 +32,9 @@
     "none": "The clip gave no frames to compare.",
     "previous": "Previous frame",
     "next": "Next frame",
-    "position": "Frame {n} of {count} · {time}"
+    "position": "Frame {n} of {count} · {time}",
+    "before": "Source",
+    "after": "Encoded preview",
+    "stage": "Source and encoded frames"
   }
 }
