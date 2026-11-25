@@ -16,6 +16,8 @@ const props = defineProps<{
   member?: Schemas['GroupMember']
   /** The member's episode label (`E05`). */
   label?: string
+  /** The member's episode title, shown after its label. */
+  subTitle?: string | null
   /** `${idBase}-title` and `${idBase}-details` name the tree item, without its remove button. */
   idBase: string
 }>()
@@ -42,11 +44,13 @@ const near = computed(() => props.member?.match === 'near')
           />
           <!-- Words apart in the row's name, which is built from these spans. -->
           {{ ' ' }}
-          <span class="source-item__label">{{ label }}</span>
-          {{ ' ' }}
-          <span v-if="label !== name" class="source-item__file" :title="entry.path">{{
-            name
-          }}</span>
+          <span class="source-item__episode" :title="entry.path">
+            <span class="source-item__label">{{ label }}</span>
+            <template v-if="subTitle">
+              {{ ' ' }}
+              <span class="source-item__sub-title" data-field="sub-title">· {{ subTitle }}</span>
+            </template>
+          </span>
         </template>
         <span v-else class="source-item__name" :title="entry.path">{{ name }}</span>
       </span>
@@ -128,7 +132,7 @@ const near = computed(() => props.member?.match === 'near')
 }
 
 .source-item__name,
-.source-item__file {
+.source-item__episode {
   overflow: hidden;
   flex: 1;
   min-width: 0;
@@ -136,18 +140,13 @@ const near = computed(() => props.member?.match === 'near')
   white-space: nowrap;
 }
 
-.source-item__name {
+.source-item__name,
+.source-item__label {
   font-weight: var(--rf-font-weight-medium);
 }
 
 .source-item__label {
   font-variant-numeric: tabular-nums;
-  font-weight: var(--rf-font-weight-medium);
-}
-
-.source-item__file {
-  color: var(--rf-color-text-muted);
-  font-size: var(--rf-font-size-sm);
 }
 
 .source-item__remove {

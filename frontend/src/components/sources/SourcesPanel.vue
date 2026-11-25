@@ -715,6 +715,7 @@ onBeforeUnmount(() => stopDrops?.())
               :id-base="itemId(row.entry.id)"
               :member="row.member"
               :label="row.label"
+              :sub-title="row.subTitle"
               @remove="askRemove(sourceKey(row.entry.id))"
               @reprobe="reprobe(row.entry)"
             />

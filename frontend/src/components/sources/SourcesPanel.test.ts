@@ -59,6 +59,7 @@ const grouping: Schemas['BatchGrouping'] = {
         path: episode.path,
         season: 1,
         episode: [1, 2, 5][index],
+        sub_title: index === 0 ? 'Pilot' : null,
         match: index === 2 ? 'near' : 'exact',
         differences: index === 2 ? ['1 extra track (eng AC-3 2.0 "Commentary")'] : [],
       })),
@@ -198,10 +199,13 @@ describe('the sources panel', () => {
       'movie.mkv MKV · 1:05 · H.264 1920×1080 The container reports no duration. (probe warning)',
     )
     expect(referenced(item('Show.S01E05.mkv'), 'aria-labelledby')).toBe(
-      'Near match: added with differences E05 Show.S01E05.mkv 1 extra track (eng AC-3 2.0 "Commentary")',
+      'Near match: added with differences E05 1 extra track (eng AC-3 2.0 "Commentary")',
+    )
+    expect(referenced(item('Show.S01E01.mkv'), 'aria-labelledby')).toBe(
+      'Matches the group E01 · Pilot',
     )
     // Speech input finds a row by what it shows (WCAG 2.5.3): its visible words, unbroken.
-    for (const row of [item('movie.mkv'), item('Show.S01E05.mkv')]) {
+    for (const row of [item('movie.mkv'), item('Show.S01E05.mkv'), item('Show.S01E01.mkv')]) {
       const name = referenced(row, 'aria-labelledby')?.replace(/ \(probe warning\)$/, '')
       expect(name).toContain(shown(row))
     }
@@ -219,6 +223,12 @@ describe('the sources panel', () => {
       'E02',
       'E05',
     ])
+    // The episode leads; its file name is the row's tooltip.
+    const shownEpisodes = $$('.sources-panel__member .source-item__episode')
+    expect(shownEpisodes.map(text)).toEqual(['E01 · Pilot', 'E02', 'E05'])
+    expect(shownEpisodes.map((found) => found.title)).toEqual(
+      episodes.map((episode) => episode.path),
+    )
     expect($$('.sources-panel__member').map((row) => row.dataset.match)).toEqual([
       'exact',
       'exact',
