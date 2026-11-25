@@ -286,7 +286,7 @@ function toggleMenu(event: Event): void {
       v-if="modified"
       class="preset-picker__modified"
       size="small"
-      severity="warn"
+      severity="secondary"
       outlined
       :label="t('presets.picker.modified')"
       aria-haspopup="dialog"
@@ -452,7 +452,7 @@ function toggleMenu(event: Event): void {
 }
 
 .preset-picker__icon--default {
-  color: var(--p-status-warn-color);
+  color: var(--rf-color-text);
 }
 
 .preset-picker__group {
