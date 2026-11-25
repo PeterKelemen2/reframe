@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { formatters } from '@/components/summary/testing'
 
-import { headerOf, ratioOf } from './header'
+import { headerOf, headerPartsOf, ratioOf } from './header'
 import { geometryOf, LETTERBOX } from './testing'
 
 const { t, n } = formatters()
@@ -21,6 +21,14 @@ describe('the pipeline header', () => {
     expect(headerOf(answer, t, n)).toBe(
       'Source 1920×1080 (16:9, square) → Crop 1920×800 → Output 1920×800 · 2.40:1 · square pixels',
     )
+    // A narrow tab wraps the line between these phrases only.
+    expect(headerPartsOf(answer, t, n)).toEqual([
+      'Source 1920×1080 (16:9, square) →',
+      'Crop 1920×800 →',
+      'Output 1920×800 ·',
+      '2.40:1 ·',
+      'square pixels',
+    ])
   })
 
   it('names the rotation, the flip and an anamorphic pixel aspect', () => {

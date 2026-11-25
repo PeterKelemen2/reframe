@@ -263,11 +263,12 @@ function setPar(part: 'num' | 'den', value: number | null | undefined): void {
   color: var(--rf-color-text-muted);
 }
 
-/* The pipeline stays in sight while the tab scrolls. */
+/* The pipeline stays in sight while the tab scrolls. It sticks to the scroller's edge, over the
+   panels' top padding, or the content would show above it. */
 .dimensions-tab__header {
   position: sticky;
   z-index: 1;
-  top: 0;
+  top: -0.875rem;
   padding: var(--rf-space-3) var(--rf-space-4);
   border-bottom: 1px solid var(--rf-color-border);
   background: var(--rf-color-surface);
