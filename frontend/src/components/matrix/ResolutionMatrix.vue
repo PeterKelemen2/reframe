@@ -547,6 +547,12 @@ onMounted(async () => {
   flex: none;
 }
 
+.matrix__video {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--rf-space-1);
+}
+
 .matrix__language {
   font-size: inherit;
 }
