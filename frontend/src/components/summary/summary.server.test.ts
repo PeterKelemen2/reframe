@@ -2,7 +2,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 
-import { configureClient } from '@/api/client'
+import { api, configureClient, unwrap } from '@/api/client'
 import { type DevServer, startServer } from '@/api/testing/devServer.mjs'
 import { endedTask, http } from '@/api/testing/serverHelpers'
 import { pinnedTools } from '@/editor/testing/tools.mjs'
@@ -10,7 +10,6 @@ import { useEditorStore } from '@/stores/editor'
 
 import { pipelineOf } from './pipeline'
 import { useGeometry } from './useGeometry'
-import { forgetThumbnails, useThumbnail } from './useThumbnail'
 
 const PORT = 8791
 const SOON = { timeout: 30_000, interval: 50 }
@@ -39,7 +38,6 @@ afterAll(async () => {
 
 beforeEach(() => {
   setActivePinia(createPinia())
-  forgetThumbnails()
   configureClient({ baseUrl: server.url, token: server.token })
 })
 
@@ -80,16 +78,18 @@ describe('the Summary against a real server', () => {
   })
 
   it('gives a frame link that loads as a PNG without the token, as an <img> asks for it', async () => {
-    const scope = effectScope()
-    const thumbnail = scope.run(() => useThumbnail(ids['multitrack.mkv']!, true))!
-    await vi.waitFor(() => expect(thumbnail.url.value).not.toBeNull(), SOON)
-    expect(thumbnail.url.value!.startsWith(`${server.url}/api/preview/frames/`)).toBe(true)
-    const image = await fetch(thumbnail.url.value!)
+    const answer = unwrap(
+      await api.POST('/api/preview/frames', {
+        body: { source_id: ids['multitrack.mkv']!, count: 1 },
+      }),
+    )
+    const frame = answer.frames.find((candidate) => candidate.kind === 'source')!
+    const link = new URL(frame.url, server.url)
+    expect(link.pathname.startsWith('/api/preview/frames/')).toBe(true)
+    const image = await fetch(link)
     expect(image.status).toBe(200)
     expect(image.headers.get('content-type')).toBe('image/png')
-    const signature = new URL(thumbnail.url.value!)
-    signature.searchParams.set('sig', 'forged')
-    expect((await fetch(signature)).status).toBe(401)
-    scope.stop()
+    link.searchParams.set('sig', 'forged')
+    expect((await fetch(link)).status).toBe(401)
   })
 })

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ImageOff } from '@lucide/vue'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -11,15 +10,13 @@ import { useEditorStore } from '@/stores/editor'
 
 import { formatBitrate, formatBytes, videoLine } from './format'
 import { useJobSource } from './useJobSource'
-import { useThumbnail } from './useThumbnail'
 
 const { t, n } = useI18n()
 const editor = useEditorStore()
-const { sourceId, entry, source } = useJobSource()
+const { entry, source } = useJobSource()
 const { label: rangeLabel, length: rangeLength } = useRange()
 
 const video = computed(() => source.value?.video?.[0] ?? null)
-const thumbnail = useThumbnail(sourceId, () => video.value !== null)
 
 const name = computed(() => fileName(entry.value?.path ?? editor.job?.source.path ?? ''))
 const container = computed(() => source.value?.container ?? null)
@@ -56,19 +53,7 @@ const chapters = computed(() => {
 <template>
   <Card class="summary-card summary-source" :title="t('summary.source.title')" data-card="source">
     <div class="summary-source__body">
-      <div class="summary-source__thumb" :data-state="thumbnail.url.value ? 'ready' : 'empty'">
-        <img
-          v-if="thumbnail.url.value"
-          :src="thumbnail.url.value"
-          :alt="t('summary.source.thumbnail', { name })"
-          @error="thumbnail.failed()"
-        />
-        <span v-else-if="!thumbnail.loading.value" class="summary-source__no-thumb">
-          <ImageOff :size="24" aria-hidden="true" />
-          <span class="rf-sr-only">{{ t('summary.source.noThumbnail') }}</span>
-        </span>
-      </div>
-      <dl class="rf-kv-list summary-source__facts">
+      <dl class="rf-kv-list">
         <KeyValue :label="t('summary.source.file')">
           <span class="summary-source__name" data-field="file">{{ name }}</span>
         </KeyValue>
@@ -105,37 +90,9 @@ const chapters = computed(() => {
 </template>
 
 <style scoped>
-.summary-source__facts {
-  flex: 999 1 18rem;
-}
-
-.summary-source__body > .summary-card__note {
-  flex-basis: 100%;
-}
-
 .summary-source__body {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--rf-space-3) var(--rf-space-4);
-}
-
-/* The picture takes the card's width; the facts go under it. */
-.summary-source__thumb {
-  flex: 1 1 100%;
   display: grid;
-  place-items: center;
-  overflow: hidden;
-  aspect-ratio: 16 / 9;
-  border-radius: var(--rf-radius-md);
-  background: var(--p-status-off-background);
-  color: var(--rf-color-text-muted);
-}
-
-.summary-source__thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
+  gap: var(--rf-space-3);
 }
 
 .summary-source__name {

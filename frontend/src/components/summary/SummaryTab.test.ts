@@ -1,5 +1,5 @@
 import { flushPromises, type VueWrapper } from '@vue/test-utils'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import { configureClient } from '@/api/client'
 import { FakeServer } from '@/api/testing/fakes'
@@ -13,7 +13,6 @@ import { useSystemStore } from '@/stores/system'
 import { useUiStore } from '@/stores/ui'
 import { useValidationStore } from '@/stores/validation'
 
-import { forgetThumbnails } from './useThumbnail'
 import { multitrackSource, sampleDefinitions } from './testing'
 
 // The naming editor is tested on its own; here it would need a complete naming preview.
@@ -59,10 +58,6 @@ const mounted: VueWrapper[] = []
 beforeAll(() => {
   // jsdom lays nothing out; a revealed field scrolls itself into view.
   Element.prototype.scrollIntoView = () => {}
-})
-
-beforeEach(() => {
-  forgetThumbnails()
 })
 
 afterEach(() => {
@@ -131,21 +126,21 @@ function text(wrapper: VueWrapper, selector: string): string {
 }
 
 describe('the Summary tab', () => {
-  it('shows every card for the multitrack fixture', async () => {
+  it('shows every card for the multitrack fixture, in the order the output is written', async () => {
     const { wrapper } = await mountSummary()
     expect(wrapper.findAll('[data-card]').map((card) => card.attributes('data-card'))).toEqual([
-      'source',
-      'job-type',
+      'tracks',
       'picture',
       'video',
+      'job-type',
       'output',
-      'tracks',
-      'issues',
       'estimate',
+      'source',
+      'issues',
     ])
-    expect(wrapper.find('[data-card="source"] img').attributes('src')).toBe(
-      'http://server/api/preview/frames/k.png?exp=1&sig=s',
-    )
+    // The preview panel beside the tab shows the source's frames.
+    expect(wrapper.find('[data-card="source"] img').exists()).toBe(false)
+    expect(server.count('POST /api/preview/frames')).toBe(0)
     expect(text(wrapper, '[data-card="source"]')).toContain('Size370 KiB')
     expect(text(wrapper, '[data-field="video-line"]')).toBe(
       'H.264 Constrained Baseline · 320×180 · 25 fps',
@@ -264,7 +259,7 @@ describe('the Summary tab', () => {
     expect(useUiStore().activeTab).toBe('filters')
   })
 
-  it('groups the issues by severity with their fix buttons, and a fix changes the job', async () => {
+  it('leads with the issues, grouped by severity with their fix buttons; a fix changes the job', async () => {
     const fix = {
       label: 'Use libx264 (closest match)',
       patch: [{ op: 'replace' as const, path: '/video/encoder', value: 'libx264' }],
@@ -278,6 +273,7 @@ describe('the Summary tab', () => {
         issue('audio.bitrate', 'audio[1].bitrate', 'warning'),
       ],
     })
+    expect(wrapper.findAll('[data-card]')[0]!.attributes('data-card')).toBe('issues')
     const groups = wrapper.findAll('[data-card="issues"] section[data-severity]')
     expect(groups.map((group) => group.attributes('data-severity'))).toEqual([
       'error',
