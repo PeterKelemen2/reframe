@@ -179,6 +179,8 @@ export interface MatrixOptions {
   detectCrop?: boolean
   /** Gets the id of the detection's task once it has started. */
   onTask?: (taskId: string) => void
+  /** Resolves this file of the group alone; the matrix stays as it is. */
+  only?: string
 }
 
 const TOAST_LIFE = 10_000
@@ -933,22 +935,18 @@ export const useEditorStore = defineStore('editor', () => {
 
   /** Rejects with the `ApiError` of a failed request, without a toast. */
   async function askMatrix(options: MatrixOptions = {}): Promise<BatchResolution> {
+    const state = requireGroup('resolve')
+    const only = options.only
+    if (only !== undefined) {
+      const body = runRequest(state, [only])
+      const run = options.detectCrop
+        ? await detectedRun(body, options.onTask)
+        : unwrap(await apiQuiet.POST('/api/batch/resolve-run', { body }))
+      return deepFreeze(mergedResolutions(run))
+    }
     clearTimeout(matrixTimer)
     matrixTimer = undefined
-    const state = requireGroup('resolve')
-    const ids = members.value
-    const overrides = Object.fromEntries(
-      ids.flatMap((id) => {
-        const ops = state.document.overrides[id] ?? []
-        return ops.length > 0 ? [[id, ops]] : []
-      }),
-    )
-    const body = {
-      template: state.document.template,
-      source_ids: ids,
-      level: (group.value as BatchGroup).level,
-      overrides,
-    }
+    const body = runRequest(state, members.value)
     const mine = ++matrixAsks
     resolving.value = true
     try {
@@ -973,6 +971,21 @@ export const useEditorStore = defineStore('editor', () => {
       throw error
     } finally {
       if (mine === matrixAsks) resolving.value = false
+    }
+  }
+
+  function runRequest(state: GroupState, ids: string[]): BatchRunRequest {
+    const overrides = Object.fromEntries(
+      ids.flatMap((id) => {
+        const ops = state.document.overrides[id] ?? []
+        return ops.length > 0 ? [[id, ops]] : []
+      }),
+    )
+    return {
+      template: state.document.template,
+      source_ids: ids,
+      level: (group.value as BatchGroup).level,
+      overrides,
     }
   }
 
@@ -1354,6 +1367,9 @@ export const useEditorStore = defineStore('editor', () => {
     if (derive.endRun) endRunOf(state)
   }
 
+  /** The job whose sections went into a group last (*Apply to group*, *Paste*). */
+  const lastMerged = shallowRef<JobSettings | null>(null)
+
   /**
    * *Apply to group* and *Paste*: `batch/derive` of the `sections` of `from` (a job of
    * `sourceId`) into the template of the group `groupId` (edited now or before; else one from
@@ -1386,6 +1402,7 @@ export const useEditorStore = defineStore('editor', () => {
     }
     sendDerive()
     await enqueue(() => deriveInto(derive))
+    lastMerged.value = from
   }
 
   function changeOverride(sourceId: string, change: (ops: JsonPatchOp[]) => JsonPatchOp[]): void {
@@ -1725,6 +1742,7 @@ export const useEditorStore = defineStore('editor', () => {
     setScope,
     patchTemplate,
     mergeIntoGroup,
+    lastMerged,
     pickTrack,
     resetTrack,
     setNameField,

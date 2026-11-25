@@ -193,13 +193,6 @@ function editGroup(groupId: string): Promise<void> {
   return quietly(() => editor.editGroup(groupId))
 }
 
-function checkGroup(groupId: string): Promise<void> {
-  return quietly(async () => {
-    if (!editedGroup(groupId)) await editor.editGroup(groupId)
-    ui.openMatrix()
-  })
-}
-
 function toggle(groupId: string): void {
   const next = new Set(collapsed.value)
   if (!next.delete(groupId)) next.add(groupId)
@@ -362,13 +355,11 @@ function groupMenu(groupId: string): MenuItem[] {
   const target = editor.target
   const edited = target?.kind === 'group' && target.groupId === groupId ? target : null
   const copied = clipboard.value
+  // The matrix is the edited group's: checking another group would quietly edit it.
   return [
-    {
-      label: t('group.actions.edit'),
-      disabled: edited !== null,
-      command: () => editGroup(groupId),
-    },
-    { label: t('group.actions.check'), command: () => checkGroup(groupId) },
+    edited === null
+      ? { label: t('group.actions.edit'), command: () => editGroup(groupId) }
+      : { label: t('group.actions.check'), command: () => ui.openMatrix() },
     { label: t('group.actions.queue'), command: () => queueGroup(groupId) },
     { separator: true },
     ...copyItems(
@@ -661,32 +652,16 @@ onBeforeUnmount(() => stopDrops?.())
               data-field="near-count"
             />
           </div>
-          <!-- Out of the Tab order as the rows' other buttons: the keyboard has the context menu. -->
-          <div class="sources-panel__group-actions" @click.stop>
+          <!-- Out of the Tab order as the rows' other buttons: the keyboard has the context menu.
+               The edited group's actions are the banner's, and the status bar queues. -->
+          <div v-if="!editedGroup(item.group.id)" class="sources-panel__group-actions" @click.stop>
             <Button
-              v-if="!editedGroup(item.group.id)"
               size="small"
               text
               tabindex="-1"
               :label="t('group.actions.edit')"
               data-action="edit-group"
               @click="editGroup(item.group.id)"
-            />
-            <Button
-              size="small"
-              text
-              tabindex="-1"
-              :label="t('group.actions.check')"
-              data-action="check-group"
-              @click="checkGroup(item.group.id)"
-            />
-            <Button
-              size="small"
-              text
-              tabindex="-1"
-              :label="t('group.actions.queue')"
-              data-action="queue-group"
-              @click="queueGroup(item.group.id)"
             />
           </div>
         </li>
@@ -715,6 +690,7 @@ onBeforeUnmount(() => stopDrops?.())
               :id-base="itemId(row.entry.id)"
               :member="row.member"
               :label="row.label"
+              :sub-title="row.subTitle"
               @remove="askRemove(sourceKey(row.entry.id))"
               @reprobe="reprobe(row.entry)"
             />

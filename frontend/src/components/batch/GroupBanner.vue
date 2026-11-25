@@ -32,7 +32,7 @@ const sources = useSourcesStore()
 const presets = usePresetsStore()
 const toasts = useToastStore()
 const ui = useUiStore()
-const { busy: queueing, queueGroup, detection, cancelDetection } = useQueueGroup()
+const { detection, cancelDetection } = useQueueGroup()
 const id = useId()
 
 const root = useTemplateRef<HTMLElement>('root')
@@ -93,10 +93,6 @@ function setScope(scope: GroupScope): Promise<void> {
   return quietly(() => editor.setScope(scope))
 }
 
-function editGroup(groupId: string): Promise<void> {
-  return quietly(() => editor.editGroup(groupId))
-}
-
 function closeGroup(): Promise<void> {
   const target = groupTarget.value
   if (target === null) return Promise.resolve()
@@ -142,17 +138,17 @@ watch(
   },
 )
 
-// *Cancel* leaves with the detection.
+// *Cancel* leaves with the detection: the focus goes to the status bar's add.
 watch(
   () => detection.value === null,
   async (ended) => {
     if (!ended) return
     await nextTick()
-    focusIn('[data-action=queue-group]')
+    if (focusLost()) document.querySelector<HTMLElement>('.status-bar__add')?.focus()
   },
 )
 
-// The control that was used may leave with its banner (*Close group*, *Edit group*).
+// The control that was used may leave with its banner (*Close group*).
 const mode = computed(() => (edited.value ? 'group' : memberOf.value ? 'member' : null))
 watch(mode, async () => {
   await nextTick()
@@ -225,19 +221,6 @@ watch(mode, async () => {
           data-action="check-group"
           @click="ui.openMatrix()"
         />
-        <!-- Busy, not disabled: the focus stays here, and a second click is refused. -->
-        <Button
-          size="small"
-          severity="secondary"
-          :label="t('group.actions.queue')"
-          :aria-busy="queueing || undefined"
-          data-action="queue-group"
-          @click="queueGroup(groupTarget.groupId)"
-        >
-          <template v-if="queueing" #icon>
-            <LoaderCircle class="group-banner__spin" :size="16" aria-hidden="true" />
-          </template>
-        </Button>
         <Button
           size="small"
           severity="secondary"
@@ -279,14 +262,6 @@ watch(mode, async () => {
           :label="t('group.actions.applyToGroup')"
           data-action="apply-to-group"
           @click="applyOpen = true"
-        />
-        <Button
-          size="small"
-          severity="secondary"
-          text
-          :label="t('group.actions.edit')"
-          data-action="edit-group"
-          @click="editGroup(memberOf.group.id)"
         />
       </div>
       <ApplyToGroupDialog

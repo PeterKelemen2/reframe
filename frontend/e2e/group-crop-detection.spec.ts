@@ -60,7 +60,7 @@ test('Add group to queue detects the crop of each file before it queues them', a
   await openApp(page)
   const banner = await editSeason(page, 'Wide Show', 3)
 
-  await banner.getByRole('button', { name: 'Add group to queue' }).click()
+  await page.locator('.status-bar__add').click()
   await expect(page.getByText('Queued 3 jobs')).toBeVisible({ timeout: CROP_DETECTION })
   await expect(banner.locator('[data-state="detecting-crop"]')).toHaveCount(0)
   const jobs = await jobsOf(request, folder)
@@ -89,7 +89,7 @@ test.describe('a slow detection', () => {
     await openApp(page)
     const banner = await editSeason(page, 'Tall Show', 8)
 
-    const queue = banner.getByRole('button', { name: 'Add group to queue' })
+    const queue = page.locator('.status-bar__add')
     await queue.click()
     const detection = banner.locator('[data-state="detecting-crop"]')
     await expect(detection.getByRole('status')).toHaveText(/^Detecting the crop: file [1-7] of 8$/)

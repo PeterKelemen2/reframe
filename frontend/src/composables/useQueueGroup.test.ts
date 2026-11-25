@@ -598,3 +598,46 @@ describe('queueGroup with errors', () => {
     expect(group.busy.value).toBe(false)
   })
 })
+
+/** The anime season resolved with one episode alone. */
+function only(episode: number): BatchResolution {
+  const resolution = animeResolution()
+  return { ...resolution, rows: (resolution.rows ?? []).slice(episode - 1, episode) }
+}
+
+describe('queueFile', () => {
+  it('queues the one file resolved alone with its crop detected, and says so', async () => {
+    editor.resolveNow.mockImplementation(async () => only(2))
+    const group = setup()
+    await group.queueFile(sourceIdOf(2))
+    expect(editor.resolveNow).toHaveBeenCalledExactlyOnceWith({
+      detectCrop: true,
+      only: sourceIdOf(2),
+      onTask: expect.any(Function),
+    })
+    expect(queueBodies().map(outputs)).toEqual([['Anime.Show.S01E02.Departure.mkv']])
+    expect(toasts()).toEqual([{ severity: 'success', summary: 'Queued 1 job', detail: undefined }])
+    expect(group.busy.value).toBe(false)
+  })
+
+  it('queues nothing for a file with errors and says why', async () => {
+    editor.resolveNow.mockImplementation(async () => only(11))
+    const group = setup()
+    await group.queueFile(sourceIdOf(11))
+    expect(queueBodies()).toEqual([])
+    expect(toasts()).toEqual([
+      {
+        severity: 'warn',
+        summary: 'Not added to the queue: the job has an error',
+        detail: 'No source track matches rule A2 eng DTS-HD MA→AAC 2.0, and the rule is required.',
+      },
+    ])
+  })
+
+  it('does nothing while no group is edited', async () => {
+    editor.target = null
+    const group = setup()
+    await group.queueFile(sourceIdOf(1))
+    expect(editor.resolveNow).not.toHaveBeenCalled()
+  })
+})

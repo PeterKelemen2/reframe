@@ -31,26 +31,39 @@ from . import anime as A
 
 
 @pytest.mark.parametrize(
-    ("path", "name", "season", "episode", "label"),
+    ("path", "name", "season", "episode", "sub_title", "label"),
     [
         (
             "/tv/Anime.Show.S01.BluRay/Anime.Show.S01E05.Echoes.BluRay.mkv",
             "Anime Show",
             1,
             5,
+            "Echoes",
             "E05",
         ),
-        ("/tv/Show.S02.1080p/S02E03.mkv", "Show", 2, 3, "E03"),
-        ("/tv/Breaking Bad (2008)/breaking.bad.s01e01.mkv", "breaking bad", 1, 1, "E01"),
-        ("/tv/[Grp] Anime Show - 07 [1080p].mkv", "Anime Show", None, 7, "E07"),
-        ("/movies/Hacksaw.Ridge.2016/movie.mkv", "movie", None, None, "movie.mkv"),
+        ("/tv/Show.S02.1080p/S02E03.mkv", "Show", 2, 3, None, "E03"),
+        ("/tv/Breaking Bad (2008)/breaking.bad.s01e01.mkv", "breaking bad", 1, 1, None, "E01"),
+        ("/tv/[Grp] Anime Show - 07 [1080p].mkv", "Anime Show", None, 7, None, "E07"),
+        ("/tv/Show/Show.S01E02.The.Long.Night.1080p.mkv", "Show", 1, 2, "The Long Night", "E02"),
+        ("/tv/Show/Show - S01E03 - Storm.mkv", "Show", 1, 3, "Storm", "E03"),
+        ("/movies/Hacksaw.Ridge.2016/movie.mkv", "movie", None, None, None, "movie.mkv"),
     ],
 )
 def test_episode_info(
-    path: str, name: str, season: int | None, episode: int | None, label: str
+    path: str,
+    name: str,
+    season: int | None,
+    episode: int | None,
+    sub_title: str | None,
+    label: str,
 ) -> None:
     info = episode_info(Path(path))
-    assert (info.name, info.season, info.episode) == (name, season, episode)
+    assert (info.name, info.season, info.episode, info.sub_title) == (
+        name,
+        season,
+        episode,
+        sub_title,
+    )
     assert episode_labels([Path(path)]) == [label]
 
 
@@ -185,6 +198,7 @@ def test_the_example_season_is_one_group() -> None:
     assert group.fingerprint == fingerprint(A.recorded(1, 1), "standard")
     assert [m.path for m in group.members] == [A.path(1, n) for n in range(1, 13)]
     assert [(m.season, m.episode) for m in group.members] == [(1, n) for n in range(1, 13)]
+    assert [m.sub_title for m in group.members][:3] == ["Pilot", "Departure", "Storm"]
     near = {m.episode: m.differences for m in group.members if m.match == "near"}
     assert near == {
         5: ['1 extra track (eng AC-3 2.0 "Commentary")'],

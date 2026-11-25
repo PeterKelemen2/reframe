@@ -48,6 +48,11 @@ export interface QueueGroup {
    * have errors, asks first (queue the valid files, open the matrix, or cancel).
    */
   queueGroup(groupId: string): Promise<void>
+  /**
+   * Queues one file of the edited group, resolved with its crop detected as `queueGroup` does;
+   * a file with errors is a toast that says why.
+   */
+  queueFile(sourceId: string): Promise<void>
   /** The crop detection of the group being queued; `null` when none runs. */
   detection: ComputedRef<GroupDetection | null>
   /** Stops the crop detection: the group is not queued. */
@@ -63,8 +68,8 @@ const PROBLEM_LIFE = 10_000
 /** A second *Add group to queue* fails every job: the toast must still fit on the screen. */
 const FAILED_LINES = 3
 
-// Shared by every caller (the group row, the banner, the status bar, the shortcut), so that a
-// second click during a queueing does not queue the group twice.
+// Shared by every caller (the context menu, the status bar, the shortcut), so that a second click
+// during a queueing does not queue the group twice.
 const busy = ref(false)
 const detectionTask = ref<string | null>(null)
 let detectionCancelled = false
@@ -242,6 +247,47 @@ export function useQueueGroup(): QueueGroup {
     }
   }
 
+  async function queueFile(sourceId: string): Promise<void> {
+    if (busy.value || editor.target?.kind !== 'group') return
+    busy.value = true
+    detectionCancelled = false
+    try {
+      commitFocusedField()
+      let resolution: BatchResolution
+      try {
+        resolution = await editor.resolveNow({
+          detectCrop: true,
+          only: sourceId,
+          onTask: (taskId) => (detectionTask.value = taskId),
+        })
+      } catch (error) {
+        if (!(error instanceof ApiError)) throw error
+        if (error.problem.code !== DETECTION_CANCELLED) await showProblem(error)
+        return
+      } finally {
+        detectionTask.value = null
+      }
+      if (detectionCancelled) return
+      const [row] = resolution.rows ?? []
+      if (row === undefined) return
+      if (row.status === 'error' || !row.job) {
+        toasts.push({
+          severity: 'warn',
+          summary: text('editor.add.hasErrors'),
+          detail: row.issues?.find((issue) => issue.severity === 'error')?.message,
+          life: NOT_ADDED_LIFE,
+        })
+        return
+      }
+      reportAdded([row], await queue.add([row.job]))
+    } catch (error) {
+      // The API client has shown the problem as a toast.
+      if (!(error instanceof ApiError)) throw error
+    } finally {
+      busy.value = false
+    }
+  }
+
   const detection = computed<GroupDetection | null>(() => {
     const taskId = detectionTask.value
     if (taskId === null) return null
@@ -266,6 +312,7 @@ export function useQueueGroup(): QueueGroup {
   return {
     busy: computed(() => busy.value),
     queueGroup,
+    queueFile,
     detection,
     cancelDetection,
     question: computed(() => question.value),

@@ -96,6 +96,15 @@ test('a season folder: edit the group, check the matrix, queue the group', async
   // The tree is flat: the members follow their group's row, and this is the only group.
   const members = tree.locator('[aria-level="2"]')
   await expect(members.locator('.source-item__label')).toHaveText(EPISODES)
+  // A row leads with its episode and title; the file name is its tooltip.
+  await expect(members.locator('.source-item__episode')).toHaveText(
+    EPISODES.map((episode, index) => `${episode} · ${TITLES[index]}`),
+  )
+  // The open episode belongs to the group: the status bar's primary add is the season's.
+  const statusBar = page.locator('.status-bar')
+  await expect(statusBar.locator('.status-bar__add')).toHaveText('Add 12 episodes to queue')
+  await expect(statusBar.locator('.status-bar__only')).toHaveText('Only E01')
+  await expect(statusBar.locator('.status-bar__add-all')).toHaveText('Add all open files')
   await expect(members.and(page.locator('[data-match="near"]'))).toHaveCount(2)
   const e05 = members.filter({ hasText: 'E05' })
   await expect(e05).toHaveAttribute('data-match', 'near')
@@ -145,7 +154,7 @@ test('a season folder: edit the group, check the matrix, queue the group', async
   await template.blur()
   await expect(output.getByTestId('naming-result')).toHaveText('Anime Show - S01E01 - Pilot.mkv')
 
-  await banner.getByRole('button', { name: 'Add group to queue' }).click()
+  await statusBar.getByRole('button', { name: 'Add 12 episodes to queue' }).click()
   await expect(page.getByText('Queued 12 jobs')).toBeVisible({ timeout: CROP_DETECTION })
   const jobs = (await readQueue(request)).jobs
     .filter((job) => !known.has(job.id))

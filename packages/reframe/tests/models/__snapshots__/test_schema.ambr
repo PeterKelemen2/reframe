@@ -4103,6 +4103,19 @@
         'description': 'The season number from the file name, when there is one.',
         'title': 'Season',
       }),
+      'sub_title': dict({
+        'anyOf': list([
+          dict({
+            'type': 'string',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'The episode title from the file name (``{sub_title}``), when there is one.',
+        'title': 'Sub Title',
+      }),
     }),
     'required': list([
       'path',

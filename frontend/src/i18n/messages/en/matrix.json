@@ -62,7 +62,6 @@
     "corrected": "corrected"
   },
   "queue": {
-    "add": "Add group to queue",
     "queued": "Queued {n} job | Queued {n} jobs",
     "addedFailed": "{n} job added to the queue; it failed | {n} jobs added to the queue; {failed} of them failed",
     "failedLine": "{name}: {reason}",

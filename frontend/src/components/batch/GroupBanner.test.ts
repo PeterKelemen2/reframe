@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Ref } from 'vue'
 
 import { configureClient } from '@/api/client'
-import { deferred, FakeServer } from '@/api/testing/fakes'
+import { FakeServer } from '@/api/testing/fakes'
 import type { Schemas, SourceEntry } from '@/api/types'
 import PresetNameDialog from '@/components/presets/PresetNameDialog.vue'
 import { nameConflict, presetList, userPreset } from '@/components/presets/testing'
@@ -197,37 +197,20 @@ describe('the group banner', () => {
     expect(patchTemplate).toHaveBeenCalledOnce()
   })
 
-  it('checks the group in the matrix and queues it', async () => {
+  it('checks the group in the matrix, and leaves queueing to the status bar', async () => {
     await mountBanner('group')
     const openMatrix = vi.spyOn(useUiStore(), 'openMatrix')
     await click('[data-action="check-group"]')
     expect(openMatrix).toHaveBeenCalledOnce()
-    await click('[data-action="queue-group"]')
-    expect(queue.queueGroup).toHaveBeenCalledExactlyOnceWith('g1')
-  })
-
-  it('keeps Add group to queue focusable while it runs, and the focus on it after', async () => {
-    await mountBanner('group')
-    const done = deferred()
-    queue.queueGroup.mockImplementation(async () => {
-      queue.busy.value = true
-      await done.promise
-      queue.busy.value = false
-    })
-    const button = $('[data-action="queue-group"]') as HTMLButtonElement
-    button.focus()
-    await click('[data-action="queue-group"]')
-    expect(button.disabled).toBe(false)
-    expect(button.getAttribute('aria-busy')).toBe('true')
-    expect(document.activeElement).toBe(button)
-    done.resolve()
-    await flushPromises()
-    expect(button.getAttribute('aria-busy')).toBeNull()
-    expect(document.activeElement).toBe(button)
+    expect($('[data-action="queue-group"]')).toBeNull()
   })
 
   it('shows the crop detection while the group is queued, and Cancel stops it', async () => {
     await mountBanner('group')
+    // The status bar's add, which started the queueing.
+    const add = document.createElement('button')
+    add.className = 'status-bar__add'
+    document.body.append(add)
     expect($('[data-state="detecting-crop"]')).toBeNull()
     queue.busy.value = true
     queue.detection.value = { message: 'Detecting the crop: file 2 of 8' }
@@ -244,7 +227,7 @@ describe('the group banner', () => {
     queue.detection.value = null
     await flushPromises()
     expect($('[data-state="detecting-crop"]')).toBeNull()
-    expect(document.activeElement).toBe($('[data-action="queue-group"]'))
+    expect(document.activeElement).toBe(add)
   })
 
   it('says that the group could not be checked, and asks again with Try again', async () => {
@@ -272,14 +255,14 @@ describe('the group banner', () => {
     expect(select).toHaveBeenCalledExactlyOnceWith('e01')
   })
 
-  it('offers Apply to group and Edit group while a file of a group is open as one job', async () => {
-    const { editGroup } = await mountBanner('member')
+  it('offers Apply to group while a file of a group is open as one job', async () => {
+    await mountBanner('member')
     expect($('[data-state="group"]')).toBeNull()
     expect(text($('[data-state="member"] [data-field="title"]'))).toBe('In group “Show S01”')
+    // Edit group is the group row's, in the sources panel.
+    expect($('[data-action="edit-group"]')).toBeNull()
     await click('[data-action="apply-to-group"]')
     expect($('[data-dialog="apply-to-group"]')).not.toBeNull()
-    await click('[data-action="edit-group"]')
-    expect(editGroup).toHaveBeenCalledExactlyOnceWith('g1')
   })
 
   it('shows nothing for a file in no group', async () => {

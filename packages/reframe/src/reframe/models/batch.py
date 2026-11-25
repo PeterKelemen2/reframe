@@ -95,6 +95,8 @@ class GroupMember(ReframeModel):
     """The season number from the file name, when there is one."""
     episode: NonNegativeInt | None = None
     """The episode number from the file name, when there is one."""
+    sub_title: DisplayText | None = None
+    """The episode title from the file name (``{sub_title}``), when there is one."""
 
 
 class BatchGroup(ReframeModel):

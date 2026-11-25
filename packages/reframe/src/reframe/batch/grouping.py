@@ -49,6 +49,16 @@ class EpisodeInfo:
     """The show name, words separated by single spaces."""
     season: int | None
     episode: int | None
+    sub_title: str | None = None
+    """The episode title, words separated by single spaces."""
+
+
+def _spaced(text: str | None, separator: str | None) -> str | None:
+    if text is None:
+        return None
+    if separator and separator != " ":
+        text = text.replace(separator, " ")
+    return " ".join(text.split()) or None
 
 
 def episode_info(path: Path) -> EpisodeInfo:
@@ -62,12 +72,9 @@ def episode_info(path: Path) -> EpisodeInfo:
         if folder is not None:
             name = name or folder.name
             season = season if season is not None else folder.season
-    if name is not None:
-        separator = fields.separator if fields.name else None
-        if separator and separator != " ":
-            name = name.replace(separator, " ")
-        name = " ".join(name.split()) or None
-    return EpisodeInfo(name, season, fields.episode)
+    name = _spaced(name, fields.separator if fields.name else None)
+    sub_title = _spaced(fields.sub_title, fields.separator)
+    return EpisodeInfo(name, season, fields.episode, sub_title)
 
 
 EpisodeKey = tuple[bool, int, int, tuple[tuple[int, int | str], ...]]
@@ -303,4 +310,6 @@ def _group(anchor: _Bucket, level: MatchLevel) -> BatchGroup:
 
 def _with_episode(member: GroupMember) -> GroupMember:
     info = episode_info(member.path)
-    return member.model_copy(update={"season": info.season, "episode": info.episode})
+    return member.model_copy(
+        update={"season": info.season, "episode": info.episode, "sub_title": info.sub_title}
+    )

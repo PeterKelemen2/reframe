@@ -9,6 +9,8 @@ export interface GroupRow {
   member: GroupMember
   /** `E05`, `S01E05` when the group spans seasons, else the file name. */
   label: string
+  /** The episode title from the file name, beside an episode label only. */
+  subTitle: string | null
 }
 
 export type PanelItem =
@@ -61,7 +63,11 @@ export function panelItems(
     const item: PanelItem = {
       kind: 'group',
       group,
-      rows: open.map((row, index) => ({ ...row, label: labels[index] ?? '' })),
+      rows: open.map((row, index) => {
+        const label = labels[index] ?? ''
+        const named = label === fileName(row.member.path)
+        return { ...row, label, subTitle: named ? null : (row.member.sub_title ?? null) }
+      }),
     }
     for (const { entry } of open) groupOf.set(entry.id, item)
   }

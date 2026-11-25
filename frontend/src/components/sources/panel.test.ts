@@ -65,6 +65,23 @@ describe('panelItems', () => {
       '/m/s/E02.mkv',
     ])
   })
+
+  it('gives a member its episode title beside an episode label, not beside a file name', () => {
+    const paths = ['/m/s/E01.mkv', '/m/s/E02.mkv', '/m/s/extra.mkv']
+    const show = group('Show', paths)
+    show.members = [
+      { path: '/m/s/E01.mkv', match: 'exact', season: 1, episode: 1, sub_title: 'Pilot' },
+      { path: '/m/s/E02.mkv', match: 'exact', season: 1, episode: 2 },
+      { path: '/m/s/extra.mkv', match: 'exact', sub_title: 'Behind the scenes' },
+    ]
+    const [item] = panelItems(paths.map(entry), { groups: [show] })
+    if (item?.kind !== 'group') throw new Error('no group')
+    expect(item.rows.map((row) => [row.label, row.subTitle])).toEqual([
+      ['E01', 'Pilot'],
+      ['E02', null],
+      ['extra.mkv', null],
+    ])
+  })
 })
 
 function member(path: string, season: number | null, episode: number | null): Member {

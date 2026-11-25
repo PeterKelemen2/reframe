@@ -45,13 +45,21 @@ the HDR type ([0040](../decisions/0040-batch-engine-and-reframe-batch.md)).
 The sources panel shows a group like this:
 
 ```
-▾ Show S01  ·  12 files  ·  standard match                     [Edit group] [Add group to queue]
-    E01  ✓
-    E02  ✓
+▾ Show S01  ·  12 files  ·  standard match                                          [Edit group]
+    ✓ E01 · Pilot
+    ✓ E02 · Departure
     …
-    E05  ⚠ 1 extra track (eng AC-3 2.0 "Commentary")
-    E11  ✗ no match for output audio #2 (eng DTS-HD MA 5.1)
+    ⚠ E05 · Echoes      1 extra track (eng AC-3 2.0 "Commentary")
+    ⚠ E11 · Static      1 track missing (eng DTS-HD MA 5.1 "English Dub")
 ```
+
+A member's row leads with its episode label and the episode title from its file name; the file
+name is its tooltip. Each group action has one place
+([0111](../decisions/0111-the-season-is-the-primary-queue-action.md)): the group's row has
+**Edit group**; the banner of the edited group has **Check group**, **Save as preset** and
+**Close group**; the status bar queues (below, [Queueing a group](#queueing-a-group)). The row's
+context menu has them all for the keyboard, and **Check group** only for the edited group: the
+matrix is the edited group's.
 
 A file that does not match the group at all is shown as a **near match**: "differs in 1
 track". You can add it anyway. It then gets per-file overrides. A file within 2 differences
@@ -195,7 +203,12 @@ Batch mode uses the templates, variables and name-source rules from
 
 ## Queueing a group
 
-**Add group to queue** resolves every file:
+**Add group to queue** resolves every file. While the shown file belongs to a group (the edited
+group, or a member open as one job), it is the status bar's primary action, named by the count:
+**Add 12 episodes to queue** (`Ctrl+Enter`). **Only E01** beside it queues the shown file alone.
+A member open as one job with changes that no **Apply to group…** took asks first: **Apply to
+group…**, **Queue without them** or **Cancel**
+([0111](../decisions/0111-the-season-is-the-primary-queue-action.md)).
 
 - No errors → one job per file is queued, in episode order.
 - Some files have errors → a dialog lists them. Options: **Queue the valid files, skip the

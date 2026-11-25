@@ -79,7 +79,8 @@
     "problems": "Problems at the server's start"
   },
   "keys": {
-    "open": "Ctrl+O"
+    "open": "Ctrl+O",
+    "addToQueue": "Ctrl+Enter"
   },
   "workspace": {
     "noSource": "No source open",
@@ -109,7 +110,20 @@
   },
   "queue": {
     "add": "Add to queue",
-    "addAll": "Add all",
+    "addEpisodes": "Add {n} episode to queue | Add {n} episodes to queue",
+    "addFiles": "Add {n} file to queue | Add {n} files to queue",
+    "only": "Only {label}",
+    "onlyThis": "Only this file",
+    "onlyLabel": "Add only {label} to queue",
+    "onlyThisLabel": "Add only this file to queue",
+    "addAll": "Add all open files",
+    "shortcut": "Shortcut: {key}",
+    "changes": {
+      "text": "Your changes to {label} are not in the group's settings. The group is queued without them.",
+      "apply": "Apply to group…",
+      "queue": "Queue without them",
+      "cancel": "Cancel"
+    },
     "start": "Start",
     "idle": "Queue: nothing waiting",
     "running": "{n} running",
