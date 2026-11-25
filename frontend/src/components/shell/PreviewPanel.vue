@@ -118,6 +118,7 @@ async function openWindow(): Promise<void> {
         class="preview-panel__toggle"
         text
         severity="secondary"
+        :label="collapsed ? t('shell.preview.title') : undefined"
         :aria-label="collapsed ? t('shell.preview.show') : t('shell.preview.hide')"
         :aria-expanded="!collapsed"
         :aria-controls="contentId"
@@ -191,6 +192,13 @@ async function openWindow(): Promise<void> {
 .preview-panel--collapsed .preview-panel__header {
   justify-content: center;
   padding-inline: 0;
+}
+
+/* The strip names what it opens: the label runs down it under the icon. */
+.preview-panel--collapsed .preview-panel__toggle {
+  gap: var(--rf-space-2);
+  padding-block: var(--rf-space-3);
+  writing-mode: vertical-rl;
 }
 
 .preview-panel__title {

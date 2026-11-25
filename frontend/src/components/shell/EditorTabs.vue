@@ -63,6 +63,17 @@ watch(active, () => {
   height: 100%;
 }
 
+/* All eight tabs fit beside the open preview at 1440 px. The same width everywhere keeps each
+   tab in its place when a tab opens or closes the preview. */
+.editor-tabs :deep([role='tab']) {
+  padding-inline: 0.5rem;
+}
+
+/* The first label lines up with the panels' content. */
+.editor-tabs :deep([role='tablist']) {
+  padding-inline-start: 0.625rem;
+}
+
 /* A size container: a tab can size itself by the panels' height. */
 .editor-tabs__panels {
   container-type: size;

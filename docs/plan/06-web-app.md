@@ -521,7 +521,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 
 ### F-3 App shell
 - [x] Navigation rail, workspace layout (sources | tabs | preview), status bar, keyboard
-      shortcuts, theme switch, toasts, a first-run screen when FFmpeg is missing.
+      shortcuts, theme switch, toasts, a first-run screen when FFmpeg is missing. The preview
+      starts collapsed on the tabs that do not work on the picture
+      ([decision 0112](../decisions/0112-editor-room-at-1440-px.md)).
 - [x] A tab of a later milestone is not shown until it is built, and its `Ctrl+N` does nothing
       ([decision 0063](../decisions/0063-m4-frontend-mvp.md)).
 
@@ -547,7 +549,8 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 
 ### F-6 Summary tab
 - [x] The cards from [03 §Summary](03-features.md#summary). Chips and issues link to fields
-      ([decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task G").
+      ([decision 0063](../decisions/0063-m4-frontend-mvp.md), "Task G"). In the order of what
+      the job writes ([decision 0112](../decisions/0112-editor-room-at-1440-px.md)).
 - [x] A **Job type** card (not a line): the job type (encode, remux, metadata edit) and why from
       `jobs/type`, updated after each edit; *Edit in place*, why the job could not edit its source
       in place, the `inplace.*` issues with their fixes; *Remux only* (`jobs/draft-remux`, one undo
@@ -579,7 +582,8 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 
 ### F-10 Audio and subtitles tabs
 - [x] `TrackTable` (source, read-only) with expandable details, role badges, and a "Measure"
-      button for unknown bitrates. (M4 built the table, [decision 0063](../decisions/0063-m4-frontend-mvp.md),
+      button for unknown bitrates. A narrow table leaves its lower-priority columns to the
+      details ([decision 0112](../decisions/0112-editor-room-at-1440-px.md)). (M4 built the table, [decision 0063](../decisions/0063-m4-frontend-mvp.md),
       "Task I"; M6 the "Measure" button, the subtitle event count and the loudness measurement,
       [decision 0065](../decisions/0065-m6-tracks-and-metadata.md), "Task B".)
 - [x] Output track editors with drag reorder, action, encoder settings, `TrackMetadataEditor`.

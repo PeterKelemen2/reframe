@@ -20,14 +20,21 @@ export interface EditorTab {
   labelKey: string
   /** The N of its `Ctrl+N` shortcut: its place in `EDITOR_TAB_ORDER`, counted from 1. */
   shortcut: number
+  /** The tab's work is about the picture: the preview panel starts open on it. */
+  picture: boolean
   component: () => Promise<Component>
 }
 
-function tab(id: EditorTabId, component: () => Promise<Component>): EditorTab {
+function tab(
+  id: EditorTabId,
+  component: () => Promise<Component>,
+  { picture = false } = {},
+): EditorTab {
   return {
     id,
     labelKey: `app.tabs.${id}`,
     shortcut: EDITOR_TAB_ORDER.indexOf(id) + 1,
+    picture,
     component,
   }
 }
@@ -36,10 +43,10 @@ function tab(id: EditorTabId, component: () => Promise<Component>): EditorTab {
  * The built tabs. A tab that is not in this list is not shown, and its shortcut does nothing.
  */
 export const EDITOR_TABS: readonly EditorTab[] = [
-  tab('summary', () => import('./SummaryTab.vue')),
-  tab('dimensions', () => import('./DimensionsTab.vue')),
-  tab('filters', () => import('./FiltersTab.vue')),
-  tab('video', () => import('./VideoTab.vue')),
+  tab('summary', () => import('./SummaryTab.vue'), { picture: true }),
+  tab('dimensions', () => import('./DimensionsTab.vue'), { picture: true }),
+  tab('filters', () => import('./FiltersTab.vue'), { picture: true }),
+  tab('video', () => import('./VideoTab.vue'), { picture: true }),
   tab('audio', () => import('./AudioTab.vue')),
   tab('subtitles', () => import('./SubtitlesTab.vue')),
   tab('chapters', () => import('./ChaptersTab.vue')),
