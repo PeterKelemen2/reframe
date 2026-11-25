@@ -5,6 +5,8 @@ defineProps<{
   label: string
   /** Empty, `null` or missing: a dash. */
   value?: string | number | null
+  /** A measured value (size, duration, bitrate): set in the mono face. */
+  mono?: boolean
 }>()
 
 defineSlots<{ default?(): unknown }>()
@@ -13,7 +15,7 @@ defineSlots<{ default?(): unknown }>()
 <template>
   <div class="rf-kv">
     <dt>{{ label }}</dt>
-    <dd>
+    <dd :class="{ 'rf-mono': mono }">
       <slot>{{ value === null || value === undefined || value === '' ? '—' : value }}</slot>
     </dd>
   </div>

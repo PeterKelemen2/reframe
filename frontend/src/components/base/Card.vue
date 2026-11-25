@@ -30,7 +30,7 @@ defineSlots<{ default(): unknown; header?(): unknown; actions?(): unknown }>()
   display: grid;
   gap: var(--rf-space-3);
   min-width: 0;
-  padding: var(--rf-space-4);
+  padding: var(--rf-space-3) var(--rf-space-4) var(--rf-space-4);
   border: 1px solid var(--rf-color-border);
   border-radius: var(--rf-radius-lg);
   background: var(--rf-color-surface);
@@ -50,7 +50,7 @@ defineSlots<{ default(): unknown; header?(): unknown; actions?(): unknown }>()
 
 .rf-card__title h3 {
   margin: 0;
-  font-size: var(--rf-font-size-md);
+  font-size: var(--rf-text-heading);
   font-weight: var(--rf-font-weight-bold);
   line-height: var(--rf-line-height-tight);
 }

@@ -160,6 +160,28 @@ describe('the Summary tab', () => {
     expect(text(wrapper, '[data-card="estimate"] [data-field="size"]')).toBe('Depends on content')
   })
 
+  it('lists the output tracks as a receipt: the video line, the kept count and the crop edges', async () => {
+    const { wrapper, editor } = await mountSummary()
+    const video = wrapper.find('[data-group="video"] [data-path="video.encoder"]')
+    expect(video.findAll(':scope > span').map((cell) => cell.text())).toEqual([
+      '1',
+      'Video',
+      'x265',
+      'RF 22',
+      '10-bit',
+    ])
+    expect(text(wrapper, '[data-group="audio"] h4')).toBe('Audio · 3')
+    expect(text(wrapper, '[data-field="kept"]')).toBe('5 of 7 source tracks kept')
+    expect(text(wrapper, '[data-field="crop"]')).toBe('not detected yet (Automatic)')
+
+    editor.set('/dimensions/crop', {
+      mode: 'manual',
+      rect: { top: 22, bottom: 24, left: 0, right: 0 },
+    })
+    await flushPromises()
+    expect(text(wrapper, '[data-field="crop"]')).toBe('T 22 · B 24 · L 0 · R 0 (Manual)')
+  })
+
   it('nests its headings under the tab, one level at a time', async () => {
     const { wrapper } = await mountSummary()
     const levels = [...wrapper.element.querySelectorAll('h1, h2, h3, h4, h5, h6')].map((heading) =>

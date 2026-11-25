@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import Card from '@/components/base/Card.vue'
+import KeyValue from '@/components/base/KeyValue.vue'
 import { useEditorStore } from '@/stores/editor'
 import { useSystemStore } from '@/stores/system'
 
@@ -53,6 +54,18 @@ const tone = computed(() => {
 })
 const notes = computed(() => (pipeline.value?.kind === 'encoded' ? pipeline.value.notes : []))
 
+const crop = computed(() => editor.job?.dimensions?.crop ?? null)
+const cropMode = computed(() =>
+  crop.value === null ? null : t(`dimensions.crop.modes.${crop.value.mode}`),
+)
+/** The edges in the order of the inputs, or why there are none. */
+const cropRect = computed(() => {
+  const current = crop.value
+  if (current === null || current.mode === 'none') return null
+  if (!current.rect) return t('summary.picture.cropPending')
+  return t('dimensions.crop.rect', { ...current.rect })
+})
+
 const chips = computed(() => filterChips(editor.job?.filters, system.definitions))
 </script>
 
@@ -63,19 +76,33 @@ const chips = computed(() => filterChips(editor.job?.filters, system.definitions
     data-card="picture"
   >
     <div class="summary-picture__body">
-      <SummaryLink path="dimensions">
-        <span
-          class="summary-picture__pipeline"
-          :class="tone && `summary-picture__pipeline--${tone}`"
-          :aria-busy="geometry.pending.value"
-          data-field="pipeline"
-        >
-          <template v-if="geometry.error.value !== null">
-            {{ t('summary.picture.failed', { reason: geometry.error.value }) }}
-          </template>
-          <template v-else>{{ line ?? t('summary.picture.computing') }}</template>
-        </span>
-      </SummaryLink>
+      <dl class="rf-kv-list">
+        <KeyValue :label="t('summary.picture.cropLabel')">
+          <SummaryLink path="dimensions.crop">
+            <span class="summary-picture__crop" data-field="crop">
+              <span v-if="cropRect" :class="{ 'rf-mono': crop?.rect }">{{ cropRect }}</span>{{ ' ' }}
+              <span v-if="cropMode" class="summary-picture__mode">
+                {{ cropRect ? t('summary.picture.cropMode', { mode: cropMode }) : cropMode }}
+              </span>
+            </span>
+          </SummaryLink>
+        </KeyValue>
+        <KeyValue :label="t('summary.picture.size')">
+          <SummaryLink path="dimensions">
+            <span
+              class="summary-picture__pipeline"
+              :class="tone && `summary-picture__pipeline--${tone}`"
+              :aria-busy="geometry.pending.value"
+              data-field="pipeline"
+            >
+              <template v-if="geometry.error.value !== null">
+                {{ t('summary.picture.failed', { reason: geometry.error.value }) }}
+              </template>
+              <template v-else>{{ line ?? t('summary.picture.computing') }}</template>
+            </span>
+          </SummaryLink>
+        </KeyValue>
+      </dl>
       <p v-if="tone === 'warn'" class="summary-picture__upscaled">
         {{ t('summary.picture.upscaled') }}
       </p>
@@ -112,8 +139,23 @@ const chips = computed(() => filterChips(editor.job?.filters, system.definitions
 
 .summary-picture__pipeline {
   font-family: var(--rf-font-mono);
-  font-size: var(--rf-font-size-sm);
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
+}
+
+.summary-picture__crop {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0 var(--rf-space-2);
+}
+
+.summary-picture__crop .rf-mono,
+.summary-picture__pipeline {
+  font-size: var(--rf-font-size-sm);
+}
+
+.summary-picture__mode {
+  color: var(--rf-color-text-muted);
 }
 
 .summary-picture__pipeline--warn,
