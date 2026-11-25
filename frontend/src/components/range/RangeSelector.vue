@@ -429,6 +429,7 @@ function reset(): void {
           >
             <template #default="{ id: inputId, invalid }">
               <InputText
+                class="range-popover__time"
                 :model-value="texts[edge]"
                 :id="inputId"
                 :inputmode="range.kind === 'frames' ? 'numeric' : 'text'"
@@ -481,6 +482,7 @@ function reset(): void {
 
 .range-selector__length {
   color: var(--rf-color-text-muted);
+  font-family: var(--rf-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -514,6 +516,11 @@ function reset(): void {
 
 .range-selector__trigger--info .range-selector__severity {
   color: var(--p-status-info-color);
+}
+
+.range-popover__time {
+  font-family: var(--rf-font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 .range-popover__body {
