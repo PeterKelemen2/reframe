@@ -17,7 +17,9 @@ const { t } = useI18n()
 const editor = useEditorStore()
 const validation = useValidationStore()
 
-const hasIssues = computed(() => validation.issues.length > 0)
+// Only an error leads: the job cannot run as it is. Warnings and notes follow the job's facts,
+// so that the tracks stay the first thing the Summary shows.
+const blocked = computed(() => validation.issues.some((issue) => issue.severity === 'error'))
 </script>
 
 <template>
@@ -29,7 +31,7 @@ const hasIssues = computed(() => validation.issues.length > 0)
     </p>
     <!-- What the job writes, in the order of the output file; the source's own facts come last. -->
     <div v-else class="summary-tab__grid">
-      <IssuesCard v-if="hasIssues" />
+      <IssuesCard v-if="blocked" />
       <TracksCard />
       <PictureCard />
       <VideoCard />
@@ -37,7 +39,7 @@ const hasIssues = computed(() => validation.issues.length > 0)
       <OutputCard />
       <EstimateCard />
       <SourceCard />
-      <IssuesCard v-if="!hasIssues" />
+      <IssuesCard v-if="!blocked" />
     </div>
   </section>
 </template>

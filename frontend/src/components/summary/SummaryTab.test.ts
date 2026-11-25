@@ -303,7 +303,19 @@ describe('the Summary tab', () => {
     expect(useUiStore().activeTab).toBe('filters')
   })
 
-  it('leads with the issues, grouped by severity with their fix buttons; a fix changes the job', async () => {
+  it('puts warnings and notes after the job, so the tracks lead', async () => {
+    const { wrapper } = await mountSummary({
+      issues: [
+        issue('crop.note', 'dimensions.crop', 'info'),
+        issue('audio.bitrate', 'audio[1].bitrate', 'warning'),
+      ],
+    })
+    const cards = wrapper.findAll('[data-card]').map((card) => card.attributes('data-card'))
+    expect(cards[0]).toBe('tracks')
+    expect(cards.at(-1)).toBe('issues')
+  })
+
+  it('leads with the issues when one is an error, grouped by severity with their fix buttons; a fix changes the job', async () => {
     const fix = {
       label: 'Use libx264 (closest match)',
       patch: [{ op: 'replace' as const, path: '/video/encoder', value: 'libx264' }],

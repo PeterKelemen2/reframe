@@ -58,8 +58,10 @@ Batch / season editing has its own document: [04-batch-mode.md](04-batch-mode.md
 **HandBrake:** a list of text lines and a few container check boxes. It looks dated.
 
 **Reframe:** a grid of cards, in the order of what the job writes: Tracks, Picture pipeline,
-Video, Job type, Output, Estimate, then Source. Issues is the first card when there are issues,
-and the last when there are none ([decision 0112](../decisions/0112-editor-room-at-1440-px.md)).
+Video, Job type, Output, Estimate, then Source. Issues is the first card when an issue is an
+error, and the last otherwise: warnings and notes follow the job's facts
+([decisions 0112](../decisions/0112-editor-room-at-1440-px.md),
+[0113](../decisions/0113-the-spotting-list-visual-world.md)).
 
 | Card | Content |
 |------|---------|

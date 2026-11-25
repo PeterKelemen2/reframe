@@ -39,6 +39,18 @@ spotting lists and dubbing rythmo bands, where each voice has its colour.
   strip sits at the top of the editor column instead. Subtitle lanes are solid: the subtitle scan
   counts events but records no times, so a lane cannot show where the cues are.
 
+- **The Summary leads with the tracks.** Issues come first only when one is an error (the job
+  cannot run); warnings and notes follow the job's facts, at the end. This changes
+  [0112](0112-editor-room-at-1440-px.md)'s "Issues first when there are any": the finish review
+  found two info notes taking the top 300 px at 1440 px and pushing Tracks below the fold at 1280.
+- **Notes are ink, not blue.** The `info` status, info toasts and info messages are ink on a
+  neutral tint: a hue there was the one-accent look this world refuses, next to the language
+  colours.
+
+- **The editor on the ground.** The tab panels lie on the cool-white ground (blue-black in
+  dark), the cards on white panels. Below 1440 px the sources and preview columns narrow
+  (15rem and 20rem at most), so all eight tabs fit beside the open preview at 1280 px.
+
 ## Consequences
 
 - Every screen changes colour and type; behaviour, copy and layout do not.
