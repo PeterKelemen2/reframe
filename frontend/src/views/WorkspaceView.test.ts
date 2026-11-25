@@ -4,9 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 
 import type { SourceEntry, SystemInfo } from '@/api/types'
+import type * as Registry from '@/components/editor/tabs/registry'
 import type { EditorTabId } from '@/components/editor/tabs/registry'
 import { FIRST_RUN_KEY } from '@/components/shell/firstRun'
 import { focusWorkspace } from '@/components/shell/focus'
+import { sampleJob } from '@/editor/testing/samples'
 import { mountShell } from '@/components/shell/testing'
 import { platform } from '@/platform'
 import { useSystemStore } from '@/stores/system'
@@ -24,12 +26,13 @@ const sources = reactive({
   grouping: null,
   pick: vi.fn<() => Promise<void>>(async () => {}),
 })
-const editor = reactive({ job: null })
+const editor = reactive({ job: null, target: null, range: { kind: 'full' } })
 const validation = reactive({
   issues: [],
   pending: false,
   counts: { error: 0, warning: 0, info: 0 },
   addLocal: () => {},
+  issuesFor: () => [],
 })
 const useValidation = vi.fn<() => void>()
 const actions = {
@@ -44,6 +47,17 @@ const actions = {
   addAll: vi.fn<() => Promise<void>>(),
   start: vi.fn<() => Promise<void>>(),
 }
+// The tabs' own content needs the real editor; these tests are about the frame around it.
+vi.mock('@/components/editor/tabs/registry', async (importOriginal) => {
+  const actual = await importOriginal<typeof Registry>()
+  const blank = { render: () => null }
+  return {
+    ...actual,
+    EDITOR_TABS: actual.EDITOR_TABS.map((tab) =>
+      Object.assign({}, tab, { component: async () => blank }),
+    ),
+  }
+})
 vi.mock('@/stores/sources', () => ({ useSourcesStore: () => sources }))
 vi.mock('@/stores/editor', () => ({ useEditorStore: () => editor }))
 vi.mock('@/stores/validation', () => ({ useValidationStore: () => validation }))
@@ -55,6 +69,8 @@ const mounted: { unmount(): void }[] = []
 beforeEach(() => {
   sources.entries = []
   sources.activeId = null
+  editor.job = null
+  editor.target = null
   vi.clearAllMocks()
   localStorage.clear()
 })
@@ -209,6 +225,37 @@ describe('the workspace', () => {
     useUiStore().activeTab = 'subtitles'
     await flushPromises()
     expect(again.find('.workspace__columns--preview-collapsed').exists()).toBe(false)
+  })
+
+  it('shows one programme strip: under the frame, or on top of the editor while the preview is collapsed', async () => {
+    const wrapper = await mountWorkspace(() => {
+      openSource()
+      editor.job = sampleJob() as never
+      editor.target = { sourceId: 's1' } as never
+    })
+    const ui = useUiStore()
+    const strips = () => wrapper.findAll('[data-component="programme-strip"]')
+    const docked = () => wrapper.find('.workspace__editor [data-docked="true"]')
+    const inPanel = () => wrapper.find('.preview-panel [data-component="programme-strip"]')
+
+    expect(strips()).toHaveLength(1)
+    expect(inPanel().exists()).toBe(true)
+    ui.activeTab = 'audio'
+    await flushPromises()
+    expect(strips()).toHaveLength(1)
+    expect(docked().exists()).toBe(true)
+    // Below the tabs, so that a tab does not move when the strip comes or goes.
+    expect(docked().element.previousElementSibling?.getAttribute('role')).not.toBe('tabpanel')
+    expect(wrapper.find('.workspace__editor [role="tablist"]').exists()).toBe(true)
+
+    await wrapper.find('.preview-panel__toggle').trigger('click')
+    expect(strips()).toHaveLength(1)
+    expect(inPanel().exists()).toBe(true)
+    ui.activeTab = 'dimensions'
+    await flushPromises()
+    await wrapper.find('.preview-panel__toggle').trigger('click')
+    expect(strips()).toHaveLength(1)
+    expect(docked().exists()).toBe(true)
   })
 
   it('starts the crop store, which detects the crop whichever tab is shown', async () => {
