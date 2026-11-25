@@ -1,24 +1,12 @@
 import type { QueueJob } from '@/api/types'
 import { fileName } from '@/components/shell/format'
-
-/** A job's title, episode label and container, as the identity line shows them. */
-export interface JobIdentity {
-  title: string
-  /** `S03E02`; `null` for a file without an episode. */
-  episode: string | null
-  /** `MKV`; `null` when neither the settings nor the output name tell it. */
-  container: string | null
-}
+import { episodeCode, type JobIdentityParts, jobIdentity } from '@/components/shell/identity'
 
 const EPISODE = /(?:^|[\s._-])s(\d{1,2})[\s._-]?e(\d{1,3})(?:-?e\d{1,3})*(?=$|[\s._-])/i
 const CROSS = /(?:^|[\s._-])(\d{1,2})x(\d{2,3})(?=$|[\s._-])/i
 /** Where a release name's technical part starts: the title is the words before it. */
 const RELEASE_TAG =
   /^(?:\d{3,4}[pi]|4k|uhd|blu-?ray|bdrip|brrip|remux|web-?dl|web-?rip|web|hdtv|dvdrip|x26[45]|h\.?26[45]|hevc|avc|av1|hdr\d*|dv|10bit|proper|repack)$/i
-
-function pad(value: string): string {
-  return value.padStart(2, '0')
-}
 
 function stem(name: string): string {
   const dot = name.lastIndexOf('.')
@@ -43,16 +31,25 @@ function titleWithoutTags(text: string): string {
   return (cut > 0 ? parts.slice(0, cut) : parts).join(' ').replace(/[\s\-–]+$/u, '')
 }
 
-/** The title and episode of a source file name (`The.Sopranos.S03E02.Proshai.mkv`). */
-export function parseFileName(name: string): { title: string; episode: string | null } {
+/**
+ * The title, season and episode of a source file name (`The.Sopranos.S03E02.Proshai.mkv`): a
+ * queued job carries its file name, not the parsed name the editor has.
+ */
+function parseName(name: string): Omit<JobIdentityParts, 'container'> {
   const base = stem(fileName(name))
   const found = EPISODE.exec(base) ?? CROSS.exec(base)
   if (found !== null && found[1] !== undefined && found[2] !== undefined) {
     const title = cleanTitle(base.slice(0, found.index))
-    const episode = `S${pad(found[1])}E${pad(found[2])}`
-    return { title: title || episode, episode: title ? episode : null }
+    const [season, episode] = [Number(found[1]), Number(found[2])]
+    return title ? { title, season, episode } : { title: episodeCode(season, episode) ?? base }
   }
-  return { title: titleWithoutTags(base) || base, episode: null }
+  return { title: titleWithoutTags(base) || base }
+}
+
+/** The title and episode label of a source file name. */
+export function parseFileName(name: string): { title: string; episode: string | null } {
+  const { title, season, episode } = parseName(name)
+  return { title, episode: episodeCode(season, episode) }
 }
 
 function containerOf(job: QueueJob): string | null {
@@ -63,13 +60,7 @@ function containerOf(job: QueueJob): string | null {
   return extension ? extension.toUpperCase() : null
 }
 
-export function jobIdentity(job: QueueJob): JobIdentity {
-  const { title, episode } = parseFileName(job.settings.source.path)
-  return { title, episode, container: containerOf(job) }
-}
-
-/** `The Sopranos · S03E02 · MKV`; a file without an episode: `Heat (1995) · MKV`. */
+/** `The Sopranos · S03E02 · MKV`, as the status bar names the job; a film: `Heat (1995) · MKV`. */
 export function identityLine(job: QueueJob): string {
-  const { title, episode, container } = jobIdentity(job)
-  return [title, episode, container].filter((part) => part !== null && part !== '').join(' · ')
+  return jobIdentity({ ...parseName(job.settings.source.path), container: containerOf(job) })
 }
