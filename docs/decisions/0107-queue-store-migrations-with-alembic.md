@@ -64,6 +64,13 @@ optional column would make every older Reframe refuse the whole queue.
   spec collects `reframe.queue.migrations` with its `.py` files, because Alembic runs `env.py`
   and the revisions from files. Checked with a frozen build: the frozen server migrated a 0.10
   file to `0002`, and the frozen CLI read the old file unchanged.
+- Importing Alembic and SQLAlchemy takes about 130 ms, a quarter of `import reframe`. They
+  are imported only when a file needs a migration: the store first compares `alembic_version`
+  with `migrations.HEAD` on its own connection (0.06 ms against 1.7 ms for Alembic's own check).
+  `test_a_current_file_opens_without_alembic` keeps it so.
+- The store keeps `synchronous=FULL`: measured on ext4, a commit takes 0.96 ms against 0.03 ms
+  with `NORMAL`, but the store commits only on state changes, on its own thread, and `NORMAL`
+  in WAL mode can lose the last commits at a power loss.
 - Reframe 0.10 still opens a migrated file (it names its columns); the rows it writes have no
   size.
 - A new revision: `uv run alembic revision --rev-id 0003 -m "…"` from the repository root

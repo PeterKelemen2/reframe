@@ -5,6 +5,8 @@ from __future__ import annotations
 import contextlib
 import shutil
 import sqlite3
+import subprocess
+import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -92,7 +94,7 @@ def head() -> str:
 
 def test_the_revisions_form_one_line() -> None:
     script = ScriptDirectory.from_config(migrations.config())
-    assert script.get_heads() == [head()]
+    assert script.get_heads() == [head()] == [migrations.HEAD]
     assert [s.revision for s in script.walk_revisions()] == ["0002", "0001"]
 
 
@@ -202,3 +204,27 @@ def test_a_reader_without_the_lock_reads_a_file_of_reframe_0_10_as_it_is(tmp_pat
     saved = read_saved_queue(tmp_path)
     assert (saved.problem, [(j.id, j.output_size) for j in saved.jobs]) == (None, [("old", None)])
     assert path.read_bytes() == before
+
+
+def test_a_current_file_opens_without_alembic(tmp_path: Path) -> None:
+    """Alembic and SQLAlchemy take about 130 ms to import: only a file to migrate loads them."""
+    path = tmp_path / "queue.sqlite3"
+    store, _, _ = load(path)
+    run(store, lambda: store.upsert([row_of(job("a"))]))
+    store.close()
+    script = (
+        "import sys\n"
+        "from datetime import UTC, datetime\n"
+        "from pathlib import Path\n"
+        "import reframe.cli\n"
+        "from reframe.queue.store import QueueStore\n"
+        "store = QueueStore(Path(sys.argv[1]), now=lambda: datetime.now(UTC))\n"
+        "loaded = store.submit(store.load).result()\n"
+        "store.close()\n"
+        "assert [j.id for j in loaded.jobs] == ['a'], loaded\n"
+        "print(sorted(m for m in sys.modules if m.split('.')[0] in ('alembic', 'sqlalchemy')))\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", script, str(path)], capture_output=True, text=True, check=True
+    )
+    assert done.stdout.strip() == "[]"

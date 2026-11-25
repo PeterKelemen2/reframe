@@ -305,7 +305,8 @@ class QueueStore:
                 )
                 return result
             self._configure(db)
-            migrations.upgrade(self.path)
+            if not migrations.is_current(db):
+                migrations.upgrade(self.path)
             if version == 0:  # an empty file of ours (the first write did not finish)
                 db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             rows = select_jobs(db)
@@ -410,7 +411,8 @@ class QueueStore:
         if self._db is None:
             db = self._connect()
             try:
-                migrations.upgrade(self.path)
+                if not migrations.is_current(db):
+                    migrations.upgrade(self.path)
                 db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             except BaseException:
                 db.close()
