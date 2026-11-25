@@ -48,6 +48,18 @@ function message(palette: string, scheme: 'light' | 'dark') {
   }
 }
 
+function neutralMessage(scheme: 'light' | 'dark') {
+  const tone =
+    scheme === 'light'
+      ? { background: '{surface.50}', borderColor: '{surface.300}', color: '{surface.800}' }
+      : { background: '{surface.800}', borderColor: '{surface.600}', color: '{surface.100}' }
+  return {
+    ...tone,
+    outlined: { color: tone.color, borderColor: '{surface.500}' },
+    simple: { color: tone.color },
+  }
+}
+
 /** Aura's yellow 600 is below 4.5:1 on its own tint: warnings use the 800 shade in light. */
 const WARN_NOTICE_LIGHT = {
   background: '{yellow.50}',
@@ -281,10 +293,11 @@ export const ReframePreset = definePreset(Aura, {
         },
       },
     },
+    // A note is information, not a state: ink on a neutral tint, not a saturated blue.
     message: {
       colorScheme: {
         light: {
-          info: message('blue', 'light'),
+          info: neutralMessage('light'),
           success: message('green', 'light'),
           warn: {
             ...WARN_NOTICE_LIGHT,
@@ -294,7 +307,7 @@ export const ReframePreset = definePreset(Aura, {
           error: message('red', 'light'),
         },
         dark: {
-          info: message('blue', 'dark'),
+          info: neutralMessage('dark'),
           success: message('green', 'dark'),
           warn: message('yellow', 'dark'),
           error: message('red', 'dark'),
