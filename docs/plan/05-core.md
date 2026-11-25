@@ -498,10 +498,11 @@ cancelling a scan stops its FFmpeg process within 1 s.
 - [ ] SQLite store: `jobs(id, position, state, settings_json, plan_json, issues_json,
       created_at, started_at, finished_at, output_path, log_path, error, output_size)`. One
       writer thread, whole-row writes; damaged, newer and unwritable files as in
-      [decision 0016](../decisions/0016-queue-and-job-runner.md). Alembic revisions
-      (`reframe/queue/migrations`) change the tables; `PRAGMA user_version` rises only for a
+      [decision 0016](../decisions/0016-queue-and-job-runner.md). The steps of
+      `reframe/queue/migrations.py` change the tables; `PRAGMA user_version` rises only for a
       change that an older Reframe cannot ignore
-      ([decision 0107](../decisions/0107-queue-store-migrations-with-alembic.md)).
+      ([decisions 0107](../decisions/0107-queue-store-migrations-with-alembic.md),
+      [0108](../decisions/0108-own-migration-runner-for-the-queue-store.md)).
 - [ ] Runner loop: when a slot is free (parallel limit), take the next `Waiting` job →
       **validate again** (capabilities can change; wait for encoder detection when an encoder
       is still being checked) → build the plan → run the steps. Two jobs with the same output

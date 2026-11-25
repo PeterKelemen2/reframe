@@ -1,19 +1,15 @@
-"""The queue store's Alembic migrations: files of older and newer Reframes, failed revisions."""
+"""The queue store's migrations: files of older and newer Reframes, failed steps."""
 
 from __future__ import annotations
 
 import contextlib
-import shutil
 import sqlite3
-import subprocess
-import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
-from alembic.script import ScriptDirectory
 
 from reframe.models import JobSettings, JobState, QueueJob, SourceRef
 from reframe.queue import migrations, read_saved_queue
@@ -64,10 +60,9 @@ def columns(path: Path) -> list[str]:
         return [row[1] for row in db.execute("PRAGMA table_info(jobs)")]
 
 
-def revision(path: Path) -> str | None:
+def revision(path: Path) -> int:
     with contextlib.closing(sqlite3.connect(path)) as db:
-        row = db.execute("SELECT version_num FROM alembic_version").fetchone()
-    return None if row is None else str(row[0])
+        return migrations.revision(db)
 
 
 def v1_file(path: Path) -> None:
@@ -86,16 +81,7 @@ def old_writer_row(job_id: str) -> tuple[object, ...]:
     return row_of(job(job_id, state=JobState.DONE))[:12]
 
 
-def head() -> str:
-    script = ScriptDirectory.from_config(migrations.config())
-    [only] = script.get_heads()
-    return only
-
-
-def test_the_revisions_form_one_line() -> None:
-    script = ScriptDirectory.from_config(migrations.config())
-    assert script.get_heads() == [head()] == [migrations.HEAD]
-    assert [s.revision for s in script.walk_revisions()] == ["0002", "0001"]
+HEAD = len(migrations.STEPS)
 
 
 def test_a_new_file_is_at_the_newest_revision(tmp_path: Path) -> None:
@@ -103,8 +89,10 @@ def test_a_new_file_is_at_the_newest_revision(tmp_path: Path) -> None:
     store, _, _ = load(path)
     run(store, lambda: store.upsert([row_of(job("a"))]))
     store.close()
-    assert revision(path) == head()
+    assert revision(path) == HEAD == 2
     assert columns(path)[-1] == "output_size"
+    with contextlib.closing(sqlite3.connect(path)) as db:
+        assert db.execute("SELECT count(*) FROM store_revision").fetchone()[0] == 1
 
 
 def test_a_file_of_reframe_0_10_is_migrated_and_keeps_its_jobs(tmp_path: Path) -> None:
@@ -113,10 +101,32 @@ def test_a_file_of_reframe_0_10_is_migrated_and_keeps_its_jobs(tmp_path: Path) -
     store, jobs, warnings = load(path)
     assert (warnings, [j.id for j in jobs], jobs[0].output_size) == ([], ["old"], None)
     store.close()
-    assert revision(path) == head()
+    assert revision(path) == HEAD
     assert "output_size" in columns(path)
     with contextlib.closing(sqlite3.connect(path)) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION == 1
+
+
+def test_a_file_that_has_a_step_without_its_revision_is_migrated(tmp_path: Path) -> None:
+    """The steps check what is there, so a column added before its revision is not added again."""
+    path = tmp_path / "queue.sqlite3"
+    v1_file(path)
+    with contextlib.closing(sqlite3.connect(path)) as db, db:
+        db.execute("ALTER TABLE jobs ADD COLUMN output_size INTEGER")
+    store, jobs, warnings = load(path)
+    assert (warnings, [j.id for j in jobs]) == ([], ["old"])
+    store.close()
+    assert revision(path) == HEAD
+
+
+def test_a_current_file_is_not_written(tmp_path: Path) -> None:
+    path = tmp_path / "queue.sqlite3"
+    store, _, _ = load(path)
+    run(store, lambda: store.upsert([row_of(job("a"))]))
+    store.close()
+    with contextlib.closing(sqlite3.connect(path, isolation_level=None)) as db:
+        migrations.upgrade(db)
+        assert db.total_changes == 0
 
 
 def test_the_output_size_survives_a_restart(tmp_path: Path) -> None:
@@ -157,39 +167,29 @@ def test_a_revision_of_a_newer_reframe_is_left_alone(tmp_path: Path) -> None:
     store.close()
     with contextlib.closing(sqlite3.connect(path)) as db, db:
         db.execute("ALTER TABLE jobs ADD COLUMN priority INTEGER")
-        db.execute("UPDATE alembic_version SET version_num = '9999'")
+        db.execute("UPDATE store_revision SET revision = 99")
     again, jobs, warnings = load(path)
     assert (warnings, [j.id for j in jobs]) == ([], ["a"])
     run(again, lambda: again.upsert([row_of(job("b", output_size=3))]))
     again.close()
-    assert revision(path) == "9999"
+    assert revision(path) == 99
     assert "priority" in columns(path)
 
 
-def test_a_failed_revision_changes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Each revision is one transaction with its version stamp, DDL included."""
-    scripts = tmp_path / "migrations"
-    shutil.copytree(migrations.SCRIPTS, scripts, ignore=shutil.ignore_patterns("__pycache__"))
-    (scripts / "versions" / "r0003_fails.py").write_text(
-        '"""Adds a column, then fails."""\n'
-        "import sqlalchemy as sa\n"
-        "from alembic import op\n\n"
-        'revision = "0003"\n'
-        'down_revision = "0002"\n'
-        "branch_labels = depends_on = None\n\n\n"
-        "def upgrade():\n"
-        '    op.add_column("jobs", sa.Column("half_done", sa.Integer()))\n'
-        '    op.execute("SELECT * FROM no_such_table")\n\n\n'
-        "def downgrade():\n"
-        "    pass\n"
-    )
+def test_a_failed_step_changes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each step is one transaction with its revision, DDL included."""
+
+    def fails(db: sqlite3.Connection) -> None:
+        db.execute("ALTER TABLE jobs ADD COLUMN half_done INTEGER")
+        db.execute("SELECT * FROM no_such_table")
+
     path = tmp_path / "queue.sqlite3"
     v1_file(path)
-    monkeypatch.setattr(migrations, "SCRIPTS", scripts)
+    monkeypatch.setattr(migrations, "STEPS", (*migrations.STEPS, fails))
     store, jobs, warnings = load(path)
     assert (jobs, warnings, store.read_only) == ([], ["queue.unreadable"], True)
     store.close()
-    assert revision(path) == "0002"  # the revisions before it are kept
+    assert revision(path) == HEAD  # the steps before it are kept
     assert "half_done" not in columns(path)
     monkeypatch.undo()
     again, jobs, warnings = load(path)
@@ -204,27 +204,3 @@ def test_a_reader_without_the_lock_reads_a_file_of_reframe_0_10_as_it_is(tmp_pat
     saved = read_saved_queue(tmp_path)
     assert (saved.problem, [(j.id, j.output_size) for j in saved.jobs]) == (None, [("old", None)])
     assert path.read_bytes() == before
-
-
-def test_a_current_file_opens_without_alembic(tmp_path: Path) -> None:
-    """Alembic and SQLAlchemy take about 130 ms to import: only a file to migrate loads them."""
-    path = tmp_path / "queue.sqlite3"
-    store, _, _ = load(path)
-    run(store, lambda: store.upsert([row_of(job("a"))]))
-    store.close()
-    script = (
-        "import sys\n"
-        "from datetime import UTC, datetime\n"
-        "from pathlib import Path\n"
-        "import reframe.cli\n"
-        "from reframe.queue.store import QueueStore\n"
-        "store = QueueStore(Path(sys.argv[1]), now=lambda: datetime.now(UTC))\n"
-        "loaded = store.submit(store.load).result()\n"
-        "store.close()\n"
-        "assert [j.id for j in loaded.jobs] == ['a'], loaded\n"
-        "print(sorted(m for m in sys.modules if m.split('.')[0] in ('alembic', 'sqlalchemy')))\n"
-    )
-    done = subprocess.run(
-        [sys.executable, "-c", script, str(path)], capture_output=True, text=True, check=True
-    )
-    assert done.stdout.strip() == "[]"

@@ -1,6 +1,6 @@
 # 0107 — Queue store migrations with Alembic, and the size of a finished job
 
-- Status: accepted
+- Status: accepted; the use of Alembic is superseded by [0108](0108-own-migration-runner-for-the-queue-store.md)
 - Date: 2026-11-25
 - Steps: C-11, F-14
 

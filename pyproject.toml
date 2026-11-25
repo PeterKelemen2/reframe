@@ -137,10 +137,3 @@ source = ["reframe", "reframe_server"]
 show_missing = true
 skip_covered = true
 exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "^\\s*\\.\\.\\.\\s*$"]
-
-# --------------------------------------------------------------------------- alembic
-
-# The queue store's migrations: `uv run alembic revision -m "…"` writes a new revision.
-[tool.alembic]
-script_location = "%(here)s/packages/reframe/src/reframe/queue/migrations"
-file_template = "r%%(rev)s_%%(slug)s"

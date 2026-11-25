@@ -14,8 +14,8 @@
   than :data:`~reframe.settings.MAX_DEPTH` levels) stays in the file untouched and is left
   out of the queue. Such a document is damage, never a crash, and is never written
   (:func:`row_of`).
-- **Tables** come from the Alembic revisions of :mod:`reframe.queue.migrations`, run by the
-  owner when it opens the file.
+- **Tables** come from the steps of :mod:`reframe.queue.migrations`, run by the owner when
+  it opens the file.
 - **The file** is created at the first write, not at start-up. A file of a newer Reframe is
   never written. Only the process that holds the owner lock writes it; another process keeps
   its jobs in memory only (:attr:`QueueStore.read_only`).
@@ -305,8 +305,7 @@ class QueueStore:
                 )
                 return result
             self._configure(db)
-            if not migrations.is_current(db):
-                migrations.upgrade(self.path)
+            migrations.upgrade(db)
             if version == 0:  # an empty file of ours (the first write did not finish)
                 db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             rows = select_jobs(db)
@@ -411,8 +410,7 @@ class QueueStore:
         if self._db is None:
             db = self._connect()
             try:
-                if not migrations.is_current(db):
-                    migrations.upgrade(self.path)
+                migrations.upgrade(db)
                 db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
             except BaseException:
                 db.close()
