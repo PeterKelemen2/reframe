@@ -3,10 +3,11 @@ import { computed, ref, shallowRef, watch } from 'vue'
 
 import { ApiError, apiQuiet, unwrap } from '@/api/client'
 import { text } from '@/api/text'
-import type { CropDetection, CropRect, CropSettings } from '@/api/types'
+import type { CropDetection, CropRect, CropSettings, ValidationIssue } from '@/api/types'
 import {
   appliedCrop,
   type CropGrid,
+  EDGES,
   gridOf,
   NO_CROP,
   snapCrop,
@@ -18,6 +19,7 @@ import { useJobSource } from '@/components/summary/useJobSource'
 import { type PatchOptions, useEditorStore } from './editor'
 import { useSettingsStore } from './settings'
 import { useTasksStore } from './tasks'
+import { useValidationStore } from './validation'
 
 export type CropMode = CropSettings['mode']
 
@@ -46,6 +48,11 @@ function detected(mode: CropMode | null): mode is 'auto' | 'conservative' {
 function unchanged(before: CropSettings | undefined, now: CropSettings | undefined): boolean {
   if (before?.mode !== now?.mode) return false
   return before?.rect == null || JSON.stringify(before.rect) === JSON.stringify(now?.rect)
+}
+
+/** A crop with its edges named, in the order top, bottom, left, right: `T 22 · B 24 · L 0 · R 0`. */
+function cropText(rect: CropRect): string {
+  return text('dimensions.crop.rect', { ...rect })
 }
 
 function noteOf(change: SnapChange, grid: CropGrid): string {
@@ -80,6 +87,7 @@ export const useCropStore = defineStore('crop', () => {
   const editor = useEditorStore()
   const tasks = useTasksStore()
   const settings = useSettingsStore()
+  const validation = useValidationStore()
   const answer = useGeometry()
   const { source } = useJobSource()
 
@@ -143,6 +151,64 @@ export const useCropStore = defineStore('crop', () => {
   )
   /** Manual mode: the inputs, the drag handles and the arrow keys change the crop. */
   const editable = computed(() => mode.value === 'manual' && pictureEditable.value)
+
+  /**
+   * The sample frames disagree on the black bars: what the most common bars are, on how many
+   * frames; `null` when every frame has the same.
+   */
+  const disagreement = computed<{ rect: CropRect; frames: number; total: number } | null>(() => {
+    const found = detection.value
+    if (found === null || EDGES.every((edge) => found.auto[edge] === found.conservative[edge])) {
+      return null
+    }
+    return { rect: found.auto, frames: found.auto_frames, total: found.samples.length }
+  })
+
+  /**
+   * The crop removes more than is black on every sample frame: on the other frames it can remove
+   * picture. Only automatic mode applies such a crop by itself.
+   */
+  const issues = computed<ValidationIssue[]>(() => {
+    const found = detection.value
+    const applied = rect.value
+    const crop = editor.job?.dimensions?.crop
+    if (
+      editor.target?.kind !== 'job' ||
+      crop?.mode !== 'auto' ||
+      !pictureEditable.value ||
+      found === null ||
+      applied === null ||
+      EDGES.every((edge) => applied[edge] <= found.conservative[edge])
+    ) {
+      return []
+    }
+    const safe = found.conservative
+    return [
+      {
+        severity: 'warning',
+        code: 'dimensions.crop_frames_disagree',
+        path: 'dimensions.crop',
+        message: text('dimensions.disagree.issue', {
+          rect: cropText(applied),
+          safe: cropText(safe),
+        }),
+        fixes: [
+          {
+            label: text('dimensions.disagree.conservative'),
+            target: 'job',
+            patch: [
+              {
+                op: 'replace',
+                path: '/dimensions/crop',
+                value: { ...crop, mode: 'conservative', rect: { ...safe } },
+              },
+            ],
+          },
+        ],
+      },
+    ]
+  })
+  validation.addLocal('crop', () => issues.value)
 
   function put(key: string, change: Partial<FileDetection>): void {
     const known = files.value[key] ?? { result: null, error: null, running: null }
@@ -281,6 +347,8 @@ export const useCropStore = defineStore('crop', () => {
     editable,
     pictureEditable,
     detection,
+    disagreement,
+    issues,
     detecting,
     detectionError,
     snapNote,

@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { problem, settle } from '@/api/testing/fakes'
 import type { AppSettings, JobSettings, JobTemplate, MediaSource } from '@/api/types'
 import {
+  edgesText,
   geometryOf,
   LETTERBOX,
   letterboxDetection,
@@ -14,6 +15,7 @@ import { useCropStore } from './crop'
 import { useEditorStore } from './editor'
 import { useSettingsStore } from './settings'
 import { useSourcesStore } from './sources'
+import { useValidationStore } from './validation'
 
 function jobIn(crop: NonNullable<NonNullable<JobSettings['dimensions']>['crop']>): JobSettings {
   const job = sampleJob()
@@ -460,5 +462,79 @@ describe('no picture to edit', () => {
   it('turns the picture off when jobs/geometry finds no video', async () => {
     const setup = await opened({ geometry: { source: null, geometry: null } })
     expect(setup.crop.pictureEditable).toBe(false)
+  })
+})
+
+const issuesOf = () =>
+  useValidationStore().issues.filter((issue) => issue.code === 'dimensions.crop_frames_disagree')
+
+describe('frames that disagree on the black bars', () => {
+  it('are a warning while automatic removes more than every frame has black', async () => {
+    const setup = await opened()
+    expect(issuesOf()).toEqual([])
+    setup.detections[0]!.resolve()
+    await settle()
+    expect(setup.crop.disagreement).toEqual({
+      rect: { top: 22, bottom: 24, left: 0, right: 0 },
+      frames: 5,
+      total: 10,
+    })
+    const [issue] = issuesOf()
+    expect(issue).toMatchObject({
+      severity: 'warning',
+      path: 'dimensions.crop',
+      message: edgesText(
+        'Automatic removes T 22 · B 24 · L 0 · R 0, but only T 0 · B 0 · L 0 · R 0 is black on every sample frame. On the other frames the crop can remove picture.',
+      ),
+    })
+    expect(useValidationStore().counts.warning).toBe(1)
+    // The server's answer for the job does not take it away.
+    useValidationStore().issues = []
+    expect(issuesOf()).toHaveLength(1)
+
+    await setup.editor.applyFix(issue!.fixes![0]!)
+    expect(setup.editor.get('/dimensions/crop')).toEqual({
+      mode: 'conservative',
+      rect: { top: 0, bottom: 0, left: 0, right: 0 },
+    })
+    expect(issuesOf()).toEqual([])
+    setup.editor.undo()
+    expect(issuesOf()).toHaveLength(1)
+  })
+
+  it('are no issue in manual mode, in a group or while the video is copied', async () => {
+    const setup = await opened()
+    setup.detections[0]!.resolve()
+    await settle()
+    await setup.crop.setMode('manual')
+    expect(issuesOf()).toEqual([])
+    setup.editor.undo()
+    expect(issuesOf()).toHaveLength(1)
+    setup.editor.set('/video/passthrough', true)
+    expect(issuesOf()).toEqual([])
+    setup.editor.undo()
+    expect(issuesOf()).toHaveLength(1)
+    setup.editor.target = {
+      kind: 'group',
+      groupId: 'g1',
+      sourceId: 'letterbox',
+      job: setup.editor.job!,
+      template: {} as JobTemplate,
+      presetId: null,
+      overrides: {},
+      scope: 'group',
+    }
+    expect(issuesOf()).toEqual([])
+  })
+
+  it('are none when every frame has the same bars', async () => {
+    const setup = await opened()
+    const same = letterboxDetection()
+    same.conservative = { ...same.auto }
+    setup.outcome.task.result = same as never
+    setup.detections[0]!.resolve()
+    await settle()
+    expect(setup.crop.disagreement).toBeNull()
+    expect(issuesOf()).toEqual([])
   })
 })

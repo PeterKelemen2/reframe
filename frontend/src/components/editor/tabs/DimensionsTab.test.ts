@@ -10,6 +10,7 @@ import { settle } from '@/api/testing/fakes'
 import type { CropDetection, JobGeometry, JobSettings, JobTemplate } from '@/api/types'
 import CropMagnifier from '@/components/crop/CropMagnifier.vue'
 import {
+  edgesText,
   geometryOf,
   LETTERBOX,
   letterboxDetection,
@@ -107,15 +108,38 @@ describe('the Dimensions tab', () => {
   })
 
   it("shows the automatic detection with its notes, and conservative's own line", async () => {
-    const { wrapper, editor } = await mountTab()
+    const { wrapper, editor } = await mountTab({
+      detection: {
+        ...letterboxDetection(),
+        notes: ['1 of 10 frames are black: they do not count.'],
+      },
+    })
     const line = () => wrapper.find('[data-line="detection"]').text()
-    expect(line()).toBe('Detected 22 / 24 / 0 / 0 on 5 of 10 frames')
-    expect(wrapper.find('.crop-section__notes').text()).toContain('The frames disagree')
+    expect(line()).toBe(edgesText('Detected T 22 · B 24 · L 0 · R 0 on 5 of 10 frames'))
+    expect(wrapper.find('.crop-section__notes').text()).toContain('frames are black')
+    expect(wrapper.find('[data-line="more-bars"]').exists()).toBe(false)
     control(wrapper, 'dimensions.crop', SelectButton).emit('conservative')
     await settle()
     await flushPromises()
     expect(editor.get('/dimensions/crop/mode')).toBe('conservative')
-    expect(line()).toBe('Black on every frame: 0 / 0 / 0 / 0 (10 frames)')
+    expect(line()).toBe(edgesText('Black on every frame: T 0 · B 0 · L 0 · R 0 (10 frames)'))
+    expect(wrapper.find('[data-line="more-bars"]').text()).toBe(
+      edgesText('Some frames have more black bars: T 22 · B 24 · L 0 · R 0 on 5 of 10 frames.'),
+    )
+  })
+
+  it('warns at the crop mode that automatic can remove picture where the frames disagree', async () => {
+    const { wrapper } = await mountTab()
+    const warning = () => wrapper.find('[data-path="dimensions.crop"] .rf-field__issue--warning')
+    expect(warning().text()).toContain(
+      edgesText(
+        'Automatic removes T 22 · B 24 · L 0 · R 0, but only T 0 · B 0 · L 0 · R 0 is black on every sample frame.',
+      ),
+    )
+    control(wrapper, 'dimensions.crop', SelectButton).emit('conservative')
+    await settle()
+    await flushPromises()
+    expect(warning().exists()).toBe(false)
   })
 
   it('says one sample frame in the singular', async () => {
@@ -123,11 +147,11 @@ describe('the Dimensions tab', () => {
     one.samples = one.samples.slice(0, 1)
     const { wrapper } = await mountTab({ detection: one })
     const line = () => wrapper.find('[data-line="detection"]').text()
-    expect(line()).toBe('Detected 22 / 24 / 0 / 0 on the one sample frame')
+    expect(line()).toBe(edgesText('Detected T 22 · B 24 · L 0 · R 0 on the one sample frame'))
     control(wrapper, 'dimensions.crop', SelectButton).emit('conservative')
     await settle()
     await flushPromises()
-    expect(line()).toBe('Black on the one sample frame: 0 / 0 / 0 / 0')
+    expect(line()).toBe(edgesText('Black on the one sample frame: T 0 · B 0 · L 0 · R 0'))
   })
 
   it('snaps a typed crop value with a note, and the input shows the stored value', async () => {
@@ -231,14 +255,27 @@ describe('the Dimensions tab', () => {
       'In a group, Automatic and Conservative detect the black bars of each file when the group is queued. Choose Manual to crop every file the same way.',
     )
     expect(wrapper.find('[data-line="detection"]').text()).toBe(
-      'This file: Detected 22 / 24 / 0 / 0 on 5 of 10 frames',
+      edgesText('This file: Detected T 22 · B 24 · L 0 · R 0 on 5 of 10 frames'),
     )
   })
 
-  it('shows the magnifier in manual mode only', async () => {
-    const { wrapper } = await mountTab()
-    expect(wrapper.findComponent(CropMagnifier).exists()).toBe(false)
+  it('shows the magnifier in every crop mode but None, and the values in Manual only', async () => {
+    const { wrapper, editor } = await mountTab()
+    const readOnly = () => wrapper.find('[data-note="read-only"]')
+    expect(wrapper.findComponent(CropMagnifier).exists()).toBe(true)
+    expect(readOnly().text()).toBe('Choose Manual to move the edges.')
     expect(wrapper.find('input[data-edge="top"]').exists()).toBe(false)
+    for (const mode of ['conservative', 'none', 'manual'] as const) {
+      control(wrapper, 'dimensions.crop', SelectButton).emit(mode)
+      // oxlint-disable-next-line eslint/no-await-in-loop -- each mode follows the last
+      await settle()
+      // oxlint-disable-next-line eslint/no-await-in-loop -- each mode follows the last
+      await flushPromises()
+      expect(editor.get('/dimensions/crop/mode')).toBe(mode)
+      expect(wrapper.findComponent(CropMagnifier).exists()).toBe(mode !== 'none')
+      expect(readOnly().exists()).toBe(mode === 'conservative')
+      expect(wrapper.find('input[data-edge="top"]').exists()).toBe(mode === 'manual')
+    }
   })
 
   it('changes the orientation and the advanced settings, one undo step each', async () => {

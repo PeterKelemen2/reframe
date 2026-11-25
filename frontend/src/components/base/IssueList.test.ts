@@ -90,6 +90,22 @@ describe('IssueList', () => {
     expect(wrapper.find('ul').exists()).toBe(false)
     expect(wrapper.text()).toBe('No issues')
   })
+
+  it('opens the crop check on the Dimensions tab for frames that disagree on the crop', async () => {
+    const disagree: ValidationIssue = {
+      severity: 'warning',
+      code: 'dimensions.crop_frames_disagree',
+      path: 'dimensions.crop',
+      message: 'Automatic removes …',
+    }
+    const { wrapper, ui } = setup([disagree, ...ISSUES])
+    const checks = wrapper.findAll('.rf-issue__check-crop')
+    expect(checks.map((check) => check.text())).toEqual(['Check crop on all frames'])
+    await checks[0]!.trigger('click')
+    expect(ui.activeTab).toBe('dimensions')
+    expect(ui.revealed?.path).toBe('dimensions.crop')
+    expect(ui.cropCheckOpen).toBe(true)
+  })
 })
 
 describe('IssueList with a build mismatch', () => {

@@ -556,10 +556,12 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 
 ### F-7 Dimensions tab, preview panel, crop magnifier
 - [x] Pipeline header from `jobs/geometry`.
-- [x] `FrameViewer`: fit/100 %/200 %, frame strip, timestamp seek, crop overlay with drag handles.
+- [x] `FrameViewer`: fit/100 %/200 %, frame strip, timestamp seek, crop overlay in every crop
+      mode, with drag handles in Manual.
 - [x] `CropMagnifier`: canvas-based. It loads the full-resolution PNG and draws 4 edge strips at
       2×/4×/8× with `imageSmoothingEnabled = false`, a removed-area tint, the crop lines, and a
-      cursor loupe.
+      cursor loupe. Shown read-only in Automatic and Conservative too
+      ([0110](../decisions/0110-crop-review-in-every-crop-mode.md)).
 - [x] `CropCheckGrid`: every sample with the overlay. A Web Worker computes the luma variance
       of the removed band and puts a warning badge on frames that lose content.
 

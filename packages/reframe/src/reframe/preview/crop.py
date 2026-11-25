@@ -65,10 +65,6 @@ def parse_cropdetect(stderr: str, width: int, height: int) -> tuple[bool, CropRe
     return False, None
 
 
-def _edges(rect: CropRect) -> str:
-    return f"{rect.top} / {rect.bottom} / {rect.left} / {rect.right}"
-
-
 async def detect_crop(
     tctx: CropTask, ctx: MediaTaskContext, path: Path, *, count: int | None
 ) -> CropDetection:
@@ -125,11 +121,6 @@ async def detect_crop(
         notes.append(f"No result at {failure}.")
     if not rects:
         notes.append("No frame has a picture to measure: no crop.")
-    elif auto != conservative:
-        notes.append(
-            f"The frames disagree: automatic {_edges(auto)}, conservative {_edges(conservative)} "
-            "(top / bottom / left / right)."
-        )
     return CropDetection(
         path=path,
         samples=samples,

@@ -5,6 +5,8 @@ import { mountBase } from '@/components/base/testing'
 
 import type { CheckAnswer, CheckRequest } from './cropCheck'
 import CropCheckGrid from './CropCheckGrid.vue'
+import { edgesText } from '@/components/dimensions/testing'
+
 import { detection, fakeCrop, fakePreview, LETTERBOX, PILLARBOX, SIZE, strip } from './testing'
 
 const preview = fakePreview()
@@ -140,11 +142,11 @@ describe('the crop check', () => {
     await flushPromises()
     const lost = nameOf(frame(5))
     expect(lost).toContain('0:00:02.200')
-    expect(lost).toContain('Bars 0 / 0 / 40 / 40')
+    expect(lost).toContain('Bars T 0 · B 0 · L 40 · R 40')
     expect(lost).toContain('Removes picture')
     const kept = nameOf(frame(0))
     expect(kept).toContain('0:00:00.200')
-    expect(kept).toContain('Bars 22 / 24 / 0 / 0')
+    expect(kept).toContain('Bars T 22 · B 24 · L 0 · R 0')
     expect(kept).not.toContain('Removes picture')
   })
 
@@ -169,9 +171,9 @@ describe('the crop check', () => {
   it('shows on each frame the bars detected at its time', async () => {
     crop.detection = { ...detection(), samples: detection().samples.toReversed().slice(0, 9) }
     await mountGrid()
-    expect(frame(1).textContent).toContain('Bars 22 / 24 / 0 / 0')
+    expect(frame(1).textContent).toContain(edgesText('Bars T 22 · B 24 · L 0 · R 0'))
     expect(frame(1).querySelectorAll('[data-bar]')).toHaveLength(2)
-    expect(frame(6).textContent).toContain('Bars 0 / 0 / 40 / 40')
+    expect(frame(6).textContent).toContain(edgesText('Bars T 0 · B 0 · L 40 · R 40'))
     expect(frame(0).textContent).toContain('No detection result')
     expect(frame(0).querySelectorAll('[data-bar]')).toHaveLength(0)
   })

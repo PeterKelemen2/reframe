@@ -27,6 +27,8 @@ const shown = computed<CropRect>(() => crop.rect ?? NO_CROP)
 const inGroup = computed(() => editor.target?.kind === 'group')
 const locked = computed(() => !crop.pictureEditable)
 
+const rectText = (rect: CropRect) => t('dimensions.crop.rect', { ...rect })
+
 const detectionLine = computed(() => {
   const found = crop.detection
   if (found === null) return null
@@ -34,19 +36,38 @@ const detectionLine = computed(() => {
     case 'auto':
       return t(
         'dimensions.detection.auto',
-        { ...found.auto, frames: found.auto_frames, total: found.samples.length },
+        { rect: rectText(found.auto), frames: found.auto_frames, total: found.samples.length },
         found.samples.length,
       )
     case 'conservative':
       return t(
         'dimensions.detection.conservative',
-        { ...found.conservative, total: found.samples.length },
+        { rect: rectText(found.conservative), total: found.samples.length },
         found.samples.length,
       )
     default:
       return null
   }
 })
+
+/** Conservative leaves bars that some frames have: what they are. Automatic has its issue. */
+const moreBarsLine = computed(() => {
+  const more = crop.disagreement
+  if (crop.mode !== 'conservative' || more === null) return null
+  return t('dimensions.detection.moreBars', {
+    rect: rectText(more.rect),
+    frames: more.frames,
+    total: more.total,
+  })
+})
+
+/** Every crop mode can be checked; only Manual changes the crop from here. */
+const magnifierShown = computed(
+  () =>
+    crop.pictureEditable &&
+    (crop.mode === 'manual' ||
+      ((crop.mode === 'auto' || crop.mode === 'conservative') && crop.rect !== null)),
+)
 
 const detectedMode = computed(
   () => crop.pictureEditable && (crop.mode === 'auto' || crop.mode === 'conservative'),
@@ -142,6 +163,9 @@ function redetect(): void {
             inGroup ? t('dimensions.detection.shownFile', { line: detectionLine }) : detectionLine
           }}
         </p>
+        <p v-if="moreBarsLine !== null" class="crop-section__more" data-line="more-bars">
+          {{ moreBarsLine }}
+        </p>
         <ul v-if="(crop.detection?.notes ?? []).length > 0" class="crop-section__notes">
           <li v-for="note in crop.detection?.notes" :key="note">{{ note }}</li>
         </ul>
@@ -182,7 +206,12 @@ function redetect(): void {
       >
         {{ crop.snapNote }}
       </p>
-      <CropMagnifier v-if="crop.editable" />
+    </template>
+    <template v-if="magnifierShown">
+      <p v-if="!crop.editable" class="crop-section__read-only" data-note="read-only">
+        {{ t('dimensions.crop.readOnly') }}
+      </p>
+      <CropMagnifier />
     </template>
   </div>
 </template>
@@ -216,6 +245,17 @@ function redetect(): void {
 .crop-section__notes {
   margin: 0;
   padding-left: var(--rf-space-4);
+  color: var(--rf-color-text-muted);
+  font-size: var(--rf-font-size-sm);
+}
+
+.crop-section__more {
+  margin: 0;
+  font-size: var(--rf-font-size-sm);
+}
+
+.crop-section__read-only {
+  margin: 0;
   color: var(--rf-color-text-muted);
   font-size: var(--rf-font-size-sm);
 }

@@ -28,7 +28,7 @@
     "summary": "The crop removes picture content on no frame. | The crop removes picture content on {n} of {count} frames. | The crop removes picture content on {n} of {count} frames.",
     "checking": "Checking the frames…",
     "lost": "Removes picture",
-    "bars": "Bars {top} / {bottom} / {left} / {right}",
+    "bars": "Bars {rect}",
     "detecting": "Detecting the bars…",
     "noResult": "No detection result",
     "show": "Show the frame at {time}",

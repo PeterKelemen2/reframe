@@ -217,7 +217,7 @@ test('a manual crop: the magnifier shows its lines, the command has its crop fil
 
   await page.getByRole('tab', { name: 'Dimensions' }).click()
   await expect(page.locator('[data-line="detection"]')).toHaveText(
-    'Detected 22 / 24 / 0 / 0 on 5 of 10 frames',
+    'Detected T 22 · B 24 · L 0 · R 0 on 5 of 10 frames',
   )
   await page
     .locator('[data-control="crop-mode"]')
