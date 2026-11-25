@@ -496,7 +496,13 @@ const summary = computed(() => {
               @update:model-value="saveName = $event ?? ''"
             />
           </form>
-          <span v-else class="file-browser__summary" aria-live="polite" data-field="summary">
+          <span
+            v-else
+            class="file-browser__summary"
+            :class="{ 'rf-mono': mode === 'folder' }"
+            aria-live="polite"
+            data-field="summary"
+          >
             {{ summary }}
           </span>
         </div>
@@ -558,8 +564,7 @@ const summary = computed(() => {
 }
 
 .file-browser__root[aria-current] {
-  border-color: var(--rf-color-border);
-  background: var(--rf-color-surface-hover);
+  background: var(--p-highlight-background);
   font-weight: var(--rf-font-weight-medium);
 }
 
@@ -605,7 +610,7 @@ const summary = computed(() => {
   border: none;
   border-radius: var(--rf-radius-sm);
   background: none;
-  color: var(--rf-color-primary);
+  color: var(--rf-color-text-muted);
   font: inherit;
   cursor: pointer;
 }
@@ -617,6 +622,7 @@ const summary = computed(() => {
 
 .file-browser__crumb:hover {
   background: var(--rf-color-surface-hover);
+  color: var(--rf-color-text);
 }
 
 .file-browser__location {
@@ -664,8 +670,7 @@ const summary = computed(() => {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--rf-space-2);
-  padding: var(--rf-space-1) var(--rf-space-2);
-  border-left: 3px solid transparent;
+  padding: 0.3125rem var(--rf-space-2);
   cursor: pointer;
   user-select: none;
 }
@@ -676,13 +681,17 @@ const summary = computed(() => {
 
 .file-browser__entry--selected,
 .file-browser__entry--selected:hover {
-  background: color-mix(in srgb, var(--rf-color-primary) 16%, transparent);
+  background: var(--p-highlight-background);
+  font-weight: var(--rf-font-weight-medium);
 }
 
+/* The keyboard's place in the list: a ring round the whole row. */
 .file-browser__list:focus .file-browser__entry--cursor {
-  border-left-color: var(--rf-color-primary);
-  outline: 1px dashed var(--rf-color-primary);
-  outline-offset: -1px;
+  box-shadow: inset 0 0 0 2px var(--rf-color-primary);
+}
+
+.file-browser__entry > svg {
+  color: var(--rf-color-text-muted);
 }
 
 .file-browser__entry[data-kind='folder'] {
@@ -707,7 +716,8 @@ const summary = computed(() => {
 
 .file-browser__size {
   color: var(--rf-color-text-muted);
-  font-size: var(--rf-font-size-sm);
+  font-family: var(--rf-font-mono);
+  font-size: var(--rf-font-size-xs);
   font-variant-numeric: tabular-nums;
 }
 
