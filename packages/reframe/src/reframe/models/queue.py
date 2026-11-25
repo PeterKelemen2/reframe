@@ -72,6 +72,8 @@ class QueueJob(ReframeModel):
     started_at: AwareDatetime | None = None
     finished_at: AwareDatetime | None = None
     output_path: Path | None = None
+    output_size: NonNegativeInt | None = None
+    """Bytes of the finished output; ``None`` until the job is done."""
     log_path: Path | None = None
     error: DisplayText | None = None
     progress: JobProgress | None = None

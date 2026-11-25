@@ -90,7 +90,8 @@ def put_rows(path: Path, *rows: tuple[str, str, str | None, str]) -> None:
     db = sqlite3.connect(path)
     for position, (job_id, settings, plan, issues) in enumerate(rows, start=10):
         db.execute(
-            "INSERT INTO jobs VALUES (?, ?, 'waiting', ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL)",
+            "INSERT INTO jobs VALUES "
+            "(?, ?, 'waiting', ?, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, NULL)",
             (job_id, position, settings, plan, issues, NOW.isoformat()),
         )
     db.commit()
@@ -307,7 +308,7 @@ async def test_the_queue_starts_with_a_deep_row_and_keeps_a_deep_job(harness: Ha
     deep_settings = good[:-1] + f',"from_the_future":{deep_text(PARSER_DEPTH)}}}'
     db.execute(
         "INSERT INTO jobs SELECT 'deep-row', 9, 'running', ?, plan_json, issues_json, "
-        "created_at, NULL, NULL, NULL, NULL, NULL FROM jobs WHERE id = ?",
+        "created_at, NULL, NULL, NULL, NULL, NULL, NULL FROM jobs WHERE id = ?",
         (deep_settings, kept.id),
     )
     db.commit()

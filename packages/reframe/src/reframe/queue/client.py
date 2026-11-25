@@ -18,7 +18,7 @@ from pydantic import ValidationError
 from reframe.models.job import JobSettings
 from reframe.models.migrations import MigrationError
 from reframe.models.queue import QueueJob
-from reframe.queue.store import _COLUMNS, SCHEMA_VERSION, STORE_FILE, _job_of
+from reframe.queue.store import SCHEMA_VERSION, STORE_FILE, _job_of, select_jobs
 
 __all__ = ["QueueLike", "SavedQueue", "read_saved_queue"]
 
@@ -94,9 +94,7 @@ def read_saved_queue(data_dir: Path) -> SavedQueue:
                 version = int(db.execute("PRAGMA user_version").fetchone()[0])
                 if version > SCHEMA_VERSION:
                     return SavedQueue([], f"{path}: saved by a newer Reframe (schema {version})")
-                rows = db.execute(
-                    f"SELECT {', '.join(_COLUMNS)} FROM jobs ORDER BY position, created_at"
-                ).fetchall()
+                rows = select_jobs(db)
             finally:
                 db.close()
         except sqlite3.Error as exc:

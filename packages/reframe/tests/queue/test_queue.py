@@ -67,6 +67,7 @@ async def test_a_run_and_its_events_in_order(harness: Harness) -> None:
     ended = await h.run_one(h.job())
     assert ended.state is JobState.DONE
     assert ended.output_path == h.tmp / "out" / "Movie.mkv"
+    assert ended.output_size == ended.output_path.stat().st_size > 0
     assert ended.started_at is not None
     assert ended.finished_at is not None
     assert ended.progress is not None

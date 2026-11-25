@@ -129,6 +129,7 @@ class Outcome:
     plan: EncodePlan | None = None
     """The plan of this run, if one was built (its files are cleaned up)."""
     output_path: Path | None = None
+    output_size: int | None = None
     keep_part: bool = False
     """The ``.part`` file is complete and must be kept (``ask`` collision)."""
     progress: JobProgress | None = None
@@ -143,6 +144,11 @@ class _Prepared:
     source: MediaSource
     tools: ToolSet
     plan: EncodePlan
+
+
+def _file_size(media: MediaSource) -> int | None:
+    fingerprint = media.ref.fingerprint
+    return fingerprint.size if fingerprint is not None else media.container.size
 
 
 def _block_key(block: ProgressBlock) -> tuple[float | None, int | None, int | None]:
@@ -670,7 +676,13 @@ class JobRunner:
             if placed != plan.output_final:
                 joblog.note(f"{plan.output_final.name} exists: saved as {placed.name}")
             joblog.note(f"Renamed {tmp.name} to {placed.name}")
-            return Outcome(JobState.DONE, plan=plan, output_path=placed, progress=tracker.finish())
+            return Outcome(
+                JobState.DONE,
+                plan=plan,
+                output_path=placed,
+                output_size=_file_size(output),
+                progress=tracker.finish(),
+            )
         if isinstance(placed, OSError):
             return Outcome(
                 JobState.FAILED,
@@ -783,7 +795,13 @@ class JobRunner:
                 plan=plan,
             )
         joblog.note(f"Edited {source.name} in place")
-        return Outcome(JobState.DONE, plan=plan, output_path=source, progress=tracker.finish())
+        return Outcome(
+            JobState.DONE,
+            plan=plan,
+            output_path=source,
+            output_size=_file_size(output),
+            progress=tracker.finish(),
+        )
 
     def _no_exit(self, stderr: Sequence[str]) -> str:
         head = (

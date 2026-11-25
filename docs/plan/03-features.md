@@ -776,7 +776,9 @@ Same behaviour as HandBrake:
 ## Queue
 
 - States: `Waiting` · `Running` · `Paused` · `Done` · `Failed` · `Cancelled` · `Interrupted`.
-- Columns: source, output, preset, progress, fps, speed, ETA, current size.
+- Columns: source, output, preset, progress, fps, speed, ETA, current size (a done job: the
+  size of the finished file, kept after a restart;
+  [decision 0107](../decisions/0107-queue-store-migrations-with-alembic.md)).
 - Actions: start / pause / resume / cancel (per job and all), reorder by dragging, retry,
   duplicate, **edit** (loads the job back into the editor), remove, open the output folder.
 - **Pause** suspends the FFmpeg process (psutil suspend/resume, works on both OSes).

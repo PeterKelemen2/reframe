@@ -200,7 +200,9 @@ class StubSources:
             return ProbeError(file, ProbeErrorKind.NOT_FOUND, "The file does not exist.")
         if self.output is not None:
             return self.output(file)
-        return self.source.model_copy(update={"ref": SourceRef(path=file)}, deep=True)
+        stat = await asyncio.to_thread(file.stat)
+        ref = SourceRef(path=file, fingerprint=SourceFingerprint(size=stat.st_size, mtime=0.0))
+        return self.source.model_copy(update={"ref": ref}, deep=True)
 
 
 class CountingBackend:

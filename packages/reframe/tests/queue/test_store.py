@@ -50,7 +50,7 @@ def test_columns_of_the_plan(tmp_path: Path) -> None:
     columns = [row[1] for row in db.execute("PRAGMA table_info(jobs)")]
     assert columns == [
         "id", "position", "state", "settings_json", "plan_json", "issues_json", "created_at",
-        "started_at", "finished_at", "output_path", "log_path", "error",
+        "started_at", "finished_at", "output_path", "log_path", "error", "output_size",
     ]  # fmt: skip
     assert db.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     assert db.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
@@ -109,7 +109,7 @@ def test_rows_that_do_not_load_are_kept_untouched(tmp_path: Path) -> None:
     db.execute("UPDATE jobs SET settings_json=? WHERE id='newer'", (json.dumps(newer),))
     db.execute(
         "INSERT INTO jobs SELECT 'odd', 2, 'teleporting', settings_json, NULL, 'not json', "
-        "created_at, NULL, NULL, NULL, NULL, NULL FROM jobs WHERE id='ok'"
+        "created_at, NULL, NULL, NULL, NULL, NULL, NULL FROM jobs WHERE id='ok'"
     )
     db.execute("UPDATE jobs SET plan_json='{\"job_type\": \"x\"}', issues_json='[1]' WHERE id='ok'")
     db.commit()

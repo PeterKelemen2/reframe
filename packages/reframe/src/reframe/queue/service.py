@@ -871,6 +871,7 @@ class QueueService:
                 job.issues = outcome.issues
             if outcome.output_path is not None:
                 job.output_path = outcome.output_path
+            job.output_size = outcome.output_size
             if outcome.progress is not None:
                 job.progress = outcome.progress
                 self._events.publish(JobProgressEvent(job_id=job.id, progress=outcome.progress))

@@ -14,6 +14,8 @@
   than :data:`~reframe.settings.MAX_DEPTH` levels) stays in the file untouched and is left
   out of the queue. Such a document is damage, never a crash, and is never written
   (:func:`row_of`).
+- **Tables** come from the Alembic revisions of :mod:`reframe.queue.migrations`, run by the
+  owner when it opens the file.
 - **The file** is created at the first write, not at start-up. A file of a newer Reframe is
   never written. Only the process that holds the owner lock writes it; another process keeps
   its jobs in memory only (:attr:`QueueStore.read_only`).
@@ -43,9 +45,18 @@ from reframe.models.migrations import MigrationError, load_document
 from reframe.models.plan import EncodePlan
 from reframe.models.queue import JobState, QueueJob
 from reframe.models.text import json_text
+from reframe.queue import migrations
 from reframe.settings import TOO_DEEP, too_deep
 
-__all__ = ["SCHEMA_VERSION", "STORE_FILE", "QueueStore", "Row", "StoreLoad", "row_of"]
+__all__ = [
+    "SCHEMA_VERSION",
+    "STORE_FILE",
+    "QueueStore",
+    "Row",
+    "StoreLoad",
+    "row_of",
+    "select_jobs",
+]
 
 log = logging.getLogger(__name__)
 
@@ -53,22 +64,6 @@ STORE_FILE = "queue.sqlite3"
 #: ``PRAGMA user_version`` of the file this Reframe writes.
 SCHEMA_VERSION = 1
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS jobs (
-    id            TEXT PRIMARY KEY,
-    position      INTEGER NOT NULL,
-    state         TEXT NOT NULL,
-    settings_json TEXT NOT NULL,
-    plan_json     TEXT,
-    issues_json   TEXT NOT NULL DEFAULT '[]',
-    created_at    TEXT NOT NULL,
-    started_at    TEXT,
-    finished_at   TEXT,
-    output_path   TEXT,
-    log_path      TEXT,
-    error         TEXT
-)
-"""
 _COLUMNS = (
     "id",
     "position",
@@ -82,12 +77,13 @@ _COLUMNS = (
     "output_path",
     "log_path",
     "error",
+    "output_size",
 )
 _ISSUES: TypeAdapter[list[ValidationIssue]] = TypeAdapter(list[ValidationIssue])
 
 #: One row as SQLite values, in :data:`_COLUMNS` order.
 Row = tuple[str, int, str, str, str | None, str, str, str | None, str | None,
-            str | bytes | None, str | bytes | None, str | bytes | None]  # fmt: skip
+            str | bytes | None, str | bytes | None, str | bytes | None, int | None]  # fmt: skip
 
 
 def _time(value: datetime | None) -> str | None:
@@ -170,7 +166,16 @@ def row_of(job: QueueJob) -> Row:
         _path(job.output_path),
         _path(job.log_path),
         _text(job.error),
+        job.output_size,
     )
+
+
+def select_jobs(db: sqlite3.Connection) -> list[Any]:
+    """Every row, in :data:`_COLUMNS` order. A column that the file's revision does not have
+    yet reads as NULL: a reader without the owner lock does not migrate the file."""
+    present = {row[1] for row in db.execute("PRAGMA table_info(jobs)")}
+    fields = ", ".join(c if c in present else f"NULL AS {c}" for c in _COLUMNS)
+    return db.execute(f"SELECT {fields} FROM jobs ORDER BY position, created_at").fetchall()
 
 
 def _refused(row: Sequence[object]) -> str | None:
@@ -237,6 +242,7 @@ def _job_of(values: Sequence[Any]) -> QueueJob:
         output_path=_unpath(data["output_path"]),
         log_path=_unpath(data["log_path"]),
         error=_untext(data["error"]),
+        output_size=data["output_size"],
     )
 
 
@@ -299,18 +305,16 @@ class QueueStore:
                 )
                 return result
             self._configure(db)
-            db.execute(_SCHEMA)
+            migrations.upgrade(self.path)
             if version == 0:  # an empty file of ours (the first write did not finish)
                 db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-            rows = db.execute(
-                f"SELECT {', '.join(_COLUMNS)} FROM jobs ORDER BY position, created_at"
-            ).fetchall()
+            rows = select_jobs(db)
             self._db, db = db, None
         except sqlite3.DatabaseError as exc:
             _close(db)
             db = None
             return self._replace_corrupt(result, str(exc))
-        except OSError as exc:
+        except (OSError, migrations.MigrationFailedError) as exc:
             self.read_only = True
             result.warnings.append(
                 AppWarningEvent(
@@ -405,8 +409,12 @@ class QueueStore:
             return None
         if self._db is None:
             db = self._connect()
-            db.execute(_SCHEMA)
-            db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            try:
+                migrations.upgrade(self.path)
+                db.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+            except BaseException:
+                db.close()
+                raise
             self._db = db
         return self._db
 
@@ -417,7 +425,7 @@ class QueueStore:
                 return
             with _transaction(db):
                 db.executemany(sql, rows)
-        except (sqlite3.Error, OSError) as exc:
+        except (sqlite3.Error, OSError, migrations.MigrationFailedError) as exc:
             log.error("queue store write failed: %s", exc)
             if not self._failed:
                 self._failed = True

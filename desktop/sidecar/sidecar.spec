@@ -17,7 +17,12 @@ DATA_PACKAGES = (
 def analysis(script):
     return Analysis(
         [str(Path(SPECPATH) / script)],
-        datas=[item for package in DATA_PACKAGES for item in collect_data_files(package)],
+        datas=[
+            *(item for package in DATA_PACKAGES for item in collect_data_files(package)),
+            # Alembic runs env.py and the revisions from their files: without them the queue
+            # cannot be saved.
+            *collect_data_files("reframe.queue.migrations", include_py_files=True),
+        ],
         # babelfish loads its converters from entry-point strings.
         hiddenimports=collect_submodules("babelfish"),
         # pydantic's hook pulls mypy and hypothesis in through pydantic.mypy and pydantic.v1. The

@@ -7676,6 +7676,20 @@
         'default': None,
         'title': 'Output Path',
       }),
+      'output_size': dict({
+        'anyOf': list([
+          dict({
+            'minimum': 0,
+            'type': 'integer',
+          }),
+          dict({
+            'type': 'null',
+          }),
+        ]),
+        'default': None,
+        'description': 'Bytes of the finished output; ``None`` until the job is done.',
+        'title': 'Output Size',
+      }),
       'plan': dict({
         'anyOf': list([
           dict({
