@@ -189,7 +189,13 @@ test('the walk of a whole page reaches the workspace header, the sources and the
 })
 
 test('the walk judges the element the set-up left the focus on', async ({ page }) => {
-  const shown = await broken(page, 'login', `.login-screen__input:focus-visible { ${NO_RING} }`)
+  // The field's ink border on focus is an indicator of its own: it goes too.
+  const shown = await broken(
+    page,
+    'login',
+    `.login-screen__input:focus-visible { ${NO_RING};
+       border-color: var(--p-form-field-border-color) !important }`,
+  )
   expect(unseen(await focusFindings(page, shown), 'login-screen__input')).not.toEqual([])
 })
 

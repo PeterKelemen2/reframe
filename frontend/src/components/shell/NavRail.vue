@@ -117,9 +117,6 @@ async function logout(): Promise<void> {
   line-height: var(--rf-line-height-tight);
   text-align: center;
   text-decoration: none;
-  transition:
-    background-color var(--rf-duration),
-    color var(--rf-duration);
 }
 
 .nav-rail__link:hover {
@@ -130,7 +127,7 @@ async function logout(): Promise<void> {
 /* The view shown: the whole item tinted, in ink on paper or paper on ink. */
 .nav-rail__link[aria-current='page'] {
   background: var(--p-highlight-background);
-  color: var(--rf-color-text);
+  color: var(--p-highlight-color);
   font-weight: var(--rf-font-weight-medium);
 }
 

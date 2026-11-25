@@ -294,7 +294,7 @@ const queueSummary = computed(() => {
 
 .status-bar__output {
   display: flex;
-  flex: 1 1 14rem;
+  flex: 1 1 8rem;
   align-items: baseline;
   gap: var(--rf-space-2);
   min-width: 0;
