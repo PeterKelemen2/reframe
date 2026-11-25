@@ -34,7 +34,10 @@ Batch / season editing has its own document: [04-batch-mode.md](04-batch-mode.md
 - **Sources panel**: open files or folders. Shows probe status, warnings, and batch groups
   ([04](04-batch-mode.md)).
 - **Preview panel**: can be collapsed or detached (desktop: separate window; web: a large modal). It follows the
-  active tab. On Dimensions it shows crop overlays. On Filters it shows before/after.
+  active tab. On Dimensions it shows crop overlays. On Filters it shows before/after. It starts open on the
+  tabs that work on the picture (Summary, Dimensions, Filters, Video) and collapsed to a strip on Audio,
+  Subtitles, Chapters and Tags. The user's choice is kept for each of the two kinds of tab
+  ([decision 0112](../decisions/0112-editor-room-at-1440-px.md)).
 - **Status bar**: output path, validation summary (click to see the list), queue actions.
 - Light, dark and system themes. Compact and comfortable density.
 - Keyboard: `Ctrl+O` open, `Ctrl+Enter` add to queue, `Ctrl+1…8` switch tabs, `←/→` move
@@ -46,11 +49,13 @@ Batch / season editing has its own document: [04-batch-mode.md](04-batch-mode.md
 
 **HandBrake:** a list of text lines and a few container check boxes. It looks dated.
 
-**Reframe:** a grid of cards.
+**Reframe:** a grid of cards, in the order of what the job writes: Tracks, Picture pipeline,
+Video, Job type, Output, Estimate, then Source. Issues is the first card when there are issues,
+and the last when there are none ([decision 0112](../decisions/0112-editor-room-at-1440-px.md)).
 
 | Card | Content |
 |------|---------|
-| Source | Thumbnail, file name, container, duration, size, overall bitrate. Video line, e.g. `HEVC Main 10 · 3840×2160 · 23.976 fps · HDR10 · BT.2020 PQ`. Track counts. Chapter count |
+| Source | File name, container, duration, size, overall bitrate. Video line, e.g. `HEVC Main 10 · 3840×2160 · 23.976 fps · HDR10 · BT.2020 PQ`. Track counts. Chapter count |
 | Output | Container (MKV / MP4 / WebM). Options: **Web optimized** (MP4 faststart), **Align A/V start**, **Passthru common metadata**. Output folder and file name ([template-based](#output-naming)), with the chosen name source |
 | Picture pipeline | `3840×2160 → crop 3840×1600 → scale 1920×800 · 2.40:1 · square pixels`, plus filter chips (`Deinterlace: off`, `Colorspace: BT.709`, `Tone map: on`) |
 | Video | Encoder, quality mode and value, speed preset, bit depth, number of changed advanced options |
@@ -336,11 +341,11 @@ tracks (DTS-HD MA) often show no bitrate.
 
 ### Source track table (read-only, always visible at the top)
 
-| # | Lang | Name | Codec | Channels | Rate / depth | Bitrate | Role & flags |
-|---|------|------|-------|----------|--------------|---------|--------------|
-| 1 | jpn | — | **TrueHD Atmos** | 7.1 | 48 kHz / 24-bit | 3 912 kb/s | `Default` |
-| 2 | eng | English Dub | **DTS-HD MA** | 5.1 | 48 kHz / 24-bit | 2 104 kb/s | |
-| 3 | eng | Director's Commentary | AC-3 | 2.0 | 48 kHz | 192 kb/s | `Commentary` |
+| # | Lang | Name | Codec | Channels | Role & flags | Rate / depth | Bitrate |
+|---|------|------|-------|----------|--------------|--------------|---------|
+| 1 | jpn | — | **TrueHD Atmos** | 7.1 | `Default` | 48 kHz / 24-bit | 3 912 kb/s |
+| 2 | eng | English Dub | **DTS-HD MA** | 5.1 | | 48 kHz / 24-bit | 2 104 kb/s |
+| 3 | eng | Director's Commentary | AC-3 | 2.0 | `Commentary` | 48 kHz | 192 kb/s |
 
 - **Codec** uses the commercial name (DTS-HD MA, DTS:X, TrueHD Atmos, E-AC-3 Atmos, AAC-LC, HE-AAC,
   FLAC, PCM), from the FFprobe profile.
@@ -353,6 +358,8 @@ tracks (DTS-HD MA) often show no bitrate.
   keywords in several languages, or a 2.0 low-bitrate track in the same language as a main
   track). The tooltip names the source of the badge.
 - Expand a row to see all details: delay, duration, frame count, all tags and dispositions.
+- A narrow table leaves out Rate / depth and Bitrate. The row's details show them, with
+  **Measure** ([decision 0112](../decisions/0112-editor-room-at-1440-px.md)).
 
 ### Output tracks (below the source table)
 
@@ -372,8 +379,8 @@ A lossless source track that is written by a lossy encoder with fewer channels g
 (`audio.lossless_downmix`), with fixes to pass it through or keep the source layout
 ([0109](../decisions/0109-stale-track-names-and-lossless-downmix.md)).
 
-Rows can be reordered by dragging. Buttons: **Add track**, **Add all**, **Reload from preset
-rules**.
+Rows can be reordered by dragging. Buttons: **Add track** (its menu ends with every source
+track not added yet), **Reload from preset rules**.
 
 ### Audio defaults (stored in the preset)
 
@@ -489,15 +496,16 @@ rule does.
 
 ### Source track table
 
-| # | Lang | Name | Format | Type | Events | Role & flags |
-|---|------|------|--------|------|--------|--------------|
-| 1 | eng | Signs & Songs | ASS | text | 212 | `Forced`, `Signs` |
-| 2 | eng | Full | ASS | text | 3 410 | `Default` |
-| 3 | eng | SDH | PGS | bitmap | 3 655 | `SDH` |
-| 4 | hun | — | SRT | text | 3 102 | |
+| # | Lang | Name | Format | Type | Role & flags | Events |
+|---|------|------|--------|------|--------------|--------|
+| 1 | eng | Signs & Songs | ASS | text | `Forced`, `Signs` | 212 |
+| 2 | eng | Full | ASS | text | `Default` | 3 410 |
+| 3 | eng | SDH | PGS | bitmap | `SDH` | 3 655 |
+| 4 | hun | — | SRT | text | | 3 102 |
 
 - **Events** come from Matroska `NUMBER_OF_FRAMES` tags, or from a packet count scan on request.
   A low count relative to other tracks in the same language suggests a forced track.
+  A narrow table leaves out Events; the row's details show the count, with **Count**.
 - Roles: `Forced`, `SDH`, `Signs & Songs`, `Commentary`. Badges are solid or outlined, as in Audio.
 
 ### Output tracks

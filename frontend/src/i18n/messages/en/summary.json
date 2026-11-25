@@ -15,8 +15,6 @@
   },
   "source": {
     "title": "Source",
-    "thumbnail": "A frame of {name}",
-    "noThumbnail": "No picture of the source",
     "file": "File",
     "container": "Container",
     "duration": "Duration",

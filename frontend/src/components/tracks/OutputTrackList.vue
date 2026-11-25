@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FilePlus2, ListPlus, PencilLine, Plus, RotateCcw, SlidersHorizontal, X } from '@lucide/vue'
+import { FilePlus2, PencilLine, Plus, RotateCcw, SlidersHorizontal, X } from '@lucide/vue'
 import Button from 'primevue/button'
 import Checkbox from 'primevue/checkbox'
 import Column from 'primevue/column'
@@ -174,16 +174,20 @@ function adds(chosen: readonly SourceStream[]): JsonPatchOp[] {
   )
 }
 
-const addItems = computed(() =>
-  streams.value.map((stream) => ({
+/** One item per source track, then one that adds every source track without an output track. */
+const addItems = computed(() => [
+  ...streams.value.map((stream) => ({
     label: streamLabel(stream),
     command: () => editor.patch(adds([stream])),
   })),
-)
-
-function addAll(): void {
-  if (unused.value.length > 0) editor.patch(adds(unused.value))
-}
+  { separator: true },
+  {
+    label: t('tracks.output.addUnused', { count: unused.value.length }),
+    class: 'output-tracks__add-unused',
+    disabled: unused.value.length === 0,
+    command: () => editor.patch(adds(unused.value)),
+  },
+])
 
 async function focusIn(index: number, selectors: string[]): Promise<void> {
   await nextTick()
@@ -266,23 +270,6 @@ async function reload(): Promise<void> {
           </Button>
         </span>
         <Menu ref="addMenu" :pt="{ root: { id: `${id}-add` } }" :model="addItems" popup />
-        <span
-          v-tooltip.top="
-            fixedList ? t('tracks.output.fileScopeHelp') : t('tracks.output.addAllHelp')
-          "
-        >
-          <Button
-            size="small"
-            severity="secondary"
-            data-action="add-all"
-            :label="t('tracks.output.addAll')"
-            :disabled="unused.length === 0 || fixedList"
-            :aria-describedby="fixedList ? `${id}-file-scope` : undefined"
-            @click="addAll"
-          >
-            <template #icon><ListPlus :size="16" aria-hidden="true" /></template>
-          </Button>
-        </span>
         <span
           v-tooltip.top="inGroup ? t('tracks.output.reloadGroup') : t('tracks.output.reloadHelp')"
         >

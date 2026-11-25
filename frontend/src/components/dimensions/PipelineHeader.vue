@@ -6,13 +6,13 @@ import { pipelineOf } from '@/components/summary/pipeline'
 import { useCropStore } from '@/stores/crop'
 import { useValidationStore } from '@/stores/validation'
 
-import { headerOf } from './header'
+import { headerPartsOf } from './header'
 
 const { t, n } = useI18n()
 const crop = useCropStore()
 const validation = useValidationStore()
 
-const line = computed(() => (crop.geometry === null ? null : headerOf(crop.geometry, t, n)))
+const parts = computed(() => (crop.geometry === null ? null : headerPartsOf(crop.geometry, t, n)))
 const pipeline = computed(() => (crop.geometry === null ? null : pipelineOf(crop.geometry)))
 const invalid = computed(
   () =>
@@ -39,7 +39,13 @@ const notes = computed(() => (pipeline.value?.kind === 'encoded' ? pipeline.valu
       <template v-if="crop.geometryError !== null">
         {{ t('dimensions.header.failed', { reason: crop.geometryError }) }}
       </template>
-      <template v-else>{{ line ?? t('dimensions.header.computing') }}</template>
+      <template v-else-if="parts === null">{{ t('dimensions.header.computing') }}</template>
+      <template v-else>
+        <template v-for="(part, index) in parts" :key="index">
+          <span class="pipeline-header__part">{{ part }}</span
+          >{{ ' ' }}
+        </template>
+      </template>
     </p>
     <p v-if="tone === 'error' && crop.geometryError === null" class="pipeline-header__tone">
       {{ t('dimensions.header.invalid') }}
@@ -65,6 +71,10 @@ const notes = computed(() => (pipeline.value?.kind === 'encoded' ? pipeline.valu
   font-size: var(--rf-font-size-sm);
   font-weight: var(--rf-font-weight-medium);
   overflow-wrap: anywhere;
+}
+
+.pipeline-header__part {
+  white-space: nowrap;
 }
 
 .pipeline-header__line--warn,

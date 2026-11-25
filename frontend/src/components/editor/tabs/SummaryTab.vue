@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import EstimateCard from '@/components/summary/EstimateCard.vue'
@@ -10,9 +11,13 @@ import SourceCard from '@/components/summary/SourceCard.vue'
 import TracksCard from '@/components/summary/TracksCard.vue'
 import VideoCard from '@/components/summary/VideoCard.vue'
 import { useEditorStore } from '@/stores/editor'
+import { useValidationStore } from '@/stores/validation'
 
 const { t } = useI18n()
 const editor = useEditorStore()
+const validation = useValidationStore()
+
+const hasIssues = computed(() => validation.issues.length > 0)
 </script>
 
 <template>
@@ -22,19 +27,17 @@ const editor = useEditorStore()
     <p v-if="editor.job === null" class="summary-tab__empty" data-state="empty">
       {{ editor.loading ? t('summary.loading') : t('summary.noJob') }}
     </p>
+    <!-- What the job writes, in the order of the output file; the source's own facts come last. -->
     <div v-else class="summary-tab__grid">
-      <div class="summary-tab__top">
-        <SourceCard />
-        <JobTypeCard />
-        <div class="summary-tab__side">
-          <PictureCard />
-          <VideoCard />
-        </div>
-      </div>
-      <OutputCard />
+      <IssuesCard v-if="hasIssues" />
       <TracksCard />
-      <IssuesCard />
+      <PictureCard />
+      <VideoCard />
+      <JobTypeCard />
+      <OutputCard />
       <EstimateCard />
+      <SourceCard />
+      <IssuesCard v-if="!hasIssues" />
     </div>
   </section>
 </template>
@@ -47,33 +50,11 @@ const editor = useEditorStore()
 
 .summary-tab__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr));
+  /* Wide enough for the Video card's values on one line, such as "Constant quality RF 22". */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
   grid-auto-flow: row dense;
   gap: var(--rf-space-4);
   align-items: start;
-}
-
-/* A narrow tab: the top row's cards flow with the others. */
-.summary-tab__top,
-.summary-tab__side {
-  display: contents;
-}
-
-/* A wide tab: Source, Job type, and Picture pipeline over Video, in parts of 3, 2 and 1. The
-   third column keeps room for the pipeline's chips. */
-@container (width >= 60rem) {
-  .summary-tab__top {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) minmax(16rem, 1fr);
-    gap: var(--rf-space-4);
-    align-items: start;
-  }
-
-  .summary-tab__side {
-    display: grid;
-    gap: var(--rf-space-4);
-  }
 }
 
 .summary-tab__empty {

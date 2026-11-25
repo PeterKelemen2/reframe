@@ -339,15 +339,16 @@ function tagsOf(stream: SourceStream): [string, string][] {
             <template v-if="kind === 'audio'">
               <th scope="col">{{ t('tracks.source.codec') }}</th>
               <th scope="col">{{ t('tracks.source.channels') }}</th>
-              <th scope="col">{{ t('tracks.source.rateDepth') }}</th>
-              <th scope="col">{{ t('tracks.source.bitrate') }}</th>
+              <th scope="col">{{ t('tracks.source.roles') }}</th>
+              <th scope="col" data-column="secondary">{{ t('tracks.source.rateDepth') }}</th>
+              <th scope="col" data-column="secondary">{{ t('tracks.source.bitrate') }}</th>
             </template>
             <template v-else>
               <th scope="col">{{ t('tracks.source.format') }}</th>
               <th scope="col">{{ t('tracks.source.type') }}</th>
-              <th scope="col">{{ t('tracks.source.events') }}</th>
+              <th scope="col">{{ t('tracks.source.roles') }}</th>
+              <th scope="col" data-column="secondary">{{ t('tracks.source.events') }}</th>
             </template>
-            <th scope="col">{{ t('tracks.source.roles') }}</th>
           </tr>
         </thead>
         <tbody v-for="stream in streams" :key="stream.index">
@@ -375,8 +376,32 @@ function tagsOf(stream: SourceStream): [string, string][] {
             <template v-if="stream.kind === 'audio'">
               <td><CodecLabel :stream="stream" /></td>
               <td>{{ channelsText(stream) ?? '—' }}</td>
-              <td class="track-table__nowrap">{{ rateDepth(stream) ?? '—' }}</td>
-              <td class="track-table__bitrate" :data-source="stream.bitrate?.source ?? 'unknown'">
+              <td>
+                <div class="track-table__roles">
+                  <RoleBadge
+                    v-for="role in stream.roles ?? []"
+                    :key="role.role"
+                    :role="role"
+                    :kind="kind"
+                  />
+                  <span
+                    v-for="flag in shownFlags(stream)"
+                    :key="flag"
+                    class="track-table__flag"
+                    :data-flag="flag"
+                  >
+                    {{ flagLabel(flag) }}
+                  </span>
+                </div>
+              </td>
+              <td class="track-table__nowrap" data-column="secondary">
+                {{ rateDepth(stream) ?? '—' }}
+              </td>
+              <td
+                class="track-table__bitrate"
+                data-column="secondary"
+                :data-source="stream.bitrate?.source ?? 'unknown'"
+              >
                 <span class="track-table__value">
                   <span
                     v-if="stream.bitrate?.value"
@@ -410,7 +435,25 @@ function tagsOf(stream: SourceStream): [string, string][] {
             <template v-else>
               <td><CodecLabel :stream="stream" /></td>
               <td>{{ typeLabel(stream) }}</td>
-              <td class="track-table__events">
+              <td>
+                <div class="track-table__roles">
+                  <RoleBadge
+                    v-for="role in stream.roles ?? []"
+                    :key="role.role"
+                    :role="role"
+                    :kind="kind"
+                  />
+                  <span
+                    v-for="flag in shownFlags(stream)"
+                    :key="flag"
+                    class="track-table__flag"
+                    :data-flag="flag"
+                  >
+                    {{ flagLabel(flag) }}
+                  </span>
+                </div>
+              </td>
+              <td class="track-table__events" data-column="secondary">
                 <span class="track-table__value">
                   <span v-tooltip.top="eventsHelp(stream)">{{
                     count(stream.event_count) ?? '—'
@@ -444,24 +487,6 @@ function tagsOf(stream: SourceStream): [string, string][] {
                 </span>
               </td>
             </template>
-            <td>
-              <div class="track-table__roles">
-                <RoleBadge
-                  v-for="role in stream.roles ?? []"
-                  :key="role.role"
-                  :role="role"
-                  :kind="kind"
-                />
-                <span
-                  v-for="flag in shownFlags(stream)"
-                  :key="flag"
-                  class="track-table__flag"
-                  :data-flag="flag"
-                >
-                  {{ flagLabel(flag) }}
-                </span>
-              </div>
-            </td>
           </tr>
           <tr
             v-if="expanded.has(stream.index)"
@@ -491,6 +516,7 @@ function tagsOf(stream: SourceStream): [string, string][] {
                       })
                     "
                   />
+                  <KeyValue :label="t('tracks.source.rateDepth')" :value="rateDepth(stream)" />
                   <KeyValue :label="t('tracks.details.sampleFormat')" :value="stream.sample_fmt" />
                   <KeyValue
                     :label="t('tracks.details.lossless')"
@@ -502,6 +528,21 @@ function tagsOf(stream: SourceStream): [string, string][] {
                       ·
                     </template>
                     {{ bitrateHelp(stream.bitrate?.source) }}
+                    <!-- The row's own control is in a column that a narrow table leaves out. -->
+                    <ScanControl
+                      v-if="scanSource !== null && measurable(stream)"
+                      class="track-table__detail-scan track-table__narrow-only"
+                      :run="runOf('bitrate', stream)"
+                      :label="t('media.scan.measure')"
+                      :start-label="t('media.scan.measureBitrate', { n: trackNumber(stream) })"
+                      :progress-label="t('media.scan.measuringBitrate', { n: trackNumber(stream) })"
+                      :cancel-label="t('media.scan.cancelBitrate', { n: trackNumber(stream) })"
+                      :help="t('media.scan.measureHelp')"
+                      data-scan="bitrate-detail"
+                      @start="measureBitrate(stream)"
+                      @cancel="cancel"
+                      @leave="focusRow(stream)"
+                    />
                   </KeyValue>
                   <KeyValue :label="t('media.loudness.title')">
                     <dl
@@ -557,14 +598,15 @@ function tagsOf(stream: SourceStream): [string, string][] {
                   <KeyValue :label="t('tracks.details.events')">
                     {{ count(stream.event_count) ?? '—' }}
                     <template v-if="eventsHelp(stream)"> · {{ eventsHelp(stream) }} </template>
-                    <!-- Counts again, forced events too; the row counts only while unknown. -->
+                    <!-- Counts again, forced events too. While the count is unknown the row has a
+                         control too, in a column that a narrow table leaves out. -->
                     <ScanControl
-                      v-if="
-                        scanSource !== null &&
-                        stream.event_count !== null &&
-                        stream.event_count !== undefined
-                      "
+                      v-if="scanSource !== null"
                       class="track-table__detail-scan"
+                      :class="{
+                        'track-table__narrow-only':
+                          stream.event_count === null || stream.event_count === undefined,
+                      }"
                       :run="runOf('subtitle', stream)"
                       :label="t('media.scan.count')"
                       :start-label="t('media.scan.countTrack', { n: trackNumber(stream) })"
@@ -639,6 +681,24 @@ function tagsOf(stream: SourceStream): [string, string][] {
 </template>
 
 <style scoped>
+.track-table {
+  container: track-table / inline-size;
+}
+
+/* A narrow table keeps language, codec, channels and roles in sight: the rate, bitrate and
+   event columns go, and the row's details show them with their scan controls. */
+@container track-table (width < 48rem) {
+  .track-table [data-column='secondary'] {
+    display: none;
+  }
+}
+
+@container track-table (width >= 48rem) {
+  .track-table .track-table__narrow-only {
+    display: none;
+  }
+}
+
 .track-table__empty {
   margin: 0;
   color: var(--rf-color-text-muted);

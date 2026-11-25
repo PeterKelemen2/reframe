@@ -66,21 +66,17 @@ describe('the audio source table', () => {
       'Japanese 5.1',
       'AC-3',
       '5.1',
+      'Main (Set by a disposition flag in the file) Default',
       '48 kHz',
       '192 kb/s stream',
-      'Main (Set by a disposition flag in the file) Default',
     ])
-    expect(cells(wrapper, 1)[6]).toBe('— Unknown')
+    expect(cells(wrapper, 1)[7]).toBe('— Unknown')
   })
 
   it('shows the bit depth of a lossless track', () => {
     const wrapper = mountTable('audio', probedSource('dts-hd-ma').audio!)
-    expect(cells(wrapper, 0).slice(3, 7)).toEqual([
-      'DTS-HD MA',
-      '5.1',
-      '48 kHz / 24-bit',
-      '— Unknown',
-    ])
+    expect(cells(wrapper, 0).slice(3, 5)).toEqual(['DTS-HD MA', '5.1'])
+    expect(cells(wrapper, 0).slice(6)).toEqual(['48 kHz / 24-bit', '— Unknown'])
   })
 
   it('expands a row to every detail and collapses it again', async () => {
@@ -128,10 +124,10 @@ describe('the subtitle source table', () => {
       'English',
       'PGS',
       'bitmap',
-      '3,655',
       'Main (Set by a disposition flag in the file) Default',
+      '3,655',
     ])
-    expect(cells(wrapper, 1)[5]).toBe('—')
+    expect(cells(wrapper, 1)[6]).toBe('—')
   })
 
   it('shows the canvas and the forced events in the details', async () => {
@@ -193,6 +189,52 @@ function mountScans(
     cancel: vi.spyOn(scans, 'cancel').mockResolvedValue(),
   }
 }
+
+describe('a narrow source table', () => {
+  it('puts the roles before the columns it leaves out, and the details show what they hold', async () => {
+    const { wrapper, measureBitrate } = mountScans('audio', probedSource('dts-hd-ma').audio!)
+    const headers = wrapper.findAll('th')
+    expect(headers.map((header) => header.text())).toEqual([
+      '#',
+      'Lang',
+      'Name',
+      'Codec',
+      'Channels',
+      'Role & flags',
+      'Rate / depth',
+      'Bitrate',
+    ])
+    expect(headers.map((header) => header.attributes('data-column') ?? '')).toEqual([
+      ...Array<string>(6).fill(''),
+      'secondary',
+      'secondary',
+    ])
+    await wrapper.find('.track-table__toggle').trigger('click')
+    expect(detail(wrapper, 'Rate / depth')).toBe('48 kHz / 24-bit')
+    const measure = wrapper.find('.track-table__details [data-scan="bitrate-detail"]')
+    expect(measure.classes()).toContain('track-table__narrow-only')
+    await measure.find('button').trigger('click')
+    expect(measureBitrate).toHaveBeenCalledExactlyOnceWith('src', 1)
+  })
+
+  it('counts a subtitle track’s events from its details', async () => {
+    const { wrapper, scanSubtitles } = mountScans('subtitle', pgsStreams())
+    expect(wrapper.findAll('th').map((header) => header.text())).toEqual([
+      '#',
+      'Lang',
+      'Name',
+      'Format',
+      'Type',
+      'Role & flags',
+      'Events',
+    ])
+    await wrapper.find('.track-table__toggle').trigger('click')
+    const count = wrapper.find('.track-table__details [data-scan="events"]')
+    expect(count.classes()).toContain('track-table__narrow-only')
+    await count.find('button').trigger('click')
+    expect(scanSubtitles).toHaveBeenCalledExactlyOnceWith('src', [pgsStreams()[0]!.index])
+  })
+})
 
 describe('the scans in the source tables', () => {
   it('offers Measure for a track without a bitrate, and measures it without expanding the row', async () => {
@@ -264,7 +306,7 @@ describe('the scans in the source tables', () => {
     const { wrapper } = mountScans('subtitle', [
       { ...pgs[0]!, event_count: 12, forced_event_count: 2, event_count_source: 'measured' },
     ])
-    expect(cells(wrapper, 0)[5]).toBe('12 2 forced')
+    expect(cells(wrapper, 0)[6]).toBe('12 2 forced')
   })
 
   it('measures a track’s loudness from its details and shows the three values', async () => {
@@ -335,29 +377,29 @@ describe('the scans in the source tables', () => {
   it('groups the digits of a bitrate', () => {
     const audio = probedSource('dts-hd-ma').audio!
     const { wrapper } = mountScans('audio', [measuredBitrate(audio[0]!)])
-    expect(cells(wrapper, 0)[6]).toBe('2,140 kb/s measured')
+    expect(cells(wrapper, 0)[7]).toBe('2,140 kb/s measured')
   })
 
   describe('an estimated bitrate', () => {
     it('says it is an estimate, from how many samples, and offers Measure for the exact value', async () => {
       const { wrapper, measureBitrate } = mountScans('audio', [estimated(12)])
-      expect(cells(wrapper, 0)[6]).toBe('≈ 1,509 kb/s Measure estimated from 12 samples')
+      expect(cells(wrapper, 0)[7]).toBe('≈ 1,509 kb/s Measure estimated from 12 samples')
       await button(wrapper, 'Measure the bitrate of track 1')!.trigger('click')
       expect(measureBitrate).toHaveBeenCalledExactlyOnceWith('src', 1)
       await wrapper.find('.track-table__toggle').trigger('click')
       expect(detail(wrapper, 'Bitrate')).toBe(
-        "≈ 1,509 kb/s · Estimated from a sample of the file's clusters",
+        "≈ 1,509 kb/s · Estimated from a sample of the file's clusters Measure",
       )
     })
 
     it('counts one sample in the singular', () => {
       const { wrapper } = mountScans('audio', [estimated(1)])
-      expect(cells(wrapper, 0)[6]).toBe('≈ 1,509 kb/s Measure estimated from one sample')
+      expect(cells(wrapper, 0)[7]).toBe('≈ 1,509 kb/s Measure estimated from one sample')
     })
 
     it('says only "estimated" when the probe gave no count', () => {
       const { wrapper } = mountScans('audio', [estimated(null)])
-      expect(cells(wrapper, 0)[6]).toBe('≈ 1,509 kb/s Measure estimated')
+      expect(cells(wrapper, 0)[7]).toBe('≈ 1,509 kb/s Measure estimated')
     })
 
     it('offers no Measure once the bitrate is measured', () => {

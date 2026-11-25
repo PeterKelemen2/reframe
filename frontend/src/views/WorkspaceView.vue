@@ -7,6 +7,7 @@ import { useI18n } from 'vue-i18n'
 
 import { ApiError } from '@/api/client'
 import GroupBanner from '@/components/batch/GroupBanner.vue'
+import { EDITOR_TABS } from '@/components/editor/tabs/registry'
 import MatrixDialog from '@/components/matrix/MatrixDialog.vue'
 import PresetPicker from '@/components/presets/PresetPicker.vue'
 import RangeSelector from '@/components/range/RangeSelector.vue'
@@ -23,18 +24,35 @@ import { platform } from '@/platform'
 import { useCropStore } from '@/stores/crop'
 import { useEditorStore } from '@/stores/editor'
 import { useSourcesStore } from '@/stores/sources'
+import { useUiStore } from '@/stores/ui'
 
 const { t } = useI18n()
 const sources = useSourcesStore()
 const editor = useEditorStore()
+const ui = useUiStore()
 const { shown: firstRunShown } = useFirstRun()
 
 useValidation()
 // Detects the crop of a job opened in automatic or conservative mode, whichever tab is shown.
 useCropStore()
 
-const previewCollapsed = useLocalStorage('reframe.workspace.previewHidden', false, {
+// One choice for the tabs that work on the picture, one for the others: the preview takes room
+// that the track tables need and shows nothing that changes there.
+const previewHiddenOnPicture = useLocalStorage('reframe.workspace.previewHidden', false, {
   writeDefaults: false,
+})
+const previewHiddenElsewhere = useLocalStorage('reframe.workspace.previewHiddenElsewhere', true, {
+  writeDefaults: false,
+})
+const pictureTab = computed(
+  () => EDITOR_TABS.find((tab) => tab.id === ui.activeTab)?.picture ?? true,
+)
+const previewCollapsed = computed({
+  get: () => (pictureTab.value ? previewHiddenOnPicture : previewHiddenElsewhere).value,
+  set: (hidden: boolean) => {
+    if (pictureTab.value) previewHiddenOnPicture.value = hidden
+    else previewHiddenElsewhere.value = hidden
+  },
 })
 
 const title = computed(() => {

@@ -4,11 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, reactive, ref } from 'vue'
 
 import type { SourceEntry, SystemInfo } from '@/api/types'
+import type { EditorTabId } from '@/components/editor/tabs/registry'
 import { FIRST_RUN_KEY } from '@/components/shell/firstRun'
 import { focusWorkspace } from '@/components/shell/focus'
 import { mountShell } from '@/components/shell/testing'
 import { platform } from '@/platform'
 import { useSystemStore } from '@/stores/system'
+import { useUiStore } from '@/stores/ui'
 
 import WorkspaceView from './WorkspaceView.vue'
 
@@ -171,6 +173,38 @@ describe('the workspace', () => {
     await closed.find('.preview-panel__toggle').trigger('click')
     const opened = await mountWorkspace(openSource)
     expect(opened.find('.workspace__columns--preview-collapsed').exists()).toBe(false)
+  })
+
+  it('hides the preview on the tabs without the picture, and keeps a choice for each kind of tab', async () => {
+    const wrapper = await mountWorkspace(openSource)
+    const ui = useUiStore()
+    const collapsed = () => wrapper.find('.workspace__columns--preview-collapsed').exists()
+    const toggle = () => wrapper.find('.preview-panel__toggle')
+    async function show(tab: EditorTabId): Promise<void> {
+      ui.activeTab = tab
+      await flushPromises()
+    }
+
+    expect(collapsed()).toBe(false)
+    await show('audio')
+    expect(collapsed()).toBe(true)
+    expect(toggle().text()).toBe('Preview')
+    expect(toggle().attributes('aria-label')).toBe('Show the preview')
+    await toggle().trigger('click')
+    expect(collapsed()).toBe(false)
+    await show('tags')
+    expect(collapsed()).toBe(false)
+    await show('dimensions')
+    await toggle().trigger('click')
+    expect(collapsed()).toBe(true)
+    await show('chapters')
+    expect(collapsed()).toBe(false)
+
+    const again = await mountWorkspace(openSource)
+    expect(again.find('.workspace__columns--preview-collapsed').exists()).toBe(true)
+    useUiStore().activeTab = 'subtitles'
+    await flushPromises()
+    expect(again.find('.workspace__columns--preview-collapsed').exists()).toBe(false)
   })
 
   it('starts the crop store, which detects the crop whichever tab is shown', async () => {

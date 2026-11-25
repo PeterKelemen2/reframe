@@ -46,10 +46,15 @@ export function ratioOf(
  * from the same `pipelineOf` as the Summary's picture card.
  */
 export function headerOf(answer: JobGeometry, t: Translate, n: FormatNumber): string {
+  return headerPartsOf(answer, t, n).join(' ')
+}
+
+/** The header in phrases that a line break must not split, each with the separator after it. */
+export function headerPartsOf(answer: JobGeometry, t: Translate, n: FormatNumber): string[] {
   const pipeline = pipelineOf(answer)
-  if (pipeline.kind === 'no-video') return t('dimensions.header.noVideo')
+  if (pipeline.kind === 'no-video') return [t('dimensions.header.noVideo')]
   if (pipeline.kind === 'copied') {
-    return t('dimensions.header.copied', { size: size(pipeline.source) })
+    return [t('dimensions.header.copied', { size: size(pipeline.source) })]
   }
   const source = answer.source as NonNullable<JobGeometry['source']>
   const sar = source.sar ?? { num: 1, den: 1 }
@@ -84,5 +89,9 @@ export function headerOf(answer: JobGeometry, t: Translate, n: FormatNumber): st
   const pixels = pipeline.par
     ? t('dimensions.header.par', { par: `${pipeline.par.num}:${pipeline.par.den}` })
     : t('dimensions.header.square')
-  return [steps.join(' → '), formatAspect(pipeline.aspect, t, n), pixels].join(' · ')
+  return [
+    ...steps.map((step, index) => (index < steps.length - 1 ? `${step} →` : `${step} ·`)),
+    `${formatAspect(pipeline.aspect, t, n)} ·`,
+    pixels,
+  ]
 }

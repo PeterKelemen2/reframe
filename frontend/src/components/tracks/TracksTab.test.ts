@@ -123,6 +123,18 @@ function comboboxNames(wrapper: VueWrapper, path: string): (string | null)[] {
     })
 }
 
+function unusedItem(): HTMLElement {
+  return document.querySelector<HTMLElement>('.output-tracks__add-unused')!
+}
+
+/** Chooses the Add track menu's last item, which reads `label`. */
+async function addUnused(list: Pick<VueWrapper, 'find'>, label: string): Promise<void> {
+  await list.find('[data-action="add"]').trigger('click')
+  expect(unusedItem().textContent?.trim()).toBe(label)
+  unusedItem().querySelector<HTMLElement>('.p-menu-item-content')!.click()
+  await flushPromises()
+}
+
 function subtitle(source: number) {
   const track = sampleJob().subtitles![0]!
   return { ...track, source, metadata: { ...track.metadata!, default: false } }
@@ -142,12 +154,12 @@ describe('the output audio tracks', () => {
     expect(streamsOf(editor)).toEqual([1, 2, 3])
   })
 
-  it('adds every source track without an output track with Add all, as one undo step', async () => {
+  it('adds every source track without an output track from Add track, as one undo step', async () => {
     const { wrapper, editor } = await mountTab({ job: (job) => job.audio!.splice(1) })
-    const addAll = wrapper.find('[data-action="add-all"]')
-    await addAll.trigger('click')
+    await addUnused(wrapper, 'Every source track not added yet (2)')
     expect(streamsOf(editor)).toEqual([1, 2, 3])
-    expect(addAll.attributes('disabled')).toBeDefined()
+    await wrapper.find('[data-action="add"]').trigger('click')
+    expect(unusedItem().getAttribute('aria-disabled')).toBe('true')
     editor.undo()
     expect(streamsOf(editor)).toEqual([1])
   })
@@ -472,9 +484,9 @@ describe('an output subtitle track', () => {
     )
   })
 
-  it('adds the source subtitle tracks without an output track with Add all', async () => {
+  it('adds the source subtitle tracks without an output track from Add track', async () => {
     const { wrapper, editor } = await mountTab({ tab: 'subtitles' })
-    await wrapper.find('[data-list="subtitles"] [data-action="add-all"]').trigger('click')
+    await addUnused(wrapper.find('[data-list="subtitles"]'), 'Every source track not added yet (2)')
     expect(editor.job?.subtitles?.map((track) => track.source)).toEqual([4, 5, 6])
     expect(editor.job?.subtitles?.[1]?.metadata).toMatchObject({ hearing_impaired: true })
   })
