@@ -6,40 +6,106 @@ export const STATUS_BAR_HEIGHT = '--shell-status-bar-height'
 <script setup lang="ts">
 import { ListPlus, ListVideo, LoaderCircle, Play, Plus } from '@lucide/vue'
 import { useResizeObserver } from '@vueuse/core'
+import Button from 'primevue/button'
 import vTooltip from 'primevue/tooltip'
-import { computed, onBeforeUnmount, ref, useTemplateRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useId, useTemplateRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 
+import ApplyToGroupDialog from '@/components/batch/ApplyToGroupDialog.vue'
 import { useQueueActions } from '@/composables/useQueueActions'
 import { useEditorStore } from '@/stores/editor'
 import { useQueueStore } from '@/stores/queue'
+import { useSourcesStore } from '@/stores/sources'
 
 import ConnectionStatus from './ConnectionStatus.vue'
+import { focusLost } from './focus'
 import FocusSafeButton from './FocusSafeButton'
 import ValidationSummary from './ValidationSummary.vue'
 
 const { t } = useI18n()
 const editor = useEditorStore()
 const queue = useQueueStore()
+const sources = useSourcesStore()
 const actions = useQueueActions()
-const { canAdd, canAddAll, canStart, busy } = actions
+const id = useId()
+const { canAdd, canAddOnly, canAddAll, canStart, busy, activeGroup, changes } = actions
 
-/** Add all is the add under way: its button shows the wait, else *Add to queue*'s does. */
-const addingAll = ref(false)
+/** The button whose add is under way shows the wait; a shortcut's add is the primary one's. */
+const adding = ref<'only' | 'all' | null>(null)
 
-async function addAll(): Promise<void> {
-  addingAll.value = true
+async function run(which: 'only' | 'all', action: () => Promise<void>): Promise<void> {
+  adding.value = which
   try {
-    await actions.addAll()
+    await action()
   } finally {
-    addingAll.value = false
+    adding.value = null
   }
+}
+
+const addLabel = computed(() => {
+  const group = activeGroup.value
+  if (group === null) return t('shell.queue.add')
+  const key = group.episodes ? 'shell.queue.addEpisodes' : 'shell.queue.addFiles'
+  return t(key, { n: group.count }, group.count)
+})
+
+const only = computed(() => {
+  const label = activeGroup.value?.label ?? null
+  return label === null
+    ? { text: t('shell.queue.onlyThis'), name: t('shell.queue.onlyThisLabel') }
+    : { text: t('shell.queue.only', { label }), name: t('shell.queue.onlyLabel', { label }) }
+})
+
+const shortcut = computed(() => t('shell.queue.shortcut', { key: t('shell.keys.addToQueue') }))
+
+const root = useTemplateRef<HTMLElement>('root')
+
+// The question belongs to the file it was asked about.
+watch(
+  () => editor.session,
+  () => actions.dismissChanges(),
+)
+
+function focusAdd(): void {
+  void nextTick(() => {
+    if (focusLost()) root.value?.querySelector<HTMLElement>('.status-bar__add')?.focus()
+  })
+}
+
+watch(
+  () => changes.value !== null,
+  async (asked) => {
+    if (!asked) return
+    await nextTick()
+    root.value?.querySelector<HTMLElement>('[data-action="changes-apply"]')?.focus()
+  },
+)
+
+const apply = ref<{ groupId: string; name: string } | null>(null)
+const applyOpen = ref(false)
+
+function applyFirst(): void {
+  const asked = changes.value
+  actions.dismissChanges()
+  if (asked === null) return
+  const name = sources.grouping?.groups?.find((group) => group.id === asked.groupId)?.name ?? ''
+  apply.value = { groupId: asked.groupId, name }
+  applyOpen.value = true
+}
+
+function cancelChanges(): void {
+  actions.dismissChanges()
+  focusAdd()
+}
+
+function queueWithoutChanges(): void {
+  void actions.addGroup()
+  focusAdd()
 }
 
 const outputPath = computed(() => editor.job?.output?.path || null)
 
-const root = useTemplateRef<HTMLElement>('root')
 useResizeObserver(root, ([entry]) => {
   const height = entry?.borderBoxSize?.[0]?.blockSize ?? entry?.contentRect.height ?? 0
   document.documentElement.style.setProperty(STATUS_BAR_HEIGHT, `${Math.ceil(height)}px`)
@@ -60,6 +126,42 @@ const queueSummary = computed(() => {
 
 <template>
   <section ref="root" class="status-bar" :aria-label="t('shell.status.label')">
+    <div
+      v-if="changes"
+      class="status-bar__changes"
+      role="alertdialog"
+      :aria-labelledby="`${id}-changes`"
+      data-state="changes"
+      @keydown.esc.stop.prevent="cancelChanges"
+    >
+      <p :id="`${id}-changes`" class="status-bar__changes-text">
+        {{ t('shell.queue.changes.text', { label: changes.label }) }}
+      </p>
+      <div class="status-bar__changes-actions">
+        <Button
+          size="small"
+          :label="t('shell.queue.changes.apply')"
+          data-action="changes-apply"
+          @click="applyFirst"
+        />
+        <Button
+          size="small"
+          severity="secondary"
+          outlined
+          :label="t('shell.queue.changes.queue')"
+          data-action="changes-queue"
+          @click="queueWithoutChanges"
+        />
+        <Button
+          size="small"
+          severity="secondary"
+          text
+          :label="t('shell.queue.changes.cancel')"
+          data-action="changes-cancel"
+          @click="cancelChanges"
+        />
+      </div>
+    </div>
     <div class="status-bar__output" data-field="output">
       <span class="status-bar__caption">{{ t('shell.status.output') }}</span>
       <span
@@ -82,22 +184,39 @@ const queueSummary = computed(() => {
     </RouterLink>
     <div class="status-bar__actions">
       <FocusSafeButton
+        v-tooltip.top="shortcut"
         class="status-bar__add"
         size="small"
-        :label="editor.target?.kind === 'group' ? t('matrix.queue.add') : t('shell.queue.add')"
+        :label="addLabel"
         :disabled="!canAdd"
-        :aria-busy="(busy && !addingAll) || undefined"
+        :aria-busy="(busy && adding === null) || undefined"
         aria-keyshortcuts="Control+Enter"
         @click="actions.addCurrent()"
       >
         <template #icon>
           <LoaderCircle
-            v-if="busy && !addingAll"
+            v-if="busy && adding === null"
             class="status-bar__spin"
             :size="16"
             aria-hidden="true"
           />
           <Plus v-else :size="16" aria-hidden="true" />
+        </template>
+      </FocusSafeButton>
+      <FocusSafeButton
+        v-if="activeGroup"
+        class="status-bar__only"
+        size="small"
+        severity="secondary"
+        outlined
+        :label="only.text"
+        :aria-label="only.name"
+        :disabled="!canAddOnly"
+        :aria-busy="(busy && adding === 'only') || undefined"
+        @click="run('only', actions.addOnly)"
+      >
+        <template v-if="busy && adding === 'only'" #icon>
+          <LoaderCircle class="status-bar__spin" :size="16" aria-hidden="true" />
         </template>
       </FocusSafeButton>
       <FocusSafeButton
@@ -107,12 +226,12 @@ const queueSummary = computed(() => {
         outlined
         :label="t('shell.queue.addAll')"
         :disabled="!canAddAll"
-        :aria-busy="(busy && addingAll) || undefined"
-        @click="addAll"
+        :aria-busy="(busy && adding === 'all') || undefined"
+        @click="run('all', actions.addAll)"
       >
         <template #icon>
           <LoaderCircle
-            v-if="busy && addingAll"
+            v-if="busy && adding === 'all'"
             class="status-bar__spin"
             :size="16"
             aria-hidden="true"
@@ -134,6 +253,13 @@ const queueSummary = computed(() => {
         </template>
       </FocusSafeButton>
     </div>
+    <ApplyToGroupDialog
+      v-if="apply"
+      v-model:visible="applyOpen"
+      :group-id="apply.groupId"
+      :group-name="apply.name"
+      @closed="focusAdd"
+    />
   </section>
 </template>
 
@@ -200,7 +326,31 @@ const queueSummary = computed(() => {
 
 .status-bar__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--rf-space-2);
   margin-left: auto;
+}
+
+.status-bar__changes {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--rf-space-2) var(--rf-space-4);
+  padding: var(--rf-space-2) var(--rf-space-3);
+  border: 1px solid var(--p-status-warn-border-color);
+  border-radius: var(--rf-radius-md);
+  background: var(--p-status-warn-background);
+}
+
+.status-bar__changes-text {
+  flex: 1 1 24rem;
+  margin: 0;
+}
+
+.status-bar__changes-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--rf-space-2);
 }
 </style>

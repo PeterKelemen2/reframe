@@ -27,7 +27,7 @@ Batch / season editing has its own document: [04-batch-mode.md](04-batch-mode.md
 │ sets │   E02 ✓        │   tab content                                  │  crop overlay)                  │
 │ Log  │ ▸ Movie.mkv    │                                                │                                 │
 │ Set. ├────────────────┴────────────────────────────────────────────────┴─────────────────────────────────┤
-│      │ Output: /media/out/Show - S01E01.mkv   ⚠ 1 warning   [Add to queue] [Add all] [Start]             │
+│      │ Output: …/S01E01.mkv  ⚠ 1  [Add 12 episodes to queue] [Only E01] [Add all open files] [Start]     │
 └──────┴───────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -35,10 +35,13 @@ Batch / season editing has its own document: [04-batch-mode.md](04-batch-mode.md
   ([04](04-batch-mode.md)).
 - **Preview panel**: can be collapsed or detached (desktop: separate window; web: a large modal). It follows the
   active tab. On Dimensions it shows crop overlays. On Filters it shows before/after.
-- **Status bar**: output path, validation summary (click to see the list), queue actions.
+- **Status bar**: output path, validation summary (click to see the list), queue actions. While
+  the shown file belongs to a batch group, the primary action queues the group (*Add 12 episodes
+  to queue*) and *Only E01* adds the shown file alone; *Add all open files* adds every open
+  source ([0111](../decisions/0111-the-season-is-the-primary-queue-action.md)).
 - Light, dark and system themes. Compact and comfortable density.
-- Keyboard: `Ctrl+O` open, `Ctrl+Enter` add to queue, `Ctrl+1…8` switch tabs, `←/→` move
-  through preview frames.
+- Keyboard: `Ctrl+O` open, `Ctrl+Enter` the status bar's primary add (in a group, the group),
+  `Ctrl+1…8` switch tabs, `←/→` move through preview frames.
 
 ---
 

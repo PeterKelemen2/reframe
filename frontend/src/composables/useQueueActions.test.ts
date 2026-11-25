@@ -5,7 +5,7 @@ import { computed, defineComponent, reactive, ref, toRefs } from 'vue'
 
 import { configureClient } from '@/api/client'
 import { deferred, FakeServer, problem, settle } from '@/api/testing/fakes'
-import type { JobSettings, QueueJob, SourceEntry, ValidationIssue } from '@/api/types'
+import type { JobSettings, QueueJob, Schemas, SourceEntry, ValidationIssue } from '@/api/types'
 import type { EditorTarget } from '@/stores/editor'
 import { createAppI18n } from '@/i18n'
 import { useQueueStore } from '@/stores/queue'
@@ -21,6 +21,8 @@ const editorState = reactive({
   session: 1,
   editing: false,
   editFailure: null as string | null,
+  canUndo: false,
+  lastMerged: null as JobSettings | null,
 })
 const editor = reactive({
   ...toRefs(editorState),
@@ -37,14 +39,18 @@ const validation = reactive({
   hasErrors: computed(() => issues.value.some((found) => found.severity === 'error')),
   flush: vi.fn<() => void>(),
 })
-const sources = reactive({ entries: [] as SourceEntry[] })
+const sources = reactive({
+  entries: [] as SourceEntry[],
+  grouping: null as Schemas['BatchGrouping'] | null,
+})
 vi.mock('@/stores/editor', () => ({ useEditorStore: () => editor }))
 vi.mock('@/stores/validation', () => ({ useValidationStore: () => validation }))
 vi.mock('@/stores/sources', () => ({ useSourcesStore: () => sources }))
 const groupBusy = ref(false)
 const queueGroup = vi.fn<(groupId: string) => Promise<void>>(async () => {})
+const queueFile = vi.fn<(sourceId: string) => Promise<void>>(async () => {})
 vi.mock('./useQueueGroup', () => ({
-  useQueueGroup: () => ({ busy: computed(() => groupBusy.value), queueGroup }),
+  useQueueGroup: () => ({ busy: computed(() => groupBusy.value), queueGroup, queueFile }),
 }))
 
 function settings(path: string, output: string | null = `/out/${path}.mkv`): JobSettings {
@@ -114,14 +120,18 @@ beforeEach(() => {
   editor.session = 1
   editor.editing = false
   editor.editFailure = null
+  editor.canUndo = false
+  editor.lastMerged = null
   editor.flushEdits.mockReset()
   validation.issues = []
   validation.pending = false
   validation.failed = false
   validation.flush.mockReset()
   sources.entries = []
+  sources.grouping = null
   groupBusy.value = false
   queueGroup.mockClear()
+  queueFile.mockClear()
   server = new FakeServer()
     .on('GET /api/queue', { jobs: [] })
     .on('GET /api/power', { pending: null })
@@ -593,5 +603,95 @@ describe('while a group is edited', () => {
     const { canAdd, busy } = actions()
     expect(canAdd.value).toBe(false)
     expect(busy.value).toBe(true)
+  })
+})
+
+/** Two episodes open, `s1` and `s2`, in group `g1`. */
+function season(): void {
+  sources.entries = [entry('s1'), entry('s2'), entry('movie')]
+  sources.grouping = {
+    groups: [
+      {
+        id: 'g1',
+        name: 'Show S01',
+        level: 'standard',
+        representative: '/media/s1.mkv',
+        fingerprint: {} as Schemas['Fingerprint'],
+        members: [1, 2].map((episode) => ({
+          path: `/media/s${episode}.mkv`,
+          match: 'exact' as const,
+          season: 1,
+          episode,
+        })),
+      },
+    ],
+  }
+}
+
+describe('with a file of a group open alone', () => {
+  it('names the group and adds it, not the open job', async () => {
+    season()
+    open('s1', settings('s1'))
+    const { activeGroup, canAdd, addCurrent, changes } = actions()
+    expect(activeGroup.value).toEqual({ groupId: 'g1', count: 2, episodes: true, label: 'E01' })
+    expect(canAdd.value).toBe(true)
+    await addCurrent()
+    expect(changes.value).toBeNull()
+    expect(queueGroup).toHaveBeenCalledExactlyOnceWith('g1')
+    expect(queueBodies()).toEqual([])
+  })
+
+  it('has no group for a file that is in none', () => {
+    season()
+    open('movie', settings('movie'))
+    expect(actions().activeGroup.value).toBeNull()
+  })
+
+  it('asks first when the open file has changes no Apply to group took, then queues on the answer', async () => {
+    season()
+    open('s1', settings('s1'))
+    editor.canUndo = true
+    const { addCurrent, addGroup, changes, dismissChanges } = actions()
+    await addCurrent()
+    expect(changes.value).toEqual({ groupId: 'g1', label: 'E01' })
+    expect(queueGroup).not.toHaveBeenCalled()
+    dismissChanges()
+    expect(changes.value).toBeNull()
+    await addCurrent()
+    await addGroup()
+    expect(changes.value).toBeNull()
+    expect(queueGroup).toHaveBeenCalledExactlyOnceWith('g1')
+  })
+
+  it('does not ask once the open job went into the group as it is', async () => {
+    season()
+    open('s1', settings('s1'))
+    editor.canUndo = true
+    editor.lastMerged = editor.job
+    const { addCurrent, changes } = actions()
+    await addCurrent()
+    expect(changes.value).toBeNull()
+    expect(queueGroup).toHaveBeenCalledExactlyOnceWith('g1')
+  })
+
+  it('adds the open job alone with Only E01', async () => {
+    season()
+    open('s1', settings('s1'))
+    const { canAddOnly, addOnly } = actions()
+    expect(canAddOnly.value).toBe(true)
+    await addOnly()
+    expect(queueGroup).not.toHaveBeenCalled()
+    expect(queueBodies()).toEqual([[settings('s1')]])
+  })
+})
+
+describe('Only E01 while a group is edited', () => {
+  it('queues the shown file of the group alone', async () => {
+    editGroup()
+    const { canAddOnly, addOnly } = actions()
+    expect(canAddOnly.value).toBe(true)
+    await addOnly()
+    expect(queueFile).toHaveBeenCalledExactlyOnceWith('s1')
+    expect(queueGroup).not.toHaveBeenCalled()
   })
 })

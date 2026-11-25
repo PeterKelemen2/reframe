@@ -4,6 +4,7 @@ import { computed, reactive, ref } from 'vue'
 
 import { deferred } from '@/api/testing/fakes'
 import type { JobSettings, QueueJob, Severity, ValidationIssue } from '@/api/types'
+import type { ActiveGroup, ChangesQuestion } from '@/composables/useQueueActions'
 import type { EditorTarget } from '@/stores/editor'
 import { useQueueStore } from '@/stores/queue'
 import { useSystemStore } from '@/stores/system'
@@ -16,6 +17,7 @@ import { mountShell } from './testing'
 const editor = reactive({
   job: null as JobSettings | null,
   target: null as EditorTarget | null,
+  session: 0,
   applyFix: vi.fn<() => Promise<void>>(),
 })
 const validation = reactive({
@@ -29,10 +31,18 @@ const validation = reactive({
 })
 const actions = {
   canAdd: ref(false),
+  canAddOnly: ref(false),
   canAddAll: ref(false),
   canStart: ref(false),
   busy: ref(false),
+  activeGroup: ref<ActiveGroup | null>(null),
+  changes: ref<ChangesQuestion | null>(null),
   addCurrent: vi.fn<() => Promise<void>>(async () => {}),
+  addGroup: vi.fn<() => Promise<void>>(async () => {}),
+  dismissChanges: vi.fn<() => void>(() => {
+    actions.changes.value = null
+  }),
+  addOnly: vi.fn<() => Promise<void>>(async () => {}),
   addAll: vi.fn<() => Promise<void>>(async () => {}),
   start: vi.fn<() => Promise<void>>(async () => {}),
 }
@@ -51,9 +61,17 @@ beforeEach(() => {
   } as JobSettings
   validation.issues = []
   validation.pending = false
-  for (const flag of [actions.canAdd, actions.canAddAll, actions.canStart, actions.busy]) {
+  for (const flag of [
+    actions.canAdd,
+    actions.canAddOnly,
+    actions.canAddAll,
+    actions.canStart,
+    actions.busy,
+  ]) {
     flag.value = false
   }
+  actions.activeGroup.value = null
+  actions.changes.value = null
   vi.clearAllMocks()
 })
 
@@ -275,12 +293,75 @@ describe('the status bar', () => {
     expect(actions.start).toHaveBeenCalledTimes(1)
   })
 
-  it('names the add Add group to queue while a group is edited', async () => {
+  it('names the add after the active group, with the shown file alone beside it', async () => {
     const wrapper = await mountBar()
-    expect(wrapper.find('.status-bar__add').text()).toBe('Add to queue')
-    editor.target = { kind: 'group' } as EditorTarget
+    const add = () => wrapper.find('.status-bar__add')
+    const only = () => wrapper.find('.status-bar__only')
+    expect(add().text()).toBe('Add to queue')
+    expect(only().exists()).toBe(false)
+    expect(add().attributes('aria-keyshortcuts')).toBe('Control+Enter')
+
+    actions.activeGroup.value = { groupId: 'g', count: 12, episodes: true, label: 'E01' }
     await flushPromises()
-    expect(wrapper.find('.status-bar__add').text()).toBe('Add group to queue')
+    expect(add().text()).toBe('Add 12 episodes to queue')
+    expect(only().text()).toBe('Only E01')
+    expect(only().attributes('aria-label')).toBe('Add only E01 to queue')
+
+    actions.activeGroup.value = { groupId: 'g', count: 3, episodes: false, label: null }
+    await flushPromises()
+    expect(add().text()).toBe('Add 3 files to queue')
+    expect(only().text()).toBe('Only this file')
+
+    actions.canAddOnly.value = true
+    await flushPromises()
+    await only().trigger('click')
+    expect(actions.addOnly).toHaveBeenCalledTimes(1)
+    expect(actions.addCurrent).not.toHaveBeenCalled()
+  })
+
+  it('names Add all open files apart from the Audio tab’s Add all', async () => {
+    const wrapper = await mountBar()
+    expect(wrapper.find('.status-bar__add-all').text()).toBe('Add all open files')
+  })
+
+  it('asks before the group is queued without the open file’s own changes', async () => {
+    actions.activeGroup.value = { groupId: 'g', count: 12, episodes: true, label: 'E01' }
+    const wrapper = await mountBar()
+    expect(wrapper.find('[data-state="changes"]').exists()).toBe(false)
+    actions.changes.value = { groupId: 'g', label: 'E01' }
+    await flushPromises()
+    const question = wrapper.find('[data-state="changes"]')
+    expect(question.attributes('role')).toBe('alertdialog')
+    expect(question.find('p').text()).toBe(
+      "Your changes to E01 are not in the group's settings. The group is queued without them.",
+    )
+    expect(document.activeElement).toBe(question.find('[data-action="changes-apply"]').element)
+
+    await question.find('[data-action="changes-queue"]').trigger('click')
+    expect(actions.addGroup).toHaveBeenCalledTimes(1)
+
+    actions.changes.value = { groupId: 'g', label: 'E01' }
+    await flushPromises()
+    await wrapper.find('[data-action="changes-cancel"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-state="changes"]').exists()).toBe(false)
+    expect(actions.addGroup).toHaveBeenCalledTimes(1)
+
+    actions.changes.value = { groupId: 'g', label: 'E01' }
+    await flushPromises()
+    await wrapper.find('[data-action="changes-apply"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-state="changes"]').exists()).toBe(false)
+    expect(document.querySelector('[data-dialog="apply-to-group"]')).not.toBeNull()
+  })
+
+  it('drops the question when another file opens', async () => {
+    const wrapper = await mountBar()
+    actions.changes.value = { groupId: 'g', label: 'E01' }
+    await flushPromises()
+    editor.session += 1
+    await flushPromises()
+    expect(wrapper.find('[data-state="changes"]').exists()).toBe(false)
   })
 
   // A browser moves the focus of a button that turns disabled to the page.

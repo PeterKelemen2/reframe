@@ -879,6 +879,28 @@ describe('the editor store, group target', () => {
       expect(requests('POST /api/batch/detect-crops')).toHaveLength(0)
     })
 
+    it('resolveNow of one file resolves it alone and leaves the matrix as it is', async () => {
+      const editor = await edited()
+      const matrix = editor.resolution
+      editor.setNameField('e2', 'episode', '7')
+      await flush()
+      const answer = await editor.resolveNow({ only: 'e2' })
+      const sent = body<ResolveBody>(requests('POST /api/batch/resolve-run').at(-1))
+      expect(sent.source_ids).toEqual(['e2'])
+      expect(Object.keys(sent.overrides)).toEqual(['e2'])
+      expect(answer.rows?.map((found) => found.path)).toEqual([pathOf('e2')])
+      expect(editor.resolution?.rows).toHaveLength(matrix?.rows?.length ?? 0)
+    })
+
+    it('remembers the job whose sections went into a group last', async () => {
+      const editor = useEditorStore()
+      await editor.open('other', 'h264')
+      expect(editor.lastMerged).toBeNull()
+      const from = editor.job as JobSettings
+      await editor.mergeIntoGroup('g1', from, 'other', ['video'])
+      expect(editor.lastMerged).toBe(from)
+    })
+
     describe('resolveNow with the crop of each file', () => {
       /** The detection task's run: the fake server's `resolve-run` answer for the request. */
       let run: BatchRun | null = null

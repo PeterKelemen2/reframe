@@ -619,6 +619,9 @@ Done when: a component sandbox page (dev only) shows every base component in bot
 - [x] Override dots on `Field` with **Reset to group** and **Apply to whole group**
       ([decision 0066](../decisions/0066-m7-batch-season.md), "Task D").
 - [x] Queue-group flow with the error dialog.
+- [x] The status bar owns queueing: in a group its primary add is the group's (*Add 12 episodes
+      to queue*, `Ctrl+Enter`) with *Only E01* beside it; each group action has one place
+      ([0111](../decisions/0111-the-season-is-the-primary-queue-action.md)).
 
 ### F-14 Queue and activity
 - [x] Queue table: drag reorder, live progress, per-job and global controls, edit-back,

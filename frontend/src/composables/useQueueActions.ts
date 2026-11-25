@@ -1,9 +1,10 @@
-import { type ComputedRef, computed, ref, watch, type WatchStopHandle } from 'vue'
+import { type ComputedRef, computed, ref, shallowRef, watch, type WatchStopHandle } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { ApiError, apiQuiet, unwrap } from '@/api/client'
 import type { JobSettings, QueueJob, SourceEntry, ValidationIssue } from '@/api/types'
 import { fileName } from '@/components/shell/format'
+import { panelItems } from '@/components/sources/panel'
 import { commitFocusedField } from '@/editor/focus'
 import { useEditorStore } from '@/stores/editor'
 import { useQueueStore } from '@/stores/queue'
@@ -13,25 +14,57 @@ import { useValidationStore } from '@/stores/validation'
 
 import { useQueueGroup } from './useQueueGroup'
 
+/** The batch group of the file the editor shows: the edited group, or the open file's group. */
+export interface ActiveGroup {
+  groupId: string
+  /** Its open files. */
+  count: number
+  /** Every one of them has an episode number. */
+  episodes: boolean
+  /** The shown file's episode label (`E01`); `null` when its file name stands for it. */
+  label: string | null
+}
+
+/** The open file has changes that its group's settings do not have. */
+export interface ChangesQuestion {
+  groupId: string
+  /** The open file's episode label, else its file name. */
+  label: string
+}
+
 export interface QueueActions {
   /**
-   * The editor's job had no error at its last check, and nothing is in the way of adding it. A
-   * check or an edit on its way does not count: the add waits for them.
+   * The primary add can run: the active group's (nothing is being queued), else the editor's
+   * job's (it had no error at its last check). A check or an edit on its way does not count:
+   * the add waits for them.
    */
   canAdd: ComputedRef<boolean>
+  /** *Only E01* can run (in a group). */
+  canAddOnly: ComputedRef<boolean>
   /** At least one source is open and no add is under way. */
   canAddAll: ComputedRef<boolean>
   /** Waiting jobs that a Start would hand to the runner. */
   canStart: ComputedRef<boolean>
   /** An add is under way (it may still wait for the job's check). */
   busy: ComputedRef<boolean>
+  /** The group the primary add queues; `null`: it adds the editor's job. */
+  activeGroup: ComputedRef<ActiveGroup | null>
+  /** The question the primary add asked before it queues the group. */
+  changes: ComputedRef<ChangesQuestion | null>
   /**
-   * Adds the editor's job as the screen shows it (`Ctrl+Enter`, *Add to queue*): first the
-   * focused field's value and the edits on their way go into the job and the job is checked.
-   * A job that cannot be added then is a toast that says why. While a group is edited, it is
-   * *Add group to queue* of that group.
+   * The primary add (`Ctrl+Enter`): in a group, every open file of the group, with the group's
+   * settings; a file of the group open alone with changes of its own asks first (`changes`).
+   * Else the editor's job as the screen shows it: first the focused field's value and the edits
+   * on their way go into the job and the job is checked. A job that cannot be added then is a
+   * toast that says why.
    */
   addCurrent(): Promise<void>
+  /** Queues the active group without asking; answers `changes`. */
+  addGroup(): Promise<void>
+  /** Drops the question in `changes`. */
+  dismissChanges(): void
+  /** In a group: the shown file alone. */
+  addOnly(): Promise<void>
   /** Drafts every open source with the editor's preset and adds those without errors. */
   addAll(): Promise<void>
   /** Starts the queue. */
@@ -56,6 +89,7 @@ const SETTLE_LIMIT = 20_000
 // Shared by every caller (the status bar's buttons and the shortcut), so that a second click or
 // a held Ctrl+Enter during an add does not queue the job twice.
 const busy = ref(false)
+const changes = shallowRef<ChangesQuestion | null>(null)
 
 /** The request body is read later than the click; a copy keeps edits made meanwhile out of it. */
 function snapshot(job: JobSettings): JobSettings {
@@ -81,17 +115,44 @@ export function useQueueActions(): QueueActions {
   const toasts = useToastStore()
   const group = useQueueGroup()
 
+  const activeGroup = computed<ActiveGroup | null>(() => {
+    const target = editor.target
+    if (target === null) return null
+    for (const item of panelItems(sources.entries, sources.grouping)) {
+      if (item.kind !== 'group') continue
+      const open = item.rows.find((row) => row.entry.id === target.sourceId)
+      if (target.kind === 'group' ? item.group.id !== target.groupId : open === undefined) {
+        continue
+      }
+      return {
+        groupId: item.group.id,
+        count: item.rows.length,
+        episodes: item.rows.every((row) => row.member.episode != null),
+        label: open?.member.episode == null ? null : open.label,
+      }
+    }
+    return null
+  })
+
+  const groupFree = computed(() => !busy.value && !group.busy.value)
   // A check or an edit on its way does not turn it off: a click on the button blurs the field
   // that was typed in, its value goes into the job, and the button must stay enabled under the
   // pointer. The add waits for them.
+  const canAddJob = computed(
+    () =>
+      editor.job !== null &&
+      !editor.loading &&
+      !validation.hasErrors &&
+      Boolean(editor.job.output?.path) &&
+      groupFree.value,
+  )
   const canAdd = computed(() =>
-    editor.target?.kind === 'group'
-      ? !busy.value && !group.busy.value
-      : editor.job !== null &&
-        !editor.loading &&
-        !validation.hasErrors &&
-        Boolean(editor.job.output?.path) &&
-        !busy.value,
+    activeGroup.value !== null || editor.target?.kind === 'group'
+      ? groupFree.value
+      : canAddJob.value,
+  )
+  const canAddOnly = computed(() =>
+    editor.target?.kind === 'group' ? groupFree.value : canAddJob.value,
   )
   const canAddAll = computed(() => sources.entries.length > 0 && !busy.value)
   const canStart = computed(
@@ -193,12 +254,54 @@ export function useQueueActions(): QueueActions {
     }
   }
 
-  async function addCurrent(): Promise<void> {
+  /** The open file of a group has edits that no *Apply to group* took. */
+  function ownChanges(): boolean {
+    if (editor.target?.kind !== 'job') return false
+    commitFocusedField()
+    return (editor.canUndo || editor.editing) && editor.lastMerged !== editor.job
+  }
+
+  function groupToQueue(): string | null {
     const target = editor.target
-    if (target?.kind === 'group') {
-      if (!busy.value) await group.queueGroup(target.groupId)
+    return target?.kind === 'group' ? target.groupId : (activeGroup.value?.groupId ?? null)
+  }
+
+  async function addGroup(): Promise<void> {
+    changes.value = null
+    const groupId = groupToQueue()
+    if (groupId === null || !groupFree.value) return
+    await group.queueGroup(groupId)
+  }
+
+  async function addCurrent(): Promise<void> {
+    const groupId = groupToQueue()
+    if (groupId === null) {
+      await addJob()
       return
     }
+    if (!groupFree.value) return
+    const target = editor.target
+    if (target?.kind === 'job' && ownChanges()) {
+      const entry = sources.entries.find((found) => found.id === target.sourceId)
+      changes.value = {
+        groupId,
+        label: activeGroup.value?.label ?? fileName(entry?.path ?? ''),
+      }
+      return
+    }
+    await addGroup()
+  }
+
+  async function addOnly(): Promise<void> {
+    const target = editor.target
+    if (target?.kind === 'group') {
+      if (groupFree.value) await group.queueFile(target.sourceId)
+      return
+    }
+    await addJob()
+  }
+
+  async function addJob(): Promise<void> {
     if (busy.value || editor.job === null || editor.loading) return
     busy.value = true
     try {
@@ -330,10 +433,16 @@ export function useQueueActions(): QueueActions {
 
   return {
     canAdd,
+    canAddOnly,
     canAddAll,
     canStart,
     busy: computed(() => busy.value || group.busy.value),
+    activeGroup,
+    changes: computed(() => changes.value),
     addCurrent,
+    addGroup,
+    dismissChanges: () => (changes.value = null),
+    addOnly,
     addAll,
     start,
   }

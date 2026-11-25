@@ -550,19 +550,13 @@ describe('a batch group in the sources panel', () => {
     expect(showFile).not.toHaveBeenCalled()
   })
 
-  it('edits, checks and queues a group from its row', async () => {
+  it('edits a group from its row, its one action: the status bar queues, the banner checks', async () => {
     const { editGroup } = await mountPanel(withShow)
-    const openMatrix = vi.spyOn(useUiStore(), 'openMatrix')
+    const actions = groupItem().querySelectorAll('.sources-panel__group-actions button')
+    expect([...actions].map(text)).toEqual(['Edit group'])
     groupItem().querySelector<HTMLElement>('[data-action="edit-group"]')?.click()
     await flushPromises()
     expect(editGroup).toHaveBeenCalledExactlyOnceWith('g1')
-    groupItem().querySelector<HTMLElement>('[data-action="check-group"]')?.click()
-    await flushPromises()
-    expect(editGroup).toHaveBeenCalledTimes(2)
-    expect(openMatrix).toHaveBeenCalledOnce()
-    groupItem().querySelector<HTMLElement>('[data-action="queue-group"]')?.click()
-    await flushPromises()
-    expect(queue.queueGroup).toHaveBeenCalledExactlyOnceWith('g1')
     expect(groupItem().getAttribute('aria-expanded')).toBe('true')
   })
 
@@ -580,14 +574,30 @@ describe('a batch group in the sources panel', () => {
     expect(groupItem().getAttribute('aria-expanded')).toBe('true')
   })
 
-  it('checks the edited group without editing it again', async () => {
+  it('shows no actions on the edited group’s row; its menu checks it without editing it again', async () => {
     const { editGroup } = await mountPanel(editing)
     const openMatrix = vi.spyOn(useUiStore(), 'openMatrix')
-    expect(groupItem().querySelector('[data-action="edit-group"]')).toBeNull()
-    groupItem().querySelector<HTMLElement>('[data-action="check-group"]')?.click()
-    await flushPromises()
+    expect(groupItem().querySelector('.sources-panel__group-actions')).toBeNull()
+    await rightClick(groupItem())
+    expect(
+      menuItems()
+        .slice(0, 2)
+        .map((found) => found.getAttribute('aria-label')),
+    ).toEqual(['Check group', 'Add group to queue'])
+    await choose('Check group')
     expect(editGroup).not.toHaveBeenCalled()
     expect(openMatrix).toHaveBeenCalledOnce()
+  })
+
+  it('offers no Check group for a group that is not edited: it would quietly edit it', async () => {
+    const { editGroup } = await mountPanel(withShow)
+    await rightClick(groupItem())
+    expect(menuItems().some((found) => found.getAttribute('aria-label') === 'Check group')).toBe(
+      false,
+    )
+    await choose('Add group to queue')
+    expect(queue.queueGroup).toHaveBeenCalledExactlyOnceWith('g1')
+    expect(editGroup).not.toHaveBeenCalled()
   })
 
   it('opens the context menu with Shift+F10 and the context menu key, and its actions work', async () => {
@@ -599,9 +609,9 @@ describe('a batch group in the sources panel', () => {
     await flushPromises()
     expect(
       menuItems()
-        .slice(0, 3)
+        .slice(0, 2)
         .map((found) => found.getAttribute('aria-label')),
-    ).toEqual(['Edit group', 'Check group', 'Add group to queue'])
+    ).toEqual(['Edit group', 'Add group to queue'])
     // The menu has the focus, on its first item.
     const list = $('.p-contextmenu [role="menubar"]') as HTMLElement
     await vi.waitFor(() => expect(document.activeElement).toBe(list))

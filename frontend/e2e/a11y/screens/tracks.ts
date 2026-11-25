@@ -155,7 +155,7 @@ export const screens: Screen[] = [
     region: '.queue-group-dialog',
     async setup(page) {
       await seasonWithError(page)
-      await page.locator('.group-banner [data-action="queue-group"]').click()
+      await page.locator('.status-bar__add').click()
       await expect(page.locator('.queue-group-dialog')).toBeVisible({ timeout: CROP_DETECTION })
     },
   },

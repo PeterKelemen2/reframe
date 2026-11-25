@@ -31,8 +31,12 @@ const validation = reactive({
 const useValidation = vi.fn<() => void>()
 const actions = {
   canAdd: ref(false),
+  canAddOnly: ref(false),
   canAddAll: ref(false),
   canStart: ref(false),
+  activeGroup: ref(null),
+  changes: ref(null),
+  dismissChanges: vi.fn<() => void>(),
   addCurrent: vi.fn<() => Promise<void>>(),
   addAll: vi.fn<() => Promise<void>>(),
   start: vi.fn<() => Promise<void>>(),
