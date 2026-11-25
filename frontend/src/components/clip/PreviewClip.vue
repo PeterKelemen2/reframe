@@ -337,4 +337,27 @@ watch(
   max-height: 60vh;
   background: #000;
 }
+
+/* The same joined segments as the frame viewer's: the preview column has one control style. */
+.preview-clip__controls :deep(.p-selectbutton) {
+  --p-selectbutton-border-radius: var(--rf-radius-md);
+  --p-togglebutton-sm-padding: 0;
+  --p-togglebutton-content-sm-padding: 0.25rem 0.75rem;
+  --p-togglebutton-background: transparent;
+  --p-togglebutton-border-color: var(--p-form-field-border-color);
+  --p-togglebutton-color: var(--rf-color-text);
+  --p-togglebutton-hover-background: var(--rf-color-surface-hover);
+  --p-togglebutton-hover-color: var(--rf-color-text);
+  --p-togglebutton-checked-background: var(--rf-color-primary);
+  --p-togglebutton-checked-border-color: var(--rf-color-primary);
+  --p-togglebutton-checked-color: var(--rf-color-on-primary);
+  --p-togglebutton-content-checked-background: transparent;
+  --p-togglebutton-content-checked-shadow: none;
+
+  background: transparent;
+}
+
+.preview-clip__controls :deep(.p-togglebutton) {
+  font-weight: var(--rf-font-weight-medium);
+}
 </style>
