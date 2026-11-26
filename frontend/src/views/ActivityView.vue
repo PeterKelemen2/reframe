@@ -103,7 +103,7 @@ const lines = computed(() =>
           </span>
           <div class="activity-view__text">
             <span data-field="text">{{ line.text }}</span>
-            <span v-if="line.detail" class="activity-view__detail rf-mono" data-field="detail">
+            <span v-if="line.detail" class="activity-view__detail" data-field="detail">
               {{ line.detail }}
             </span>
           </div>

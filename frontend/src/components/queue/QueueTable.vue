@@ -611,6 +611,7 @@ async function move(index: number, to: number): Promise<void> {
   font-weight: var(--rf-font-weight-medium);
   letter-spacing: var(--rf-tracking-label);
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .queue-table :deep(.p-datatable-tbody > tr > td) {
