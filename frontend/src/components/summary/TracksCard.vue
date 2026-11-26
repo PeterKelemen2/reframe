@@ -175,14 +175,16 @@ function flagLabel(flag: Flag): string {
                   <ArrowRight class="summary-track__arrow" :size="14" aria-hidden="true" />
                   <span class="rf-sr-only">{{ t('summary.tracks.writtenAs') }}</span>
                 </span>
-                <template v-if="chip.passthru">
-                  <CodecLabel v-if="chip.stream" :stream="chip.stream" />
-                  <span v-if="chip.layout">{{ chip.layout }}</span>
-                </template>
-                <template v-else>
-                  <span>{{ chip.encoder }}</span>
-                  <span v-if="chip.layout">{{ chip.layout }}</span>
-                </template>
+                <span class="summary-track__output">
+                  <template v-if="chip.passthru">
+                    <CodecLabel v-if="chip.stream" :stream="chip.stream" />
+                    <span v-if="chip.layout">{{ chip.layout }}</span>
+                  </template>
+                  <template v-else>
+                    <span>{{ chip.encoder }}</span>
+                    <span v-if="chip.layout">{{ chip.layout }}</span>
+                  </template>
+                </span>
                 <span
                   v-if="chip.name && chip.sourceName"
                   class="summary-track__from"
@@ -439,6 +441,14 @@ function flagLabel(flag: Flag): string {
   gap: 0 var(--rf-space-1);
   align-items: center;
   min-width: 0;
+}
+
+/* What is written stays on one line, such as "AAC Stereo"; the cell wraps between its parts. */
+.summary-track__output {
+  display: inline-flex;
+  gap: var(--rf-space-1);
+  align-items: center;
+  white-space: nowrap;
 }
 
 .summary-track__codec > .summary-track__name {
