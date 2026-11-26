@@ -491,8 +491,9 @@ function flagLabel(flag: Flag): string {
   white-space: nowrap;
 }
 
-/* A narrow card: each row wraps its cells instead of keeping the columns. */
-@container (width < 34rem) {
+/* A narrow card: each row wraps its cells instead of keeping the columns. The Summary is about
+   33rem wide beside the open preview at 1280 px, and keeps the columns there. */
+@container (width < 30rem) {
   .summary-tracks__grid,
   .summary-tracks__group,
   .summary-tracks__list,

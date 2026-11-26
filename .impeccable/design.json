@@ -1072,8 +1072,8 @@
       },
       {
         "name": "tracks-narrow-card",
-        "value": "container 34rem",
-        "purpose": "Track rows wrap their cells instead of keeping columns."
+        "value": "container 30rem",
+        "purpose": "Track rows wrap their cells instead of keeping columns; the Summary is about 33rem at 1280px and keeps them."
       }
     ],
     "density": [
