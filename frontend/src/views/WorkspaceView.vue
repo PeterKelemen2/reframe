@@ -227,7 +227,9 @@ async function open(): Promise<void> {
   min-width: 0;
 }
 
+/* The strip keeps its height when the editor is short; the panels scroll instead. */
 .workspace__strip {
+  flex: none;
   padding: var(--rf-space-3) var(--rf-space-4);
   border-bottom: 1px solid var(--rf-color-border);
   background: var(--rf-color-surface);
@@ -267,16 +269,29 @@ kbd {
 }
 
 @media (width < 60rem) {
+  /* The title takes a line of its own when the range would not fit beside it. */
+  .workspace__source {
+    flex-wrap: wrap;
+  }
+
+  /* One column that scrolls: each part keeps its own height instead of sharing the screen. */
   .workspace__columns,
   .workspace__columns--preview-collapsed {
     grid-template-columns: minmax(0, 1fr);
-    grid-auto-rows: auto;
+    grid-auto-rows: max-content;
     overflow: auto;
   }
 
   .workspace__columns > :deep(.sources-panel) {
+    max-block-size: 40dvh;
     border-right: none;
     border-bottom: 1px solid var(--rf-color-border);
+  }
+
+  /* The tab panels are a size container and take no height from their content: in one column
+     the editor needs a height of its own, about the room between the header and the status bar. */
+  .workspace__editor {
+    block-size: max(28rem, 100dvh - 12rem);
   }
 }
 </style>
